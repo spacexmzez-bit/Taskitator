@@ -4,19 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - Today</title>
-    <link rel="stylesheet" href="style.css?v=3">
+    <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 
     <div id="backdrop"></div>
 
-    <!-- Mobile Header -->
     <div id="mobile-header">
         <h2>Taskitator</h2>
         <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
     </div>
 
-    <!-- Sidebar Drawer -->
     <aside id="sidebar">
         <h2>Taskitator</h2>
         <a href="index.html" class="nav-link active">📅 Today's Tasks</a>
@@ -26,7 +24,6 @@
         <a href="trash.html" class="nav-link">🗑️ Trash Bin</a>
     </aside>
 
-    <!-- Main Workspace -->
     <main id="main-content">
         <header id="top-nav">
             <a href="#" class="tab-link active">All Today</a>
@@ -37,13 +34,11 @@
         <section id="view-area">
             <h1>Today's To-Do List</h1>
 
-            <!-- Task Quick Add -->
             <form id="add-task-form" class="add-task-bar">
-                <input type="text" id="task-title-input" class="task-input" placeholder="Add a new task..." required maxlength="80">
+                <input type="text" id="task-title-input" class="task-input" placeholder="Add a new root task..." required maxlength="80">
                 <button type="submit" class="add-btn">+</button>
             </form>
 
-            <!-- Dynamic Tasks Container -->
             <div id="task-list"></div>
         </section>
     </main>
@@ -57,7 +52,17 @@
             </div>
             <div class="modal-body">
                 <p id="modal-desc">Task description goes here.</p>
-                <div class="task-meta" id="modal-meta" style="margin-top: 12px;"></div>
+                <div class="task-meta" id="modal-meta"></div>
+
+                <!-- Sub-tasks Container inside Modal -->
+                <div class="modal-subtasks-section">
+                    <h4>Sub-Tasks</h4>
+                    <div id="modal-subtasks-list"></div>
+                    <form id="modal-subtask-form" class="modal-subtask-form">
+                        <input type="text" id="subtask-input" class="modal-subtask-input" placeholder="Add a sub-task..." required maxlength="80">
+                        <button type="submit" class="modal-subtask-add-btn">+</button>
+                    </form>
+                </div>
             </div>
             <div class="modal-actions">
                 <button class="trash-btn" id="trash-task-btn">Trash Task</button>
@@ -66,7 +71,6 @@
     </div>
 
     <script>
-        // DOM Elements
         const toggleBtn = document.getElementById('menu-toggle');
         const sidebar = document.getElementById('sidebar');
         const backdrop = document.getElementById('backdrop');
@@ -79,11 +83,14 @@
         const modalTitle = document.getElementById('modal-title');
         const modalDesc = document.getElementById('modal-desc');
         const modalMeta = document.getElementById('modal-meta');
+        const modalSubtasksList = document.getElementById('modal-subtasks-list');
+        const modalSubtaskForm = document.getElementById('modal-subtask-form');
+        const subtaskInput = document.getElementById('subtask-input');
         const trashTaskBtn = document.getElementById('trash-task-btn');
 
         let activeTaskId = null;
 
-        // Mobile Nav Toggle
+        // Mobile Nav
         toggleBtn.addEventListener('click', () => {
             const isOpen = sidebar.classList.toggle('open');
             backdrop.classList.toggle('active', isOpen);
@@ -94,88 +101,167 @@
             backdrop.classList.remove('active');
         });
 
-        // Local Storage State
+        // Local Storage Access
         function getTasks() {
-            return JSON.parse(localStorage.getItem('taskitator_tasks')) || [
-                {
-                    id: '1',
-                    title: 'Welcome to Taskitator',
-                    description: 'This is a sample description to demonstrate line truncation. Clicking anywhere on this card opens the modal detail window.',
-                    priority: 'high',
-                    dueDate: 'today',
-                    status: 'active'
-                }
-            ];
+            return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
         }
 
         function saveTasks(tasks) {
             localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
         }
 
-        // Render Tasks to DOM
+        // Recursive Helper: Get all descendant IDs of a task
+        function getDescendantIds(parentId, allTasks) {
+            let descendants = [];
+            const children = allTasks.filter(t => t.parent_id === parentId);
+            children.forEach(child => {
+                descendants.push(child.id);
+                descendants = descendants.concat(getDescendantIds(child.id, allTasks));
+            });
+            return descendants;
+        }
+
+        // Render Tree for Today's List
         function renderTasks() {
-            const tasks = getTasks().filter(t => t.status === 'active');
+            const allTasks = getTasks();
+            const activeTasks = allTasks.filter(t => t.status === 'active');
             taskList.innerHTML = '';
 
-            if (tasks.length === 0) {
+            if (activeTasks.length === 0) {
                 taskList.innerHTML = '<p style="color: #64748b; font-size: 0.9rem; margin-top: 20px;">No tasks for today. Tap above to add one.</p>';
                 return;
             }
 
-            tasks.forEach(task => {
-                const card = document.createElement('div');
-                card.className = 'task-card';
-                card.dataset.id = task.id;
-
-                const priorityClass = task.priority ? `badge-priority-${task.priority}` : '';
-
-                card.innerHTML = `
-                    <div class="check-circle" data-action="complete"></div>
-                    <div class="task-info">
-                        <div class="task-title">${escapeHtml(task.title)}</div>
-                        <div class="task-desc">${escapeHtml(task.description || 'No description')}</div>
-                        <div class="task-meta">
-                            <span class="badge ${priorityClass}">${task.priority || 'Normal'}</span>
-                            <span class="due-badge">${task.dueDate || 'Today'}</span>
-                        </div>
-                    </div>
-                `;
-
-                // Handle clicks on card
-                card.addEventListener('click', (e) => {
-                    if (e.target.dataset.action === 'complete') {
-                        triggerComplete(task.id, card);
-                    } else {
-                        openModal(task);
-                    }
+            // Recursive function to append tasks in hierarchical order with indentation
+            function appendTaskTree(parentId, depth) {
+                const children = activeTasks.filter(t => t.parent_id === parentId);
+                children.forEach(task => {
+                    const card = createTaskCard(task, depth, allTasks);
+                    taskList.appendChild(card);
+                    appendTaskTree(task.id, depth + 1);
                 });
+            }
 
-                taskList.appendChild(card);
-            });
+            // Start with root tasks (no parent)
+            appendTaskTree(null, 0);
         }
 
-        // Complete Animation & Action
+        // Create Task DOM Node
+        function createTaskCard(task, depth, allTasks) {
+            const card = document.createElement('div');
+            const safeDepth = Math.min(depth, 3);
+            card.className = `task-card depth-${safeDepth}`;
+            card.dataset.id = task.id;
+
+            // Calculate direct sub-tasks ratio
+            const directSubtasks = allTasks.filter(t => t.parent_id === task.id && t.status !== 'trashed');
+            const completedCount = directSubtasks.filter(t => t.status === 'completed').length;
+            const subtaskBadge = directSubtasks.length > 0 
+                ? `<span class="subtask-badge">${completedCount}/${directSubtasks.length} subtasks</span>` 
+                : '';
+
+            const priorityClass = task.priority ? `badge-priority-${task.priority}` : '';
+
+            card.innerHTML = `
+                <div class="check-circle" data-action="complete"></div>
+                <div class="task-info">
+                    <div class="task-title">${escapeHtml(task.title)}</div>
+                    <div class="task-desc">${escapeHtml(task.description || 'No description')}</div>
+                    <div class="task-meta">
+                        <span class="badge ${priorityClass}">${task.priority || 'Normal'}</span>
+                        <span class="due-badge">${task.due_date || 'Today'}</span>
+                        ${subtaskBadge}
+                    </div>
+                </div>
+            `;
+
+            card.addEventListener('click', (e) => {
+                if (e.target.dataset.action === 'complete') {
+                    triggerComplete(task.id, card);
+                } else {
+                    openModal(task.id);
+                }
+            });
+
+            return card;
+        }
+
+        // Cascading Completion (Parent + all nested descendants)
         function triggerComplete(taskId, element) {
             element.classList.add('completing');
             setTimeout(() => {
                 const tasks = getTasks();
-                const target = tasks.find(t => t.id === taskId);
-                if (target) target.status = 'completed';
+                const descendantIds = getDescendantIds(taskId, tasks);
+                const targetIds = new Set([taskId, ...descendantIds]);
+
+                tasks.forEach(t => {
+                    if (targetIds.has(t.id)) {
+                        t.status = 'completed';
+                    }
+                });
+
                 saveTasks(tasks);
                 renderTasks();
             }, 350);
         }
 
+        // Cascading Trash (Parent + all descendants)
+        trashTaskBtn.addEventListener('click', () => {
+            if (!activeTaskId) return;
+            const tasks = getTasks();
+            const descendantIds = getDescendantIds(activeTaskId, tasks);
+            const targetIds = new Set([activeTaskId, ...descendantIds]);
+            const timestamp = new Date().toISOString();
+
+            tasks.forEach(t => {
+                if (targetIds.has(t.id)) {
+                    t.status = 'trashed';
+                    t.trashed_at = timestamp;
+                }
+            });
+
+            saveTasks(tasks);
+            closeModal();
+            renderTasks();
+        });
+
         // Modal Controls
-        function openModal(task) {
-            activeTaskId = task.id;
+        function openModal(taskId) {
+            activeTaskId = taskId;
+            const tasks = getTasks();
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+
             modalTitle.textContent = task.title;
             modalDesc.textContent = task.description || 'No detailed description provided.';
             modalMeta.innerHTML = `
                 <span class="badge badge-priority-${task.priority || 'low'}">${task.priority || 'Normal'}</span>
-                <span class="due-badge">Due: ${task.dueDate || 'Today'}</span>
+                <span class="due-badge">Due: ${task.due_date || 'Today'}</span>
             `;
+
+            renderModalSubtasks(task.id, tasks);
             modalOverlay.classList.add('active');
+        }
+
+        function renderModalSubtasks(parentId, allTasks) {
+            modalSubtasksList.innerHTML = '';
+            const subtasks = allTasks.filter(t => t.parent_id === parentId && t.status !== 'trashed');
+
+            if (subtasks.length === 0) {
+                modalSubtasksList.innerHTML = '<p style="color: #64748b; font-size: 0.8rem;">No sub-tasks yet.</p>';
+                return;
+            }
+
+            subtasks.forEach(st => {
+                const item = document.createElement('div');
+                item.className = 'modal-subtask-item';
+                const statusIcon = st.status === 'completed' ? '✓' : '○';
+                item.innerHTML = `
+                    <span>${statusIcon} ${escapeHtml(st.title)}</span>
+                    <span style="color: #64748b; font-size: 0.75rem;">${st.status}</span>
+                `;
+                modalSubtasksList.appendChild(item);
+            });
         }
 
         function closeModal() {
@@ -188,18 +274,32 @@
             if (e.target === modalOverlay) closeModal();
         });
 
-        // Trash Task Action
-        trashTaskBtn.addEventListener('click', () => {
-            if (!activeTaskId) return;
+        // Add Sub-Task via Modal
+        modalSubtaskForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const title = subtaskInput.value.trim();
+            if (!title || !activeTaskId) return;
+
+            const newSubtask = {
+                id: Date.now().toString(),
+                parent_id: activeTaskId,
+                title: title,
+                description: '',
+                priority: 'med',
+                due_date: 'today',
+                status: 'active'
+            };
+
             const tasks = getTasks();
-            const target = tasks.find(t => t.id === activeTaskId);
-            if (target) target.status = 'trashed';
+            tasks.push(newSubtask);
             saveTasks(tasks);
-            closeModal();
+
+            subtaskInput.value = '';
+            renderModalSubtasks(activeTaskId, tasks);
             renderTasks();
         });
 
-        // Add Task Action
+        // Add Root Task
         taskForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const title = taskInput.value.trim();
@@ -207,10 +307,11 @@
 
             const newTask = {
                 id: Date.now().toString(),
+                parent_id: null,
                 title: title,
                 description: '',
                 priority: 'med',
-                dueDate: 'today',
+                due_date: 'today',
                 status: 'active'
             };
 
@@ -221,14 +322,12 @@
             renderTasks();
         });
 
-        // Sanitizer utility
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
 
-        // Initial render
         renderTasks();
     </script>
 </body>
