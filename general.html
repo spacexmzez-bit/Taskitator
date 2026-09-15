@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - General List</title>
-    <link rel="stylesheet" href="style.css?v=6">
+    <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 
@@ -26,9 +26,9 @@
         <a href="trash.html" class="nav-link">🗑️ Trash Bin</a>
     </aside>
 
-    <!-- Main Content Area -->
+    <!-- Main Workspace -->
     <main id="main-content">
-        <!-- Dynamic Header Presets -->
+        <!-- Top Nav Grouping Presets -->
         <header id="top-nav">
             <a href="#" class="tab-link active" data-group="all">All Grandparents</a>
             <a href="#" class="tab-link" data-group="date">By Date</a>
@@ -39,29 +39,71 @@
         <section id="view-area">
             <h1>General To-Do List</h1>
 
-            <!-- Create Root Grandparent Task Form -->
             <form id="add-task-form" class="add-task-bar">
-                <input type="text" id="task-title-input" class="task-input" placeholder="Add a new grandparent task..." required maxlength="80">
+                <input type="text" id="task-title-input" class="task-input" placeholder="Add a new root grandparent task..." required maxlength="80">
                 <button type="submit" class="add-btn">+</button>
             </form>
 
-            <!-- Dynamic Tasks Container -->
             <div id="general-task-list"></div>
         </section>
     </main>
 
-    <!-- Deep-View Details Modal -->
+    <!-- Phase 9 Interactive Parameter Editing Modal -->
     <div id="modal-overlay">
         <div class="modal-card">
             <div class="modal-header">
-                <h3 id="modal-title">Task Details</h3>
+                <h3 id="modal-heading">Edit Task</h3>
                 <button class="close-modal-btn" id="close-modal">&times;</button>
             </div>
             <div class="modal-body">
-                <p id="modal-desc">Description</p>
-                <div class="task-meta" id="modal-meta"></div>
+                <!-- Title Edit -->
+                <div class="modal-edit-field">
+                    <label class="modal-label" for="edit-title">Title</label>
+                    <input type="text" id="edit-title" class="modal-input" maxlength="80" required>
+                </div>
 
-                <!-- Nested Sub-tasks Section -->
+                <!-- Description Edit -->
+                <div class="modal-edit-field">
+                    <label class="modal-label" for="edit-desc">Description</label>
+                    <textarea id="edit-desc" class="modal-textarea" rows="2" placeholder="Add details..."></textarea>
+                </div>
+
+                <!-- Priority & Due Date Row -->
+                <div class="modal-row">
+                    <div class="modal-edit-field">
+                        <label class="modal-label" for="edit-priority">Priority</label>
+                        <select id="edit-priority" class="modal-select">
+                            <option value="high">High</option>
+                            <option value="med">Medium</option>
+                            <option value="low">Low</option>
+                        </select>
+                    </div>
+                    <div class="modal-edit-field">
+                        <label class="modal-label" for="edit-due">Due Date</label>
+                        <input type="date" id="edit-due" class="modal-input">
+                    </div>
+                </div>
+
+                <!-- Tag Picker -->
+                <div class="modal-edit-field">
+                    <label class="modal-label">Tag</label>
+                    <div id="modal-tags" class="modal-tags-wrapper"></div>
+                </div>
+
+                <!-- Recurrence Toggle -->
+                <div class="modal-field-group">
+                    <label class="modal-checkbox-label">
+                        <input type="checkbox" id="modal-recur-checkbox">
+                        Repeat this task
+                    </label>
+                    <select id="modal-recur-rule" class="modal-recurrence-select" style="display: none;">
+                        <option value="daily">Every Day</option>
+                        <option value="weekdays">Weekdays Only (Skips Weekend)</option>
+                        <option value="weekly">Once a Week</option>
+                    </select>
+                </div>
+
+                <!-- Sub-tasks Section -->
                 <div class="modal-subtasks-section">
                     <h4>Direct Sub-Tasks</h4>
                     <div id="modal-subtasks-list"></div>
@@ -78,7 +120,8 @@
     </div>
 
     <script>
-        // DOM References
+        const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+
         const toggleBtn = document.getElementById('menu-toggle');
         const sidebar = document.getElementById('sidebar');
         const backdrop = document.getElementById('backdrop');
@@ -89,9 +132,14 @@
 
         const modalOverlay = document.getElementById('modal-overlay');
         const closeModalBtn = document.getElementById('close-modal');
-        const modalTitle = document.getElementById('modal-title');
-        const modalDesc = document.getElementById('modal-desc');
-        const modalMeta = document.getElementById('modal-meta');
+        const editTitle = document.getElementById('edit-title');
+        const editDesc = document.getElementById('edit-desc');
+        const editPriority = document.getElementById('edit-priority');
+        const editDue = document.getElementById('edit-due');
+        const modalTags = document.getElementById('modal-tags');
+        const modalRecurCheckbox = document.getElementById('modal-recur-checkbox');
+        const modalRecurRule = document.getElementById('modal-recur-rule');
+
         const modalSubtasksList = document.getElementById('modal-subtasks-list');
         const modalSubtaskForm = document.getElementById('modal-subtask-form');
         const subtaskInput = document.getElementById('subtask-input');
@@ -100,7 +148,7 @@
         let currentGrouping = 'all';
         let activeTaskId = null;
 
-        // Mobile Drawer Toggle
+        // Mobile Nav Drawer Toggle
         toggleBtn.addEventListener('click', () => {
             const isOpen = sidebar.classList.toggle('open');
             backdrop.classList.toggle('active', isOpen);
@@ -120,7 +168,17 @@
             localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
         }
 
-        // Recursive Helper to find all descendants
+        function getSettings() {
+            return JSON.parse(localStorage.getItem('taskitator_settings')) || {
+                weekendDays: [5, 6],
+                tags: [
+                    { id: '1', name: 'Work', color: '#0284c7' },
+                    { id: '2', name: 'Personal', color: '#10b981' },
+                    { id: '3', name: 'Urgent', color: '#ef4444' }
+                ]
+            };
+        }
+
         function getDescendantIds(parentId, allTasks) {
             let descendants = [];
             const children = allTasks.filter(t => t.parent_id === parentId);
@@ -131,7 +189,7 @@
             return descendants;
         }
 
-        // Top Navigation Switcher
+        // Top Nav Preset Switcher
         navTabs.forEach(tab => {
             tab.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -142,7 +200,6 @@
             });
         });
 
-        // Date Categorizer Helper
         function getDateCategory(dueDateStr) {
             if (!dueDateStr || dueDateStr.toLowerCase() === 'today') return 'Today';
             if (dueDateStr.toLowerCase() === 'tomorrow') return 'Tomorrow';
@@ -164,16 +221,15 @@
             return 'Upcoming';
         }
 
-        // Main Render Engine
+        // Main Render Function (Strict Grandparent Filter: !t.parent_id)
         function renderGeneralView() {
             const allTasks = getTasks();
-            // Strict Rule: ONLY grandparent tasks (parent_id is null or undefined) that are active
             const rootTasks = allTasks.filter(t => !t.parent_id && t.status === 'active');
 
             taskList.innerHTML = '';
 
             if (rootTasks.length === 0) {
-                taskList.innerHTML = '<p style="color: #64748b; font-size: 0.9rem; margin-top: 20px;">No grandparent tasks found. Create one above to start organizing.</p>';
+                taskList.innerHTML = '<p style="color: #64748b; font-size: 0.9rem; margin-top: 20px;">No grandparent tasks found. Add one above.</p>';
                 return;
             }
 
@@ -190,7 +246,6 @@
             }
         }
 
-        // Sectioned Grouping Renderer
         function renderGrouped(tasks, allTasks, keyFn, customOrder = null) {
             const groups = {};
 
@@ -222,20 +277,28 @@
             });
         }
 
-        // Task Card Element Factory
         function createTaskCard(task, allTasks) {
             const card = document.createElement('div');
             card.className = 'task-card';
             card.dataset.id = task.id;
 
-            // Direct children counter (completed vs total)
             const directSubtasks = allTasks.filter(t => t.parent_id === task.id && t.status !== 'trashed');
             const completedCount = directSubtasks.filter(t => t.status === 'completed').length;
             const subtaskBadge = directSubtasks.length > 0 
                 ? `<span class="subtask-badge">${completedCount}/${directSubtasks.length} subtasks</span>` 
                 : '';
 
+            const recurringBadge = task.is_recurring 
+                ? `<span class="badge-recurring">🔁 ${escapeHtml(task.recurrence_rule || 'daily')}</span>` 
+                : '';
+
             const priorityClass = task.priority ? `badge-priority-${task.priority}` : '';
+
+            const settings = getSettings();
+            const tagObj = (settings.tags || []).find(t => t.name === task.tag);
+            const tagBadge = tagObj 
+                ? `<span class="badge" style="background-color: ${tagObj.color}; color: #ffffff;">${escapeHtml(tagObj.name)}</span>` 
+                : (task.tag ? `<span class="badge">${escapeHtml(task.tag)}</span>` : '');
 
             card.innerHTML = `
                 <div class="check-circle" data-action="complete"></div>
@@ -245,12 +308,13 @@
                     <div class="task-meta">
                         <span class="badge ${priorityClass}">${task.priority || 'Normal'}</span>
                         <span class="due-badge">${task.due_date || 'Today'}</span>
+                        ${tagBadge}
+                        ${recurringBadge}
                         ${subtaskBadge}
                     </div>
                 </div>
             `;
 
-            // Card Click Handling
             card.addEventListener('click', (e) => {
                 if (e.target.dataset.action === 'complete') {
                     triggerComplete(task.id, card);
@@ -262,15 +326,18 @@
             return card;
         }
 
-        // Cascading Completion (Grandparent + all nested descendants)
         function triggerComplete(taskId, card) {
             card.classList.add('completing');
             setTimeout(() => {
                 const tasks = getTasks();
                 const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
+                const nowIso = new Date().toISOString();
 
                 tasks.forEach(t => {
-                    if (targetIds.has(t.id)) t.status = 'completed';
+                    if (targetIds.has(t.id)) {
+                        t.status = 'completed';
+                        t.completed_at = nowIso;
+                    }
                 });
 
                 saveTasks(tasks);
@@ -278,30 +345,97 @@
             }, 350);
         }
 
-        // Deep-View Modal Controls
+        // ==========================================
+        // PHASE 9: INTERACTIVE MODAL EDITING
+        // ==========================================
         function openModal(taskId) {
             activeTaskId = taskId;
             const tasks = getTasks();
             const task = tasks.find(t => t.id === taskId);
             if (!task) return;
 
-            modalTitle.textContent = task.title;
-            modalDesc.textContent = task.description || 'No detailed description provided.';
-            modalMeta.innerHTML = `
-                <span class="badge badge-priority-${task.priority || 'med'}">${task.priority || 'Normal'}</span>
-                <span class="due-badge">Due: ${task.due_date || 'Today'}</span>
-            `;
+            editTitle.value = task.title || '';
+            editDesc.value = task.description || '';
+            editPriority.value = task.priority || 'med';
+            editDue.value = (task.due_date && task.due_date !== 'today') ? task.due_date : '';
 
+            modalRecurCheckbox.checked = !!task.is_recurring;
+            modalRecurRule.style.display = task.is_recurring ? 'block' : 'none';
+            modalRecurRule.value = task.recurrence_rule || 'daily';
+
+            renderModalTagPicker(task.tag);
             renderModalSubtasks(task.id, tasks);
             modalOverlay.classList.add('active');
         }
+
+        function renderModalTagPicker(selectedTag) {
+            modalTags.innerHTML = '';
+            const settings = getSettings();
+            const tags = settings.tags || [];
+
+            if (tags.length === 0) {
+                modalTags.innerHTML = '<span style="color: #64748b; font-size: 0.8rem;">No tags created in Settings.</span>';
+                return;
+            }
+
+            tags.forEach(tag => {
+                const chip = document.createElement('span');
+                chip.className = `modal-tag-chip ${selectedTag === tag.name ? 'active' : ''}`;
+                chip.style.backgroundColor = tag.color;
+                chip.style.color = '#ffffff';
+                chip.textContent = tag.name;
+
+                chip.addEventListener('click', () => {
+                    const tasks = getTasks();
+                    const task = tasks.find(t => t.id === activeTaskId);
+                    if (!task) return;
+
+                    task.tag = task.tag === tag.name ? null : tag.name;
+
+                    saveTasks(tasks);
+                    renderModalTagPicker(task.tag);
+                    renderGeneralView();
+                });
+
+                modalTags.appendChild(chip);
+            });
+        }
+
+        function handleModalFieldChange() {
+            if (!activeTaskId) return;
+            const tasks = getTasks();
+            const task = tasks.find(t => t.id === activeTaskId);
+            if (!task) return;
+
+            task.title = editTitle.value.trim() || 'Untitled Task';
+            task.description = editDesc.value.trim();
+            task.priority = editPriority.value;
+            task.due_date = editDue.value || 'today';
+            task.is_recurring = modalRecurCheckbox.checked;
+            task.recurrence_rule = modalRecurCheckbox.checked ? modalRecurRule.value : null;
+
+            saveTasks(tasks);
+            renderGeneralView();
+        }
+
+        editTitle.addEventListener('input', handleModalFieldChange);
+        editDesc.addEventListener('input', handleModalFieldChange);
+        editPriority.addEventListener('change', handleModalFieldChange);
+        editDue.addEventListener('change', handleModalFieldChange);
+
+        modalRecurCheckbox.addEventListener('change', () => {
+            modalRecurRule.style.display = modalRecurCheckbox.checked ? 'block' : 'none';
+            handleModalFieldChange();
+        });
+
+        modalRecurRule.addEventListener('change', handleModalFieldChange);
 
         function renderModalSubtasks(parentId, allTasks) {
             modalSubtasksList.innerHTML = '';
             const subtasks = allTasks.filter(t => t.parent_id === parentId && t.status !== 'trashed');
 
             if (subtasks.length === 0) {
-                modalSubtasksList.innerHTML = '<p style="color: #64748b; font-size: 0.8rem;">No sub-tasks attached to this task.</p>';
+                modalSubtasksList.innerHTML = '<p style="color: #64748b; font-size: 0.8rem;">No sub-tasks yet.</p>';
                 return;
             }
 
@@ -327,7 +461,6 @@
             if (e.target === modalOverlay) closeModal();
         });
 
-        // Add Direct Child Task via Modal
         modalSubtaskForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const title = subtaskInput.value.trim();
@@ -340,7 +473,9 @@
                 description: '',
                 priority: 'med',
                 due_date: 'today',
-                status: 'active'
+                status: 'active',
+                is_recurring: false,
+                recurrence_rule: null
             };
 
             const tasks = getTasks();
@@ -352,7 +487,6 @@
             renderGeneralView();
         });
 
-        // Cascading Trash (Grandparent + all nested descendants)
         trashTaskBtn.addEventListener('click', () => {
             if (!activeTaskId) return;
             const tasks = getTasks();
@@ -371,7 +505,6 @@
             renderGeneralView();
         });
 
-        // Add Root Grandparent Task
         taskForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const title = taskInput.value.trim();
@@ -379,12 +512,14 @@
 
             const newTask = {
                 id: Date.now().toString(),
-                parent_id: null, // Locks it as a grandparent
+                parent_id: null,
                 title: title,
                 description: '',
                 priority: 'med',
                 due_date: 'today',
-                status: 'active'
+                status: 'active',
+                is_recurring: false,
+                recurrence_rule: null
             };
 
             const tasks = getTasks();
@@ -394,14 +529,12 @@
             renderGeneralView();
         });
 
-        // HTML Sanitizer
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
 
-        // Initial Execution
         renderGeneralView();
     </script>
 </body>
