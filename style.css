@@ -847,3 +847,32 @@ body {
     font-weight: 600;
     box-shadow: 0 0 0 2px #0f172a, 0 0 0 3px #38bdf8;
 }
+/* Phase 10: Tag Quick-Add & Filter Styles */
+.quick-tag-select {
+    background-color: #111827;
+    border: 1px solid #1f2937;
+    color: #94a3b8;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    outline: none;
+    cursor: pointer;
+}
+
+.quick-tag-select:focus {
+    border-color: #38bdf8;
+    color: #f1f5f9;
+}
+
+.group-title-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tag-color-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
