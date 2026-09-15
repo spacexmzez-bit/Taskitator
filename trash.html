@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Taskitator - Trash Bin</title>
+    <link rel="stylesheet" href="style.css?v=7">
+</head>
+<body>
+
+    <div id="backdrop"></div>
+
+    <!-- Mobile Sticky Header -->
+    <div id="mobile-header">
+        <h2>Taskitator</h2>
+        <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
+    </div>
+
+    <!-- Sidebar Drawer -->
+    <aside id="sidebar">
+        <h2>Taskitator</h2>
+        <a href="index.html" class="nav-link">📅 Today's Tasks</a>
+        <a href="general.html" class="nav-link">📋 General List</a>
+        <a href="stats.html" class="nav-link">📊 Statistics</a>
+        <a href="settings.html" class="nav-link">⚙️ Settings</a>
+        <a href="trash.html" class="nav-link active">🗑️ Trash Bin</a>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main id="main-content">
+        <section id="view-area">
+            <h1>Trash Bin</h1>
+
+            <!-- 14-Day Warning Banner -->
+            <div class="trash-banner">
+                <span class="trash-banner-icon">ℹ️</span>
+                <div>
+                    Tasks in the trash bin are kept for <strong>14 days</strong> from the moment they are trashed. After 14 days, they are permanently removed automatically. Restoring a task resets this timer.
+                </div>
+            </div>
+
+            <!-- Trashed Items Container -->
+            <div id="trash-list"></div>
+        </section>
+    </main>
+
+    <script>
+        const toggleBtn = document.getElementById('menu-toggle');
+        const sidebar = document.getElementById('sidebar');
+        const backdrop = document.getElementById('backdrop');
+        const trashList = document.getElementById('trash-list');
+
+        const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+
+        // Mobile Nav Drawer Toggle
+        toggleBtn.addEventListener('click', () => {
+            const isOpen = sidebar.classList.toggle('open');
+            backdrop.classList.toggle('active', isOpen);
+        });
+
+        backdrop.addEventListener('click', () => {
+            sidebar.classList.remove('open');
+            backdrop.classList.remove('active');
+        });
+
+        // Local Storage Utilities
+        function getTasks() {
+            return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
+        }
+
+        function saveTasks(tasks) {
+            localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
+        }
+
+        // Descendant ID Resolver
+        function getDescendantIds(parentId, allTasks) {
+            let descendants = [];
+            const children = allTasks.filter(t => t.parent_id === parentId);
+            children.forEach(child => {
+                descendants.push(child.id);
+                descendants = descendants.concat(getDescendantIds(child.id, allTasks));
+            });
+            return descendants;
+        }
+
+        // Auto-purge items older than 14 days
+        function purgeExpiredTasks() {
+            const now = Date.now();
+            let tasks = getTasks();
+            
+            const remainingTasks = tasks.filter(task => {
+                if (task.status !== 'trashed') return true;
+                const trashedTime = task.trashed_at ? new Date(task.trashed_at).getTime() : now;
+                return (now - trashedTime) < FOURTEEN_DAYS_MS;
+            });
+
+            if (remainingTasks.length !== tasks.length) {
+                saveTasks(remainingTasks);
+            }
+        }
+
+        // Countdown Formatter
+        function getRemainingTimeText(trashedAtISO) {
+            if (!trashedAtISO) return 'Expiring soon';
+            const trashedTime = new Date(trashedAtISO).getTime();
+            const expiresAt = trashedTime + FOURTEEN_DAYS_MS;
+            const diff = expiresAt - Date.now();
+
+            if (diff <= 0) return 'Expired (purging...)';
+
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
+            if (days > 0) {
+                return `${days}d ${hours}h remaining`;
+            }
+            return `${hours}h remaining`;
+        }
+
+        // Render Trashed Items
+        function renderTrash() {
+            purgeExpiredTasks();
+            const tasks = getTasks();
+            // Show trashed tasks (only root trashed tasks or stray children whose parents weren't trashed)
+            const trashedTasks = tasks.filter(t => t.status === 'trashed');
+            trashList.innerHTML = '';
+
+            if (trashedTasks.length === 0) {
+                trashList.innerHTML = '<p style="color: #64748b; font-size: 0.95rem; margin-top: 20px;">The trash bin is currently empty.</p>';
+                return;
+            }
+
+            trashedTasks.forEach(task => {
+                const card = document.createElement('div');
+                card.className = 'trash-card';
+                card.dataset.id = task.id;
+
+                card.innerHTML = `
+                    <div class="trash-card-info">
+                        <div class="trash-card-title">${escapeHtml(task.title)}</div>
+                        <div class="trash-countdown">⏳ ${getRemainingTimeText(task.trashed_at)}</div>
+                    </div>
+                    <div class="trash-actions">
+                        <button class="btn-restore" data-action="restore">Restore</button>
+                        <button class="btn-purge" data-action="purge">Delete</button>
+                    </div>
+                `;
+
+                card.addEventListener('click', (e) => {
+                    const action = e.target.dataset.action;
+                    if (action === 'restore') {
+                        restoreTask(task.id);
+                    } else if (action === 'purge') {
+                        purgeTask(task.id);
+                    }
+                });
+
+                trashList.appendChild(card);
+            });
+        }
+
+        // Restore Task & its descendants
+        function restoreTask(taskId) {
+            const tasks = getTasks();
+            const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
+
+            tasks.forEach(t => {
+                if (targetIds.has(t.id)) {
+                    t.status = 'active';
+                    t.trashed_at = null; // Resets the 14-day timer completely
+                }
+            });
+
+            saveTasks(tasks);
+            renderTrash();
+        }
+
+        // Hard Delete single task & descendants
+        function purgeTask(taskId) {
+            const confirmPurge = confirm('Permanently delete this task and any nested sub-tasks? This action cannot be undone.');
+            if (!confirmPurge) return;
+
+            const tasks = getTasks();
+            const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
+            const filteredTasks = tasks.filter(t => !targetIds.has(t.id));
+
+            saveTasks(filteredTasks);
+            renderTrash();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        renderTrash();
+    </script>
+</body>
+</html>
