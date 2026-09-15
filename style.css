@@ -728,3 +728,51 @@ body {
     #main-content { padding-top: 56px; }
     #view-area { padding: 16px; }
 }
+/* style.css */
+/* Phase 12: Backup & Sync Controls */
+.backup-actions-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.btn-secondary {
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    color: #f1f5f9;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-secondary:hover {
+    background-color: #334155;
+    border-color: #475569;
+}
+
+.sync-textarea {
+    width: 100%;
+    min-height: 140px;
+    background-color: #0b111e;
+    border: 1px solid #1f2937;
+    color: #38bdf8;
+    font-family: monospace;
+    font-size: 0.78rem;
+    padding: 10px;
+    border-radius: 6px;
+    margin-top: 8px;
+    resize: vertical;
+    outline: none;
+}
+
+.sync-textarea:focus {
+    border-color: #38bdf8;
+}
