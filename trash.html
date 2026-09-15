@@ -1,16 +1,17 @@
 <!DOCTYPE html>
+<!-- trash.html -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - Trash Bin</title>
-    <link rel="stylesheet" href="style.css?v=7">
+    <link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
     <div id="backdrop"></div>
 
-    <!-- Mobile Sticky Header -->
+    <!-- Mobile Header -->
     <div id="mobile-header">
         <h2>Taskitator</h2>
         <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
@@ -31,26 +32,21 @@
         <section id="view-area">
             <h1>Trash Bin</h1>
 
-            <!-- 14-Day Warning Banner -->
             <div class="trash-banner">
-                <span class="trash-banner-icon">ℹ️</span>
-                <div>
-                    Tasks in the trash bin are kept for <strong>14 days</strong> from the moment they are trashed. After 14 days, they are permanently removed automatically. Restoring a task resets this timer.
-                </div>
+                Items in the trash bin are permanently deleted after 14 days. Restoring a parent task brings back all its nested sub-tasks.
             </div>
 
-            <!-- Trashed Items Container -->
             <div id="trash-list"></div>
         </section>
     </main>
 
     <script>
+        const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+
         const toggleBtn = document.getElementById('menu-toggle');
         const sidebar = document.getElementById('sidebar');
         const backdrop = document.getElementById('backdrop');
         const trashList = document.getElementById('trash-list');
-
-        const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
         // Mobile Nav Drawer Toggle
         toggleBtn.addEventListener('click', () => {
@@ -72,7 +68,27 @@
             localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
         }
 
-        // Descendant ID Resolver
+        function getSettings() {
+            return JSON.parse(localStorage.getItem('taskitator_settings')) || {
+                weekendDays: [5, 6],
+                tags: []
+            };
+        }
+
+        function purgeExpiredTasks() {
+            const now = Date.now();
+            const tasks = getTasks();
+            const cleanTasks = tasks.filter(task => {
+                if (task.status !== 'trashed') return true;
+                const trashedTime = task.trashed_at ? new Date(task.trashed_at).getTime() : now;
+                return (now - trashedTime) < FOURTEEN_DAYS_MS;
+            });
+
+            if (cleanTasks.length !== tasks.length) {
+                saveTasks(cleanTasks);
+            }
+        }
+
         function getDescendantIds(parentId, allTasks) {
             let descendants = [];
             const children = allTasks.filter(t => t.parent_id === parentId);
@@ -83,83 +99,113 @@
             return descendants;
         }
 
-        // Auto-purge items older than 14 days
-        function purgeExpiredTasks() {
-            const now = Date.now();
+        function processDailyLoginRoutine() {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const lastLogin = localStorage.getItem('taskitator_last_login');
+            const settings = getSettings();
+            const todayDayOfWeek = new Date().getDay();
+
             let tasks = getTasks();
-            
-            const remainingTasks = tasks.filter(task => {
-                if (task.status !== 'trashed') return true;
-                const trashedTime = task.trashed_at ? new Date(task.trashed_at).getTime() : now;
-                return (now - trashedTime) < FOURTEEN_DAYS_MS;
-            });
+            let changed = false;
 
-            if (remainingTasks.length !== tasks.length) {
-                saveTasks(remainingTasks);
+            if (lastLogin !== todayStr) {
+                tasks.forEach(task => {
+                    if (!task.is_recurring || task.status === 'trashed') return;
+                    if (task.status === 'completed') {
+                        let shouldSpawn = false;
+                        const rule = task.recurrence_rule || 'daily';
+                        const completedDate = task.completed_at ? new Date(task.completed_at) : new Date(0);
+                        const daysDiff = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
+
+                        if (rule === 'daily') {
+                            shouldSpawn = true;
+                        } else if (rule === 'weekdays') {
+                            const isWeekend = (settings.weekendDays || [5, 6]).includes(todayDayOfWeek);
+                            if (!isWeekend) shouldSpawn = true;
+                        } else if (rule === 'weekly') {
+                            if (daysDiff >= 7) shouldSpawn = true;
+                        } else if (rule === 'monthly') {
+                            if (daysDiff >= 30) shouldSpawn = true;
+                        }
+
+                        if (shouldSpawn) {
+                            task.status = 'active';
+                            task.due_date = 'today';
+                            task.completed_at = null;
+
+                            const descendantIds = new Set(getDescendantIds(task.id, tasks));
+                            tasks.forEach(dt => {
+                                if (descendantIds.has(dt.id) && dt.status !== 'trashed') {
+                                    dt.status = 'active';
+                                    dt.completed_at = null;
+                                }
+                            });
+
+                            changed = true;
+                        }
+                    }
+                });
+
+                localStorage.setItem('taskitator_last_login', todayStr);
+                if (changed) saveTasks(tasks);
             }
         }
 
-        // Countdown Formatter
-        function getRemainingTimeText(trashedAtISO) {
-            if (!trashedAtISO) return 'Expiring soon';
-            const trashedTime = new Date(trashedAtISO).getTime();
+        function formatRemainingTime(trashedAtIso) {
+            const trashedTime = new Date(trashedAtIso).getTime();
             const expiresAt = trashedTime + FOURTEEN_DAYS_MS;
-            const diff = expiresAt - Date.now();
+            const remainingMs = expiresAt - Date.now();
 
-            if (diff <= 0) return 'Expired (purging...)';
+            if (remainingMs <= 0) return 'Expiring soon';
 
-            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const days = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((remainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
 
-            if (days > 0) {
-                return `${days}d ${hours}h remaining`;
-            }
-            return `${hours}h remaining`;
+            return `${days}d ${hours}h remaining`;
         }
 
-        // Render Trashed Items
         function renderTrash() {
-            purgeExpiredTasks();
-            const tasks = getTasks();
-            // Show trashed tasks (only root trashed tasks or stray children whose parents weren't trashed)
-            const trashedTasks = tasks.filter(t => t.status === 'trashed');
+            const allTasks = getTasks();
+            const trashedTasks = allTasks.filter(t => t.status === 'trashed');
+
             trashList.innerHTML = '';
 
             if (trashedTasks.length === 0) {
-                trashList.innerHTML = '<p style="color: #64748b; font-size: 0.95rem; margin-top: 20px;">The trash bin is currently empty.</p>';
+                trashList.innerHTML = '<p style="color: #64748b; font-size: 0.9rem; margin-top: 20px;">Trash bin is empty.</p>';
                 return;
             }
 
             trashedTasks.forEach(task => {
                 const card = document.createElement('div');
                 card.className = 'trash-card';
-                card.dataset.id = task.id;
+
+                const countdownText = task.trashed_at 
+                    ? formatRemainingTime(task.trashed_at) 
+                    : '14d 0h remaining';
 
                 card.innerHTML = `
-                    <div class="trash-card-info">
-                        <div class="trash-card-title">${escapeHtml(task.title)}</div>
-                        <div class="trash-countdown">⏳ ${getRemainingTimeText(task.trashed_at)}</div>
+                    <div style="flex-grow: 1;">
+                        <div style="font-weight: 500; font-size: 0.95rem;">${escapeHtml(task.title)}</div>
+                        <div class="trash-countdown">⏳ ${countdownText}</div>
                     </div>
-                    <div class="trash-actions">
-                        <button class="btn-restore" data-action="restore">Restore</button>
-                        <button class="btn-purge" data-action="purge">Delete</button>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn-restore" data-id="${task.id}">Restore</button>
+                        <button class="btn-purge" data-id="${task.id}">Delete</button>
                     </div>
                 `;
 
-                card.addEventListener('click', (e) => {
-                    const action = e.target.dataset.action;
-                    if (action === 'restore') {
-                        restoreTask(task.id);
-                    } else if (action === 'purge') {
-                        purgeTask(task.id);
-                    }
+                card.querySelector('.btn-restore').addEventListener('click', () => {
+                    restoreTask(task.id);
+                });
+
+                card.querySelector('.btn-purge').addEventListener('click', () => {
+                    hardPurgeTask(task.id);
                 });
 
                 trashList.appendChild(card);
             });
         }
 
-        // Restore Task & its descendants
         function restoreTask(taskId) {
             const tasks = getTasks();
             const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
@@ -167,7 +213,7 @@
             tasks.forEach(t => {
                 if (targetIds.has(t.id)) {
                     t.status = 'active';
-                    t.trashed_at = null; // Resets the 14-day timer completely
+                    t.trashed_at = null;
                 }
             });
 
@@ -175,16 +221,12 @@
             renderTrash();
         }
 
-        // Hard Delete single task & descendants
-        function purgeTask(taskId) {
-            const confirmPurge = confirm('Permanently delete this task and any nested sub-tasks? This action cannot be undone.');
-            if (!confirmPurge) return;
-
+        function hardPurgeTask(taskId) {
             const tasks = getTasks();
             const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
-            const filteredTasks = tasks.filter(t => !targetIds.has(t.id));
+            const remainingTasks = tasks.filter(t => !targetIds.has(t.id));
 
-            saveTasks(filteredTasks);
+            saveTasks(remainingTasks);
             renderTrash();
         }
 
@@ -194,6 +236,9 @@
             return div.innerHTML;
         }
 
+        // Universal Lifecycle Sync
+        purgeExpiredTasks();
+        processDailyLoginRoutine();
         renderTrash();
     </script>
 </body>
