@@ -453,3 +453,97 @@ body {
     color: #64748b;
     font-weight: 500;
 }
+
+/* Trash Notice Banner */
+.trash-banner {
+    background-color: #1e1b4b;
+    border: 1px solid #4338ca;
+    color: #c7d2fe;
+    padding: 14px 16px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    line-height: 1.4;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.trash-banner-icon {
+    font-size: 1.4rem;
+    flex-shrink: 0;
+}
+
+/* Trash Task Card */
+.trash-card {
+    background-color: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.trash-card-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.trash-card-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.trash-countdown {
+    font-size: 0.78rem;
+    color: #f87171;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.trash-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.btn-restore {
+    background-color: #065f46;
+    color: #34d399;
+    border: 1px solid #059669;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-restore:hover {
+    background-color: #047857;
+}
+
+.btn-purge {
+    background-color: #7f1d1d;
+    color: #fca5a5;
+    border: 1px solid #b91c1c;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-purge:hover {
+    background-color: #991b1b;
+}
+
