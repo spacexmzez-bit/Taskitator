@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Taskitator - General List</title>
+    <link rel="stylesheet" href="style.css?v=6">
+</head>
+<body>
+
+    <div id="backdrop"></div>
+
+    <!-- Mobile Header -->
+    <div id="mobile-header">
+        <h2>Taskitator</h2>
+        <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
+    </div>
+
+    <!-- Sidebar Drawer -->
+    <aside id="sidebar">
+        <h2>Taskitator</h2>
+        <a href="index.html" class="nav-link">📅 Today's Tasks</a>
+        <a href="general.html" class="nav-link active">📋 General List</a>
+        <a href="stats.html" class="nav-link">📊 Statistics</a>
+        <a href="settings.html" class="nav-link">⚙️ Settings</a>
+        <a href="trash.html" class="nav-link">🗑️ Trash Bin</a>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main id="main-content">
+        <!-- Dynamic Header Presets -->
+        <header id="top-nav">
+            <a href="#" class="tab-link active" data-group="all">All Grandparents</a>
+            <a href="#" class="tab-link" data-group="date">By Date</a>
+            <a href="#" class="tab-link" data-group="priority">By Priority</a>
+            <a href="#" class="tab-link" data-group="tag">By Tag</a>
+        </header>
+
+        <section id="view-area">
+            <h1>General To-Do List</h1>
+
+            <!-- Create Root Grandparent Task Form -->
+            <form id="add-task-form" class="add-task-bar">
+                <input type="text" id="task-title-input" class="task-input" placeholder="Add a new grandparent task..." required maxlength="80">
+                <button type="submit" class="add-btn">+</button>
+            </form>
+
+            <!-- Dynamic Tasks Container -->
+            <div id="general-task-list"></div>
+        </section>
+    </main>
+
+    <!-- Deep-View Details Modal -->
+    <div id="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modal-title">Task Details</h3>
+                <button class="close-modal-btn" id="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="modal-desc">Description</p>
+                <div class="task-meta" id="modal-meta"></div>
+
+                <!-- Nested Sub-tasks Section -->
+                <div class="modal-subtasks-section">
+                    <h4>Direct Sub-Tasks</h4>
+                    <div id="modal-subtasks-list"></div>
+                    <form id="modal-subtask-form" class="modal-subtask-form">
+                        <input type="text" id="subtask-input" class="modal-subtask-input" placeholder="Add a direct child task..." required maxlength="80">
+                        <button type="submit" class="modal-subtask-add-btn">+</button>
+                    </form>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="trash-btn" id="trash-task-btn">Trash Task</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM References
+        const toggleBtn = document.getElementById('menu-toggle');
+        const sidebar = document.getElementById('sidebar');
+        const backdrop = document.getElementById('backdrop');
+        const taskList = document.getElementById('general-task-list');
+        const taskForm = document.getElementById('add-task-form');
+        const taskInput = document.getElementById('task-title-input');
+        const navTabs = document.querySelectorAll('#top-nav .tab-link');
+
+        const modalOverlay = document.getElementById('modal-overlay');
+        const closeModalBtn = document.getElementById('close-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalDesc = document.getElementById('modal-desc');
+        const modalMeta = document.getElementById('modal-meta');
+        const modalSubtasksList = document.getElementById('modal-subtasks-list');
+        const modalSubtaskForm = document.getElementById('modal-subtask-form');
+        const subtaskInput = document.getElementById('subtask-input');
+        const trashTaskBtn = document.getElementById('trash-task-btn');
+
+        let currentGrouping = 'all';
+        let activeTaskId = null;
+
+        // Mobile Drawer Toggle
+        toggleBtn.addEventListener('click', () => {
+            const isOpen = sidebar.classList.toggle('open');
+            backdrop.classList.toggle('active', isOpen);
+        });
+
+        backdrop.addEventListener('click', () => {
+            sidebar.classList.remove('open');
+            backdrop.classList.remove('active');
+        });
+
+        // Local Storage Utilities
+        function getTasks() {
+            return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
+        }
+
+        function saveTasks(tasks) {
+            localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
+        }
+
+        // Recursive Helper to find all descendants
+        function getDescendantIds(parentId, allTasks) {
+            let descendants = [];
+            const children = allTasks.filter(t => t.parent_id === parentId);
+            children.forEach(child => {
+                descendants.push(child.id);
+                descendants = descendants.concat(getDescendantIds(child.id, allTasks));
+            });
+            return descendants;
+        }
+
+        // Top Navigation Switcher
+        navTabs.forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                e.preventDefault();
+                navTabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentGrouping = tab.dataset.group;
+                renderGeneralView();
+            });
+        });
+
+        // Date Categorizer Helper
+        function getDateCategory(dueDateStr) {
+            if (!dueDateStr || dueDateStr.toLowerCase() === 'today') return 'Today';
+            if (dueDateStr.toLowerCase() === 'tomorrow') return 'Tomorrow';
+
+            const due = new Date(dueDateStr);
+            if (isNaN(due.getTime())) return 'Later / Unscheduled';
+
+            const now = new Date();
+            now.setHours(0, 0, 0, 0);
+            due.setHours(0, 0, 0, 0);
+
+            const diffTime = due.getTime() - now.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays < 0) return 'Overdue';
+            if (diffDays === 0) return 'Today';
+            if (diffDays === 1) return 'Tomorrow';
+            if (diffDays <= 7) return 'This Week';
+            return 'Upcoming';
+        }
+
+        // Main Render Engine
+        function renderGeneralView() {
+            const allTasks = getTasks();
+            // Strict Rule: ONLY grandparent tasks (parent_id is null or undefined) that are active
+            const rootTasks = allTasks.filter(t => !t.parent_id && t.status === 'active');
+
+            taskList.innerHTML = '';
+
+            if (rootTasks.length === 0) {
+                taskList.innerHTML = '<p style="color: #64748b; font-size: 0.9rem; margin-top: 20px;">No grandparent tasks found. Create one above to start organizing.</p>';
+                return;
+            }
+
+            if (currentGrouping === 'all') {
+                rootTasks.forEach(task => {
+                    taskList.appendChild(createTaskCard(task, allTasks));
+                });
+            } else if (currentGrouping === 'priority') {
+                renderGrouped(rootTasks, allTasks, t => (t.priority || 'med').toUpperCase(), ['HIGH', 'MED', 'LOW']);
+            } else if (currentGrouping === 'date') {
+                renderGrouped(rootTasks, allTasks, t => getDateCategory(t.due_date), ['Overdue', 'Today', 'Tomorrow', 'This Week', 'Upcoming', 'Later / Unscheduled']);
+            } else if (currentGrouping === 'tag') {
+                renderGrouped(rootTasks, allTasks, t => t.tag || 'Untagged');
+            }
+        }
+
+        // Sectioned Grouping Renderer
+        function renderGrouped(tasks, allTasks, keyFn, customOrder = null) {
+            const groups = {};
+
+            tasks.forEach(t => {
+                const key = keyFn(t);
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(t);
+            });
+
+            let keys = Object.keys(groups);
+            if (customOrder) {
+                keys = customOrder.filter(k => groups[k]).concat(keys.filter(k => !customOrder.includes(k)));
+            }
+
+            keys.forEach(key => {
+                const section = document.createElement('div');
+                section.className = 'group-section';
+
+                const title = document.createElement('div');
+                title.className = 'group-title';
+                title.innerHTML = `<span>${escapeHtml(key)}</span> <span class="group-count">${groups[key].length}</span>`;
+                section.appendChild(title);
+
+                groups[key].forEach(t => {
+                    section.appendChild(createTaskCard(t, allTasks));
+                });
+
+                taskList.appendChild(section);
+            });
+        }
+
+        // Task Card Element Factory
+        function createTaskCard(task, allTasks) {
+            const card = document.createElement('div');
+            card.className = 'task-card';
+            card.dataset.id = task.id;
+
+            // Direct children counter (completed vs total)
+            const directSubtasks = allTasks.filter(t => t.parent_id === task.id && t.status !== 'trashed');
+            const completedCount = directSubtasks.filter(t => t.status === 'completed').length;
+            const subtaskBadge = directSubtasks.length > 0 
+                ? `<span class="subtask-badge">${completedCount}/${directSubtasks.length} subtasks</span>` 
+                : '';
+
+            const priorityClass = task.priority ? `badge-priority-${task.priority}` : '';
+
+            card.innerHTML = `
+                <div class="check-circle" data-action="complete"></div>
+                <div class="task-info">
+                    <div class="task-title">${escapeHtml(task.title)}</div>
+                    <div class="task-desc">${escapeHtml(task.description || 'No description')}</div>
+                    <div class="task-meta">
+                        <span class="badge ${priorityClass}">${task.priority || 'Normal'}</span>
+                        <span class="due-badge">${task.due_date || 'Today'}</span>
+                        ${subtaskBadge}
+                    </div>
+                </div>
+            `;
+
+            // Card Click Handling
+            card.addEventListener('click', (e) => {
+                if (e.target.dataset.action === 'complete') {
+                    triggerComplete(task.id, card);
+                } else {
+                    openModal(task.id);
+                }
+            });
+
+            return card;
+        }
+
+        // Cascading Completion (Grandparent + all nested descendants)
+        function triggerComplete(taskId, card) {
+            card.classList.add('completing');
+            setTimeout(() => {
+                const tasks = getTasks();
+                const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
+
+                tasks.forEach(t => {
+                    if (targetIds.has(t.id)) t.status = 'completed';
+                });
+
+                saveTasks(tasks);
+                renderGeneralView();
+            }, 350);
+        }
+
+        // Deep-View Modal Controls
+        function openModal(taskId) {
+            activeTaskId = taskId;
+            const tasks = getTasks();
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            modalTitle.textContent = task.title;
+            modalDesc.textContent = task.description || 'No detailed description provided.';
+            modalMeta.innerHTML = `
+                <span class="badge badge-priority-${task.priority || 'med'}">${task.priority || 'Normal'}</span>
+                <span class="due-badge">Due: ${task.due_date || 'Today'}</span>
+            `;
+
+            renderModalSubtasks(task.id, tasks);
+            modalOverlay.classList.add('active');
+        }
+
+        function renderModalSubtasks(parentId, allTasks) {
+            modalSubtasksList.innerHTML = '';
+            const subtasks = allTasks.filter(t => t.parent_id === parentId && t.status !== 'trashed');
+
+            if (subtasks.length === 0) {
+                modalSubtasksList.innerHTML = '<p style="color: #64748b; font-size: 0.8rem;">No sub-tasks attached to this task.</p>';
+                return;
+            }
+
+            subtasks.forEach(st => {
+                const item = document.createElement('div');
+                item.className = 'modal-subtask-item';
+                const statusIcon = st.status === 'completed' ? '✓' : '○';
+                item.innerHTML = `
+                    <span>${statusIcon} ${escapeHtml(st.title)}</span>
+                    <span style="color: #64748b; font-size: 0.75rem;">${st.status}</span>
+                `;
+                modalSubtasksList.appendChild(item);
+            });
+        }
+
+        function closeModal() {
+            modalOverlay.classList.remove('active');
+            activeTaskId = null;
+        }
+
+        closeModalBtn.addEventListener('click', closeModal);
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) closeModal();
+        });
+
+        // Add Direct Child Task via Modal
+        modalSubtaskForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const title = subtaskInput.value.trim();
+            if (!title || !activeTaskId) return;
+
+            const newSubtask = {
+                id: Date.now().toString(),
+                parent_id: activeTaskId,
+                title: title,
+                description: '',
+                priority: 'med',
+                due_date: 'today',
+                status: 'active'
+            };
+
+            const tasks = getTasks();
+            tasks.push(newSubtask);
+            saveTasks(tasks);
+
+            subtaskInput.value = '';
+            renderModalSubtasks(activeTaskId, tasks);
+            renderGeneralView();
+        });
+
+        // Cascading Trash (Grandparent + all nested descendants)
+        trashTaskBtn.addEventListener('click', () => {
+            if (!activeTaskId) return;
+            const tasks = getTasks();
+            const targetIds = new Set([activeTaskId, ...getDescendantIds(activeTaskId, tasks)]);
+            const timestamp = new Date().toISOString();
+
+            tasks.forEach(t => {
+                if (targetIds.has(t.id)) {
+                    t.status = 'trashed';
+                    t.trashed_at = timestamp;
+                }
+            });
+
+            saveTasks(tasks);
+            closeModal();
+            renderGeneralView();
+        });
+
+        // Add Root Grandparent Task
+        taskForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const title = taskInput.value.trim();
+            if (!title) return;
+
+            const newTask = {
+                id: Date.now().toString(),
+                parent_id: null, // Locks it as a grandparent
+                title: title,
+                description: '',
+                priority: 'med',
+                due_date: 'today',
+                status: 'active'
+            };
+
+            const tasks = getTasks();
+            tasks.unshift(newTask);
+            saveTasks(tasks);
+            taskInput.value = '';
+            renderGeneralView();
+        });
+
+        // HTML Sanitizer
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initial Execution
+        renderGeneralView();
+    </script>
+</body>
+</html>
