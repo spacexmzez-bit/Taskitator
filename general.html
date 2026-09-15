@@ -5,7 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - General List</title>
-    <link rel="stylesheet" href="style.css?v=13">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0b111e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 
@@ -37,7 +41,7 @@
             <h1>General To-Do List</h1>
 
             <form id="add-task-form" class="add-task-bar">
-                <input type="text" id="task-title-input" class="task-input" placeholder="Add a new root grandparent task..." required maxlength="80">
+                <input type="text" id="task-title-input" class="task-input" placeholder="Add a new root grandparent task (Press '/' to focus)..." required maxlength="80">
                 <select id="quick-tag-input" class="quick-tag-select">
                     <option value="">No Tag</option>
                 </select>
@@ -136,6 +140,25 @@
 
         let currentGrouping = 'all';
         let activeTaskId = null;
+
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(err => {
+                    console.warn('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+
+        // Desktop Keyboard Shortcuts
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (modalOverlay.classList.contains('active')) closeModal();
+            } else if (e.key === '/' && document.activeElement !== taskInput && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                taskInput.focus();
+            }
+        });
 
         toggleBtn.addEventListener('click', () => {
             const isOpen = sidebar.classList.toggle('open');
