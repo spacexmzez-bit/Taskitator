@@ -663,4 +663,67 @@ body {
     background-color: #b91c1c;
 }
 
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.stat-card {
+    background-color: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.stat-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #38bdf8;
+}
+
+.stat-label {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Progress Bars */
+.progress-container {
+    background-color: #1e293b;
+    border-radius: 999px;
+    height: 12px;
+    width: 100%;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.progress-fill {
+    height: 100%;
+    background-color: #0284c7;
+    border-radius: 999px;
+    transition: width 0.4s ease;
+}
+
+.progress-fill.high { background-color: #ef4444; }
+.progress-fill.med { background-color: #f59e0b; }
+.progress-fill.low { background-color: #10b981; }
+
+/* Breakdown Breakdown List */
+.breakdown-row {
+    margin-top: 14px;
+}
+
+.breakdown-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+}
 
