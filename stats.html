@@ -1,22 +1,25 @@
 <!DOCTYPE html>
+<!-- stats.html -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - Statistics</title>
-    <link rel="stylesheet" href="style.css?v=9">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0b111e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 
     <div id="backdrop"></div>
 
-    <!-- Mobile Header -->
     <div id="mobile-header">
         <h2>Taskitator</h2>
         <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
     </div>
 
-    <!-- Sidebar Drawer -->
     <aside id="sidebar">
         <h2>Taskitator</h2>
         <a href="index.html" class="nav-link">📅 Today's Tasks</a>
@@ -26,93 +29,10 @@
         <a href="trash.html" class="nav-link">🗑️ Trash Bin</a>
     </aside>
 
-    <!-- Main Workspace -->
     <main id="main-content">
         <section id="view-area">
-            <h1>Productivity & Metrics</h1>
-
-            <!-- Metric Cards Overview -->
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <span class="stat-value" id="stat-rate">0%</span>
-                    <span class="stat-label">Completion Rate</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-value" id="stat-completed">0</span>
-                    <span class="stat-label">Tasks Completed</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-value" id="stat-active">0</span>
-                    <span class="stat-label">Active Tasks</span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-value" id="stat-trashed">0</span>
-                    <span class="stat-label">In Trash Bin</span>
-                </div>
-            </div>
-
-            <!-- Overall Progress Section -->
-            <div class="settings-section">
-                <h3>Overall Completion</h3>
-                <p>Ratio of completed tasks against all active and completed items.</p>
-                <div class="breakdown-header">
-                    <span id="progress-text">0 of 0 tasks completed</span>
-                    <span id="progress-percent" style="font-weight: 600; color: #38bdf8;">0%</span>
-                </div>
-                <div class="progress-container">
-                    <div id="overall-bar" class="progress-fill" style="width: 0%;"></div>
-                </div>
-            </div>
-
-            <!-- Priority Breakdown Section -->
-            <div class="settings-section">
-                <h3>Active Tasks by Priority</h3>
-                <p>Distribution of your remaining active tasks across priority levels.</p>
-
-                <div class="breakdown-row">
-                    <div class="breakdown-header">
-                        <span style="color: #ef4444; font-weight: 600;">High Priority</span>
-                        <span id="high-count">0 tasks (0%)</span>
-                    </div>
-                    <div class="progress-container">
-                        <div id="high-bar" class="progress-fill high" style="width: 0%;"></div>
-                    </div>
-                </div>
-
-                <div class="breakdown-row">
-                    <div class="breakdown-header">
-                        <span style="color: #f59e0b; font-weight: 600;">Medium Priority</span>
-                        <span id="med-count">0 tasks (0%)</span>
-                    </div>
-                    <div class="progress-container">
-                        <div id="med-bar" class="progress-fill med" style="width: 0%;"></div>
-                    </div>
-                </div>
-
-                <div class="breakdown-row">
-                    <div class="breakdown-header">
-                        <span style="color: #10b981; font-weight: 600;">Low Priority</span>
-                        <span id="low-count">0 tasks (0%)</span>
-                    </div>
-                    <div class="progress-container">
-                        <div id="low-bar" class="progress-fill low" style="width: 0%;"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Structure Breakdown Section -->
-            <div class="settings-section">
-                <h3>Hierarchy Breakdown</h3>
-                <p>Analysis of how deeply you decompose your goals into actionable sub-tasks.</p>
-                <div class="breakdown-header">
-                    <span>Root (Grandparent) Tasks</span>
-                    <span id="root-count" style="font-weight: 600; color: #f1f5f9;">0</span>
-                </div>
-                <div class="breakdown-header" style="margin-top: 10px;">
-                    <span>Nested Sub-tasks</span>
-                    <span id="sub-count" style="font-weight: 600; color: #38bdf8;">0</span>
-                </div>
-            </div>
+            <h1>Workspace Statistics</h1>
+            <div id="stats-container" class="stats-grid"></div>
         </section>
     </main>
 
@@ -120,8 +40,17 @@
         const toggleBtn = document.getElementById('menu-toggle');
         const sidebar = document.getElementById('sidebar');
         const backdrop = document.getElementById('backdrop');
+        const statsContainer = document.getElementById('stats-container');
 
-        // Drawer toggle
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(err => {
+                    console.warn('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+
         toggleBtn.addEventListener('click', () => {
             const isOpen = sidebar.classList.toggle('open');
             backdrop.classList.toggle('active', isOpen);
@@ -136,57 +65,34 @@
             return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
         }
 
-        function calculateStats() {
+        function renderStats() {
             const tasks = getTasks();
+            const total = tasks.length;
+            const completed = tasks.filter(t => t.status === 'completed').length;
+            const active = tasks.filter(t => t.status === 'active').length;
+            const trashed = tasks.filter(t => t.status === 'trashed').length;
 
-            const activeTasks = tasks.filter(t => t.status === 'active');
-            const completedTasks = tasks.filter(t => t.status === 'completed');
-            const trashedTasks = tasks.filter(t => t.status === 'trashed');
-
-            const totalTracked = activeTasks.length + completedTasks.length;
-            const completionRate = totalTracked > 0 
-                ? Math.round((completedTasks.length / totalTracked) * 100) 
-                : 0;
-
-            // Overview Cards
-            document.getElementById('stat-rate').textContent = `${completionRate}%`;
-            document.getElementById('stat-completed').textContent = completedTasks.length;
-            document.getElementById('stat-active').textContent = activeTasks.length;
-            document.getElementById('stat-trashed').textContent = trashedTasks.length;
-
-            // Progress Bar
-            document.getElementById('progress-text').textContent = `${completedTasks.length} of ${totalTracked} tasks completed`;
-            document.getElementById('progress-percent').textContent = `${completionRate}%`;
-            document.getElementById('overall-bar').style.width = `${completionRate}%`;
-
-            // Priority Breakdown (Active tasks)
-            const activeTotal = activeTasks.length;
-            const highTasks = activeTasks.filter(t => t.priority === 'high').length;
-            const medTasks = activeTasks.filter(t => t.priority === 'med').length;
-            const lowTasks = activeTasks.filter(t => t.priority === 'low').length;
-
-            const highPct = activeTotal > 0 ? Math.round((highTasks / activeTotal) * 100) : 0;
-            const medPct = activeTotal > 0 ? Math.round((medTasks / activeTotal) * 100) : 0;
-            const lowPct = activeTotal > 0 ? Math.round((lowTasks / activeTotal) * 100) : 0;
-
-            document.getElementById('high-count').textContent = `${highTasks} tasks (${highPct}%)`;
-            document.getElementById('high-bar').style.width = `${highPct}%`;
-
-            document.getElementById('med-count').textContent = `${medTasks} tasks (${medPct}%)`;
-            document.getElementById('med-bar').style.width = `${medPct}%`;
-
-            document.getElementById('low-count').textContent = `${lowTasks} tasks (${lowPct}%)`;
-            document.getElementById('low-bar').style.width = `${lowPct}%`;
-
-            // Hierarchy Breakdown
-            const rootTasks = tasks.filter(t => !t.parent_id && t.status !== 'trashed').length;
-            const subTasks = tasks.filter(t => t.parent_id && t.status !== 'trashed').length;
-
-            document.getElementById('root-count').textContent = rootTasks;
-            document.getElementById('sub-count').textContent = subTasks;
+            statsContainer.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-label">Total Created</div>
+                    <div class="stat-value">${total}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Active Tasks</div>
+                    <div class="stat-value" style="color: #38bdf8;">${active}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Completed</div>
+                    <div class="stat-value" style="color: #10b981;">${completed}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">In Trash</div>
+                    <div class="stat-value" style="color: #ef4444;">${trashed}</div>
+                </div>
+            `;
         }
 
-        calculateStats();
+        renderStats();
     </script>
 </body>
 </html>
