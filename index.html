@@ -4,19 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - Today</title>
-    <link rel="stylesheet" href="style.css?v=11">
+    <link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 
     <div id="backdrop"></div>
 
-    <!-- Mobile Header -->
     <div id="mobile-header">
         <h2>Taskitator</h2>
         <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
     </div>
 
-    <!-- Sidebar Drawer -->
     <aside id="sidebar">
         <h2>Taskitator</h2>
         <a href="index.html" class="nav-link active">📅 Today's Tasks</a>
@@ -26,12 +24,11 @@
         <a href="trash.html" class="nav-link">🗑️ Trash Bin</a>
     </aside>
 
-    <!-- Main Workspace -->
     <main id="main-content">
         <header id="top-nav">
-            <a href="#" class="tab-link active">All Today</a>
-            <a href="#" class="tab-link">Priority</a>
-            <a href="#" class="tab-link">Tags</a>
+            <a href="#" class="tab-link active" data-filter="all">All Today</a>
+            <a href="#" class="tab-link" data-filter="priority">By Priority</a>
+            <a href="#" class="tab-link" data-filter="tag">By Tag</a>
         </header>
 
         <section id="view-area">
@@ -39,6 +36,9 @@
 
             <form id="add-task-form" class="add-task-bar">
                 <input type="text" id="task-title-input" class="task-input" placeholder="Add a new root task..." required maxlength="80">
+                <select id="quick-tag-input" class="quick-tag-select">
+                    <option value="">No Tag</option>
+                </select>
                 <button type="submit" class="add-btn">+</button>
             </form>
 
@@ -46,7 +46,6 @@
         </section>
     </main>
 
-    <!-- Task Details & Parameter Edit Modal -->
     <div id="modal-overlay">
         <div class="modal-card">
             <div class="modal-header">
@@ -54,19 +53,14 @@
                 <button class="close-modal-btn" id="close-modal">&times;</button>
             </div>
             <div class="modal-body">
-                <!-- Title Edit -->
                 <div class="modal-edit-field">
                     <label class="modal-label" for="edit-title">Title</label>
                     <input type="text" id="edit-title" class="modal-input" maxlength="80" required>
                 </div>
-
-                <!-- Description Edit -->
                 <div class="modal-edit-field">
                     <label class="modal-label" for="edit-desc">Description</label>
                     <textarea id="edit-desc" class="modal-textarea" rows="2" placeholder="Add details..."></textarea>
                 </div>
-
-                <!-- Priority & Due Date Row -->
                 <div class="modal-row">
                     <div class="modal-edit-field">
                         <label class="modal-label" for="edit-priority">Priority</label>
@@ -81,14 +75,10 @@
                         <input type="date" id="edit-due" class="modal-input">
                     </div>
                 </div>
-
-                <!-- Tag Picker -->
                 <div class="modal-edit-field">
                     <label class="modal-label">Tag</label>
                     <div id="modal-tags" class="modal-tags-wrapper"></div>
                 </div>
-
-                <!-- Recurrence Toggle -->
                 <div class="modal-field-group">
                     <label class="modal-checkbox-label">
                         <input type="checkbox" id="modal-recur-checkbox">
@@ -100,8 +90,6 @@
                         <option value="weekly">Once a Week</option>
                     </select>
                 </div>
-
-                <!-- Sub-tasks Section -->
                 <div class="modal-subtasks-section">
                     <h4>Direct Sub-Tasks</h4>
                     <div id="modal-subtasks-list"></div>
@@ -119,13 +107,14 @@
 
     <script>
         const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
-
         const toggleBtn = document.getElementById('menu-toggle');
         const sidebar = document.getElementById('sidebar');
         const backdrop = document.getElementById('backdrop');
         const taskForm = document.getElementById('add-task-form');
         const taskInput = document.getElementById('task-title-input');
+        const quickTagInput = document.getElementById('quick-tag-input');
         const taskList = document.getElementById('task-list');
+        const navTabs = document.querySelectorAll('#top-nav .tab-link');
 
         const modalOverlay = document.getElementById('modal-overlay');
         const closeModalBtn = document.getElementById('close-modal');
@@ -143,8 +132,8 @@
         const trashTaskBtn = document.getElementById('trash-task-btn');
 
         let activeTaskId = null;
+        let currentFilter = 'all';
 
-        // Mobile Nav Drawer Toggle
         toggleBtn.addEventListener('click', () => {
             const isOpen = sidebar.classList.toggle('open');
             backdrop.classList.toggle('active', isOpen);
@@ -155,7 +144,6 @@
             backdrop.classList.remove('active');
         });
 
-        // Local Storage Utilities
         function getTasks() {
             return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
         }
@@ -175,6 +163,18 @@
             };
         }
 
+        function populateQuickTagSelect() {
+            const settings = getSettings();
+            const tags = settings.tags || [];
+            quickTagInput.innerHTML = '<option value="">No Tag</option>';
+            tags.forEach(tag => {
+                const opt = document.createElement('option');
+                opt.value = tag.name;
+                opt.textContent = tag.name;
+                quickTagInput.appendChild(opt);
+            });
+        }
+
         function purgeExpiredTasks() {
             const now = Date.now();
             const tasks = getTasks();
@@ -183,10 +183,7 @@
                 const trashedTime = task.trashed_at ? new Date(task.trashed_at).getTime() : now;
                 return (now - trashedTime) < FOURTEEN_DAYS_MS;
             });
-
-            if (cleanTasks.length !== tasks.length) {
-                saveTasks(cleanTasks);
-            }
+            if (cleanTasks.length !== tasks.length) saveTasks(cleanTasks);
         }
 
         function processDailyLoginRoutine() {
@@ -204,7 +201,6 @@
                     if (task.status === 'completed') {
                         let shouldSpawn = false;
                         const rule = task.recurrence_rule || 'daily';
-
                         if (rule === 'daily') shouldSpawn = true;
                         else if (rule === 'weekdays') {
                             const isWeekend = (settings.weekendDays || [5, 6]).includes(todayDayOfWeek);
@@ -214,7 +210,6 @@
                             const daysDiff = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
                             if (daysDiff >= 7) shouldSpawn = true;
                         }
-
                         if (shouldSpawn) {
                             task.status = 'active';
                             task.due_date = 'today';
@@ -223,7 +218,6 @@
                         }
                     }
                 });
-
                 localStorage.setItem('taskitator_last_login', todayStr);
                 if (changed) saveTasks(tasks);
             }
@@ -239,7 +233,16 @@
             return descendants;
         }
 
-        // Render Task Hierarchy
+        navTabs.forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                e.preventDefault();
+                navTabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentFilter = tab.dataset.filter;
+                renderTasks();
+            });
+        });
+
         function renderTasks() {
             const allTasks = getTasks();
             const activeTasks = allTasks.filter(t => t.status === 'active');
@@ -250,16 +253,56 @@
                 return;
             }
 
-            function appendTaskTree(parentId, depth) {
-                const children = activeTasks.filter(t => t.parent_id === parentId);
-                children.forEach(task => {
-                    const card = createTaskCard(task, depth, allTasks);
-                    taskList.appendChild(card);
-                    appendTaskTree(task.id, depth + 1);
-                });
+            if (currentFilter === 'all') {
+                function appendTaskTree(parentId, depth) {
+                    const children = activeTasks.filter(t => t.parent_id === parentId);
+                    children.forEach(task => {
+                        const card = createTaskCard(task, depth, allTasks);
+                        taskList.appendChild(card);
+                        appendTaskTree(task.id, depth + 1);
+                    });
+                }
+                appendTaskTree(null, 0);
+            } else if (currentFilter === 'priority') {
+                renderGroupedToday(activeTasks, allTasks, t => (t.priority || 'med').toUpperCase(), ['HIGH', 'MED', 'LOW']);
+            } else if (currentFilter === 'tag') {
+                renderGroupedToday(activeTasks, allTasks, t => t.tag || 'Untagged');
+            }
+        }
+
+        function renderGroupedToday(tasks, allTasks, keyFn, customOrder = null) {
+            const groups = {};
+            tasks.forEach(t => {
+                const key = keyFn(t);
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(t);
+            });
+
+            let keys = Object.keys(groups);
+            if (customOrder) {
+                keys = customOrder.filter(k => groups[k]).concat(keys.filter(k => !customOrder.includes(k)));
             }
 
-            appendTaskTree(null, 0);
+            const settings = getSettings();
+
+            keys.forEach(key => {
+                const section = document.createElement('div');
+                section.className = 'group-section';
+
+                const title = document.createElement('div');
+                title.className = 'group-title';
+
+                const matchedTag = (settings.tags || []).find(tg => tg.name.toLowerCase() === key.toLowerCase());
+                const dotHtml = matchedTag ? `<span class="tag-color-dot" style="background-color: ${matchedTag.color}"></span>` : '';
+
+                title.innerHTML = `<span class="group-title-tag">${dotHtml}${escapeHtml(key)}</span> <span class="group-count">${groups[key].length}</span>`;
+                section.appendChild(title);
+
+                groups[key].forEach(t => {
+                    section.appendChild(createTaskCard(t, 0, allTasks));
+                });
+                taskList.appendChild(section);
+            });
         }
 
         function createTaskCard(task, depth, allTasks) {
@@ -280,7 +323,6 @@
 
             const priorityClass = task.priority ? `badge-priority-${task.priority}` : '';
 
-            // Resolve Tag Appearance
             const settings = getSettings();
             const tagObj = (settings.tags || []).find(t => t.name === task.tag);
             const tagBadge = tagObj 
@@ -326,7 +368,6 @@
                         t.completed_at = nowIso;
                     }
                 });
-
                 saveTasks(tasks);
                 renderTasks();
             }, 350);
@@ -344,35 +385,27 @@
                     t.trashed_at = timestamp;
                 }
             });
-
             saveTasks(tasks);
             closeModal();
             renderTasks();
         });
 
-        // ==========================================
-        // PHASE 9: INTERACTIVE MODAL EDITING
-        // ==========================================
         function openModal(taskId) {
             activeTaskId = taskId;
             const tasks = getTasks();
             const task = tasks.find(t => t.id === taskId);
             if (!task) return;
 
-            // Load Values into Form
             editTitle.value = task.title || '';
             editDesc.value = task.description || '';
             editPriority.value = task.priority || 'med';
             editDue.value = (task.due_date && task.due_date !== 'today') ? task.due_date : '';
 
-            // Load Recurrence
             modalRecurCheckbox.checked = !!task.is_recurring;
             modalRecurRule.style.display = task.is_recurring ? 'block' : 'none';
             modalRecurRule.value = task.recurrence_rule || 'daily';
 
-            // Load Tag Selector Chips
             renderModalTagPicker(task.tag);
-
             renderModalSubtasks(task.id, tasks);
             modalOverlay.classList.add('active');
         }
@@ -399,23 +432,15 @@
                     const task = tasks.find(t => t.id === activeTaskId);
                     if (!task) return;
 
-                    // Toggle selection: unselect if tapped again
-                    if (task.tag === tag.name) {
-                        task.tag = null;
-                    } else {
-                        task.tag = tag.name;
-                    }
-
+                    task.tag = task.tag === tag.name ? null : tag.name;
                     saveTasks(tasks);
                     renderModalTagPicker(task.tag);
                     renderTasks();
                 });
-
                 modalTags.appendChild(chip);
             });
         }
 
-        // Live Auto-Save on Modal Input Changes
         function handleModalFieldChange() {
             if (!activeTaskId) return;
             const tasks = getTasks();
@@ -476,7 +501,6 @@
             if (e.target === modalOverlay) closeModal();
         });
 
-        // Add Direct Sub-Task
         modalSubtaskForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const title = subtaskInput.value.trim();
@@ -490,6 +514,7 @@
                 priority: 'med',
                 due_date: 'today',
                 status: 'active',
+                tag: null,
                 is_recurring: false,
                 recurrence_rule: null
             };
@@ -503,7 +528,6 @@
             renderTasks();
         });
 
-        // Add Root Task
         taskForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const title = taskInput.value.trim();
@@ -517,6 +541,7 @@
                 priority: 'med',
                 due_date: 'today',
                 status: 'active',
+                tag: quickTagInput.value || null,
                 is_recurring: false,
                 recurrence_rule: null
             };
@@ -536,6 +561,7 @@
 
         purgeExpiredTasks();
         processDailyLoginRoutine();
+        populateQuickTagSelect();
         renderTasks();
     </script>
 </body>
