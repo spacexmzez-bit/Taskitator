@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - Today</title>
-    <link rel="stylesheet" href="style.css?v=7">
+    <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
@@ -57,6 +57,19 @@
                 <p id="modal-desc">Description</p>
                 <div class="task-meta" id="modal-meta"></div>
 
+                <!-- Recurrence Configuration -->
+                <div class="modal-field-group">
+                    <label class="modal-checkbox-label">
+                        <input type="checkbox" id="modal-recur-checkbox">
+                        Repeat this task
+                    </label>
+                    <select id="modal-recur-rule" class="modal-recurrence-select" style="display: none;">
+                        <option value="daily">Every Day</option>
+                        <option value="weekdays">Weekdays Only (Skips Weekend)</option>
+                        <option value="weekly">Once a Week</option>
+                    </select>
+                </div>
+
                 <!-- Sub-tasks Section inside Modal -->
                 <div class="modal-subtasks-section">
                     <h4>Direct Sub-Tasks</h4>
@@ -93,6 +106,9 @@
         const subtaskInput = document.getElementById('subtask-input');
         const trashTaskBtn = document.getElementById('trash-task-btn');
 
+        const modalRecurCheckbox = document.getElementById('modal-recur-checkbox');
+        const modalRecurRule = document.getElementById('modal-recur-rule');
+
         let activeTaskId = null;
 
         // Mobile Nav Drawer Toggle
@@ -106,7 +122,7 @@
             backdrop.classList.remove('active');
         });
 
-        // Local Storage Access
+        // Local Storage Utilities
         function getTasks() {
             return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
         }
@@ -115,7 +131,13 @@
             localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
         }
 
-        // Auto-purge any trashed tasks older than 14 days
+        function getSettings() {
+            return JSON.parse(localStorage.getItem('taskitator_settings')) || {
+                weekendDays: [5, 6],
+                tags: []
+            };
+        }
+
         function purgeExpiredTasks() {
             const now = Date.now();
             const tasks = getTasks();
@@ -130,6 +152,58 @@
             }
         }
 
+        // ==========================================
+        // RECURRING TASK ROUTINE & DAILY LOGIN CHECK
+        // ==========================================
+        function processDailyLoginRoutine() {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const lastLogin = localStorage.getItem('taskitator_last_login');
+            const settings = getSettings();
+            const todayDayOfWeek = new Date().getDay(); // 0 = Sun, 6 = Sat
+
+            let tasks = getTasks();
+            let changed = false;
+
+            // Run recurrence roll-forward only once per calendar day
+            if (lastLogin !== todayStr) {
+                tasks.forEach(task => {
+                    if (!task.is_recurring || task.status === 'trashed') return;
+
+                    const isCompleted = task.status === 'completed';
+                    const rule = task.recurrence_rule || 'daily';
+
+                    if (isCompleted) {
+                        let shouldSpawn = false;
+
+                        if (rule === 'daily') {
+                            shouldSpawn = true;
+                        } else if (rule === 'weekdays') {
+                            const isWeekend = (settings.weekendDays || [5, 6]).includes(todayDayOfWeek);
+                            if (!isWeekend) shouldSpawn = true;
+                        } else if (rule === 'weekly') {
+                            // Check if at least 7 days have passed since completion
+                            const completedDate = task.completed_at ? new Date(task.completed_at) : new Date(0);
+                            const daysDiff = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
+                            if (daysDiff >= 7) shouldSpawn = true;
+                        }
+
+                        if (shouldSpawn) {
+                            // Reset state for today
+                            task.status = 'active';
+                            task.due_date = 'today';
+                            task.completed_at = null;
+                            changed = true;
+                        }
+                    }
+                });
+
+                localStorage.setItem('taskitator_last_login', todayStr);
+                if (changed) {
+                    saveTasks(tasks);
+                }
+            }
+        }
+
         // Descendant ID Resolver
         function getDescendantIds(parentId, allTasks) {
             let descendants = [];
@@ -141,7 +215,7 @@
             return descendants;
         }
 
-        // Render Indented Tree
+        // Render Indented Hierarchy Tree
         function renderTasks() {
             const allTasks = getTasks();
             const activeTasks = allTasks.filter(t => t.status === 'active');
@@ -161,7 +235,6 @@
                 });
             }
 
-            // Start with root tasks
             appendTaskTree(null, 0);
         }
 
@@ -178,6 +251,10 @@
                 ? `<span class="subtask-badge">${completedCount}/${directSubtasks.length} subtasks</span>` 
                 : '';
 
+            const recurringBadge = task.is_recurring 
+                ? `<span class="badge-recurring">🔁 ${escapeHtml(task.recurrence_rule || 'daily')}</span>` 
+                : '';
+
             const priorityClass = task.priority ? `badge-priority-${task.priority}` : '';
 
             card.innerHTML = `
@@ -188,6 +265,7 @@
                     <div class="task-meta">
                         <span class="badge ${priorityClass}">${task.priority || 'Normal'}</span>
                         <span class="due-badge">${task.due_date || 'Today'}</span>
+                        ${recurringBadge}
                         ${subtaskBadge}
                     </div>
                 </div>
@@ -210,10 +288,12 @@
             setTimeout(() => {
                 const tasks = getTasks();
                 const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
+                const nowIso = new Date().toISOString();
 
                 tasks.forEach(t => {
                     if (targetIds.has(t.id)) {
                         t.status = 'completed';
+                        t.completed_at = nowIso;
                     }
                 });
 
@@ -222,7 +302,7 @@
             }, 350);
         }
 
-        // Cascading Trash with 14-day timestamp
+        // Cascading Trash
         trashTaskBtn.addEventListener('click', () => {
             if (!activeTaskId) return;
             const tasks = getTasks();
@@ -241,7 +321,7 @@
             renderTasks();
         });
 
-        // Modal Controls
+        // Modal Controls & Recurrence Settings
         function openModal(taskId) {
             activeTaskId = taskId;
             const tasks = getTasks();
@@ -255,8 +335,35 @@
                 <span class="due-badge">Due: ${task.due_date || 'Today'}</span>
             `;
 
+            // Populate Recurrence State
+            modalRecurCheckbox.checked = !!task.is_recurring;
+            modalRecurRule.style.display = task.is_recurring ? 'block' : 'none';
+            modalRecurRule.value = task.recurrence_rule || 'daily';
+
             renderModalSubtasks(task.id, tasks);
             modalOverlay.classList.add('active');
+        }
+
+        modalRecurCheckbox.addEventListener('change', () => {
+            modalRecurRule.style.display = modalRecurCheckbox.checked ? 'block' : 'none';
+            saveRecurrenceState();
+        });
+
+        modalRecurRule.addEventListener('change', () => {
+            saveRecurrenceState();
+        });
+
+        function saveRecurrenceState() {
+            if (!activeTaskId) return;
+            const tasks = getTasks();
+            const task = tasks.find(t => t.id === activeTaskId);
+            if (!task) return;
+
+            task.is_recurring = modalRecurCheckbox.checked;
+            task.recurrence_rule = modalRecurCheckbox.checked ? modalRecurRule.value : null;
+
+            saveTasks(tasks);
+            renderTasks();
         }
 
         function renderModalSubtasks(parentId, allTasks) {
@@ -290,7 +397,7 @@
             if (e.target === modalOverlay) closeModal();
         });
 
-        // Add Sub-Task via Modal
+        // Add Direct Sub-Task
         modalSubtaskForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const title = subtaskInput.value.trim();
@@ -303,7 +410,9 @@
                 description: '',
                 priority: 'med',
                 due_date: 'today',
-                status: 'active'
+                status: 'active',
+                is_recurring: false,
+                recurrence_rule: null
             };
 
             const tasks = getTasks();
@@ -328,7 +437,9 @@
                 description: '',
                 priority: 'med',
                 due_date: 'today',
-                status: 'active'
+                status: 'active',
+                is_recurring: false,
+                recurrence_rule: null
             };
 
             const tasks = getTasks();
@@ -344,8 +455,9 @@
             return div.innerHTML;
         }
 
-        // Run auto-purge check before initial render
+        // Startup Routine: 1. Purge expired -> 2. Process daily login -> 3. Render
         purgeExpiredTasks();
+        processDailyLoginRoutine();
         renderTasks();
     </script>
 </body>
