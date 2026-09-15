@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - Today</title>
-    <link rel="stylesheet" href="style.css?v=6">
+    <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
@@ -74,6 +74,8 @@
     </div>
 
     <script>
+        const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+
         const toggleBtn = document.getElementById('menu-toggle');
         const sidebar = document.getElementById('sidebar');
         const backdrop = document.getElementById('backdrop');
@@ -93,7 +95,7 @@
 
         let activeTaskId = null;
 
-        // Mobile Nav Drawer
+        // Mobile Nav Drawer Toggle
         toggleBtn.addEventListener('click', () => {
             const isOpen = sidebar.classList.toggle('open');
             backdrop.classList.toggle('active', isOpen);
@@ -111,6 +113,21 @@
 
         function saveTasks(tasks) {
             localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
+        }
+
+        // Auto-purge any trashed tasks older than 14 days
+        function purgeExpiredTasks() {
+            const now = Date.now();
+            const tasks = getTasks();
+            const cleanTasks = tasks.filter(task => {
+                if (task.status !== 'trashed') return true;
+                const trashedTime = task.trashed_at ? new Date(task.trashed_at).getTime() : now;
+                return (now - trashedTime) < FOURTEEN_DAYS_MS;
+            });
+
+            if (cleanTasks.length !== tasks.length) {
+                saveTasks(cleanTasks);
+            }
         }
 
         // Descendant ID Resolver
@@ -195,7 +212,9 @@
                 const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
 
                 tasks.forEach(t => {
-                    if (targetIds.has(t.id)) t.status = 'completed';
+                    if (targetIds.has(t.id)) {
+                        t.status = 'completed';
+                    }
                 });
 
                 saveTasks(tasks);
@@ -203,7 +222,7 @@
             }, 350);
         }
 
-        // Cascading Trash
+        // Cascading Trash with 14-day timestamp
         trashTaskBtn.addEventListener('click', () => {
             if (!activeTaskId) return;
             const tasks = getTasks();
@@ -325,8 +344,9 @@
             return div.innerHTML;
         }
 
+        // Run auto-purge check before initial render
+        purgeExpiredTasks();
         renderTasks();
     </script>
 </body>
 </html>
-
