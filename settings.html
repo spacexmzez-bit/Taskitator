@@ -5,19 +5,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - Settings</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0b111e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 
     <div id="backdrop"></div>
 
-    <!-- Mobile Header -->
     <div id="mobile-header">
         <h2>Taskitator</h2>
         <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
     </div>
 
-    <!-- Sidebar Drawer -->
     <aside id="sidebar">
         <h2>Taskitator</h2>
         <a href="index.html" class="nav-link">📅 Today's Tasks</a>
@@ -27,12 +29,10 @@
         <a href="trash.html" class="nav-link">🗑️ Trash Bin</a>
     </aside>
 
-    <!-- Main Workspace -->
     <main id="main-content">
         <section id="view-area">
             <h1>Application Settings</h1>
 
-            <!-- Weekend Days Config -->
             <div class="settings-section">
                 <h3>Weekend Schedule</h3>
                 <p>Select the days that represent your weekend. Recurring tasks can use this to skip workdays.</p>
@@ -47,7 +47,6 @@
                 </div>
             </div>
 
-            <!-- Custom Tags Management -->
             <div class="settings-section">
                 <h3>Custom Tags</h3>
                 <p>Add custom colored tags to organize tasks across categories and projects.</p>
@@ -59,7 +58,6 @@
                 </form>
             </div>
 
-            <!-- Backup & Data Sync -->
             <div class="settings-section">
                 <h3>Backup & Cross-Device Sync</h3>
                 <p>Export your full workspace data as a JSON file or copy raw text to transfer tasks between devices.</p>
@@ -74,7 +72,6 @@
                 </div>
             </div>
 
-            <!-- Danger Zone / Data Reset -->
             <div class="settings-section danger-section">
                 <h3>Danger Zone: Reset Application Data</h3>
                 <p>Permanently remove all tasks, hierarchies, custom tags, and usage statistics from this device. Requires 3 confirmations.</p>
@@ -83,7 +80,6 @@
         </section>
     </main>
 
-    <!-- 3-Step Purge Confirmation Modal -->
     <div id="modal-overlay">
         <div class="modal-card">
             <div class="modal-header">
@@ -100,7 +96,6 @@
         </div>
     </div>
 
-    <!-- Quick Text Sync Modal -->
     <div id="sync-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); z-index: 55; align-items: center; justify-content: center; padding: 16px;">
         <div class="modal-card">
             <div class="modal-header">
@@ -139,7 +134,6 @@
         const resetModalTitle = document.getElementById('reset-modal-title');
         const resetModalText = document.getElementById('reset-modal-text');
 
-        // Sync & Backup Elements
         const exportJsonBtn = document.getElementById('export-json-btn');
         const importFileInput = document.getElementById('import-file-input');
         const openSyncModalBtn = document.getElementById('open-sync-modal-btn');
@@ -151,7 +145,23 @@
 
         let resetStep = 0;
 
-        // Drawer
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(err => {
+                    console.warn('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+
+        // Desktop Keyboard Shortcuts
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (modalOverlay.classList.contains('active')) closeResetModal();
+                if (syncModalOverlay.style.display === 'flex') syncModalOverlay.style.display = 'none';
+            }
+        });
+
         toggleBtn.addEventListener('click', () => {
             const isOpen = sidebar.classList.toggle('open');
             backdrop.classList.toggle('active', isOpen);
@@ -253,9 +263,6 @@
             renderTags();
         });
 
-        // ==========================================
-        // PHASE 12: EXPORT, IMPORT & SYNC ENGINE
-        // ==========================================
         function generateBackupPayload() {
             return {
                 app: "Taskitator",
@@ -287,7 +294,6 @@
             renderTags();
         }
 
-        // 1. Export JSON File
         exportJsonBtn.addEventListener('click', () => {
             const payload = generateBackupPayload();
             const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -303,7 +309,6 @@
             URL.revokeObjectURL(url);
         });
 
-        // 2. Import JSON File
         importFileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -322,7 +327,6 @@
             reader.readAsText(file);
         });
 
-        // 3. Quick Text Sync
         openSyncModalBtn.addEventListener('click', () => {
             const payload = generateBackupPayload();
             syncPayloadBox.value = JSON.stringify(payload, null, 2);
@@ -361,7 +365,6 @@
             }
         });
 
-        // 3-Step Danger Purge Flow
         const resetPrompts = [
             {
                 title: 'Step 1 of 3: Confirm Reset',
