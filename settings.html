@@ -1,10 +1,11 @@
 <!DOCTYPE html>
+<!-- settings.html -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - Settings</title>
-    <link rel="stylesheet" href="style.css?v=8">
+    <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 
@@ -58,6 +59,21 @@
                 </form>
             </div>
 
+            <!-- Backup & Data Sync -->
+            <div class="settings-section">
+                <h3>Backup & Cross-Device Sync</h3>
+                <p>Export your full workspace data as a JSON file or copy raw text to transfer tasks between devices.</p>
+                
+                <div class="backup-actions-grid">
+                    <button class="btn-secondary" id="export-json-btn">💾 Export JSON File</button>
+                    <label class="btn-secondary" style="cursor: pointer;">
+                        📂 Import JSON File
+                        <input type="file" id="import-file-input" accept=".json" style="display: none;">
+                    </label>
+                    <button class="btn-secondary" id="open-sync-modal-btn">📋 Quick Text Sync</button>
+                </div>
+            </div>
+
             <!-- Danger Zone / Data Reset -->
             <div class="settings-section danger-section">
                 <h3>Danger Zone: Reset Application Data</h3>
@@ -67,7 +83,7 @@
         </section>
     </main>
 
-    <!-- Step-by-Step Reset Modal -->
+    <!-- 3-Step Purge Confirmation Modal -->
     <div id="modal-overlay">
         <div class="modal-card">
             <div class="modal-header">
@@ -80,6 +96,26 @@
             <div class="modal-actions">
                 <button class="btn-restore" id="cancel-reset-btn">Cancel</button>
                 <button class="btn-danger" id="confirm-step-btn">Confirm (Step 1/3)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Text Sync Modal -->
+    <div id="sync-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); z-index: 55; align-items: center; justify-content: center; padding: 16px;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Quick Text Sync</h3>
+                <button class="close-modal-btn" id="close-sync-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 8px;">
+                    Copy the JSON payload below to move to another device, or paste a payload here and click Restore.
+                </p>
+                <textarea id="sync-payload-box" class="sync-textarea" spellcheck="false"></textarea>
+            </div>
+            <div class="modal-actions" style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px;">
+                <button class="btn-secondary" id="copy-sync-btn">📋 Copy String</button>
+                <button class="btn-secondary" id="restore-sync-btn" style="background-color: #0284c7; border-color: #38bdf8;">📥 Apply String</button>
             </div>
         </div>
     </div>
@@ -103,9 +139,19 @@
         const resetModalTitle = document.getElementById('reset-modal-title');
         const resetModalText = document.getElementById('reset-modal-text');
 
+        // Sync & Backup Elements
+        const exportJsonBtn = document.getElementById('export-json-btn');
+        const importFileInput = document.getElementById('import-file-input');
+        const openSyncModalBtn = document.getElementById('open-sync-modal-btn');
+        const syncModalOverlay = document.getElementById('sync-modal-overlay');
+        const closeSyncModalBtn = document.getElementById('close-sync-modal');
+        const syncPayloadBox = document.getElementById('sync-payload-box');
+        const copySyncBtn = document.getElementById('copy-sync-btn');
+        const restoreSyncBtn = document.getElementById('restore-sync-btn');
+
         let resetStep = 0;
 
-        // Mobile Nav Drawer
+        // Drawer
         toggleBtn.addEventListener('click', () => {
             const isOpen = sidebar.classList.toggle('open');
             backdrop.classList.toggle('active', isOpen);
@@ -116,10 +162,9 @@
             backdrop.classList.remove('active');
         });
 
-        // Settings Store Access
         function getSettings() {
             return JSON.parse(localStorage.getItem('taskitator_settings')) || {
-                weekendDays: [5, 6], // Default: Friday & Saturday
+                weekendDays: [5, 6],
                 tags: [
                     { id: '1', name: 'Work', color: '#0284c7' },
                     { id: '2', name: 'Personal', color: '#10b981' },
@@ -132,7 +177,6 @@
             localStorage.setItem('taskitator_settings', JSON.stringify(settings));
         }
 
-        // Weekend Selector Logic
         function renderWeekendSelector() {
             const settings = getSettings();
             const pills = daysSelector.querySelectorAll('.day-pill');
@@ -163,7 +207,6 @@
             renderWeekendSelector();
         });
 
-        // Tag Manager Logic
         function renderTags() {
             const settings = getSettings();
             tagContainer.innerHTML = '';
@@ -210,6 +253,114 @@
             renderTags();
         });
 
+        // ==========================================
+        // PHASE 12: EXPORT, IMPORT & SYNC ENGINE
+        // ==========================================
+        function generateBackupPayload() {
+            return {
+                app: "Taskitator",
+                version: "1.0",
+                exported_at: new Date().toISOString(),
+                tasks: JSON.parse(localStorage.getItem('taskitator_tasks')) || [],
+                settings: getSettings(),
+                last_login: localStorage.getItem('taskitator_last_login') || null
+            };
+        }
+
+        function validateAndApplyPayload(data) {
+            if (!data || typeof data !== 'object') {
+                throw new Error("Invalid backup payload format.");
+            }
+            if (!Array.isArray(data.tasks)) {
+                throw new Error("Missing or corrupt tasks list in backup.");
+            }
+
+            localStorage.setItem('taskitator_tasks', JSON.stringify(data.tasks));
+            if (data.settings) {
+                localStorage.setItem('taskitator_settings', JSON.stringify(data.settings));
+            }
+            if (data.last_login) {
+                localStorage.setItem('taskitator_last_login', data.last_login);
+            }
+
+            renderWeekendSelector();
+            renderTags();
+        }
+
+        // 1. Export JSON File
+        exportJsonBtn.addEventListener('click', () => {
+            const payload = generateBackupPayload();
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const dateStr = new Date().toISOString().split('T')[0];
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `taskitator-backup-${dateStr}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        // 2. Import JSON File
+        importFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const parsed = JSON.parse(event.target.result);
+                    validateAndApplyPayload(parsed);
+                    alert("Backup restored successfully!");
+                } catch (err) {
+                    alert("Import failed: " + err.message);
+                }
+                importFileInput.value = '';
+            };
+            reader.readAsText(file);
+        });
+
+        // 3. Quick Text Sync
+        openSyncModalBtn.addEventListener('click', () => {
+            const payload = generateBackupPayload();
+            syncPayloadBox.value = JSON.stringify(payload, null, 2);
+            syncModalOverlay.style.display = 'flex';
+        });
+
+        closeSyncModalBtn.addEventListener('click', () => {
+            syncModalOverlay.style.display = 'none';
+        });
+
+        syncModalOverlay.addEventListener('click', (e) => {
+            if (e.target === syncModalOverlay) {
+                syncModalOverlay.style.display = 'none';
+            }
+        });
+
+        copySyncBtn.addEventListener('click', () => {
+            syncPayloadBox.select();
+            navigator.clipboard.writeText(syncPayloadBox.value).then(() => {
+                const originalText = copySyncBtn.textContent;
+                copySyncBtn.textContent = "✅ Copied!";
+                setTimeout(() => copySyncBtn.textContent = originalText, 1500);
+            });
+        });
+
+        restoreSyncBtn.addEventListener('click', () => {
+            try {
+                const raw = syncPayloadBox.value.trim();
+                if (!raw) return;
+                const parsed = JSON.parse(raw);
+                validateAndApplyPayload(parsed);
+                alert("Workspace successfully updated from string!");
+                syncModalOverlay.style.display = 'none';
+            } catch (err) {
+                alert("Restore failed: " + err.message);
+            }
+        });
+
         // 3-Step Danger Purge Flow
         const resetPrompts = [
             {
@@ -254,10 +405,9 @@
             if (resetStep < 2) {
                 showResetStep(resetStep + 1);
             } else {
-                // Execute Hard Purge
                 localStorage.removeItem('taskitator_tasks');
                 localStorage.removeItem('taskitator_settings');
-                localStorage.removeItem('taskitator_stats');
+                localStorage.removeItem('taskitator_last_login');
                 alert('All data has been erased successfully.');
                 window.location.href = 'index.html';
             }
@@ -269,7 +419,6 @@
             return div.innerHTML;
         }
 
-        // Init
         renderWeekendSelector();
         renderTags();
     </script>
