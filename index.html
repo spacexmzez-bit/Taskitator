@@ -2,19 +2,23 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - Today</title>
-    <link rel="stylesheet" href="style.css">
+    <!-- The ?v=2 forces your phone to load the fresh CSS -->
+    <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 
-    <!-- Mobile-Only Header -->
+    <!-- Dimmed screen overlay for mobile -->
+    <div id="backdrop"></div>
+
+    <!-- Mobile-Only Sticky Header -->
     <div id="mobile-header">
         <h2>Taskitator</h2>
         <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
     </div>
 
-    <!-- Sidebar (Drawer on mobile) -->
+    <!-- Slide-out Sidebar Drawer -->
     <aside id="sidebar">
         <h2>Taskitator</h2>
         <a href="index.html" class="nav-link active">📅 Today's Tasks</a>
@@ -26,14 +30,12 @@
 
     <!-- Main Workspace -->
     <main id="main-content">
-        <!-- Top Navigation Header -->
         <header id="top-nav">
             <a href="#" class="tab-link active">All Today</a>
             <a href="#" class="tab-link">Priority</a>
             <a href="#" class="tab-link">Tags</a>
         </header>
 
-        <!-- View Body -->
         <section id="view-area">
             <h1>Today's To-Do List</h1>
 
@@ -41,7 +43,7 @@
                 <div class="check-circle"></div>
                 <div class="task-info">
                     <div class="task-title">Finish Phase 1 Setup</div>
-                    <div class="task-desc">This long description will cleanly cut off with an ellipsis without creating any horizontal scroll on your phone screen.</div>
+                    <div class="task-desc">This long description will cleanly cut off with an ellipsis without causing horizontal scrolling.</div>
                 </div>
             </div>
         </section>
@@ -50,17 +52,20 @@
     <script>
         const toggleBtn = document.getElementById('menu-toggle');
         const sidebar = document.getElementById('sidebar');
+        const backdrop = document.getElementById('backdrop');
 
-        toggleBtn.addEventListener('click', () => {
-            sidebar.classList.toggle('open');
-        });
+        function toggleMenu() {
+            const isOpen = sidebar.classList.toggle('open');
+            backdrop.classList.toggle('active', isOpen);
+        }
 
-        // Close drawer when clicking outside on mobile
-        document.addEventListener('click', (e) => {
-            if (!sidebar.contains(e.target) && !toggleBtn.contains(e.target)) {
-                sidebar.classList.remove('open');
-            }
-        });
+        function closeMenu() {
+            sidebar.classList.remove('open');
+            backdrop.classList.remove('active');
+        }
+
+        toggleBtn.addEventListener('click', toggleMenu);
+        backdrop.addEventListener('click', closeMenu);
     </script>
 </body>
 </html>
