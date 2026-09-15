@@ -794,3 +794,21 @@ body {
         opacity: 0.8;
     }
 }
+/* style.css */
+/* Phase 13: Production Ergonomics & Touch Controls */
+html {
+    -webkit-text-size-adjust: 100%;
+    touch-action: manipulation;
+}
+
+body {
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Fast action keyboard hints on desktop */
+@media (min-width: 769px) {
+    .task-input::placeholder {
+        opacity: 0.8;
+    }
+}
