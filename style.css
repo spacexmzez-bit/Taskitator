@@ -781,3 +781,69 @@ body {
 .modal-recurrence-select:focus {
     border-color: #38bdf8;
 }
+/* Phase 9: In-Modal Parameter Editing */
+.modal-edit-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.modal-label {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+}
+
+.modal-input, .modal-textarea, .modal-select {
+    background-color: #111827;
+    border: 1px solid #1f2937;
+    color: #f1f5f9;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.88rem;
+    outline: none;
+    font-family: inherit;
+}
+
+.modal-input:focus, .modal-textarea:focus, .modal-select:focus {
+    border-color: #38bdf8;
+}
+
+.modal-textarea {
+    resize: vertical;
+    min-height: 60px;
+}
+
+.modal-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+/* Modal Tag Selector */
+.modal-tags-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.modal-tag-chip {
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    border: 1px solid transparent;
+    opacity: 0.45;
+    transition: opacity 0.2s, transform 0.1s;
+    user-select: none;
+}
+
+.modal-tag-chip.active {
+    opacity: 1;
+    font-weight: 600;
+    box-shadow: 0 0 0 2px #0f172a, 0 0 0 3px #38bdf8;
+}
