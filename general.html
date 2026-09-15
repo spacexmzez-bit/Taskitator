@@ -1,22 +1,21 @@
 <!DOCTYPE html>
+<!-- general.html -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - General List</title>
-    <link rel="stylesheet" href="style.css?v=12">
+    <link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
     <div id="backdrop"></div>
 
-    <!-- Mobile Header -->
     <div id="mobile-header">
         <h2>Taskitator</h2>
         <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
     </div>
 
-    <!-- Sidebar Drawer -->
     <aside id="sidebar">
         <h2>Taskitator</h2>
         <a href="index.html" class="nav-link">📅 Today's Tasks</a>
@@ -26,9 +25,7 @@
         <a href="trash.html" class="nav-link">🗑️ Trash Bin</a>
     </aside>
 
-    <!-- Main Workspace -->
     <main id="main-content">
-        <!-- Top Nav Grouping Presets -->
         <header id="top-nav">
             <a href="#" class="tab-link active" data-group="all">All Grandparents</a>
             <a href="#" class="tab-link" data-group="date">By Date</a>
@@ -51,7 +48,6 @@
         </section>
     </main>
 
-    <!-- Interactive Parameter Editing Modal -->
     <div id="modal-overlay">
         <div class="modal-card">
             <div class="modal-header">
@@ -63,12 +59,10 @@
                     <label class="modal-label" for="edit-title">Title</label>
                     <input type="text" id="edit-title" class="modal-input" maxlength="80" required>
                 </div>
-
                 <div class="modal-edit-field">
                     <label class="modal-label" for="edit-desc">Description</label>
                     <textarea id="edit-desc" class="modal-textarea" rows="2" placeholder="Add details..."></textarea>
                 </div>
-
                 <div class="modal-row">
                     <div class="modal-edit-field">
                         <label class="modal-label" for="edit-priority">Priority</label>
@@ -83,12 +77,10 @@
                         <input type="date" id="edit-due" class="modal-input">
                     </div>
                 </div>
-
                 <div class="modal-edit-field">
                     <label class="modal-label">Tag</label>
                     <div id="modal-tags" class="modal-tags-wrapper"></div>
                 </div>
-
                 <div class="modal-field-group">
                     <label class="modal-checkbox-label">
                         <input type="checkbox" id="modal-recur-checkbox">
@@ -98,9 +90,9 @@
                         <option value="daily">Every Day</option>
                         <option value="weekdays">Weekdays Only (Skips Weekend)</option>
                         <option value="weekly">Once a Week</option>
+                        <option value="monthly">Once a Month</option>
                     </select>
                 </div>
-
                 <div class="modal-subtasks-section">
                     <h4>Direct Sub-Tasks</h4>
                     <div id="modal-subtasks-list"></div>
@@ -118,7 +110,6 @@
 
     <script>
         const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
-
         const toggleBtn = document.getElementById('menu-toggle');
         const sidebar = document.getElementById('sidebar');
         const backdrop = document.getElementById('backdrop');
@@ -146,7 +137,6 @@
         let currentGrouping = 'all';
         let activeTaskId = null;
 
-        // Drawer Toggle
         toggleBtn.addEventListener('click', () => {
             const isOpen = sidebar.classList.toggle('open');
             backdrop.classList.toggle('active', isOpen);
@@ -176,16 +166,15 @@
             };
         }
 
-        function populateQuickTagSelect() {
-            const settings = getSettings();
-            const tags = settings.tags || [];
-            quickTagInput.innerHTML = '<option value="">No Tag</option>';
-            tags.forEach(tag => {
-                const opt = document.createElement('option');
-                opt.value = tag.name;
-                opt.textContent = tag.name;
-                quickTagInput.appendChild(opt);
+        function purgeExpiredTasks() {
+            const now = Date.now();
+            const tasks = getTasks();
+            const cleanTasks = tasks.filter(task => {
+                if (task.status !== 'trashed') return true;
+                const trashedTime = task.trashed_at ? new Date(task.trashed_at).getTime() : now;
+                return (now - trashedTime) < FOURTEEN_DAYS_MS;
             });
+            if (cleanTasks.length !== tasks.length) saveTasks(cleanTasks);
         }
 
         function getDescendantIds(parentId, allTasks) {
@@ -196,6 +185,69 @@
                 descendants = descendants.concat(getDescendantIds(child.id, allTasks));
             });
             return descendants;
+        }
+
+        function processDailyLoginRoutine() {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const lastLogin = localStorage.getItem('taskitator_last_login');
+            const settings = getSettings();
+            const todayDayOfWeek = new Date().getDay();
+
+            let tasks = getTasks();
+            let changed = false;
+
+            if (lastLogin !== todayStr) {
+                tasks.forEach(task => {
+                    if (!task.is_recurring || task.status === 'trashed') return;
+                    if (task.status === 'completed') {
+                        let shouldSpawn = false;
+                        const rule = task.recurrence_rule || 'daily';
+                        const completedDate = task.completed_at ? new Date(task.completed_at) : new Date(0);
+                        const daysDiff = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
+
+                        if (rule === 'daily') {
+                            shouldSpawn = true;
+                        } else if (rule === 'weekdays') {
+                            const isWeekend = (settings.weekendDays || [5, 6]).includes(todayDayOfWeek);
+                            if (!isWeekend) shouldSpawn = true;
+                        } else if (rule === 'weekly') {
+                            if (daysDiff >= 7) shouldSpawn = true;
+                        } else if (rule === 'monthly') {
+                            if (daysDiff >= 30) shouldSpawn = true;
+                        }
+
+                        if (shouldSpawn) {
+                            task.status = 'active';
+                            task.due_date = 'today';
+                            task.completed_at = null;
+
+                            const descendantIds = new Set(getDescendantIds(task.id, tasks));
+                            tasks.forEach(dt => {
+                                if (descendantIds.has(dt.id) && dt.status !== 'trashed') {
+                                    dt.status = 'active';
+                                    dt.completed_at = null;
+                                }
+                            });
+
+                            changed = true;
+                        }
+                    }
+                });
+                localStorage.setItem('taskitator_last_login', todayStr);
+                if (changed) saveTasks(tasks);
+            }
+        }
+
+        function populateQuickTagSelect() {
+            const settings = getSettings();
+            const tags = settings.tags || [];
+            quickTagInput.innerHTML = '<option value="">No Tag</option>';
+            tags.forEach(tag => {
+                const opt = document.createElement('option');
+                opt.value = tag.name;
+                opt.textContent = tag.name;
+                quickTagInput.appendChild(opt);
+            });
         }
 
         navTabs.forEach(tab => {
@@ -547,6 +599,8 @@
             return div.innerHTML;
         }
 
+        purgeExpiredTasks();
+        processDailyLoginRoutine();
         populateQuickTagSelect();
         renderGeneralView();
     </script>
