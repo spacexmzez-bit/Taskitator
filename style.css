@@ -1,3 +1,436 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+    background-color: #0b111e;
+    color: #f1f5f9;
+    min-height: 100vh;
+    display: flex;
+    overflow-x: hidden;
+}
+
+/* Mobile Sticky Header */
+#mobile-header {
+    display: none;
+    background-color: #060911;
+    border-bottom: 1px solid #1e293b;
+    padding: 14px 18px;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+
+#mobile-header h2 {
+    font-size: 1.15rem;
+    color: #38bdf8;
+    font-weight: 700;
+}
+
+#menu-toggle {
+    background: #111827;
+    border: 1px solid #1e293b;
+    color: #f1f5f9;
+    font-size: 1.25rem;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+/* Sidebar Navigation */
+#sidebar {
+    width: 250px;
+    background-color: #060911;
+    border-right: 1px solid #1e293b;
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+#sidebar h2 {
+    font-size: 1.2rem;
+    color: #38bdf8;
+    margin-bottom: 12px;
+    padding-left: 8px;
+}
+
+.nav-link {
+    color: #94a3b8;
+    text-decoration: none;
+    padding: 12px 14px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.95rem;
+    transition: background 0.2s ease;
+}
+
+.nav-link:hover, .nav-link.active {
+    background-color: #1e293b;
+    color: #ffffff;
+}
+
+/* Dimmed Backdrop for Mobile Drawer */
+#backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 90;
+}
+
+#backdrop.active {
+    display: block;
+}
+
+/* Main Workspace */
+#main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    width: 100%;
+}
+
+#top-nav {
+    background-color: #0f172a;
+    border-bottom: 1px solid #1e293b;
+    padding: 12px 20px;
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.tab-link {
+    color: #94a3b8;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.tab-link.active {
+    color: #38bdf8;
+}
+
+#view-area {
+    padding: 24px 20px;
+    width: 100%;
+    max-width: 800px;
+}
+
+#view-area h1 {
+    font-size: 1.5rem;
+    margin-bottom: 16px;
+}
+
+/* Add Task Input Bar */
+.add-task-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.task-input {
+    flex: 1;
+    background-color: #111827;
+    border: 1px solid #1f2937;
+    color: #f1f5f9;
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    outline: none;
+}
+
+.task-input:focus {
+    border-color: #38bdf8;
+}
+
+.add-btn {
+    background-color: #0284c7;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 0 18px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.add-btn:hover {
+    background-color: #0369a1;
+}
+
+/* Task Card Component */
+.task-card {
+    background-color: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    cursor: pointer;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.task-card:hover {
+    border-color: #334155;
+}
+
+.check-circle {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid #38bdf8;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.task-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.task-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.task-desc {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+}
+
+/* Metadata, Badges & Dates */
+.task-meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+    align-items: center;
+}
+
+.badge {
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge-priority-high { background: #ef4444; color: #ffffff; }
+.badge-priority-med { background: #f59e0b; color: #000000; }
+.badge-priority-low { background: #10b981; color: #ffffff; }
+
+.due-badge {
+    font-size: 0.75rem;
+    color: #38bdf8;
+}
+
+/* Task Completion Animation */
+.task-card.completing {
+    animation: completeAnim 0.35s forwards cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes completeAnim {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.04); opacity: 0.9; }
+    100% { transform: scale(0.2); opacity: 0; height: 0; margin: 0; padding: 0; }
+}
+
+/* Task Modal Popup */
+#modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    z-index: 150;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+#modal-overlay.active {
+    display: flex;
+}
+
+.modal-card {
+    background-color: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 500px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    font-size: 1.2rem;
+    color: #f1f5f9;
+}
+
+.close-modal-btn {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+.modal-body p {
+    color: #cbd5e1;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.trash-btn {
+    background-color: #dc2626;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+/* Mobile Breakpoint */
+@media (max-width: 768px) {
+    body {
+        flex-direction: column;
+    }
+
+    #mobile-header {
+        display: flex;
+    }
+
+    #sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        height: 100vh;
+        z-index: 100;
+        transform: translateX(-100%);
+        transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        width: 260px;
+        box-shadow: none;
+    }
+
+    #sidebar.open {
+        transform: translateX(0);
+        box-shadow: 6px 0 24px rgba(0, 0, 0, 0.6);
+    }
+
+    #view-area {
+        padding: 18px 16px;
+    }
+}
+/* Sub-task Tree Indentation */
+.task-card.depth-0 { margin-left: 0; }
+.task-card.depth-1 { margin-left: 20px; border-left: 3px solid #38bdf8; width: calc(100% - 20px); }
+.task-card.depth-2 { margin-left: 40px; border-left: 3px solid #818cf8; width: calc(100% - 40px); }
+.task-card.depth-3 { margin-left: 60px; border-left: 3px solid #c084fc; width: calc(100% - 60px); }
+
+/* Sub-task Counter Badge */
+.subtask-badge {
+    font-size: 0.75rem;
+    background: #1e293b;
+    color: #94a3b8;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid #334155;
+}
+
+/* Modal Sub-tasks Section */
+.modal-subtasks-section {
+    border-top: 1px solid #1e293b;
+    padding-top: 14px;
+    margin-top: 8px;
+}
+
+.modal-subtasks-section h4 {
+    font-size: 0.95rem;
+    color: #38bdf8;
+    margin-bottom: 10px;
+}
+
+.modal-subtask-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #111827;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid #1f2937;
+    margin-bottom: 6px;
+    font-size: 0.85rem;
+}
+
+.modal-subtask-form {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.modal-subtask-input {
+    flex: 1;
+    background: #111827;
+    border: 1px solid #1f2937;
+    color: #f1f5f9;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    outline: none;
+}
+
+.modal-subtask-input:focus {
+    border-color: #38bdf8;
+}
+
+.modal-subtask-add-btn {
+    background: #0284c7;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 0 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
 /* Grouping Section Headers */
 .group-section {
     margin-top: 24px;
