@@ -5,19 +5,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - Trash Bin</title>
-    <link rel="stylesheet" href="style.css?v=13">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0b111e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 
     <div id="backdrop"></div>
 
-    <!-- Mobile Header -->
     <div id="mobile-header">
         <h2>Taskitator</h2>
         <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
     </div>
 
-    <!-- Sidebar Drawer -->
     <aside id="sidebar">
         <h2>Taskitator</h2>
         <a href="index.html" class="nav-link">📅 Today's Tasks</a>
@@ -27,7 +29,6 @@
         <a href="trash.html" class="nav-link active">🗑️ Trash Bin</a>
     </aside>
 
-    <!-- Main Workspace -->
     <main id="main-content">
         <section id="view-area">
             <h1>Trash Bin</h1>
@@ -48,7 +49,15 @@
         const backdrop = document.getElementById('backdrop');
         const trashList = document.getElementById('trash-list');
 
-        // Mobile Nav Drawer Toggle
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(err => {
+                    console.warn('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+
         toggleBtn.addEventListener('click', () => {
             const isOpen = sidebar.classList.toggle('open');
             backdrop.classList.toggle('active', isOpen);
@@ -59,7 +68,6 @@
             backdrop.classList.remove('active');
         });
 
-        // Local Storage Utilities
         function getTasks() {
             return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
         }
@@ -236,7 +244,6 @@
             return div.innerHTML;
         }
 
-        // Universal Lifecycle Sync
         purgeExpiredTasks();
         processDailyLoginRoutine();
         renderTrash();
