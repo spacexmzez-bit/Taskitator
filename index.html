@@ -1,10 +1,11 @@
 <!DOCTYPE html>
+<!-- index.html -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - Today</title>
-    <link rel="stylesheet" href="style.css?v=12">
+    <link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
@@ -88,6 +89,7 @@
                         <option value="daily">Every Day</option>
                         <option value="weekdays">Weekdays Only (Skips Weekend)</option>
                         <option value="weekly">Once a Week</option>
+                        <option value="monthly">Once a Month</option>
                     </select>
                 </div>
                 <div class="modal-subtasks-section">
@@ -186,6 +188,16 @@
             if (cleanTasks.length !== tasks.length) saveTasks(cleanTasks);
         }
 
+        function getDescendantIds(parentId, allTasks) {
+            let descendants = [];
+            const children = allTasks.filter(t => t.parent_id === parentId);
+            children.forEach(child => {
+                descendants.push(child.id);
+                descendants = descendants.concat(getDescendantIds(child.id, allTasks));
+            });
+            return descendants;
+        }
+
         function processDailyLoginRoutine() {
             const todayStr = new Date().toISOString().split('T')[0];
             const lastLogin = localStorage.getItem('taskitator_last_login');
@@ -201,19 +213,34 @@
                     if (task.status === 'completed') {
                         let shouldSpawn = false;
                         const rule = task.recurrence_rule || 'daily';
-                        if (rule === 'daily') shouldSpawn = true;
-                        else if (rule === 'weekdays') {
+                        const completedDate = task.completed_at ? new Date(task.completed_at) : new Date(0);
+                        const daysDiff = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
+
+                        if (rule === 'daily') {
+                            shouldSpawn = true;
+                        } else if (rule === 'weekdays') {
                             const isWeekend = (settings.weekendDays || [5, 6]).includes(todayDayOfWeek);
                             if (!isWeekend) shouldSpawn = true;
                         } else if (rule === 'weekly') {
-                            const completedDate = task.completed_at ? new Date(task.completed_at) : new Date(0);
-                            const daysDiff = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
                             if (daysDiff >= 7) shouldSpawn = true;
+                        } else if (rule === 'monthly') {
+                            if (daysDiff >= 30) shouldSpawn = true;
                         }
+
                         if (shouldSpawn) {
                             task.status = 'active';
                             task.due_date = 'today';
                             task.completed_at = null;
+
+                            // Cascading Recurrence Reset: Reset all descendants
+                            const descendantIds = new Set(getDescendantIds(task.id, tasks));
+                            tasks.forEach(dt => {
+                                if (descendantIds.has(dt.id) && dt.status !== 'trashed') {
+                                    dt.status = 'active';
+                                    dt.completed_at = null;
+                                }
+                            });
+
                             changed = true;
                         }
                     }
@@ -221,16 +248,6 @@
                 localStorage.setItem('taskitator_last_login', todayStr);
                 if (changed) saveTasks(tasks);
             }
-        }
-
-        function getDescendantIds(parentId, allTasks) {
-            let descendants = [];
-            const children = allTasks.filter(t => t.parent_id === parentId);
-            children.forEach(child => {
-                descendants.push(child.id);
-                descendants = descendants.concat(getDescendantIds(child.id, allTasks));
-            });
-            return descendants;
         }
 
         navTabs.forEach(tab => {
