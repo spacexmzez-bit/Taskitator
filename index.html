@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Taskitator - Today</title>
-    <link rel="stylesheet" href="style.css?v=10">
+    <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 
     <div id="backdrop"></div>
 
-    <!-- Mobile Sticky Header -->
+    <!-- Mobile Header -->
     <div id="mobile-header">
         <h2>Taskitator</h2>
         <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
@@ -46,18 +46,49 @@
         </section>
     </main>
 
-    <!-- Task Details Modal -->
+    <!-- Task Details & Parameter Edit Modal -->
     <div id="modal-overlay">
         <div class="modal-card">
             <div class="modal-header">
-                <h3 id="modal-title">Task Details</h3>
+                <h3 id="modal-heading">Edit Task</h3>
                 <button class="close-modal-btn" id="close-modal">&times;</button>
             </div>
             <div class="modal-body">
-                <p id="modal-desc">Description</p>
-                <div class="task-meta" id="modal-meta"></div>
+                <!-- Title Edit -->
+                <div class="modal-edit-field">
+                    <label class="modal-label" for="edit-title">Title</label>
+                    <input type="text" id="edit-title" class="modal-input" maxlength="80" required>
+                </div>
 
-                <!-- Recurrence Configuration -->
+                <!-- Description Edit -->
+                <div class="modal-edit-field">
+                    <label class="modal-label" for="edit-desc">Description</label>
+                    <textarea id="edit-desc" class="modal-textarea" rows="2" placeholder="Add details..."></textarea>
+                </div>
+
+                <!-- Priority & Due Date Row -->
+                <div class="modal-row">
+                    <div class="modal-edit-field">
+                        <label class="modal-label" for="edit-priority">Priority</label>
+                        <select id="edit-priority" class="modal-select">
+                            <option value="high">High</option>
+                            <option value="med">Medium</option>
+                            <option value="low">Low</option>
+                        </select>
+                    </div>
+                    <div class="modal-edit-field">
+                        <label class="modal-label" for="edit-due">Due Date</label>
+                        <input type="date" id="edit-due" class="modal-input">
+                    </div>
+                </div>
+
+                <!-- Tag Picker -->
+                <div class="modal-edit-field">
+                    <label class="modal-label">Tag</label>
+                    <div id="modal-tags" class="modal-tags-wrapper"></div>
+                </div>
+
+                <!-- Recurrence Toggle -->
                 <div class="modal-field-group">
                     <label class="modal-checkbox-label">
                         <input type="checkbox" id="modal-recur-checkbox">
@@ -70,7 +101,7 @@
                     </select>
                 </div>
 
-                <!-- Sub-tasks Section inside Modal -->
+                <!-- Sub-tasks Section -->
                 <div class="modal-subtasks-section">
                     <h4>Direct Sub-Tasks</h4>
                     <div id="modal-subtasks-list"></div>
@@ -98,16 +129,18 @@
 
         const modalOverlay = document.getElementById('modal-overlay');
         const closeModalBtn = document.getElementById('close-modal');
-        const modalTitle = document.getElementById('modal-title');
-        const modalDesc = document.getElementById('modal-desc');
-        const modalMeta = document.getElementById('modal-meta');
+        const editTitle = document.getElementById('edit-title');
+        const editDesc = document.getElementById('edit-desc');
+        const editPriority = document.getElementById('edit-priority');
+        const editDue = document.getElementById('edit-due');
+        const modalTags = document.getElementById('modal-tags');
+        const modalRecurCheckbox = document.getElementById('modal-recur-checkbox');
+        const modalRecurRule = document.getElementById('modal-recur-rule');
+
         const modalSubtasksList = document.getElementById('modal-subtasks-list');
         const modalSubtaskForm = document.getElementById('modal-subtask-form');
         const subtaskInput = document.getElementById('subtask-input');
         const trashTaskBtn = document.getElementById('trash-task-btn');
-
-        const modalRecurCheckbox = document.getElementById('modal-recur-checkbox');
-        const modalRecurRule = document.getElementById('modal-recur-rule');
 
         let activeTaskId = null;
 
@@ -134,7 +167,11 @@
         function getSettings() {
             return JSON.parse(localStorage.getItem('taskitator_settings')) || {
                 weekendDays: [5, 6],
-                tags: []
+                tags: [
+                    { id: '1', name: 'Work', color: '#0284c7' },
+                    { id: '2', name: 'Personal', color: '#10b981' },
+                    { id: '3', name: 'Urgent', color: '#ef4444' }
+                ]
             };
         }
 
@@ -152,43 +189,33 @@
             }
         }
 
-        // ==========================================
-        // RECURRING TASK ROUTINE & DAILY LOGIN CHECK
-        // ==========================================
         function processDailyLoginRoutine() {
             const todayStr = new Date().toISOString().split('T')[0];
             const lastLogin = localStorage.getItem('taskitator_last_login');
             const settings = getSettings();
-            const todayDayOfWeek = new Date().getDay(); // 0 = Sun, 6 = Sat
+            const todayDayOfWeek = new Date().getDay();
 
             let tasks = getTasks();
             let changed = false;
 
-            // Run recurrence roll-forward only once per calendar day
             if (lastLogin !== todayStr) {
                 tasks.forEach(task => {
                     if (!task.is_recurring || task.status === 'trashed') return;
-
-                    const isCompleted = task.status === 'completed';
-                    const rule = task.recurrence_rule || 'daily';
-
-                    if (isCompleted) {
+                    if (task.status === 'completed') {
                         let shouldSpawn = false;
+                        const rule = task.recurrence_rule || 'daily';
 
-                        if (rule === 'daily') {
-                            shouldSpawn = true;
-                        } else if (rule === 'weekdays') {
+                        if (rule === 'daily') shouldSpawn = true;
+                        else if (rule === 'weekdays') {
                             const isWeekend = (settings.weekendDays || [5, 6]).includes(todayDayOfWeek);
                             if (!isWeekend) shouldSpawn = true;
                         } else if (rule === 'weekly') {
-                            // Check if at least 7 days have passed since completion
                             const completedDate = task.completed_at ? new Date(task.completed_at) : new Date(0);
                             const daysDiff = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
                             if (daysDiff >= 7) shouldSpawn = true;
                         }
 
                         if (shouldSpawn) {
-                            // Reset state for today
                             task.status = 'active';
                             task.due_date = 'today';
                             task.completed_at = null;
@@ -198,13 +225,10 @@
                 });
 
                 localStorage.setItem('taskitator_last_login', todayStr);
-                if (changed) {
-                    saveTasks(tasks);
-                }
+                if (changed) saveTasks(tasks);
             }
         }
 
-        // Descendant ID Resolver
         function getDescendantIds(parentId, allTasks) {
             let descendants = [];
             const children = allTasks.filter(t => t.parent_id === parentId);
@@ -215,7 +239,7 @@
             return descendants;
         }
 
-        // Render Indented Hierarchy Tree
+        // Render Task Hierarchy
         function renderTasks() {
             const allTasks = getTasks();
             const activeTasks = allTasks.filter(t => t.status === 'active');
@@ -238,7 +262,6 @@
             appendTaskTree(null, 0);
         }
 
-        // Task Card Builder
         function createTaskCard(task, depth, allTasks) {
             const card = document.createElement('div');
             const safeDepth = Math.min(depth, 3);
@@ -257,6 +280,13 @@
 
             const priorityClass = task.priority ? `badge-priority-${task.priority}` : '';
 
+            // Resolve Tag Appearance
+            const settings = getSettings();
+            const tagObj = (settings.tags || []).find(t => t.name === task.tag);
+            const tagBadge = tagObj 
+                ? `<span class="badge" style="background-color: ${tagObj.color}; color: #ffffff;">${escapeHtml(tagObj.name)}</span>` 
+                : (task.tag ? `<span class="badge">${escapeHtml(task.tag)}</span>` : '');
+
             card.innerHTML = `
                 <div class="check-circle" data-action="complete"></div>
                 <div class="task-info">
@@ -265,6 +295,7 @@
                     <div class="task-meta">
                         <span class="badge ${priorityClass}">${task.priority || 'Normal'}</span>
                         <span class="due-badge">${task.due_date || 'Today'}</span>
+                        ${tagBadge}
                         ${recurringBadge}
                         ${subtaskBadge}
                     </div>
@@ -282,7 +313,6 @@
             return card;
         }
 
-        // Cascading Completion
         function triggerComplete(taskId, element) {
             element.classList.add('completing');
             setTimeout(() => {
@@ -302,7 +332,6 @@
             }, 350);
         }
 
-        // Cascading Trash
         trashTaskBtn.addEventListener('click', () => {
             if (!activeTaskId) return;
             const tasks = getTasks();
@@ -321,50 +350,100 @@
             renderTasks();
         });
 
-        // Modal Controls & Recurrence Settings
+        // ==========================================
+        // PHASE 9: INTERACTIVE MODAL EDITING
+        // ==========================================
         function openModal(taskId) {
             activeTaskId = taskId;
             const tasks = getTasks();
             const task = tasks.find(t => t.id === taskId);
             if (!task) return;
 
-            modalTitle.textContent = task.title;
-            modalDesc.textContent = task.description || 'No description provided.';
-            modalMeta.innerHTML = `
-                <span class="badge badge-priority-${task.priority || 'low'}">${task.priority || 'Normal'}</span>
-                <span class="due-badge">Due: ${task.due_date || 'Today'}</span>
-            `;
+            // Load Values into Form
+            editTitle.value = task.title || '';
+            editDesc.value = task.description || '';
+            editPriority.value = task.priority || 'med';
+            editDue.value = (task.due_date && task.due_date !== 'today') ? task.due_date : '';
 
-            // Populate Recurrence State
+            // Load Recurrence
             modalRecurCheckbox.checked = !!task.is_recurring;
             modalRecurRule.style.display = task.is_recurring ? 'block' : 'none';
             modalRecurRule.value = task.recurrence_rule || 'daily';
+
+            // Load Tag Selector Chips
+            renderModalTagPicker(task.tag);
 
             renderModalSubtasks(task.id, tasks);
             modalOverlay.classList.add('active');
         }
 
-        modalRecurCheckbox.addEventListener('change', () => {
-            modalRecurRule.style.display = modalRecurCheckbox.checked ? 'block' : 'none';
-            saveRecurrenceState();
-        });
+        function renderModalTagPicker(selectedTag) {
+            modalTags.innerHTML = '';
+            const settings = getSettings();
+            const tags = settings.tags || [];
 
-        modalRecurRule.addEventListener('change', () => {
-            saveRecurrenceState();
-        });
+            if (tags.length === 0) {
+                modalTags.innerHTML = '<span style="color: #64748b; font-size: 0.8rem;">No tags created in Settings.</span>';
+                return;
+            }
 
-        function saveRecurrenceState() {
+            tags.forEach(tag => {
+                const chip = document.createElement('span');
+                chip.className = `modal-tag-chip ${selectedTag === tag.name ? 'active' : ''}`;
+                chip.style.backgroundColor = tag.color;
+                chip.style.color = '#ffffff';
+                chip.textContent = tag.name;
+
+                chip.addEventListener('click', () => {
+                    const tasks = getTasks();
+                    const task = tasks.find(t => t.id === activeTaskId);
+                    if (!task) return;
+
+                    // Toggle selection: unselect if tapped again
+                    if (task.tag === tag.name) {
+                        task.tag = null;
+                    } else {
+                        task.tag = tag.name;
+                    }
+
+                    saveTasks(tasks);
+                    renderModalTagPicker(task.tag);
+                    renderTasks();
+                });
+
+                modalTags.appendChild(chip);
+            });
+        }
+
+        // Live Auto-Save on Modal Input Changes
+        function handleModalFieldChange() {
             if (!activeTaskId) return;
             const tasks = getTasks();
             const task = tasks.find(t => t.id === activeTaskId);
             if (!task) return;
 
+            task.title = editTitle.value.trim() || 'Untitled Task';
+            task.description = editDesc.value.trim();
+            task.priority = editPriority.value;
+            task.due_date = editDue.value || 'today';
             task.is_recurring = modalRecurCheckbox.checked;
             task.recurrence_rule = modalRecurCheckbox.checked ? modalRecurRule.value : null;
 
             saveTasks(tasks);
             renderTasks();
         }
+
+        editTitle.addEventListener('input', handleModalFieldChange);
+        editDesc.addEventListener('input', handleModalFieldChange);
+        editPriority.addEventListener('change', handleModalFieldChange);
+        editDue.addEventListener('change', handleModalFieldChange);
+
+        modalRecurCheckbox.addEventListener('change', () => {
+            modalRecurRule.style.display = modalRecurCheckbox.checked ? 'block' : 'none';
+            handleModalFieldChange();
+        });
+
+        modalRecurRule.addEventListener('change', handleModalFieldChange);
 
         function renderModalSubtasks(parentId, allTasks) {
             modalSubtasksList.innerHTML = '';
@@ -455,7 +534,6 @@
             return div.innerHTML;
         }
 
-        // Startup Routine: 1. Purge expired -> 2. Process daily login -> 3. Render
         purgeExpiredTasks();
         processDailyLoginRoutine();
         renderTasks();
