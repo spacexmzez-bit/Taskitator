@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Taskitator - General List</title>
-    <link rel="stylesheet" href="style.css?v=5">
+    <title>Taskitator - Today</title>
+    <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 
@@ -19,8 +19,8 @@
     <!-- Sidebar Drawer -->
     <aside id="sidebar">
         <h2>Taskitator</h2>
-        <a href="index.html" class="nav-link">📅 Today's Tasks</a>
-        <a href="general.html" class="nav-link active">📋 General List</a>
+        <a href="index.html" class="nav-link active">📅 Today's Tasks</a>
+        <a href="general.html" class="nav-link">📋 General List</a>
         <a href="stats.html" class="nav-link">📊 Statistics</a>
         <a href="settings.html" class="nav-link">⚙️ Settings</a>
         <a href="trash.html" class="nav-link">🗑️ Trash Bin</a>
@@ -28,23 +28,21 @@
 
     <!-- Main Workspace -->
     <main id="main-content">
-        <!-- Dynamic Grouping Top Nav -->
         <header id="top-nav">
-            <a href="#" class="tab-link active" data-group="all">All Grandparents</a>
-            <a href="#" class="tab-link" data-group="date">By Date</a>
-            <a href="#" class="tab-link" data-group="priority">By Priority</a>
-            <a href="#" class="tab-link" data-group="tag">By Tag</a>
+            <a href="#" class="tab-link active">All Today</a>
+            <a href="#" class="tab-link">Priority</a>
+            <a href="#" class="tab-link">Tags</a>
         </header>
 
         <section id="view-area">
-            <h1>General To-Do List</h1>
+            <h1>Today's To-Do List</h1>
 
             <form id="add-task-form" class="add-task-bar">
                 <input type="text" id="task-title-input" class="task-input" placeholder="Add a new root task..." required maxlength="80">
                 <button type="submit" class="add-btn">+</button>
             </form>
 
-            <div id="general-task-list"></div>
+            <div id="task-list"></div>
         </section>
     </main>
 
@@ -59,8 +57,9 @@
                 <p id="modal-desc">Description</p>
                 <div class="task-meta" id="modal-meta"></div>
 
+                <!-- Sub-tasks Section inside Modal -->
                 <div class="modal-subtasks-section">
-                    <h4>Sub-Tasks</h4>
+                    <h4>Direct Sub-Tasks</h4>
                     <div id="modal-subtasks-list"></div>
                     <form id="modal-subtask-form" class="modal-subtask-form">
                         <input type="text" id="subtask-input" class="modal-subtask-input" placeholder="Add a direct sub-task..." required maxlength="80">
@@ -78,10 +77,9 @@
         const toggleBtn = document.getElementById('menu-toggle');
         const sidebar = document.getElementById('sidebar');
         const backdrop = document.getElementById('backdrop');
-        const taskList = document.getElementById('general-task-list');
         const taskForm = document.getElementById('add-task-form');
         const taskInput = document.getElementById('task-title-input');
-        const navTabs = document.querySelectorAll('#top-nav .tab-link');
+        const taskList = document.getElementById('task-list');
 
         const modalOverlay = document.getElementById('modal-overlay');
         const closeModalBtn = document.getElementById('close-modal');
@@ -93,10 +91,9 @@
         const subtaskInput = document.getElementById('subtask-input');
         const trashTaskBtn = document.getElementById('trash-task-btn');
 
-        let currentGrouping = 'all';
         let activeTaskId = null;
 
-        // Mobile Nav Toggle
+        // Mobile Nav Drawer
         toggleBtn.addEventListener('click', () => {
             const isOpen = sidebar.classList.toggle('open');
             backdrop.classList.toggle('active', isOpen);
@@ -116,6 +113,7 @@
             localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
         }
 
+        // Descendant ID Resolver
         function getDescendantIds(parentId, allTasks) {
             let descendants = [];
             const children = allTasks.filter(t => t.parent_id === parentId);
@@ -126,79 +124,35 @@
             return descendants;
         }
 
-        // Top Nav Switching
-        navTabs.forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                e.preventDefault();
-                navTabs.forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                currentGrouping = tab.dataset.group;
-                renderGeneralView();
-            });
-        });
-
-        // Main Render Function
-        function renderGeneralView() {
+        // Render Indented Tree
+        function renderTasks() {
             const allTasks = getTasks();
-            // Strict Filter: Only root/grandparent tasks (parent_id is null) that are active
-            const rootTasks = allTasks.filter(t => !t.parent_id && t.status === 'active');
-
+            const activeTasks = allTasks.filter(t => t.status === 'active');
             taskList.innerHTML = '';
 
-            if (rootTasks.length === 0) {
-                taskList.innerHTML = '<p style="color: #64748b; font-size: 0.9rem; margin-top: 20px;">No root tasks created yet. Add one above.</p>';
+            if (activeTasks.length === 0) {
+                taskList.innerHTML = '<p style="color: #64748b; font-size: 0.9rem; margin-top: 20px;">No tasks for today. Tap above to add one.</p>';
                 return;
             }
 
-            if (currentGrouping === 'all') {
-                rootTasks.forEach(task => {
-                    taskList.appendChild(createTaskCard(task, allTasks));
+            function appendTaskTree(parentId, depth) {
+                const children = activeTasks.filter(t => t.parent_id === parentId);
+                children.forEach(task => {
+                    const card = createTaskCard(task, depth, allTasks);
+                    taskList.appendChild(card);
+                    appendTaskTree(task.id, depth + 1);
                 });
-            } else if (currentGrouping === 'priority') {
-                renderGrouped(rootTasks, allTasks, t => t.priority || 'med', ['high', 'med', 'low']);
-            } else if (currentGrouping === 'date') {
-                renderGrouped(rootTasks, allTasks, t => t.due_date || 'today');
-            } else if (currentGrouping === 'tag') {
-                renderGrouped(rootTasks, allTasks, t => t.tag || 'Untagged');
-            }
-        }
-
-        // Generic Grouping Renderer
-        function renderGrouped(tasks, allTasks, keyFn, customOrder = null) {
-            const groups = {};
-
-            tasks.forEach(t => {
-                const key = keyFn(t);
-                if (!groups[key]) groups[key] = [];
-                groups[key].push(t);
-            });
-
-            let keys = Object.keys(groups);
-            if (customOrder) {
-                keys = customOrder.filter(k => groups[k]).concat(keys.filter(k => !customOrder.includes(k)));
             }
 
-            keys.forEach(key => {
-                const section = document.createElement('div');
-                section.className = 'group-section';
-
-                const title = document.createElement('div');
-                title.className = 'group-title';
-                title.innerHTML = `<span>${escapeHtml(key.toUpperCase())}</span> <span class="group-count">${groups[key].length}</span>`;
-                section.appendChild(title);
-
-                groups[key].forEach(t => {
-                    section.appendChild(createTaskCard(t, allTasks));
-                });
-
-                taskList.appendChild(section);
-            });
+            // Start with root tasks
+            appendTaskTree(null, 0);
         }
 
-        // Card Generator
-        function createTaskCard(task, allTasks) {
+        // Task Card Builder
+        function createTaskCard(task, depth, allTasks) {
             const card = document.createElement('div');
-            card.className = 'task-card';
+            const safeDepth = Math.min(depth, 3);
+            card.className = `task-card depth-${safeDepth}`;
             card.dataset.id = task.id;
 
             const directSubtasks = allTasks.filter(t => t.parent_id === task.id && t.status !== 'trashed');
@@ -234,8 +188,8 @@
         }
 
         // Cascading Completion
-        function triggerComplete(taskId, card) {
-            card.classList.add('completing');
+        function triggerComplete(taskId, element) {
+            element.classList.add('completing');
             setTimeout(() => {
                 const tasks = getTasks();
                 const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
@@ -245,9 +199,28 @@
                 });
 
                 saveTasks(tasks);
-                renderGeneralView();
+                renderTasks();
             }, 350);
         }
+
+        // Cascading Trash
+        trashTaskBtn.addEventListener('click', () => {
+            if (!activeTaskId) return;
+            const tasks = getTasks();
+            const targetIds = new Set([activeTaskId, ...getDescendantIds(activeTaskId, tasks)]);
+            const timestamp = new Date().toISOString();
+
+            tasks.forEach(t => {
+                if (targetIds.has(t.id)) {
+                    t.status = 'trashed';
+                    t.trashed_at = timestamp;
+                }
+            });
+
+            saveTasks(tasks);
+            closeModal();
+            renderTasks();
+        });
 
         // Modal Controls
         function openModal(taskId) {
@@ -259,7 +232,7 @@
             modalTitle.textContent = task.title;
             modalDesc.textContent = task.description || 'No description provided.';
             modalMeta.innerHTML = `
-                <span class="badge badge-priority-${task.priority || 'med'}">${task.priority || 'Normal'}</span>
+                <span class="badge badge-priority-${task.priority || 'low'}">${task.priority || 'Normal'}</span>
                 <span class="due-badge">Due: ${task.due_date || 'Today'}</span>
             `;
 
@@ -320,26 +293,7 @@
 
             subtaskInput.value = '';
             renderModalSubtasks(activeTaskId, tasks);
-            renderGeneralView();
-        });
-
-        // Cascading Trash
-        trashTaskBtn.addEventListener('click', () => {
-            if (!activeTaskId) return;
-            const tasks = getTasks();
-            const targetIds = new Set([activeTaskId, ...getDescendantIds(activeTaskId, tasks)]);
-            const timestamp = new Date().toISOString();
-
-            tasks.forEach(t => {
-                if (targetIds.has(t.id)) {
-                    t.status = 'trashed';
-                    t.trashed_at = timestamp;
-                }
-            });
-
-            saveTasks(tasks);
-            closeModal();
-            renderGeneralView();
+            renderTasks();
         });
 
         // Add Root Task
@@ -362,7 +316,7 @@
             tasks.unshift(newTask);
             saveTasks(tasks);
             taskInput.value = '';
-            renderGeneralView();
+            renderTasks();
         });
 
         function escapeHtml(text) {
@@ -371,8 +325,7 @@
             return div.innerHTML;
         }
 
-        // Initial Load
-        renderGeneralView();
+        renderTasks();
     </script>
 </body>
 </html>
