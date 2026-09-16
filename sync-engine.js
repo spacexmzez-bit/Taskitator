@@ -4,7 +4,7 @@ const SyncEngine = {
     STORAGE_KEY_TASKS: 'taskitator_tasks',
     STORAGE_KEY_LAST_LOGIN: 'taskitator_last_login',
 
-    // Status event emitter
+    debounceTimer: null,
     listeners: [],
 
     onStatusChange(fn) {
@@ -81,7 +81,6 @@ const SyncEngine = {
 
             const data = await res.json();
             
-            // Record last synced timestamp
             const settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS)) || {};
             settings.sync = settings.sync || {};
             settings.sync.last_synced = new Date().toISOString();
@@ -95,7 +94,15 @@ const SyncEngine = {
         }
     },
 
-    async pull() {
+    scheduleAutoPush(delayMs = 2000) {
+        if (!this.isConfigured()) return;
+        if (this.debounceTimer) clearTimeout(this.debounceTimer);
+        this.debounceTimer = setTimeout(() => {
+            this.push(false);
+        }, delayMs);
+    },
+
+    async pull(onUpdateCallback = null) {
         const config = this.getConfig();
         if (!config.url || !config.secret) {
             this.notify('unconfigured');
@@ -128,8 +135,10 @@ const SyncEngine = {
                 throw new Error('Malformed snapshot: tasks array missing.');
             }
 
-            // Apply snapshot to local storage
-            localStorage.setItem(this.STORAGE_KEY_TASKS, JSON.stringify(data.tasks));
+            const localTasksRaw = localStorage.getItem(this.STORAGE_KEY_TASKS);
+            const remoteTasksRaw = JSON.stringify(data.tasks);
+
+            localStorage.setItem(this.STORAGE_KEY_TASKS, remoteTasksRaw);
             
             if (data.settings) {
                 data.settings.sync = {
@@ -144,6 +153,11 @@ const SyncEngine = {
             }
 
             this.notify('synced', { timestamp: new Date().toISOString() });
+
+            if (onUpdateCallback && localTasksRaw !== remoteTasksRaw) {
+                onUpdateCallback();
+            }
+
             return { success: true, data };
         } catch (err) {
             this.notify('error', err.message);
@@ -152,5 +166,4 @@ const SyncEngine = {
     }
 };
 
-// Expose globally
 window.SyncEngine = SyncEngine;
