@@ -16,7 +16,13 @@
     <div id="backdrop"></div>
 
     <div id="mobile-header">
-        <h2>Taskitator</h2>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <h2>Taskitator</h2>
+            <div class="sync-indicator-badge" id="mobile-sync-badge">
+                <span class="sync-dot"></span>
+                <span class="sync-text">Offline</span>
+            </div>
+        </div>
         <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
     </div>
 
@@ -35,6 +41,10 @@
             <a href="#" class="tab-link" data-group="date">By Date</a>
             <a href="#" class="tab-link" data-group="priority">By Priority</a>
             <a href="#" class="tab-link" data-group="tag">By Tag</a>
+            <div class="sync-indicator-badge" id="desktop-sync-badge" style="margin-left: auto;">
+                <span class="sync-dot"></span>
+                <span class="sync-text">Cloud Sync</span>
+            </div>
         </header>
 
         <section id="view-area">
@@ -112,6 +122,7 @@
         </div>
     </div>
 
+    <script src="sync-engine.js"></script>
     <script>
         const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
         const toggleBtn = document.getElementById('menu-toggle');
@@ -137,6 +148,9 @@
         const modalSubtaskForm = document.getElementById('modal-subtask-form');
         const subtaskInput = document.getElementById('subtask-input');
         const trashTaskBtn = document.getElementById('trash-task-btn');
+
+        const desktopSyncBadge = document.getElementById('desktop-sync-badge');
+        const mobileSyncBadge = document.getElementById('mobile-sync-badge');
 
         let currentGrouping = 'all';
         let activeTaskId = null;
@@ -169,6 +183,43 @@
             sidebar.classList.remove('open');
             backdrop.classList.remove('active');
         });
+
+        // ==========================================
+        // SYNC ENGINE BADGE INTEGRATION
+        // ==========================================
+        function updateGlobalSyncBadge(status, detail = null) {
+            const badges = [desktopSyncBadge, mobileSyncBadge];
+            badges.forEach(badge => {
+                if (!badge) return;
+                badge.className = 'sync-indicator-badge ' + status;
+                const label = badge.querySelector('.sync-text');
+
+                if (status === 'syncing') {
+                    label.textContent = 'Syncing...';
+                } else if (status === 'synced') {
+                    label.textContent = 'Synced';
+                } else if (status === 'conflict') {
+                    label.textContent = 'Conflict';
+                } else if (status === 'error') {
+                    label.textContent = 'Sync Error';
+                } else if (status === 'unconfigured') {
+                    label.textContent = 'Local Only';
+                } else {
+                    label.textContent = 'Cloud Sync';
+                }
+            });
+        }
+
+        SyncEngine.onStatusChange((status, detail) => {
+            updateGlobalSyncBadge(status, detail);
+        });
+
+        if (!SyncEngine.isConfigured()) {
+            updateGlobalSyncBadge('unconfigured');
+        } else {
+            const config = SyncEngine.getConfig();
+            updateGlobalSyncBadge(config.last_synced ? 'synced' : 'ready');
+        }
 
         function getTasks() {
             return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
