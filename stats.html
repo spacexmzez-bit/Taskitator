@@ -16,7 +16,13 @@
     <div id="backdrop"></div>
 
     <div id="mobile-header">
-        <h2>Taskitator</h2>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <h2>Taskitator</h2>
+            <div class="sync-indicator-badge" id="mobile-sync-badge">
+                <span class="sync-dot"></span>
+                <span class="sync-text">Offline</span>
+            </div>
+        </div>
         <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
     </div>
 
@@ -30,19 +36,82 @@
     </aside>
 
     <main id="main-content">
+        <header id="top-nav">
+            <span style="font-size: 0.9rem; font-weight: 600; color: #94a3b8;">Workspace Analytics</span>
+            <div class="sync-indicator-badge" id="desktop-sync-badge" style="margin-left: auto;">
+                <span class="sync-dot"></span>
+                <span class="sync-text">Cloud Sync</span>
+            </div>
+        </header>
+
         <section id="view-area">
-            <h1>Workspace Statistics</h1>
-            <div id="stats-container" class="stats-grid"></div>
+            <h1>Productivity Statistics</h1>
+
+            <div class="stats-overview-grid">
+                <div class="stat-card">
+                    <div class="stat-card-title">Completed Today</div>
+                    <div class="stat-card-value" id="stat-completed-today">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-title">Active Today</div>
+                    <div class="stat-card-value" id="stat-active-today">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-title">Completion Rate</div>
+                    <div class="stat-card-value" id="stat-completion-rate">0%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-title">Total Active in System</div>
+                    <div class="stat-card-value" id="stat-total-active">0</div>
+                </div>
+            </div>
+
+            <div class="settings-section" style="margin-top: 24px;">
+                <h3>Priority Distribution</h3>
+                <p>Breakdown of all active tasks across priority levels.</p>
+                <div class="stats-distribution-list">
+                    <div class="dist-row">
+                        <span class="badge badge-priority-high">High</span>
+                        <span class="dist-count" id="stat-priority-high">0</span>
+                    </div>
+                    <div class="dist-row">
+                        <span class="badge badge-priority-med">Medium</span>
+                        <span class="dist-count" id="stat-priority-med">0</span>
+                    </div>
+                    <div class="dist-row">
+                        <span class="badge badge-priority-low">Low</span>
+                        <span class="dist-count" id="stat-priority-low">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>Tag Distribution</h3>
+                <p>Breakdown of active tasks categorized by custom tags.</p>
+                <div id="stats-tags-container" class="stats-distribution-list"></div>
+            </div>
         </section>
     </main>
 
+    <script src="sync-engine.js"></script>
     <script>
         const toggleBtn = document.getElementById('menu-toggle');
         const sidebar = document.getElementById('sidebar');
         const backdrop = document.getElementById('backdrop');
-        const statsContainer = document.getElementById('stats-container');
 
-        // PWA Service Worker Registration
+        const statCompletedToday = document.getElementById('stat-completed-today');
+        const statActiveToday = document.getElementById('stat-active-today');
+        const statCompletionRate = document.getElementById('stat-completion-rate');
+        const statTotalActive = document.getElementById('stat-total-active');
+
+        const statPriorityHigh = document.getElementById('stat-priority-high');
+        const statPriorityMed = document.getElementById('stat-priority-med');
+        const statPriorityLow = document.getElementById('stat-priority-low');
+        const statsTagsContainer = document.getElementById('stats-tags-container');
+
+        const desktopSyncBadge = document.getElementById('desktop-sync-badge');
+        const mobileSyncBadge = document.getElementById('mobile-sync-badge');
+
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js').catch(err => {
@@ -61,38 +130,144 @@
             backdrop.classList.remove('active');
         });
 
+        // ==========================================
+        // SYNC ENGINE BADGE & AUTO-PULL
+        // ==========================================
+        function updateGlobalSyncBadge(status, detail = null) {
+            const badges = [desktopSyncBadge, mobileSyncBadge];
+            badges.forEach(badge => {
+                if (!badge) return;
+                badge.className = 'sync-indicator-badge ' + status;
+                const label = badge.querySelector('.sync-text');
+
+                if (status === 'syncing') {
+                    label.textContent = 'Syncing...';
+                } else if (status === 'synced') {
+                    label.textContent = 'Synced';
+                } else if (status === 'conflict') {
+                    label.textContent = 'Conflict';
+                } else if (status === 'error') {
+                    label.textContent = 'Sync Error';
+                } else if (status === 'unconfigured') {
+                    label.textContent = 'Local Only';
+                } else {
+                    label.textContent = 'Cloud Sync';
+                }
+            });
+        }
+
+        SyncEngine.onStatusChange((status, detail) => {
+            updateGlobalSyncBadge(status, detail);
+        });
+
+        function performAutoPull() {
+            if (SyncEngine.isConfigured()) {
+                SyncEngine.pull(() => {
+                    calculateStatistics();
+                });
+            } else {
+                updateGlobalSyncBadge('unconfigured');
+            }
+        }
+
+        performAutoPull();
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                performAutoPull();
+            }
+        });
+
+        window.addEventListener('online', () => {
+            performAutoPull();
+        });
+
         function getTasks() {
             return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
         }
 
-        function renderStats() {
-            const tasks = getTasks();
-            const total = tasks.length;
-            const completed = tasks.filter(t => t.status === 'completed').length;
-            const active = tasks.filter(t => t.status === 'active').length;
-            const trashed = tasks.filter(t => t.status === 'trashed').length;
-
-            statsContainer.innerHTML = `
-                <div class="stat-card">
-                    <div class="stat-label">Total Created</div>
-                    <div class="stat-value">${total}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Active Tasks</div>
-                    <div class="stat-value" style="color: #38bdf8;">${active}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Completed</div>
-                    <div class="stat-value" style="color: #10b981;">${completed}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">In Trash</div>
-                    <div class="stat-value" style="color: #ef4444;">${trashed}</div>
-                </div>
-            `;
+        function getSettings() {
+            return JSON.parse(localStorage.getItem('taskitator_settings')) || {
+                tags: []
+            };
         }
 
-        renderStats();
+        function calculateStatistics() {
+            const tasks = getTasks();
+            const settings = getSettings();
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            const activeTasks = tasks.filter(t => t.status === 'active');
+            const completedToday = tasks.filter(t => {
+                if (t.status !== 'completed' || !t.completed_at) return false;
+                return t.completed_at.split('T')[0] === todayStr;
+            });
+
+            const activeToday = activeTasks.filter(t => {
+                return !t.due_date || t.due_date.toLowerCase() === 'today' || t.due_date === todayStr;
+            });
+
+            const totalTodayActions = completedToday.length + activeToday.length;
+            const completionRate = totalTodayActions > 0 
+                ? Math.round((completedToday.length / totalTodayActions) * 100) 
+                : 0;
+
+            statCompletedToday.textContent = completedToday.length;
+            statActiveToday.textContent = activeToday.length;
+            statCompletionRate.textContent = `${completionRate}%`;
+            statTotalActive.textContent = activeTasks.length;
+
+            let high = 0, med = 0, low = 0;
+            activeTasks.forEach(t => {
+                const p = (t.priority || 'med').toLowerCase();
+                if (p === 'high') high++;
+                else if (p === 'low') low++;
+                else med++;
+            });
+
+            statPriorityHigh.textContent = high;
+            statPriorityMed.textContent = med;
+            statPriorityLow.textContent = low;
+
+            const tagCounts = {};
+            (settings.tags || []).forEach(tg => { tagCounts[tg.name] = 0; });
+            let untaggedCount = 0;
+
+            activeTasks.forEach(t => {
+                if (t.tag && tagCounts.hasOwnProperty(t.tag)) {
+                    tagCounts[t.tag]++;
+                } else {
+                    untaggedCount++;
+                }
+            });
+
+            statsTagsContainer.innerHTML = '';
+            (settings.tags || []).forEach(tg => {
+                const row = document.createElement('div');
+                row.className = 'dist-row';
+                row.innerHTML = `
+                    <span class="badge" style="background-color: ${tg.color}; color: #ffffff;">${escapeHtml(tg.name)}</span>
+                    <span class="dist-count">${tagCounts[tg.name]}</span>
+                `;
+                statsTagsContainer.appendChild(row);
+            });
+
+            const untaggedRow = document.createElement('div');
+            untaggedRow.className = 'dist-row';
+            untaggedRow.innerHTML = `
+                <span class="badge">Untagged</span>
+                <span class="dist-count">${untaggedCount}</span>
+            `;
+            statsTagsContainer.appendChild(untaggedRow);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        calculateStatistics();
     </script>
 </body>
 </html>
