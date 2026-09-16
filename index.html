@@ -154,7 +154,6 @@
         let activeTaskId = null;
         let currentFilter = 'all';
 
-        // PWA Service Worker Registration
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js').catch(err => {
@@ -163,7 +162,6 @@
             });
         }
 
-        // Desktop Keyboard Shortcuts
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 if (modalOverlay.classList.contains('active')) closeModal();
@@ -184,7 +182,7 @@
         });
 
         // ==========================================
-        // SYNC ENGINE BADGE INTEGRATION
+        // SYNC ENGINE AUTO-LIFECYCLE TRIGGERS
         // ==========================================
         function updateGlobalSyncBadge(status, detail = null) {
             const badges = [desktopSyncBadge, mobileSyncBadge];
@@ -213,13 +211,31 @@
             updateGlobalSyncBadge(status, detail);
         });
 
-        // Initial sync state check
-        if (!SyncEngine.isConfigured()) {
-            updateGlobalSyncBadge('unconfigured');
-        } else {
-            const config = SyncEngine.getConfig();
-            updateGlobalSyncBadge(config.last_synced ? 'synced' : 'ready');
+        function performAutoPull() {
+            if (SyncEngine.isConfigured()) {
+                SyncEngine.pull(() => {
+                    processDailyLoginRoutine();
+                    populateQuickTagSelect();
+                    renderTasks();
+                });
+            } else {
+                updateGlobalSyncBadge('unconfigured');
+            }
         }
+
+        // Pull on page load
+        performAutoPull();
+
+        // Pull when tab regain focus
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                performAutoPull();
+            }
+        });
+
+        window.addEventListener('online', () => {
+            performAutoPull();
+        });
 
         function getTasks() {
             return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
@@ -227,6 +243,7 @@
 
         function saveTasks(tasks) {
             localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
+            SyncEngine.scheduleAutoPush();
         }
 
         function getSettings() {
