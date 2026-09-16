@@ -790,3 +790,47 @@ body {
     #main-content { padding-top: 56px; }
     #view-area { padding: 16px; }
 }
+/* style.css - Appendix: Sync Badge Indicator */
+.sync-indicator-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background-color: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    margin-left: auto;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.sync-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: #64748b;
+}
+
+.sync-indicator-badge.syncing .sync-dot {
+    background-color: #38bdf8;
+    animation: sync-pulse 1s infinite alternate;
+}
+
+.sync-indicator-badge.synced .sync-dot {
+    background-color: #10b981;
+}
+
+.sync-indicator-badge.conflict .sync-dot {
+    background-color: #f59e0b;
+}
+
+.sync-indicator-badge.error .sync-dot {
+    background-color: #ef4444;
+}
+
+@keyframes sync-pulse {
+    from { opacity: 0.3; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1.2); }
+}
