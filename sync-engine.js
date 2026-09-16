@@ -96,7 +96,7 @@ const SyncEngine = {
         }
     },
 
-    scheduleAutoPush(delayMs = 10000) {
+    scheduleAutoPush(delayMs = 45000) {
         if (!this.isConfigured()) return;
         this.hasUnsavedChanges = true;
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
