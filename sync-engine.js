@@ -5,6 +5,7 @@ const SyncEngine = {
     STORAGE_KEY_LAST_LOGIN: 'taskitator_last_login',
 
     debounceTimer: null,
+    hasUnsavedChanges: false,
     listeners: [],
 
     onStatusChange(fn) {
@@ -86,6 +87,7 @@ const SyncEngine = {
             settings.sync.last_synced = new Date().toISOString();
             localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
 
+            this.hasUnsavedChanges = false;
             this.notify('synced', { timestamp: settings.sync.last_synced });
             return { success: true, data };
         } catch (err) {
@@ -94,12 +96,22 @@ const SyncEngine = {
         }
     },
 
-    scheduleAutoPush(delayMs = 2000) {
+    scheduleAutoPush(delayMs = 10000) {
         if (!this.isConfigured()) return;
+        this.hasUnsavedChanges = true;
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
         this.debounceTimer = setTimeout(() => {
-            this.push(false);
+            if (this.hasUnsavedChanges) {
+                this.push(false);
+            }
         }, delayMs);
+    },
+
+    flushIfDirty() {
+        if (this.hasUnsavedChanges && this.isConfigured()) {
+            if (this.debounceTimer) clearTimeout(this.debounceTimer);
+            this.push(false);
+        }
     },
 
     async pull(onUpdateCallback = null) {
@@ -165,5 +177,17 @@ const SyncEngine = {
         }
     }
 };
+
+// Automatically flush pending changes to cloud when user minimizes the PWA or switches tabs
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+        SyncEngine.flushIfDirty();
+    }
+});
+
+// Flush on page exit/navigation
+window.addEventListener('beforeunload', () => {
+    SyncEngine.flushIfDirty();
+});
 
 window.SyncEngine = SyncEngine;
