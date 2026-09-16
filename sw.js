@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = 'taskitator-v2';
+const CACHE_NAME = 'taskitator-v3';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
