@@ -1,267 +1,192 @@
-<!DOCTYPE html>
 <!-- trash.html -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Taskitator - Trash Bin</title>
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#0b111e">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="stylesheet" href="style.css?v=14">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taskitator - Trash</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .trash-item {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .trash-title {
+            font-size: 0.95rem;
+            color: var(--text-color);
+            word-break: break-word;
+        }
+        .trash-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .trash-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .btn-danger {
+            background: var(--danger);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-danger:hover {
+            background: var(--danger-hover);
+        }
+    </style>
 </head>
 <body>
 
-    <div id="backdrop"></div>
+<!-- Sidebar Drawer -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<aside class="sidebar-drawer" id="sidebarDrawer">
+    <div style="font-weight: 700; font-size: 1.15rem; margin-bottom: 24px;">Taskitator</div>
+    <nav class="drawer-links">
+        <a href="index.html">📅 Today</a>
+        <a href="general.html">🗂️ General Tasks</a>
+        <a href="stats.html">📊 Stats</a>
+        <a href="trash.html" class="active">🗑️ Trash</a>
+        <a href="settings.html">⚙️ Settings</a>
+    </nav>
+</aside>
 
-    <div id="mobile-header">
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <h2>Taskitator</h2>
-            <div class="sync-indicator-badge" id="mobile-sync-badge">
-                <span class="sync-dot"></span>
-                <span class="sync-text">Offline</span>
-            </div>
+<div class="app-container">
+    <!-- Top Navbar -->
+    <header class="top-navbar">
+        <div class="nav-left">
+            <button class="icon-btn" id="openDrawerBtn" title="Menu">☰</button>
+            <h2 style="margin: 0; font-size: 1.25rem;">Trash</h2>
         </div>
-        <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
-    </div>
+        <div class="nav-right">
+            <button class="btn-danger" id="emptyTrashBtn">Empty Trash</button>
+        </div>
+    </header>
 
-    <aside id="sidebar">
-        <h2>Taskitator</h2>
-        <a href="index.html" class="nav-link">📅 Today's Tasks</a>
-        <a href="general.html" class="nav-link">📋 General List</a>
-        <a href="stats.html" class="nav-link">📊 Statistics</a>
-        <a href="settings.html" class="nav-link">⚙️ Settings</a>
-        <a href="trash.html" class="nav-link active">🗑️ Trash Bin</a>
-    </aside>
+    <ul class="task-list-tree" id="trashList"></ul>
+</div>
 
-    <main id="main-content">
-        <header id="top-nav">
-            <span style="font-size: 0.9rem; font-weight: 600; color: #94a3b8;">Retention: 14 Days</span>
-            <div class="sync-indicator-badge" id="desktop-sync-badge" style="margin-left: auto;">
-                <span class="sync-dot"></span>
-                <span class="sync-text">Cloud Sync</span>
-            </div>
-        </header>
+<script src="sync-engine.js"></script>
+<script>
+const TASKS_KEY = 'taskitator_tasks';
+let tasks = [];
 
-        <section id="view-area">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h1>Trash Bin</h1>
-                <button class="btn-danger" id="empty-trash-btn" style="display: none;">Empty Trash</button>
-            </div>
+function loadTasks() {
+    try {
+        tasks = JSON.parse(localStorage.getItem(TASKS_KEY) || '[]');
+    } catch (e) {
+        tasks = [];
+    }
+}
 
-            <p style="color: #64748b; font-size: 0.85rem; margin-bottom: 20px;">
-                Tasks remaining in trash for longer than 14 days are automatically purged upon login.
-            </p>
+function saveTasksAndPush() {
+    localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+    if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
+        SyncEngine.scheduleAutoPush(45000);
+    }
+}
 
-            <div id="trash-list"></div>
-        </section>
-    </main>
+function renderTrash() {
+    const list = document.getElementById('trashList');
+    list.innerHTML = '';
 
-    <script src="sync-engine.js"></script>
-    <script>
-        const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
-        const toggleBtn = document.getElementById('menu-toggle');
-        const sidebar = document.getElementById('sidebar');
-        const backdrop = document.getElementById('backdrop');
-        const trashList = document.getElementById('trash-list');
-        const emptyTrashBtn = document.getElementById('empty-trash-btn');
+    const trashedTasks = tasks.filter(t => t.status === 'trash');
 
-        const desktopSyncBadge = document.getElementById('desktop-sync-badge');
-        const mobileSyncBadge = document.getElementById('mobile-sync-badge');
+    if (trashedTasks.length === 0) {
+        list.innerHTML = '<li style="text-align: center; color: var(--text-muted); padding: 32px;">Trash is empty.</li>';
+        return;
+    }
 
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').catch(err => {
-                    console.warn('ServiceWorker registration failed: ', err);
-                });
-            });
-        }
+    trashedTasks.forEach(task => {
+        const li = document.createElement('li');
+        li.className = 'trash-item';
 
-        toggleBtn.addEventListener('click', () => {
-            const isOpen = sidebar.classList.toggle('open');
-            backdrop.classList.toggle('active', isOpen);
-        });
+        const info = document.createElement('div');
+        info.innerHTML = `
+            <div class="trash-title">${task.title} ${task.ai_locked ? '<span class="ai-badge">🔒 AI</span>' : ''}</div>
+            <div class="trash-meta">Created: ${new Date(task.created_at || Date.now()).toLocaleDateString()}</div>
+        `;
 
-        backdrop.addEventListener('click', () => {
-            sidebar.classList.remove('open');
-            backdrop.classList.remove('active');
-        });
+        const actions = document.createElement('div');
+        actions.className = 'trash-actions';
 
-        // ==========================================
-        // SYNC ENGINE BADGE & AUTO-PULL
-        // ==========================================
-        function updateGlobalSyncBadge(status, detail = null) {
-            const badges = [desktopSyncBadge, mobileSyncBadge];
-            badges.forEach(badge => {
-                if (!badge) return;
-                badge.className = 'sync-indicator-badge ' + status;
-                const label = badge.querySelector('.sync-text');
+        const restoreBtn = document.createElement('button');
+        restoreBtn.className = 'icon-btn';
+        restoreBtn.textContent = 'Restore';
+        restoreBtn.addEventListener('click', () => restoreTask(task.id));
 
-                if (status === 'syncing') {
-                    label.textContent = 'Syncing...';
-                } else if (status === 'synced') {
-                    label.textContent = 'Synced';
-                } else if (status === 'conflict') {
-                    label.textContent = 'Conflict';
-                } else if (status === 'error') {
-                    label.textContent = 'Sync Error';
-                } else if (status === 'unconfigured') {
-                    label.textContent = 'Local Only';
-                } else {
-                    label.textContent = 'Cloud Sync';
-                }
-            });
-        }
+        const permDelBtn = document.createElement('button');
+        permDelBtn.className = 'icon-btn';
+        permDelBtn.style.color = 'var(--danger)';
+        permDelBtn.style.borderColor = '#fca5a5';
+        permDelBtn.textContent = 'Delete Forever';
+        permDelBtn.addEventListener('click', () => permanentlyDeleteTask(task.id));
 
-        SyncEngine.onStatusChange((status, detail) => {
-            updateGlobalSyncBadge(status, detail);
-        });
+        actions.appendChild(restoreBtn);
+        actions.appendChild(permDelBtn);
 
-        function performAutoPull() {
-            if (SyncEngine.isConfigured()) {
-                SyncEngine.pull(() => {
-                    purgeExpiredTasks();
-                    renderTrash();
-                });
-            } else {
-                updateGlobalSyncBadge('unconfigured');
-            }
-        }
+        li.appendChild(info);
+        li.appendChild(actions);
+        list.appendChild(li);
+    });
+}
 
-        performAutoPull();
+function restoreTask(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    task.status = 'active';
+    saveTasksAndPush();
+    renderTrash();
+}
 
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                performAutoPull();
-            }
-        });
+function permanentlyDeleteTask(taskId) {
+    if (!confirm('Permanently delete this task? This cannot be undone.')) return;
+    tasks = tasks.filter(t => t.id !== taskId);
+    saveTasksAndPush();
+    renderTrash();
+}
 
-        window.addEventListener('online', () => {
-            performAutoPull();
-        });
-
-        function getTasks() {
-            return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
-        }
-
-        function saveTasks(tasks) {
-            localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
-            SyncEngine.scheduleAutoPush();
-        }
-
-        function getDescendantIds(parentId, allTasks) {
-            let descendants = [];
-            const children = allTasks.filter(t => t.parent_id === parentId);
-            children.forEach(child => {
-                descendants.push(child.id);
-                descendants = descendants.concat(getDescendantIds(child.id, allTasks));
-            });
-            return descendants;
-        }
-
-        function purgeExpiredTasks() {
-            const now = Date.now();
-            const tasks = getTasks();
-            const cleanTasks = tasks.filter(task => {
-                if (task.status !== 'trashed') return true;
-                const trashedTime = task.trashed_at ? new Date(task.trashed_at).getTime() : now;
-                return (now - trashedTime) < FOURTEEN_DAYS_MS;
-            });
-            if (cleanTasks.length !== tasks.length) saveTasks(cleanTasks);
-        }
-
-        function renderTrash() {
-            const allTasks = getTasks();
-            const trashedTasks = allTasks.filter(t => t.status === 'trashed');
-            trashList.innerHTML = '';
-
-            if (trashedTasks.length === 0) {
-                trashList.innerHTML = '<p style="color: #64748b; font-size: 0.9rem; margin-top: 20px;">Trash bin is empty.</p>';
-                emptyTrashBtn.style.display = 'none';
-                return;
-            }
-
-            emptyTrashBtn.style.display = 'block';
-
-            trashedTasks.forEach(task => {
-                const card = document.createElement('div');
-                card.className = 'task-card';
-                card.style.opacity = '0.75';
-
-                const daysRemaining = calculateRemainingDays(task.trashed_at);
-
-                card.innerHTML = `
-                    <div class="task-info">
-                        <div class="task-title" style="text-decoration: line-through;">${escapeHtml(task.title)}</div>
-                        <div class="task-desc">${escapeHtml(task.description || 'No description')}</div>
-                        <div class="task-meta">
-                            <span class="badge" style="background-color: #ef4444; color: #fff;">Purges in ${daysRemaining}d</span>
-                        </div>
-                    </div>
-                    <div style="display: flex; gap: 8px; margin-left: auto;">
-                        <button class="btn-restore" data-action="restore" data-id="${task.id}">Restore</button>
-                        <button class="btn-danger" data-action="delete" data-id="${task.id}">&times;</button>
-                    </div>
-                `;
-
-                card.querySelector('[data-action="restore"]').addEventListener('click', () => restoreTask(task.id));
-                card.querySelector('[data-action="delete"]').addEventListener('click', () => permanentlyDeleteTask(task.id));
-
-                trashList.appendChild(card);
-            });
-        }
-
-        function calculateRemainingDays(trashedAt) {
-            if (!trashedAt) return 14;
-            const trashedTime = new Date(trashedAt).getTime();
-            const elapsed = Date.now() - trashedTime;
-            const remainingMs = FOURTEEN_DAYS_MS - elapsed;
-            return Math.max(1, Math.ceil(remainingMs / (1000 * 60 * 60 * 24)));
-        }
-
-        function restoreTask(taskId) {
-            const tasks = getTasks();
-            const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
-
-            tasks.forEach(t => {
-                if (targetIds.has(t.id)) {
-                    t.status = 'active';
-                    t.trashed_at = null;
-                }
-            });
-
-            saveTasks(tasks);
-            renderTrash();
-        }
-
-        function permanentlyDeleteTask(taskId) {
-            if (!confirm('Permanently delete this task and its subtasks?')) return;
-            const tasks = getTasks();
-            const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
-            const filteredTasks = tasks.filter(t => !targetIds.has(t.id));
-
-            saveTasks(filteredTasks);
-            renderTrash();
-        }
-
-        emptyTrashBtn.addEventListener('click', () => {
-            if (!confirm('Permanently erase all tasks currently in the trash bin?')) return;
-            const tasks = getTasks();
-            const remainingTasks = tasks.filter(t => t.status !== 'trashed');
-
-            saveTasks(remainingTasks);
-            renderTrash();
-        });
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        purgeExpiredTasks();
+document.getElementById('emptyTrashBtn').addEventListener('click', () => {
+    const count = tasks.filter(t => t.status === 'trash').length;
+    if (count === 0) {
+        alert('Trash is already empty.');
+        return;
+    }
+    if (confirm(`Permanently delete all ${count} items in the trash?`)) {
+        tasks = tasks.filter(t => t.status !== 'trash');
+        saveTasksAndPush();
         renderTrash();
-    </script>
+    }
+});
+
+// Drawer Navigation
+const sidebarDrawer = document.getElementById('sidebarDrawer');
+const drawerBackdrop = document.getElementById('drawerBackdrop');
+
+document.getElementById('openDrawerBtn').addEventListener('click', () => {
+    sidebarDrawer.classList.add('open');
+    drawerBackdrop.classList.add('open');
+});
+
+drawerBackdrop.addEventListener('click', () => {
+    sidebarDrawer.classList.remove('open');
+    drawerBackdrop.classList.remove('open');
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadTasks();
+    renderTrash();
+});
+</script>
 </body>
 </html>
