@@ -1,676 +1,867 @@
-<!DOCTYPE html>
 <!-- index.html -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Taskitator - Today</title>
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#0b111e">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="stylesheet" href="style.css?v=14">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .app-container {
+            max-width: 680px;
+            margin: 20px auto;
+            padding: 0 16px 80px 16px;
+        }
+        .header-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .nav-links a {
+            color: #3b82f6;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-left: 12px;
+        }
+        .emergency-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #ef4444;
+            color: #ffffff;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .emergency-btn:hover {
+            background: #dc2626;
+        }
+        .info-bubble-btn {
+            background: #64748b;
+            color: #ffffff;
+            border: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            font-size: 0.75rem;
+            font-weight: bold;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .banner-emergency {
+            background: #fee2e2;
+            border: 1px solid #f87171;
+            color: #991b1b;
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        .dark-mode .banner-emergency {
+            background: #7f1d1d33;
+            border-color: #ef4444;
+            color: #fca5a5;
+        }
+        .banner-break-window {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            color: #166534;
+            padding: 14px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .dark-mode .banner-break-window {
+            background: #14532d33;
+            border-color: #22c55e;
+            color: #86efac;
+        }
+        .task-input-card {
+            background: #ffffff;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .dark-mode .task-input-card {
+            background: #1e293b;
+            border-color: #334155;
+            color: #f8fafc;
+        }
+        .form-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .form-row input[type="text"] {
+            flex: 1;
+            padding: 9px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background: #f8fafc;
+            color: inherit;
+        }
+        .dark-mode .form-row input[type="text"] {
+            background: #0f172a;
+            border-color: #475569;
+        }
+        .btn-add {
+            padding: 9px 18px;
+            background: #3b82f6;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-add:hover {
+            background: #2563eb;
+        }
+        .ai-lock-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .criteria-box-container {
+            display: none;
+            margin-bottom: 10px;
+        }
+        .criteria-box-container textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 8px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            resize: vertical;
+            min-height: 55px;
+            background: #f8fafc;
+            color: inherit;
+        }
+        .dark-mode .criteria-box-container textarea {
+            background: #0f172a;
+            border-color: #475569;
+        }
+        .task-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .task-item {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        }
+        .dark-mode .task-item {
+            background: #1e293b;
+            border-color: #334155;
+            color: #f8fafc;
+        }
+        .task-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+        .check-circle {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 2px solid #94a3b8;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            background: transparent;
+            padding: 0;
+        }
+        .task-item.completed .check-circle {
+            background: #22c55e;
+            border-color: #22c55e;
+        }
+        .task-item.completed .task-title {
+            text-decoration: line-through;
+            color: #94a3b8;
+        }
+        .task-title {
+            font-size: 0.95rem;
+            word-break: break-word;
+        }
+        .ai-badge {
+            background: #dbeafe;
+            color: #1e40af;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .dark-mode .ai-badge {
+            background: #1e3a8a;
+            color: #bfdbfe;
+        }
+        .task-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .action-btn {
+            background: transparent;
+            border: none;
+            color: #64748b;
+            cursor: pointer;
+            font-size: 0.85rem;
+            padding: 4px 6px;
+            border-radius: 4px;
+        }
+        .action-btn:hover {
+            background: #f1f5f9;
+            color: #0f172a;
+        }
+        .dark-mode .action-btn:hover {
+            background: #334155;
+            color: #f8fafc;
+        }
+        .action-btn.delete-btn:hover {
+            color: #ef4444;
+        }
+        .action-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay.open {
+            display: flex;
+        }
+        .modal-box {
+            background: #ffffff;
+            border-radius: 12px;
+            max-width: 520px;
+            width: 90%;
+            padding: 22px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .dark-mode .modal-box {
+            background: #1e293b;
+            color: #f1f5f9;
+        }
+        .audit-critique-box {
+            background: #fee2e2;
+            border: 1px solid #f87171;
+            color: #991b1b;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            margin-top: 12px;
+            line-height: 1.4;
+        }
+        .dark-mode .audit-critique-box {
+            background: #7f1d1d33;
+            border-color: #ef4444;
+            color: #fca5a5;
+        }
+        .break-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .break-row input[type="time"] {
+            padding: 6px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            background: #f8fafc;
+            color: inherit;
+        }
+        .dark-mode .break-row input[type="time"] {
+            background: #0f172a;
+            border-color: #475569;
+        }
+    </style>
 </head>
 <body>
 
-    <div id="backdrop"></div>
-
-    <div id="mobile-header">
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <h2>Taskitator</h2>
-            <div class="sync-indicator-badge" id="mobile-sync-badge">
-                <span class="sync-dot"></span>
-                <span class="sync-text">Offline</span>
-            </div>
-        </div>
-        <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
-    </div>
-
-    <aside id="sidebar">
-        <h2>Taskitator</h2>
-        <a href="index.html" class="nav-link active">📅 Today's Tasks</a>
-        <a href="general.html" class="nav-link">📋 General List</a>
-        <a href="stats.html" class="nav-link">📊 Statistics</a>
-        <a href="settings.html" class="nav-link">⚙️ Settings</a>
-        <a href="trash.html" class="nav-link">🗑️ Trash Bin</a>
-    </aside>
-
-    <main id="main-content">
-        <header id="top-nav">
-            <a href="#" class="tab-link active" data-filter="all">All Today</a>
-            <a href="#" class="tab-link" data-filter="priority">By Priority</a>
-            <a href="#" class="tab-link" data-filter="tag">By Tag</a>
-            <div class="sync-indicator-badge" id="desktop-sync-badge" style="margin-left: auto;">
-                <span class="sync-dot"></span>
-                <span class="sync-text">Cloud Sync</span>
-            </div>
-        </header>
-
-        <section id="view-area">
-            <h1>Today's To-Do List</h1>
-
-            <form id="add-task-form" class="add-task-bar">
-                <input type="text" id="task-title-input" class="task-input" placeholder="Add a new root task (Press '/' to focus)..." required maxlength="80">
-                <select id="quick-tag-input" class="quick-tag-select">
-                    <option value="">No Tag</option>
-                </select>
-                <button type="submit" class="add-btn">+</button>
-            </form>
-
-            <div id="task-list"></div>
-        </section>
-    </main>
-
-    <div id="modal-overlay">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3 id="modal-heading">Edit Task</h3>
-                <button class="close-modal-btn" id="close-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="modal-edit-field">
-                    <label class="modal-label" for="edit-title">Title</label>
-                    <input type="text" id="edit-title" class="modal-input" maxlength="80" required>
-                </div>
-                <div class="modal-edit-field">
-                    <label class="modal-label" for="edit-desc">Description</label>
-                    <textarea id="edit-desc" class="modal-textarea" rows="2" placeholder="Add details..."></textarea>
-                </div>
-                <div class="modal-row">
-                    <div class="modal-edit-field">
-                        <label class="modal-label" for="edit-priority">Priority</label>
-                        <select id="edit-priority" class="modal-select">
-                            <option value="high">High</option>
-                            <option value="med">Medium</option>
-                            <option value="low">Low</option>
-                        </select>
-                    </div>
-                    <div class="modal-edit-field">
-                        <label class="modal-label" for="edit-due">Due Date</label>
-                        <input type="date" id="edit-due" class="modal-input">
-                    </div>
-                </div>
-                <div class="modal-edit-field">
-                    <label class="modal-label">Tag</label>
-                    <div id="modal-tags" class="modal-tags-wrapper"></div>
-                </div>
-                <div class="modal-field-group">
-                    <label class="modal-checkbox-label">
-                        <input type="checkbox" id="modal-recur-checkbox">
-                        Repeat this task
-                    </label>
-                    <select id="modal-recur-rule" class="modal-recurrence-select" style="display: none;">
-                        <option value="daily">Every Day</option>
-                        <option value="weekdays">Weekdays Only (Skips Weekend)</option>
-                        <option value="weekly">Once a Week</option>
-                        <option value="monthly">Once a Month</option>
-                    </select>
-                </div>
-                <div class="modal-subtasks-section">
-                    <h4>Direct Sub-Tasks</h4>
-                    <div id="modal-subtasks-list"></div>
-                    <form id="modal-subtask-form" class="modal-subtask-form">
-                        <input type="text" id="subtask-input" class="modal-subtask-input" placeholder="Add a direct sub-task..." required maxlength="80">
-                        <button type="submit" class="modal-subtask-add-btn">+</button>
-                    </form>
-                </div>
-            </div>
-            <div class="modal-actions">
-                <button class="trash-btn" id="trash-task-btn">Trash Task</button>
+<div class="app-container">
+    <!-- Header -->
+    <div class="header-bar">
+        <h2 style="margin: 0;">Today's Focus</h2>
+        <div class="header-actions">
+            <button class="emergency-btn" id="emergencyTriggerBtn">
+                🚨 Emergency (<span id="emergencyCountDisplay">4/4</span>)
+            </button>
+            <button class="info-bubble-btn" id="emergencyInfoBtn" title="Emergency Bypass Rules">!</button>
+            <div class="nav-links">
+                <a href="general.html">General</a>
+                <a href="settings.html">Settings</a>
             </div>
         </div>
     </div>
 
-    <script src="sync-engine.js"></script>
-    <script>
-        const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
-        const toggleBtn = document.getElementById('menu-toggle');
-        const sidebar = document.getElementById('sidebar');
-        const backdrop = document.getElementById('backdrop');
-        const taskForm = document.getElementById('add-task-form');
-        const taskInput = document.getElementById('task-title-input');
-        const quickTagInput = document.getElementById('quick-tag-input');
-        const taskList = document.getElementById('task-list');
-        const navTabs = document.querySelectorAll('#top-nav .tab-link');
+    <!-- Active Emergency Banner -->
+    <div id="activeEmergencyBanner" class="banner-emergency" style="display: none;">
+        <span>🚨 Emergency Active: AI task restrictions temporarily lifted!</span>
+        <span id="emergencyCountdownTimer">15:00</span>
+    </div>
 
-        const modalOverlay = document.getElementById('modal-overlay');
-        const closeModalBtn = document.getElementById('close-modal');
-        const editTitle = document.getElementById('edit-title');
-        const editDesc = document.getElementById('edit-desc');
-        const editPriority = document.getElementById('edit-priority');
-        const editDue = document.getElementById('edit-due');
-        const modalTags = document.getElementById('modal-tags');
-        const modalRecurCheckbox = document.getElementById('modal-recur-checkbox');
-        const modalRecurRule = document.getElementById('modal-recur-rule');
+    <!-- Daily Break Scheduling Banner (Shown during active selection window) -->
+    <div id="breakSchedulerContainer" class="banner-break-window" style="display: none;">
+        <h4 style="margin: 0 0 8px 0;">⏸️ Schedule Today's Breaks (Selection Window Open)</h4>
+        <p style="font-size: 0.825rem; margin: 0 0 12px 0;">
+            Schedule up to 3 non-overlapping breaks totaling &le; 3 hours. Locks permanently when this window closes.
+        </p>
+        <div id="breakInputsList"></div>
+        <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <button class="action-btn" id="addBreakRowBtn" style="background: #e2e8f0; font-weight: 600;">+ Add Break</button>
+            <button class="btn-add" id="saveBreaksBtn" style="padding: 6px 14px; font-size: 0.85rem;">Save Today's Breaks</button>
+        </div>
+    </div>
 
-        const modalSubtasksList = document.getElementById('modal-subtasks-list');
-        const modalSubtaskForm = document.getElementById('modal-subtask-form');
-        const subtaskInput = document.getElementById('subtask-input');
-        const trashTaskBtn = document.getElementById('trash-task-btn');
+    <!-- Task Creation Card -->
+    <div class="task-input-card">
+        <form id="taskCreateForm">
+            <div class="form-row">
+                <input type="text" id="taskTitleInput" placeholder="Add a task for today..." required autocomplete="off">
+                <button type="submit" class="btn-add">Add Task</button>
+            </div>
+            
+            <label class="ai-lock-row">
+                <input type="checkbox" id="aiLockCheckbox">
+                <span>Require AI Proof Verification (Irrevocable)</span>
+            </label>
 
-        const desktopSyncBadge = document.getElementById('desktop-sync-badge');
-        const mobileSyncBadge = document.getElementById('mobile-sync-badge');
+            <div class="criteria-box-container" id="criteriaBoxContainer">
+                <label style="display:block; font-size: 0.8rem; margin-bottom: 4px; color: #64748b;">
+                    Proof Criteria (Describe what photograph proves completion):
+                </label>
+                <textarea id="taskCriteriaInput" placeholder="e.g. Photo of completed math problem #5 with handwritten date."></textarea>
+            </div>
+        </form>
+    </div>
 
-        let activeTaskId = null;
-        let currentFilter = 'all';
+    <!-- Task List -->
+    <ul class="task-list" id="todayTaskList"></ul>
+</div>
 
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').catch(err => {
-                    console.warn('ServiceWorker registration failed: ', err);
-                });
-            });
+<!-- Modal: Proof Verification Audit -->
+<div class="modal-overlay" id="auditModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0;">Submit AI Proof</h3>
+        <p id="auditTaskTitleDisplay" style="font-weight: 600; margin-bottom: 6px;"></p>
+        <div id="auditCriteriaDisplay" style="font-size: 0.85rem; color: #64748b; margin-bottom: 16px; background: #f1f5f9; padding: 10px; border-radius: 6px;"></div>
+
+        <div style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px;">Upload Photo Proof (Required):</label>
+            <input type="file" id="auditImageInput" accept="image/*" capture="environment">
+        </div>
+
+        <div style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px;">Optional Explanation / Note:</label>
+            <textarea id="auditContextInput" style="width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.85rem;" placeholder="Any extra context for the auditor..."></textarea>
+        </div>
+
+        <div id="auditFeedbackContainer" style="display: none;"></div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+            <button class="action-btn" id="closeAuditModalBtn">Cancel</button>
+            <button class="btn-add" id="submitProofBtn">Verify & Complete</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Emergency Confirmation -->
+<div class="modal-overlay" id="emergencyConfirmModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0; color: #dc2626;">🚨 Activate Emergency Bypass?</h3>
+        <p style="font-size: 0.875rem; line-height: 1.5;">
+            Activating this bypass consumes <strong>1 of your 4 weekly tokens</strong>.<br>
+            It will unlock editing and deletion of AI-locked tasks for exactly <strong>15 minutes</strong>.<br>
+            Once 15 minutes expire, all tasks lock back down immediately.
+        </p>
+        <p style="font-size: 0.85rem; font-weight: 600;" id="emergencyModalRemainingUses"></p>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+            <button class="action-btn" id="cancelEmergencyBtn">Cancel</button>
+            <button class="emergency-btn" id="confirmEmergencyBtn">Confirm & Activate (15 min)</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Emergency Info -->
+<div class="modal-overlay" id="emergencyInfoModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0;">ℹ️ Emergency Bypass Rules</h3>
+        <p style="font-size: 0.875rem; line-height: 1.5;">
+            • You have <strong>4 emergency uses</strong> per weekly cycle.<br>
+            • Each activation grants a <strong>15-minute window</strong> where AI-checked tasks can be altered or deleted.<br>
+            • Quota resets at <strong>00:00 after your configured weekend</strong>.<br>
+            • Regular breaks unfreeze your phone, but <em>never</em> permit altering AI-checked tasks.
+        </p>
+        <div style="text-align: right; margin-top: 18px;">
+            <button class="btn-add" id="closeEmergencyInfoModalBtn" style="padding: 6px 14px;">Understood</button>
+        </div>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="audit-engine.js"></script>
+<script src="sync-engine.js"></script>
+<script>
+// =========================================================================
+// App State & Storage Keys
+// =========================================================================
+const TASKS_KEY = 'taskitator_tasks';
+let tasks = [];
+let pendingAuditTaskId = null;
+let emergencyTimerInterval = null;
+
+function loadTasks() {
+    try {
+        const raw = localStorage.getItem(TASKS_KEY);
+        tasks = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        tasks = [];
+    }
+}
+
+function saveTasksAndSchedulePush() {
+    localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+    if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
+        // Collect break snapshot alongside tasks
+        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
+        SyncEngine.scheduleAutoPush(45000, { today_breaks: breaks });
+    }
+}
+
+// =========================================================================
+// UI Renderers & Task Operations
+// =========================================================================
+function renderTasks() {
+    const list = document.getElementById('todayTaskList');
+    list.innerHTML = '';
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
+
+    const todayTasks = tasks.filter(t => {
+        if (t.status === 'trash') return false;
+        const due = String(t.due_date || 'today').trim().toLowerCase();
+        return due === 'today' || due === todayStr;
+    });
+
+    if (todayTasks.length === 0) {
+        list.innerHTML = '<li style="color: #94a3b8; text-align: center; padding: 20px;">No tasks scheduled for today.</li>';
+        return;
+    }
+
+    todayTasks.forEach(task => {
+        const li = document.createElement('li');
+        li.className = `task-item ${task.status === 'completed' ? 'completed' : ''}`;
+
+        const left = document.createElement('div');
+        left.className = 'task-left';
+
+        const checkBtn = document.createElement('button');
+        checkBtn.className = 'check-circle';
+        checkBtn.innerHTML = task.status === 'completed' ? '✓' : '';
+        checkBtn.style.color = '#ffffff';
+        checkBtn.addEventListener('click', () => handleTaskCompletionClick(task.id));
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'task-title';
+        titleSpan.textContent = task.title;
+
+        left.appendChild(checkBtn);
+        left.appendChild(titleSpan);
+
+        if (task.ai_locked) {
+            const badge = document.createElement('span');
+            badge.className = 'ai-badge';
+            badge.innerHTML = '🔒 AI Proof';
+            left.appendChild(badge);
         }
 
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                if (modalOverlay.classList.contains('active')) closeModal();
-            } else if (e.key === '/' && document.activeElement !== taskInput && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
-                e.preventDefault();
-                taskInput.focus();
-            }
-        });
+        const actions = document.createElement('div');
+        actions.className = 'task-actions';
 
-        toggleBtn.addEventListener('click', () => {
-            const isOpen = sidebar.classList.toggle('open');
-            backdrop.classList.toggle('active', isOpen);
-        });
+        // Delete button is strictly disabled/hidden on AI tasks unless emergency bypass is active
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'action-btn delete-btn';
+        deleteBtn.textContent = '✕';
+        deleteBtn.title = 'Delete Task';
 
-        backdrop.addEventListener('click', () => {
-            sidebar.classList.remove('open');
-            backdrop.classList.remove('active');
-        });
-
-        // ==========================================
-        // SYNC ENGINE AUTO-LIFECYCLE TRIGGERS
-        // ==========================================
-        function updateGlobalSyncBadge(status, detail = null) {
-            const badges = [desktopSyncBadge, mobileSyncBadge];
-            badges.forEach(badge => {
-                if (!badge) return;
-                badge.className = 'sync-indicator-badge ' + status;
-                const label = badge.querySelector('.sync-text');
-
-                if (status === 'syncing') {
-                    label.textContent = 'Syncing...';
-                } else if (status === 'synced') {
-                    label.textContent = 'Synced';
-                } else if (status === 'conflict') {
-                    label.textContent = 'Conflict';
-                } else if (status === 'error') {
-                    label.textContent = 'Sync Error';
-                } else if (status === 'unconfigured') {
-                    label.textContent = 'Local Only';
-                } else {
-                    label.textContent = 'Cloud Sync';
-                }
-            });
+        if (task.ai_locked && !isBypassActive) {
+            deleteBtn.disabled = true;
+            deleteBtn.title = 'AI tasks cannot be deleted without emergency bypass';
+        } else {
+            deleteBtn.addEventListener('click', () => deleteTask(task.id));
         }
 
-        SyncEngine.onStatusChange((status, detail) => {
-            updateGlobalSyncBadge(status, detail);
-        });
-
-        function performAutoPull() {
-            if (SyncEngine.isConfigured()) {
-                SyncEngine.pull(() => {
-                    processDailyLoginRoutine();
-                    populateQuickTagSelect();
-                    renderTasks();
-                });
-            } else {
-                updateGlobalSyncBadge('unconfigured');
-            }
-        }
-
-        // Pull on page load
-        performAutoPull();
-
-        // Pull when tab regain focus
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                performAutoPull();
-            }
-        });
-
-        window.addEventListener('online', () => {
-            performAutoPull();
-        });
-
-        function getTasks() {
-            return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
-        }
-
-        function saveTasks(tasks) {
-            localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
-            SyncEngine.scheduleAutoPush();
-        }
-
-        function getSettings() {
-            return JSON.parse(localStorage.getItem('taskitator_settings')) || {
-                weekendDays: [5, 6],
-                tags: [
-                    { id: '1', name: 'Work', color: '#0284c7' },
-                    { id: '2', name: 'Personal', color: '#10b981' },
-                    { id: '3', name: 'Urgent', color: '#ef4444' }
-                ]
-            };
-        }
-
-        function populateQuickTagSelect() {
-            const settings = getSettings();
-            const tags = settings.tags || [];
-            quickTagInput.innerHTML = '<option value="">No Tag</option>';
-            tags.forEach(tag => {
-                const opt = document.createElement('option');
-                opt.value = tag.name;
-                opt.textContent = tag.name;
-                quickTagInput.appendChild(opt);
-            });
-        }
-
-        function purgeExpiredTasks() {
-            const now = Date.now();
-            const tasks = getTasks();
-            const cleanTasks = tasks.filter(task => {
-                if (task.status !== 'trashed') return true;
-                const trashedTime = task.trashed_at ? new Date(task.trashed_at).getTime() : now;
-                return (now - trashedTime) < FOURTEEN_DAYS_MS;
-            });
-            if (cleanTasks.length !== tasks.length) saveTasks(cleanTasks);
-        }
-
-        function getDescendantIds(parentId, allTasks) {
-            let descendants = [];
-            const children = allTasks.filter(t => t.parent_id === parentId);
-            children.forEach(child => {
-                descendants.push(child.id);
-                descendants = descendants.concat(getDescendantIds(child.id, allTasks));
-            });
-            return descendants;
-        }
-
-        function processDailyLoginRoutine() {
-            const todayStr = new Date().toISOString().split('T')[0];
-            const lastLogin = localStorage.getItem('taskitator_last_login');
-            const settings = getSettings();
-            const todayDayOfWeek = new Date().getDay();
-
-            let tasks = getTasks();
-            let changed = false;
-
-            if (lastLogin !== todayStr) {
-                tasks.forEach(task => {
-                    if (!task.is_recurring || task.status === 'trashed') return;
-                    if (task.status === 'completed') {
-                        let shouldSpawn = false;
-                        const rule = task.recurrence_rule || 'daily';
-                        const completedDate = task.completed_at ? new Date(task.completed_at) : new Date(0);
-                        const daysDiff = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
-
-                        if (rule === 'daily') {
-                            shouldSpawn = true;
-                        } else if (rule === 'weekdays') {
-                            const isWeekend = (settings.weekendDays || [5, 6]).includes(todayDayOfWeek);
-                            if (!isWeekend) shouldSpawn = true;
-                        } else if (rule === 'weekly') {
-                            if (daysDiff >= 7) shouldSpawn = true;
-                        } else if (rule === 'monthly') {
-                            if (daysDiff >= 30) shouldSpawn = true;
-                        }
-
-                        if (shouldSpawn) {
-                            task.status = 'active';
-                            task.due_date = 'today';
-                            task.completed_at = null;
-
-                            const descendantIds = new Set(getDescendantIds(task.id, tasks));
-                            tasks.forEach(dt => {
-                                if (descendantIds.has(dt.id) && dt.status !== 'trashed') {
-                                    dt.status = 'active';
-                                    dt.completed_at = null;
-                                }
-                            });
-
-                            changed = true;
-                        }
-                    }
-                });
-                localStorage.setItem('taskitator_last_login', todayStr);
-                if (changed) saveTasks(tasks);
-            }
-        }
-
-        navTabs.forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                e.preventDefault();
-                navTabs.forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                currentFilter = tab.dataset.filter;
-                renderTasks();
-            });
-        });
-
-        function renderTasks() {
-            const allTasks = getTasks();
-            const activeTasks = allTasks.filter(t => t.status === 'active');
-            taskList.innerHTML = '';
-
-            if (activeTasks.length === 0) {
-                taskList.innerHTML = '<p style="color: #64748b; font-size: 0.9rem; margin-top: 20px;">No tasks for today. Tap above to add one.</p>';
-                return;
-            }
-
-            if (currentFilter === 'all') {
-                function appendTaskTree(parentId, depth) {
-                    const children = activeTasks.filter(t => t.parent_id === parentId);
-                    children.forEach(task => {
-                        const card = createTaskCard(task, depth, allTasks);
-                        taskList.appendChild(card);
-                        appendTaskTree(task.id, depth + 1);
-                    });
-                }
-                appendTaskTree(null, 0);
-            } else if (currentFilter === 'priority') {
-                renderGroupedToday(activeTasks, allTasks, t => (t.priority || 'med').toUpperCase(), ['HIGH', 'MED', 'LOW']);
-            } else if (currentFilter === 'tag') {
-                renderGroupedToday(activeTasks, allTasks, t => t.tag || 'Untagged');
-            }
-        }
-
-        function renderGroupedToday(tasks, allTasks, keyFn, customOrder = null) {
-            const groups = {};
-            tasks.forEach(t => {
-                const key = keyFn(t);
-                if (!groups[key]) groups[key] = [];
-                groups[key].push(t);
-            });
-
-            let keys = Object.keys(groups);
-            if (customOrder) {
-                keys = customOrder.filter(k => groups[k]).concat(keys.filter(k => !customOrder.includes(k)));
-            }
-
-            const settings = getSettings();
-
-            keys.forEach(key => {
-                const section = document.createElement('div');
-                section.className = 'group-section';
-
-                const title = document.createElement('div');
-                title.className = 'group-title';
-
-                const matchedTag = (settings.tags || []).find(tg => tg.name.toLowerCase() === key.toLowerCase());
-                const dotHtml = matchedTag ? `<span class="tag-color-dot" style="background-color: ${matchedTag.color}"></span>` : '';
-
-                title.innerHTML = `<span class="group-title-tag">${dotHtml}${escapeHtml(key)}</span> <span class="group-count">${groups[key].length}</span>`;
-                section.appendChild(title);
-
-                groups[key].forEach(t => {
-                    section.appendChild(createTaskCard(t, 0, allTasks));
-                });
-                taskList.appendChild(section);
-            });
-        }
-
-        function createTaskCard(task, depth, allTasks) {
-            const card = document.createElement('div');
-            const safeDepth = Math.min(depth, 3);
-            card.className = `task-card depth-${safeDepth}`;
-            card.dataset.id = task.id;
-
-            const directSubtasks = allTasks.filter(t => t.parent_id === task.id && t.status !== 'trashed');
-            const completedCount = directSubtasks.filter(t => t.status === 'completed').length;
-            const subtaskBadge = directSubtasks.length > 0 
-                ? `<span class="subtask-badge">${completedCount}/${directSubtasks.length} subtasks</span>` 
-                : '';
-
-            const recurringBadge = task.is_recurring 
-                ? `<span class="badge-recurring">🔁 ${escapeHtml(task.recurrence_rule || 'daily')}</span>` 
-                : '';
-
-            const priorityClass = task.priority ? `badge-priority-${task.priority}` : '';
-
-            const settings = getSettings();
-            const tagObj = (settings.tags || []).find(t => t.name === task.tag);
-            const tagBadge = tagObj 
-                ? `<span class="badge" style="background-color: ${tagObj.color}; color: #ffffff;">${escapeHtml(tagObj.name)}</span>` 
-                : (task.tag ? `<span class="badge">${escapeHtml(task.tag)}</span>` : '');
-
-            card.innerHTML = `
-                <div class="check-circle" data-action="complete"></div>
-                <div class="task-info">
-                    <div class="task-title">${escapeHtml(task.title)}</div>
-                    <div class="task-desc">${escapeHtml(task.description || 'No description')}</div>
-                    <div class="task-meta">
-                        <span class="badge ${priorityClass}">${task.priority || 'Normal'}</span>
-                        <span class="due-badge">${task.due_date || 'Today'}</span>
-                        ${tagBadge}
-                        ${recurringBadge}
-                        ${subtaskBadge}
-                    </div>
-                </div>
-            `;
-
-            card.addEventListener('click', (e) => {
-                if (e.target.dataset.action === 'complete') {
-                    triggerComplete(task.id, card);
-                } else {
-                    openModal(task.id);
-                }
-            });
-
-            return card;
-        }
-
-        function triggerComplete(taskId, element) {
-            element.classList.add('completing');
-            setTimeout(() => {
-                const tasks = getTasks();
-                const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
-                const nowIso = new Date().toISOString();
-
-                tasks.forEach(t => {
-                    if (targetIds.has(t.id)) {
-                        t.status = 'completed';
-                        t.completed_at = nowIso;
-                    }
-                });
-                saveTasks(tasks);
-                renderTasks();
-            }, 350);
-        }
-
-        trashTaskBtn.addEventListener('click', () => {
-            if (!activeTaskId) return;
-            const tasks = getTasks();
-            const targetIds = new Set([activeTaskId, ...getDescendantIds(activeTaskId, tasks)]);
-            const timestamp = new Date().toISOString();
-
-            tasks.forEach(t => {
-                if (targetIds.has(t.id)) {
-                    t.status = 'trashed';
-                    t.trashed_at = timestamp;
-                }
-            });
-            saveTasks(tasks);
-            closeModal();
-            renderTasks();
-        });
-
-        function openModal(taskId) {
-            activeTaskId = taskId;
-            const tasks = getTasks();
-            const task = tasks.find(t => t.id === taskId);
-            if (!task) return;
-
-            editTitle.value = task.title || '';
-            editDesc.value = task.description || '';
-            editPriority.value = task.priority || 'med';
-            editDue.value = (task.due_date && task.due_date !== 'today') ? task.due_date : '';
-
-            modalRecurCheckbox.checked = !!task.is_recurring;
-            modalRecurRule.style.display = task.is_recurring ? 'block' : 'none';
-            modalRecurRule.value = task.recurrence_rule || 'daily';
-
-            renderModalTagPicker(task.tag);
-            renderModalSubtasks(task.id, tasks);
-            modalOverlay.classList.add('active');
-        }
-
-        function renderModalTagPicker(selectedTag) {
-            modalTags.innerHTML = '';
-            const settings = getSettings();
-            const tags = settings.tags || [];
-
-            if (tags.length === 0) {
-                modalTags.innerHTML = '<span style="color: #64748b; font-size: 0.8rem;">No tags created in Settings.</span>';
-                return;
-            }
-
-            tags.forEach(tag => {
-                const chip = document.createElement('span');
-                chip.className = `modal-tag-chip ${selectedTag === tag.name ? 'active' : ''}`;
-                chip.style.backgroundColor = tag.color;
-                chip.style.color = '#ffffff';
-                chip.textContent = tag.name;
-
-                chip.addEventListener('click', () => {
-                    const tasks = getTasks();
-                    const task = tasks.find(t => t.id === activeTaskId);
-                    if (!task) return;
-
-                    task.tag = task.tag === tag.name ? null : tag.name;
-                    saveTasks(tasks);
-                    renderModalTagPicker(task.tag);
-                    renderTasks();
-                });
-                modalTags.appendChild(chip);
-            });
-        }
-
-        function handleModalFieldChange() {
-            if (!activeTaskId) return;
-            const tasks = getTasks();
-            const task = tasks.find(t => t.id === activeTaskId);
-            if (!task) return;
-
-            task.title = editTitle.value.trim() || 'Untitled Task';
-            task.description = editDesc.value.trim();
-            task.priority = editPriority.value;
-            task.due_date = editDue.value || 'today';
-            task.is_recurring = modalRecurCheckbox.checked;
-            task.recurrence_rule = modalRecurCheckbox.checked ? modalRecurRule.value : null;
-
-            saveTasks(tasks);
-            renderTasks();
-        }
-
-        editTitle.addEventListener('input', handleModalFieldChange);
-        editDesc.addEventListener('input', handleModalFieldChange);
-        editPriority.addEventListener('change', handleModalFieldChange);
-        editDue.addEventListener('change', handleModalFieldChange);
-
-        modalRecurCheckbox.addEventListener('change', () => {
-            modalRecurRule.style.display = modalRecurCheckbox.checked ? 'block' : 'none';
-            handleModalFieldChange();
-        });
-
-        modalRecurRule.addEventListener('change', handleModalFieldChange);
-
-        function renderModalSubtasks(parentId, allTasks) {
-            modalSubtasksList.innerHTML = '';
-            const subtasks = allTasks.filter(t => t.parent_id === parentId && t.status !== 'trashed');
-
-            if (subtasks.length === 0) {
-                modalSubtasksList.innerHTML = '<p style="color: #64748b; font-size: 0.8rem;">No sub-tasks yet.</p>';
-                return;
-            }
-
-            subtasks.forEach(st => {
-                const item = document.createElement('div');
-                item.className = 'modal-subtask-item';
-                const statusIcon = st.status === 'completed' ? '✓' : '○';
-                item.innerHTML = `
-                    <span>${statusIcon} ${escapeHtml(st.title)}</span>
-                    <span style="color: #64748b; font-size: 0.75rem;">${st.status}</span>
-                `;
-                modalSubtasksList.appendChild(item);
-            });
-        }
-
-        function closeModal() {
-            modalOverlay.classList.remove('active');
-            activeTaskId = null;
-        }
-
-        closeModalBtn.addEventListener('click', closeModal);
-        modalOverlay.addEventListener('click', (e) => {
-            if (e.target === modalOverlay) closeModal();
-        });
-
-        modalSubtaskForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const title = subtaskInput.value.trim();
-            if (!title || !activeTaskId) return;
-
-            const newSubtask = {
-                id: Date.now().toString(),
-                parent_id: activeTaskId,
-                title: title,
-                description: '',
-                priority: 'med',
-                due_date: 'today',
-                status: 'active',
-                tag: null,
-                is_recurring: false,
-                recurrence_rule: null
-            };
-
-            const tasks = getTasks();
-            tasks.push(newSubtask);
-            saveTasks(tasks);
-
-            subtaskInput.value = '';
-            renderModalSubtasks(activeTaskId, tasks);
-            renderTasks();
-        });
-
-        taskForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const title = taskInput.value.trim();
-            if (!title) return;
-
-            const newTask = {
-                id: Date.now().toString(),
-                parent_id: null,
-                title: title,
-                description: '',
-                priority: 'med',
-                due_date: 'today',
-                status: 'active',
-                tag: quickTagInput.value || null,
-                is_recurring: false,
-                recurrence_rule: null
-            };
-
-            const tasks = getTasks();
-            tasks.unshift(newTask);
-            saveTasks(tasks);
-            taskInput.value = '';
-            renderTasks();
-        });
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        purgeExpiredTasks();
-        processDailyLoginRoutine();
-        populateQuickTagSelect();
+        actions.appendChild(deleteBtn);
+        li.appendChild(left);
+        li.appendChild(actions);
+        list.appendChild(li);
+    });
+}
+
+function handleTaskCompletionClick(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    // Unchecking an already completed task
+    if (task.status === 'completed') {
+        task.status = 'active';
+        task.completed_at = null;
+        saveTasksAndSchedulePush();
         renderTasks();
-    </script>
+        return;
+    }
+
+    // Intercept AI-locked task
+    if (task.ai_locked) {
+        openAuditModal(task);
+        return;
+    }
+
+    // Standard task
+    task.status = 'completed';
+    task.completed_at = new Date().toISOString();
+    saveTasksAndSchedulePush();
+    renderTasks();
+}
+
+function deleteTask(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    if (task.ai_locked && !TaskitatorEngine.EmergencyManager.isBypassActive()) {
+        alert('Forbidden: AI-locked tasks cannot be deleted without an active Emergency Bypass.');
+        return;
+    }
+
+    if (confirm(`Delete "${task.title}"?`)) {
+        task.status = 'trash';
+        saveTasksAndSchedulePush();
+        renderTasks();
+    }
+}
+
+// =========================================================================
+// Proof Audit Modal Handling
+// =========================================================================
+const auditModal = document.getElementById('auditModal');
+const auditTaskTitle = document.getElementById('auditTaskTitleDisplay');
+const auditCriteriaDisplay = document.getElementById('auditCriteriaDisplay');
+const auditImageInput = document.getElementById('auditImageInput');
+const auditContextInput = document.getElementById('auditContextInput');
+const auditFeedback = document.getElementById('auditFeedbackContainer');
+const submitProofBtn = document.getElementById('submitProofBtn');
+
+function openAuditModal(task) {
+    pendingAuditTaskId = task.id;
+    auditTaskTitle.textContent = task.title;
+    auditCriteriaDisplay.innerHTML = `<strong>Required Criteria:</strong> ${task.proof_criteria || 'Clear visual proof that the task was completed.'}`;
+    auditImageInput.value = '';
+    auditContextInput.value = '';
+    auditFeedback.style.display = 'none';
+    submitProofBtn.disabled = false;
+    submitProofBtn.textContent = 'Verify & Complete';
+    auditModal.classList.add('open');
+}
+
+function closeAuditModal() {
+    auditModal.classList.remove('open');
+    pendingAuditTaskId = null;
+}
+
+document.getElementById('closeAuditModalBtn').addEventListener('click', closeAuditModal);
+
+submitProofBtn.addEventListener('click', async () => {
+    if (!pendingAuditTaskId) return;
+    const task = tasks.find(t => t.id === pendingAuditTaskId);
+    if (!task) return;
+
+    const file = auditImageInput.files[0];
+    if (!file) {
+        alert('Please attach a photograph as proof.');
+        return;
+    }
+
+    submitProofBtn.disabled = true;
+    submitProofBtn.textContent = 'Auditing Proof...';
+    auditFeedback.style.display = 'none';
+
+    const result = await TaskitatorEngine.AuditEngine.verifyProof({
+        imageFile: file,
+        taskTitle: task.title,
+        criteria: task.proof_criteria,
+        userContext: auditContextInput.value.trim()
+    });
+
+    if (!result.success) {
+        submitProofBtn.disabled = false;
+        submitProofBtn.textContent = 'Verify & Complete';
+        auditFeedback.className = 'audit-critique-box';
+        auditFeedback.style.display = 'block';
+        auditFeedback.innerHTML = `<strong>Verification Blocked:</strong> ${result.error}`;
+        return;
+    }
+
+    if (result.approved) {
+        task.status = 'completed';
+        task.completed_at = new Date().toISOString();
+        task.verified_model = result.model_used;
+        saveTasksAndSchedulePush();
+        closeAuditModal();
+        renderTasks();
+    } else {
+        submitProofBtn.disabled = false;
+        submitProofBtn.textContent = 'Retry Verification';
+        auditFeedback.className = 'audit-critique-box';
+        auditFeedback.style.display = 'block';
+        auditFeedback.innerHTML = `<strong>Verdict: ${result.verdict.toUpperCase()}</strong><br>${result.critique}`;
+    }
+});
+
+// =========================================================================
+// Emergency Bypass Operations
+// =========================================================================
+const emergencyTriggerBtn = document.getElementById('emergencyTriggerBtn');
+const emergencyConfirmModal = document.getElementById('emergencyConfirmModal');
+const activeEmergencyBanner = document.getElementById('activeEmergencyBanner');
+const emergencyCountdownTimer = document.getElementById('emergencyCountdownTimer');
+
+function updateEmergencyUI() {
+    const state = TaskitatorEngine.EmergencyManager.getState();
+    document.getElementById('emergencyCountDisplay').textContent = `${state.uses_left}/4`;
+
+    if (TaskitatorEngine.EmergencyManager.isBypassActive()) {
+        activeEmergencyBanner.style.display = 'flex';
+        startEmergencyTimer();
+    } else {
+        activeEmergencyBanner.style.display = 'none';
+        clearInterval(emergencyTimerInterval);
+    }
+    renderTasks();
+}
+
+function startEmergencyTimer() {
+    clearInterval(emergencyTimerInterval);
+    emergencyTimerInterval = setInterval(() => {
+        const remaining = TaskitatorEngine.EmergencyManager.getRemainingWindowSeconds();
+        if (remaining <= 0) {
+            clearInterval(emergencyTimerInterval);
+            updateEmergencyUI();
+            return;
+        }
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        emergencyCountdownTimer.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }, 1000);
+}
+
+emergencyTriggerBtn.addEventListener('click', () => {
+    if (TaskitatorEngine.EmergencyManager.isBypassActive()) {
+        alert('Emergency bypass is already active!');
+        return;
+    }
+    const state = TaskitatorEngine.EmergencyManager.getState();
+    if (state.uses_left <= 0) {
+        alert('All 4 emergency bypass tokens for this week have been exhausted.');
+        return;
+    }
+    document.getElementById('emergencyModalRemainingUses').textContent = `Tokens remaining this week: ${state.uses_left}/4`;
+    emergencyConfirmModal.classList.add('open');
+});
+
+document.getElementById('cancelEmergencyBtn').addEventListener('click', () => {
+    emergencyConfirmModal.classList.remove('open');
+});
+
+document.getElementById('confirmEmergencyBtn').addEventListener('click', () => {
+    const res = TaskitatorEngine.EmergencyManager.activateBypass();
+    emergencyConfirmModal.classList.remove('open');
+    if (res.success) {
+        updateEmergencyUI();
+    } else {
+        alert(res.error);
+    }
+});
+
+document.getElementById('emergencyInfoBtn').addEventListener('click', () => {
+    document.getElementById('emergencyInfoModal').classList.add('open');
+});
+document.getElementById('closeEmergencyInfoModalBtn').addEventListener('click', () => {
+    document.getElementById('emergencyInfoModal').classList.remove('open');
+});
+
+// =========================================================================
+// Break Window Scheduler
+// =========================================================================
+const breakContainer = document.getElementById('breakSchedulerContainer');
+const breakInputsList = document.getElementById('breakInputsList');
+
+function renderBreakScheduler() {
+    if (!TaskitatorEngine.BreakEngine.isSelectionWindowOpen()) {
+        breakContainer.style.display = 'none';
+        return;
+    }
+
+    breakContainer.style.display = 'block';
+    const existing = TaskitatorEngine.BreakEngine.getTodayBreaks();
+    breakInputsList.innerHTML = '';
+
+    if (existing.length === 0) {
+        addBreakInputRow();
+    } else {
+        existing.forEach(b => addBreakInputRow(b.start, b.end));
+    }
+}
+
+function addBreakInputRow(startVal = '', endVal = '') {
+    const count = breakInputsList.children.length;
+    if (count >= 3) {
+        alert('Maximum 3 breaks allowed per day.');
+        return;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'break-row';
+    row.innerHTML = `
+        <span style="font-size: 0.85rem; font-weight: 600;">Break #${count + 1}:</span>
+        <input type="time" class="break-start" value="${startVal}">
+        <span>to</span>
+        <input type="time" class="break-end" value="${endVal}">
+        <button type="button" class="action-btn delete-btn" onclick="this.parentElement.remove()">✕</button>
+    `;
+    breakInputsList.appendChild(row);
+}
+
+document.getElementById('addBreakRowBtn').addEventListener('click', () => addBreakInputRow());
+
+document.getElementById('saveBreaksBtn').addEventListener('click', () => {
+    const rows = breakInputsList.querySelectorAll('.break-row');
+    const breaks = [];
+
+    rows.forEach(r => {
+        const start = r.querySelector('.break-start').value;
+        const end = r.querySelector('.break-end').value;
+        if (start && end) {
+            breaks.push({ start, end });
+        }
+    });
+
+    const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(breaks);
+    if (!res.valid) {
+        alert(`Validation Error: ${res.error}`);
+    } else {
+        alert('Breaks saved successfully for today.');
+        saveTasksAndSchedulePush();
+    }
+});
+
+// =========================================================================
+// Task Creation Form with Irrevocable Warning Guard
+// =========================================================================
+const aiCheckbox = document.getElementById('aiLockCheckbox');
+const criteriaContainer = document.getElementById('criteriaBoxContainer');
+
+aiCheckbox.addEventListener('change', () => {
+    criteriaContainer.style.display = aiCheckbox.checked ? 'block' : 'none';
+});
+
+document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const titleInput = document.getElementById('taskTitleInput');
+    const criteriaInput = document.getElementById('taskCriteriaInput');
+    const title = titleInput.value.trim();
+    const isAiLocked = aiCheckbox.checked;
+    const criteria = criteriaInput.value.trim();
+
+    if (!title) return;
+
+    if (isAiLocked) {
+        const confirmed = confirm(
+            "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
+            "Once created, AI-Checked tasks CANNOT be edited, their criteria cannot be altered, and they CANNOT be deleted.\n\n" +
+            "If phone lock is active, your device will remain locked until verified by AI proof.\n\n" +
+            "Do you accept and wish to proceed?"
+        );
+        if (!confirmed) return;
+    }
+
+    const newTask = {
+        id: 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+        title: title,
+        status: 'active',
+        due_date: 'today',
+        ai_locked: isAiLocked,
+        proof_criteria: isAiLocked ? criteria : '',
+        created_at: new Date().toISOString()
+    };
+
+    tasks.push(newTask);
+    saveTasksAndSchedulePush();
+
+    titleInput.value = '';
+    criteriaInput.value = '';
+    aiCheckbox.checked = false;
+    criteriaContainer.style.display = 'none';
+
+    renderTasks();
+});
+
+// =========================================================================
+// Initialization
+// =========================================================================
+document.addEventListener('DOMContentLoaded', () => {
+    loadTasks();
+    updateEmergencyUI();
+    renderBreakScheduler();
+    renderTasks();
+});
+</script>
 </body>
 </html>
