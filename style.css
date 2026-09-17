@@ -1,40 +1,49 @@
 /* style.css */
 /**
- * Taskitator Unified Design System
- * Shared Variables, Components, Sidebar Drawer, Modals & Utility Classes
+ * Taskitator Energetic Vibrant Blue Design System
+ * Unified Variables, Navigation, Cards, Modals, Forms & Badges
  */
 
 :root {
-    --bg-color: #f8fafc;
+    --bg-color: #f0f7ff;
     --card-bg: #ffffff;
-    --text-color: #0f172a;
-    --text-muted: #64748b;
-    --border-color: #e2e8f0;
-    --primary: #3b82f6;
-    --primary-hover: #2563eb;
+    --card-subtle: #f8fbff;
+    --text-color: #0b2545;
+    --text-muted: #4a6fa5;
+    --border-color: #cbe0fc;
+    --border-hover: #90c2ff;
+    --primary: #1d4ed8;
+    --primary-hover: #1e40af;
+    --accent: #2563eb;
+    --accent-light: #dbeafe;
     --danger: #ef4444;
     --danger-hover: #dc2626;
+    --success: #16a34a;
     --tag-bg: #e0f2fe;
-    --tag-text: #0369a1;
+    --tag-text: #0284c7;
+    --card-shadow: 0 4px 14px rgba(29, 78, 216, 0.08);
 }
 
 body.dark-mode {
-    --bg-color: #0f172a;
-    --card-bg: #1e293b;
-    --text-color: #f8fafc;
-    --text-muted: #94a3b8;
-    --border-color: #334155;
+    --bg-color: #081226;
+    --card-bg: #0f1d3a;
+    --card-subtle: #14264b;
+    --text-color: #f0f7ff;
+    --text-muted: #8bb3e8;
+    --border-color: #1e3a6e;
+    --border-hover: #2d5599;
     --primary: #3b82f6;
     --primary-hover: #60a5fa;
+    --accent: #60a5fa;
+    --accent-light: #172554;
     --danger: #ef4444;
     --danger-hover: #dc2626;
+    --success: #22c55e;
     --tag-bg: #0c4a6e;
-    --tag-text: #bae6fd;
+    --tag-text: #7dd3fc;
+    --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
-/* ==========================================================================
-   1. Base & Layout
-   ========================================================================== */
 * {
     box-sizing: border-box;
 }
@@ -42,7 +51,7 @@ body.dark-mode {
 body {
     background-color: var(--bg-color);
     color: var(--text-color);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     margin: 0;
     padding: 0;
     line-height: 1.5;
@@ -55,16 +64,14 @@ body {
     padding: 16px 16px 90px 16px;
 }
 
-/* ==========================================================================
-   2. Top Navbar & Shared Controls
-   ========================================================================== */
+/* Navbar */
 .top-navbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 12px 0 16px 0;
-    border-bottom: 1px solid var(--border-color);
-    margin-bottom: 16px;
+    border-bottom: 2px solid var(--border-color);
+    margin-bottom: 18px;
 }
 
 .nav-left, .nav-right {
@@ -74,36 +81,40 @@ body {
 }
 
 .icon-btn {
-    background: transparent;
+    background: var(--card-bg);
     border: 1px solid var(--border-color);
     color: var(--text-color);
-    border-radius: 6px;
-    padding: 6px 10px;
+    border-radius: 8px;
+    padding: 7px 12px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     font-size: 0.9rem;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    font-weight: 600;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
 }
 
 .icon-btn:hover {
-    background: var(--border-color);
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--accent-light);
 }
 
 .emergency-pill-btn {
-    background: transparent;
-    border: 1px solid #fca5a5;
+    background: var(--card-bg);
+    border: 1.5px solid #fca5a5;
     color: #dc2626;
-    border-radius: 16px;
-    padding: 4px 10px;
+    border-radius: 20px;
+    padding: 5px 12px;
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: 700;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     cursor: pointer;
-    transition: background 0.15s ease;
+    transition: all 0.15s ease;
 }
 
 .emergency-pill-btn:hover {
@@ -111,6 +122,7 @@ body {
 }
 
 body.dark-mode .emergency-pill-btn {
+    background: #2a1215;
     border-color: #7f1d1d;
     color: #f87171;
 }
@@ -120,10 +132,10 @@ body.dark-mode .emergency-pill-btn:hover {
 }
 
 .info-tiny-btn {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
-    background: transparent;
+    background: var(--card-bg);
     border: 1px solid var(--border-color);
     color: var(--text-muted);
     font-size: 0.75rem;
@@ -135,23 +147,21 @@ body.dark-mode .emergency-pill-btn:hover {
     padding: 0;
 }
 
-/* ==========================================================================
-   3. Sidebar Drawer
-   ========================================================================== */
+/* Sidebar Drawer */
 .sidebar-drawer {
     position: fixed;
     top: 0;
-    left: -260px;
-    width: 250px;
+    left: -270px;
+    width: 260px;
     height: 100%;
     background: var(--card-bg);
-    border-right: 1px solid var(--border-color);
-    box-shadow: 4px 0 12px rgba(0,0,0,0.1);
-    transition: left 0.25s ease;
+    border-right: 2px solid var(--border-color);
+    box-shadow: 6px 0 20px rgba(11, 37, 69, 0.15);
+    transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 2000;
     display: flex;
     flex-direction: column;
-    padding: 20px 16px;
+    padding: 24px 18px;
 }
 
 .sidebar-drawer.open {
@@ -164,7 +174,8 @@ body.dark-mode .emergency-pill-btn:hover {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0,0,0,0.4);
+    background: rgba(11, 37, 69, 0.45);
+    backdrop-filter: blur(2px);
     display: none;
     z-index: 1999;
 }
@@ -175,41 +186,40 @@ body.dark-mode .emergency-pill-btn:hover {
 
 .drawer-links a {
     display: block;
-    padding: 10px 12px;
+    padding: 11px 14px;
     color: var(--text-color);
     text-decoration: none;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 0.95rem;
-    font-weight: 500;
-    margin-bottom: 4px;
-    transition: background 0.15s ease, color 0.15s ease;
+    font-weight: 600;
+    margin-bottom: 6px;
+    transition: all 0.15s ease;
 }
 
 .drawer-links a:hover, .drawer-links a.active {
-    background: var(--border-color);
+    background: var(--accent-light);
     color: var(--primary);
 }
 
-/* ==========================================================================
-   4. Cards, Forms & Inputs
-   ========================================================================== */
-.settings-card, .stats-card, .trash-card {
+/* Cards & Surfaces */
+.settings-card, .stats-card, .chart-card, .stat-box {
     background: var(--card-bg);
-    border-radius: 12px;
+    border-radius: 14px;
     border: 1px solid var(--border-color);
     padding: 20px;
     margin-bottom: 20px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    box-shadow: var(--card-shadow);
 }
 
 .form-group {
-    margin-bottom: 14px;
+    margin-bottom: 16px;
 }
 
 .form-group label {
     display: block;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: 700;
+    color: var(--text-color);
     margin-bottom: 6px;
 }
 
@@ -220,13 +230,21 @@ body.dark-mode .emergency-pill-btn:hover {
 .form-group select,
 .form-group textarea {
     width: 100%;
-    padding: 8px 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
+    padding: 10px 12px;
+    border: 1.5px solid var(--border-color);
+    border-radius: 8px;
     font-size: 0.9rem;
-    background: var(--bg-color);
+    background: var(--card-subtle);
     color: var(--text-color);
-    box-sizing: border-box;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 .form-group input:disabled,
@@ -237,51 +255,50 @@ body.dark-mode .emergency-pill-btn:hover {
     opacity: 0.6;
 }
 
-/* ==========================================================================
-   5. Banners & Badges
-   ========================================================================== */
+/* Banners */
 .banner-emergency {
-    background: #fef2f2;
-    border: 1px solid #fecaca;
-    color: #991b1b;
-    padding: 10px 14px;
-    border-radius: 8px;
-    margin-bottom: 14px;
+    background: #fff1f2;
+    border: 1.5px solid #fecdd3;
+    color: #be123c;
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin-bottom: 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 body.dark-mode .banner-emergency {
-    background: #450a0a33;
-    border-color: #7f1d1d;
-    color: #fca5a5;
+    background: #380d15;
+    border-color: #881337;
+    color: #fda4af;
 }
 
 .banner-break-window {
     background: #f0fdf4;
-    border: 1px solid #bbf7d0;
-    color: #166534;
-    padding: 12px 14px;
-    border-radius: 8px;
-    margin-bottom: 16px;
+    border: 1.5px solid #bbf7d0;
+    color: #15803d;
+    padding: 14px 16px;
+    border-radius: 10px;
+    margin-bottom: 18px;
 }
 
 body.dark-mode .banner-break-window {
-    background: #052e1633;
+    background: #052e16;
     border-color: #166534;
     color: #86efac;
 }
 
+/* Badges */
 .ai-badge {
     background: #eff6ff;
-    border: 1px solid #bfdbfe;
+    border: 1px solid #93c5fd;
     color: #1d4ed8;
     font-size: 0.7rem;
-    font-weight: 600;
-    padding: 2px 6px;
+    font-weight: 700;
+    padding: 2px 7px;
     border-radius: 12px;
     display: inline-flex;
     align-items: center;
@@ -289,38 +306,188 @@ body.dark-mode .banner-break-window {
 }
 
 body.dark-mode .ai-badge {
-    background: #1e3a8a33;
-    border-color: #1e3a8a;
+    background: #172554;
+    border-color: #2563eb;
     color: #93c5fd;
 }
 
 .tag-chip {
     background: var(--tag-bg);
     color: var(--tag-text);
-    font-size: 0.7rem;
-    font-weight: 500;
-    padding: 2px 6px;
-    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
 }
 
 .due-badge {
-    background: var(--border-color);
+    background: var(--accent-light);
+    color: var(--primary);
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+}
+
+/* Tree & Tasks */
+.task-list-tree {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.task-node {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 8px;
+}
+
+.task-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--card-bg);
+    border: 1.5px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px 14px;
+    transition: all 0.15s ease;
+    cursor: pointer;
+    box-shadow: var(--card-shadow);
+}
+
+.task-row:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-1px);
+}
+
+.task-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    overflow: hidden;
+}
+
+.collapse-toggle {
+    background: transparent;
+    border: none;
+    color: var(--primary);
+    cursor: pointer;
+    padding: 0 4px;
+    font-size: 0.8rem;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-weight: bold;
+}
+
+.collapse-spacer {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.check-circle {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: transparent;
+    padding: 0;
+    color: #ffffff;
+    font-size: 0.8rem;
+    font-weight: bold;
+    transition: all 0.15s ease;
+}
+
+.task-node.completed > .task-row .check-circle {
+    background: var(--success);
+    border-color: var(--success);
+}
+
+.task-node.completed > .task-row .task-title {
+    text-decoration: line-through;
     color: var(--text-muted);
-    font-size: 0.7rem;
-    padding: 2px 6px;
+}
+
+.task-title {
+    font-size: 0.95rem;
+    font-weight: 500;
+    word-break: break-word;
+}
+
+.task-subtree {
+    list-style: none;
+    padding: 0;
+    margin: 6px 0 0 0;
+}
+
+.task-subtree.collapsed {
+    display: none;
+}
+
+.action-del-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 4px 6px;
     border-radius: 4px;
 }
 
-/* ==========================================================================
-   6. Modals
-   ========================================================================== */
+.action-del-btn:hover {
+    color: var(--danger);
+}
+
+.action-del-btn:disabled {
+    opacity: 0.25;
+    cursor: not-allowed;
+}
+
+/* FAB */
+.fab-add {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 6px 18px rgba(29, 78, 216, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    cursor: pointer;
+    z-index: 100;
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.fab-add:hover {
+    background: var(--primary-hover);
+    transform: scale(1.06);
+}
+
+/* Modals */
 .modal-overlay {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0,0,0,0.5);
+    background: rgba(11, 37, 69, 0.5);
+    backdrop-filter: blur(3px);
     display: none;
     align-items: center;
     justify-content: center;
@@ -333,11 +500,29 @@ body.dark-mode .ai-badge {
 
 .modal-box {
     background: var(--card-bg);
-    border-radius: 12px;
+    border-radius: 16px;
+    border: 1.5px solid var(--border-color);
     max-width: 540px;
     width: 90%;
-    padding: 22px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    padding: 24px;
+    box-shadow: 0 16px 36px rgba(11, 37, 69, 0.25);
     max-height: 90vh;
     overflow-y: auto;
+}
+
+.audit-critique-box {
+    background: #fff1f2;
+    border: 1.5px solid #fecdd3;
+    color: #be123c;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    margin-top: 10px;
+    line-height: 1.4;
+}
+
+body.dark-mode .audit-critique-box {
+    background: #380d15;
+    border-color: #881337;
+    color: #fda4af;
 }
