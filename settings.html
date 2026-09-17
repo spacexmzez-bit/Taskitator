@@ -1,505 +1,670 @@
-<!DOCTYPE html>
 <!-- settings.html -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Taskitator - Settings</title>
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#0b111e">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="stylesheet" href="style.css?v=14">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .settings-container {
+            max-width: 680px;
+            margin: 20px auto;
+            padding: 0 16px 80px 16px;
+        }
+        .settings-card {
+            background: #ffffff;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .dark-mode .settings-card {
+            background: #1e293b;
+            border-color: #334155;
+            color: #f1f5f9;
+        }
+        .settings-card h3 {
+            margin-top: 0;
+            margin-bottom: 12px;
+            font-size: 1.15rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        .form-group input[type="text"],
+        .form-group input[type="password"],
+        .form-group input[type="time"],
+        .form-group select {
+            width: 100%;
+            padding: 9px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background: #f8fafc;
+            color: inherit;
+            box-sizing: border-box;
+        }
+        .dark-mode .form-group input,
+        .dark-mode .form-group select {
+            background: #0f172a;
+            border-color: #475569;
+            color: #f8fafc;
+        }
+        .form-group input:disabled {
+            background: #e2e8f0;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        .dark-mode .form-group input:disabled {
+            background: #334155;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s ease;
+        }
+        .btn-primary {
+            background: #3b82f6;
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #1e293b;
+        }
+        .dark-mode .btn-secondary {
+            background: #334155;
+            color: #f1f5f9;
+        }
+        .btn-secondary:hover {
+            opacity: 0.85;
+        }
+        .day-selector-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .day-chip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.825rem;
+            font-weight: 500;
+        }
+        .dark-mode .day-chip {
+            background: #0f172a;
+            border-color: #334155;
+        }
+        .day-chip input {
+            cursor: pointer;
+        }
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .status-pill.active {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .dark-mode .status-pill.active {
+            background: #14532d;
+            color: #bbf7d0;
+        }
+        .status-pill.locked {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .dark-mode .status-pill.locked {
+            background: #7f1d1d;
+            color: #fecaca;
+        }
+        .info-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #64748b;
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: bold;
+            cursor: pointer;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+        .info-icon:hover {
+            background: #475569;
+        }
+        .notice-banner {
+            font-size: 0.8rem;
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+            line-height: 1.4;
+        }
+        .notice-info {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1e40af;
+        }
+        .dark-mode .notice-info {
+            background: #1e3a8a33;
+            border-color: #1e3a8a;
+            color: #93c5fd;
+        }
+        .notice-warning {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            color: #92400e;
+        }
+        .dark-mode .notice-warning {
+            background: #78350f33;
+            border-color: #78350f;
+            color: #fde68a;
+        }
+        .nav-back-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .nav-back-bar a {
+            text-decoration: none;
+            color: #3b82f6;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay.open {
+            display: flex;
+        }
+        .modal-box {
+            background: #ffffff;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            padding: 24px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+        .dark-mode .modal-box {
+            background: #1e293b;
+            color: #f1f5f9;
+        }
+    </style>
 </head>
 <body>
 
-    <div id="backdrop"></div>
-
-    <div id="mobile-header">
-        <h2>Taskitator</h2>
-        <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
+<div class="settings-container">
+    <div class="nav-back-bar">
+        <a href="index.html">&larr; Back to Today</a>
+        <span style="color: #94a3b8;">|</span>
+        <a href="general.html">General View</a>
     </div>
 
-    <aside id="sidebar">
-        <h2>Taskitator</h2>
-        <a href="index.html" class="nav-link">📅 Today's Tasks</a>
-        <a href="general.html" class="nav-link">📋 General List</a>
-        <a href="stats.html" class="nav-link">📊 Statistics</a>
-        <a href="settings.html" class="nav-link active">⚙️ Settings</a>
-        <a href="trash.html" class="nav-link">🗑️ Trash Bin</a>
-    </aside>
+    <h2>System & Automation Settings</h2>
 
-    <main id="main-content">
-        <section id="view-area">
-            <h1>Application Settings</h1>
+    <!-- 1. Cloudflare Sync & MacroDroid Passkey -->
+    <div class="settings-card">
+        <h3>
+            <span>Cloudflare Synchronization</span>
+            <span id="syncStatusBadge" class="status-pill active">Local Only</span>
+        </h3>
+        <div class="form-group">
+            <label for="workerUrl">Cloudflare Worker URL</label>
+            <input type="text" id="workerUrl" placeholder="https://taskitator-sync.<your-subdomain>.workers.dev">
+        </div>
+        <div class="form-group">
+            <label for="syncPasskey">Secret Passkey (Bearer Token)</label>
+            <input type="password" id="syncPasskey" placeholder="Enter your secret passkey">
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-primary" id="saveSyncBtn">Save Sync Settings</button>
+            <button class="btn btn-secondary" id="testSyncBtn">Test Worker Connection</button>
+        </div>
 
-            <!-- Cloudflare Multi-Device Sync Section -->
-            <div class="settings-section" style="border-color: #0284c7;">
-                <h3 style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>☁️ Cloudflare Multi-Device Sync</span>
-                    <span id="sync-status-badge" style="font-size: 0.75rem; color: #64748b; font-weight: normal;">Not configured</span>
-                </h3>
-                <p>Connect your private Cloudflare Worker to synchronize your tasks and settings seamlessly across all devices.</p>
-                
-                <div class="modal-edit-field">
-                    <label class="modal-label" for="sync-url-input">Worker URL</label>
-                    <input type="url" id="sync-url-input" class="modal-input" placeholder="https://taskitator-sync.yourname.workers.dev">
-                </div>
-                <div class="modal-edit-field">
-                    <label class="modal-label" for="sync-secret-input">Secret Passkey</label>
-                    <input type="password" id="sync-secret-input" class="modal-input" placeholder="Enter your private sync passkey...">
-                </div>
-
-                <div class="backup-actions-grid" style="margin-top: 14px;">
-                    <button class="btn-secondary" id="save-sync-creds-btn">💾 Save Credentials</button>
-                    <button class="btn-secondary" id="sync-push-btn" style="background-color: #0284c7; border-color: #38bdf8;">⬆️ Push to Cloud</button>
-                    <button class="btn-secondary" id="sync-pull-btn">⬇️ Pull from Cloud</button>
-                </div>
-            </div>
-
-            <!-- Weekend Days Config -->
-            <div class="settings-section">
-                <h3>Weekend Schedule</h3>
-                <p>Select the days that represent your weekend. Recurring tasks can use this to skip workdays.</p>
-                <div class="days-grid" id="days-selector">
-                    <div class="day-pill" data-day="0">Sun</div>
-                    <div class="day-pill" data-day="1">Mon</div>
-                    <div class="day-pill" data-day="2">Tue</div>
-                    <div class="day-pill" data-day="3">Wed</div>
-                    <div class="day-pill" data-day="4">Thu</div>
-                    <div class="day-pill" data-day="5">Fri</div>
-                    <div class="day-pill" data-day="6">Sat</div>
-                </div>
-            </div>
-
-            <!-- Custom Tags Management -->
-            <div class="settings-section">
-                <h3>Custom Tags</h3>
-                <p>Add custom colored tags to organize tasks across categories and projects.</p>
-                <div class="tag-list" id="tag-container"></div>
-                <form id="add-tag-form" class="tag-create-bar">
-                    <input type="text" id="tag-name-input" class="task-input" placeholder="New tag name..." required maxlength="20">
-                    <input type="color" id="tag-color-input" class="tag-color-input" value="#38bdf8">
-                    <button type="submit" class="add-btn">Add Tag</button>
-                </form>
-            </div>
-
-            <!-- File Backup & Manual Export -->
-            <div class="settings-section">
-                <h3>Local Backup</h3>
-                <p>Export a local snapshot file or load an existing JSON file into this device.</p>
-                
-                <div class="backup-actions-grid">
-                    <button class="btn-secondary" id="export-json-btn">💾 Export JSON File</button>
-                    <label class="btn-secondary" style="cursor: pointer;">
-                        📂 Import JSON File
-                        <input type="file" id="import-file-input" accept=".json" style="display: none;">
-                    </label>
-                    <button class="btn-secondary" id="open-sync-modal-btn">📋 Quick Text</button>
-                </div>
-            </div>
-
-            <!-- Danger Zone -->
-            <div class="settings-section danger-section">
-                <h3>Danger Zone: Reset Application Data</h3>
-                <p>Permanently remove all tasks, hierarchies, custom tags, and settings from this device.</p>
-                <button class="btn-danger" id="start-reset-btn">Purge All Data</button>
-            </div>
-        </section>
-    </main>
-
-    <!-- 3-Step Purge Confirmation Modal -->
-    <div id="modal-overlay">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3 id="reset-modal-title" style="color: #f87171;">Confirm Purge</h3>
-                <button class="close-modal-btn" id="close-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p id="reset-modal-text">Are you sure you want to proceed?</p>
-            </div>
-            <div class="modal-actions">
-                <button class="btn-restore" id="cancel-reset-btn">Cancel</button>
-                <button class="btn-danger" id="confirm-step-btn">Confirm (Step 1/3)</button>
-            </div>
+        <div class="notice-banner notice-info" style="margin-top: 14px;">
+            <strong>MacroDroid Integration Endpoint:</strong><br>
+            Configure MacroDroid HTTP GET to:<br>
+            <code><span id="mdEndpointUrl">https://&lt;WORKER_URL&gt;</span>/?action=status&format=text</code><br>
+            Add Header: <code>Authorization: Bearer &lt;YOUR_SECRET_PASSKEY&gt;</code><br>
+            Response outputs: <code>device_unlocked = true</code> or <code>device_unlocked = false</code>
         </div>
     </div>
 
-    <!-- Quick Text Sync Modal -->
-    <div id="sync-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); z-index: 55; align-items: center; justify-content: center; padding: 16px;">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3>Quick Text Sync</h3>
-                <button class="close-modal-btn" id="close-sync-modal">&times;</button>
+    <!-- 2. Google Gemini AI Verification (BYOK) -->
+    <div class="settings-card">
+        <h3>
+            <span>AI Proof Auditor (Google Gemini)</span>
+            <span class="status-pill active">BYOK</span>
+        </h3>
+        <div class="form-group">
+            <label for="geminiApiKey">Google AI Studio API Key</label>
+            <input type="password" id="geminiApiKey" placeholder="AIzaSy...">
+        </div>
+        <p style="font-size: 0.8rem; color: #64748b; margin-top: -8px; margin-bottom: 12px;">
+            Uses primary model <code>gemini-3.5-flash-lite</code> with instant fallback to <code>gemini-3.1-flash-lite</code> on quota limits.
+        </p>
+        <div class="btn-group">
+            <button class="btn btn-primary" id="saveGeminiBtn">Save Gemini Key</button>
+            <button class="btn btn-secondary" id="testGeminiBtn">Test Gemini Connection</button>
+        </div>
+        <div id="geminiTestFeedback" class="notice-banner" style="display: none; margin-top: 12px;"></div>
+    </div>
+
+    <!-- 3. Workweek & Emergency Bypass Status -->
+    <div class="settings-card">
+        <h3>
+            <span>
+                Emergency Bypass & Weekend Reset
+                <span class="info-icon" id="emergencyInfoBtn" title="How emergency tokens work">!</span>
+            </span>
+            <span id="emergencyTokensBadge" class="status-pill active">4/4 Uses Left</span>
+        </h3>
+
+        <div class="form-group">
+            <label>Select Weekend Days (Workweek starts the day after):</label>
+            <div class="day-selector-grid">
+                <label class="day-chip"><input type="checkbox" name="weekendDay" value="0"> Sun</label>
+                <label class="day-chip"><input type="checkbox" name="weekendDay" value="1"> Mon</label>
+                <label class="day-chip"><input type="checkbox" name="weekendDay" value="2"> Tue</label>
+                <label class="day-chip"><input type="checkbox" name="weekendDay" value="3"> Wed</label>
+                <label class="day-chip"><input type="checkbox" name="weekendDay" value="4"> Thu</label>
+                <label class="day-chip"><input type="checkbox" name="weekendDay" value="5"> Fri</label>
+                <label class="day-chip"><input type="checkbox" name="weekendDay" value="6"> Sat</label>
             </div>
-            <div class="modal-body">
-                <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 8px;">
-                    Copy the JSON payload below to move to another device, or paste a payload here and click Restore.
-                </p>
-                <textarea id="sync-payload-box" class="sync-textarea" spellcheck="false"></textarea>
-            </div>
-            <div class="modal-actions" style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px;">
-                <button class="btn-secondary" id="copy-sync-btn">📋 Copy String</button>
-                <button class="btn-secondary" id="restore-sync-btn" style="background-color: #0284c7; border-color: #38bdf8;">📥 Apply String</button>
-            </div>
+        </div>
+
+        <div class="notice-banner notice-info" id="workweekCalcNotice">
+            Calculated workweek start: <strong>Sunday at 00:00</strong> (resets emergency quota to 4).
+        </div>
+
+        <div class="btn-group" style="margin-top: 14px;">
+            <button class="btn btn-primary" id="saveWeekendBtn">Save Weekend Schedule</button>
         </div>
     </div>
 
-    <script src="sync-engine.js"></script>
-    <script>
-        const toggleBtn = document.getElementById('menu-toggle');
-        const sidebar = document.getElementById('sidebar');
-        const backdrop = document.getElementById('backdrop');
+    <!-- 4. Daily Break Selection Window -->
+    <div class="settings-card">
+        <h3>
+            <span>
+                Daily Break Selection Window
+                <span class="info-icon" id="breakWindowInfoBtn" title="Break window rules">!</span>
+            </span>
+            <span id="breakWindowStatusBadge" class="status-pill locked">Locked</span>
+        </h3>
 
-        const daysSelector = document.getElementById('days-selector');
-        const tagContainer = document.getElementById('tag-container');
-        const addTagForm = document.getElementById('add-tag-form');
-        const tagNameInput = document.getElementById('tag-name-input');
-        const tagColorInput = document.getElementById('tag-color-input');
+        <p style="font-size: 0.825rem; color: #64748b; margin-top: -6px; margin-bottom: 12px;">
+            Defines the exact daily window (up to 1 hour) during which you can schedule your breaks on the Today tab.
+        </p>
 
-        const syncUrlInput = document.getElementById('sync-url-input');
-        const syncSecretInput = document.getElementById('sync-secret-input');
-        const syncStatusBadge = document.getElementById('sync-status-badge');
-        const saveSyncCredsBtn = document.getElementById('save-sync-creds-btn');
-        const syncPushBtn = document.getElementById('sync-push-btn');
-        const syncPullBtn = document.getElementById('sync-pull-btn');
+        <div style="display: flex; gap: 12px;">
+            <div class="form-group" style="flex: 1;">
+                <label for="breakWindowStart">Window Start</label>
+                <input type="time" id="breakWindowStart" step="60">
+            </div>
+            <div class="form-group" style="flex: 1;">
+                <label for="breakWindowEnd">Window End</label>
+                <input type="time" id="breakWindowEnd" step="60">
+            </div>
+        </div>
 
-        const modalOverlay = document.getElementById('modal-overlay');
-        const closeModalBtn = document.getElementById('close-modal');
-        const cancelResetBtn = document.getElementById('cancel-reset-btn');
-        const startResetBtn = document.getElementById('start-reset-btn');
-        const confirmStepBtn = document.getElementById('confirm-step-btn');
-        const resetModalTitle = document.getElementById('reset-modal-title');
-        const resetModalText = document.getElementById('reset-modal-text');
+        <div id="breakLockNotice" class="notice-banner notice-warning">
+            This configuration is currently <strong>locked</strong>. It can only be changed during the active window or upon initial setup.
+        </div>
 
-        const exportJsonBtn = document.getElementById('export-json-btn');
-        const importFileInput = document.getElementById('import-file-input');
-        const openSyncModalBtn = document.getElementById('open-sync-modal-btn');
-        const syncModalOverlay = document.getElementById('sync-modal-overlay');
-        const closeSyncModalBtn = document.getElementById('close-sync-modal');
-        const syncPayloadBox = document.getElementById('sync-payload-box');
-        const copySyncBtn = document.getElementById('copy-sync-btn');
-        const restoreSyncBtn = document.getElementById('restore-sync-btn');
+        <div class="btn-group" style="margin-top: 14px;">
+            <button class="btn btn-primary" id="saveBreakWindowBtn" disabled>Save Window</button>
+        </div>
+    </div>
+</div>
 
-        let resetStep = 0;
+<!-- Modal: Emergency Rules Explanation -->
+<div class="modal-overlay" id="emergencyModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0;">🚨 Emergency Bypass Mechanics</h3>
+        <p style="font-size: 0.875rem; line-height: 1.5;">
+            • You receive <strong>4 emergency bypass uses</strong> per week.<br>
+            • Activating the emergency button in the header lifts editing and deletion restrictions on AI-locked tasks for exactly <strong>15 minutes</strong>.<br>
+            • Once the 15-minute countdown finishes, all tasks snap back into locked state.<br>
+            • Your 4 uses reset automatically at <strong>00:00 on the day after your configured weekend ends</strong>.<br>
+            • If you exhaust all 4 uses before the weekly reset, you cannot bypass AI tasks under any circumstance.
+        </p>
+        <div style="text-align: right; margin-top: 18px;">
+            <button class="btn btn-primary" id="closeEmergencyModalBtn">Understood</button>
+        </div>
+    </div>
+</div>
 
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').catch(err => {
-                    console.warn('ServiceWorker registration failed: ', err);
-                });
+<!-- Modal: Break Window Rules Explanation -->
+<div class="modal-overlay" id="breakWindowModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0;">⏸️ Break Selection Window Rules</h3>
+        <p style="font-size: 0.875rem; line-height: 1.5;">
+            • <strong>One-Hour Constraint:</strong> The window duration cannot exceed 60 minutes.<br>
+            • <strong>Strict Immutability:</strong> You can only edit this window during your initial setup or <em>while the current window is actively open</em>.<br>
+            • <strong>Daily Scheduling:</strong> The break scheduler only appears on your Today tab during this exact window.<br>
+            • <strong>Missed Window:</strong> If you miss the window, no breaks can be scheduled for that calendar day.<br>
+            • <strong>Phone Unlocking:</strong> During an active break, MacroDroid reports <code>device_unlocked = true</code>, releasing phone locks while keeping task completion gates strictly locked.
+        </p>
+        <div style="text-align: right; margin-top: 18px;">
+            <button class="btn btn-primary" id="closeBreakWindowModalBtn">Understood</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ==========================================
+// Settings Manager & State Storage
+// ==========================================
+const SETTINGS_KEY = 'taskitator_settings';
+
+function loadSettings() {
+    try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveSettings(settings) {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+// Calculate first workday after the last weekend day
+function calculateWorkweekStart(weekendDays) {
+    if (!weekendDays || weekendDays.length === 0) return { dayIndex: 0, dayName: 'Sunday' };
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    
+    const sorted = [...weekendDays].sort((a, b) => a - b);
+    const lastWeekendDay = sorted[sorted.length - 1];
+    const firstWorkday = (lastWeekendDay + 1) % 7;
+    return { dayIndex: firstWorkday, dayName: dayNames[firstWorkday] };
+}
+
+// Check if current time falls within configured break window
+function isInsideBreakWindow(startStr, endStr) {
+    if (!startStr || !endStr) return true; // Initial setup unlocked
+    const now = new Date();
+    const curH = now.getHours();
+    const curM = now.getMinutes();
+    const currentMins = curH * 60 + curM;
+
+    const [sH, sM] = startStr.split(':').map(Number);
+    const [eH, eM] = endStr.split(':').map(Number);
+    const startMins = sH * 60 + sM;
+    const endMins = eH * 60 + eM;
+
+    if (endMins >= startMins) {
+        return currentMins >= startMins && currentMins <= endMins;
+    } else {
+        // Crosses midnight
+        return currentMins >= startMins || currentMins <= endMins;
+    }
+}
+
+// ==========================================
+// Initialization & UI Binding
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+    const settings = loadSettings();
+
+    // 1. Sync & Worker settings
+    const workerUrlInput = document.getElementById('workerUrl');
+    const syncPasskeyInput = document.getElementById('syncPasskey');
+    const mdEndpointUrl = document.getElementById('mdEndpointUrl');
+
+    workerUrlInput.value = settings.worker_url || '';
+    syncPasskeyInput.value = settings.sync_passkey || '';
+
+    function updateMdHelper() {
+        const url = workerUrlInput.value.trim().replace(/\/+$/, '');
+        mdEndpointUrl.textContent = url ? url : 'https://<WORKER_URL>';
+    }
+    workerUrlInput.addEventListener('input', updateMdHelper);
+    updateMdHelper();
+
+    document.getElementById('saveSyncBtn').addEventListener('click', () => {
+        settings.worker_url = workerUrlInput.value.trim();
+        settings.sync_passkey = syncPasskeyInput.value.trim();
+        saveSettings(settings);
+        alert('Sync settings saved successfully.');
+    });
+
+    document.getElementById('testSyncBtn').addEventListener('click', async () => {
+        const url = workerUrlInput.value.trim().replace(/\/+$/, '');
+        const key = syncPasskeyInput.value.trim();
+        if (!url || !key) {
+            alert('Please enter both Worker URL and Passkey.');
+            return;
+        }
+
+        try {
+            const res = await fetch(`${url}/?action=status&format=text`, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${key}` }
             });
-        }
-
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                if (modalOverlay.classList.contains('active')) closeResetModal();
-                if (syncModalOverlay.style.display === 'flex') syncModalOverlay.style.display = 'none';
-            }
-        });
-
-        toggleBtn.addEventListener('click', () => {
-            const isOpen = sidebar.classList.toggle('open');
-            backdrop.classList.toggle('active', isOpen);
-        });
-
-        backdrop.addEventListener('click', () => {
-            sidebar.classList.remove('open');
-            backdrop.classList.remove('active');
-        });
-
-        function getSettings() {
-            return JSON.parse(localStorage.getItem('taskitator_settings')) || {
-                weekendDays: [5, 6],
-                tags: [
-                    { id: '1', name: 'Work', color: '#0284c7' },
-                    { id: '2', name: 'Personal', color: '#10b981' },
-                    { id: '3', name: 'Urgent', color: '#ef4444' }
-                ],
-                sync: { url: '', secret: '', last_synced: null }
-            };
-        }
-
-        function saveSettings(settings) {
-            localStorage.setItem('taskitator_settings', JSON.stringify(settings));
-        }
-
-        // ==========================================
-        // SYNC ENGINE UI BINDINGS
-        // ==========================================
-        function initSyncUI() {
-            const config = SyncEngine.getConfig();
-            syncUrlInput.value = config.url || '';
-            syncSecretInput.value = config.secret || '';
-            updateSyncBadge(config.last_synced ? 'synced' : (SyncEngine.isConfigured() ? 'ready' : 'unconfigured'), config.last_synced);
-        }
-
-        function updateSyncBadge(status, timestamp = null) {
-            if (status === 'syncing') {
-                syncStatusBadge.textContent = '🔄 Syncing...';
-                syncStatusBadge.style.color = '#38bdf8';
-            } else if (status === 'synced') {
-                if (timestamp) {
-                    const timeStr = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    syncStatusBadge.textContent = `✅ Synced (${timeStr})`;
-                } else {
-                    syncStatusBadge.textContent = '✅ Synced';
-                }
-                syncStatusBadge.style.color = '#10b981';
-            } else if (status === 'ready') {
-                syncStatusBadge.textContent = 'Ready to sync';
-                syncStatusBadge.style.color = '#94a3b8';
-            } else if (status === 'conflict') {
-                syncStatusBadge.textContent = '⚠️ Version Conflict';
-                syncStatusBadge.style.color = '#f59e0b';
-            } else if (status === 'error') {
-                syncStatusBadge.textContent = '❌ Sync Failed';
-                syncStatusBadge.style.color = '#ef4444';
+            if (res.ok) {
+                const text = await res.text();
+                alert(`Connection Successful!\nWorker response: ${text}`);
             } else {
-                syncStatusBadge.textContent = 'Not configured';
-                syncStatusBadge.style.color = '#64748b';
+                alert(`Connection Failed: HTTP ${res.status} (${res.statusText})`);
             }
+        } catch (e) {
+            alert(`Network Error: Could not contact worker. ${e.message}`);
+        }
+    });
+
+    // 2. Gemini Settings
+    const geminiApiKeyInput = document.getElementById('geminiApiKey');
+    geminiApiKeyInput.value = settings.gemini_api_key || '';
+
+    document.getElementById('saveGeminiBtn').addEventListener('click', () => {
+        settings.gemini_api_key = geminiApiKeyInput.value.trim();
+        saveSettings(settings);
+        alert('Gemini API key saved.');
+    });
+
+    document.getElementById('testGeminiBtn').addEventListener('click', async () => {
+        const key = geminiApiKeyInput.value.trim();
+        const feedback = document.getElementById('geminiTestFeedback');
+        feedback.style.display = 'block';
+
+        if (!key) {
+            feedback.className = 'notice-banner notice-warning';
+            feedback.textContent = 'Please enter an API key first.';
+            return;
         }
 
-        SyncEngine.onStatusChange((status, detail) => {
-            if (status === 'synced') {
-                updateSyncBadge('synced', detail && detail.timestamp ? detail.timestamp : null);
-            } else {
-                updateSyncBadge(status);
-            }
-        });
+        feedback.className = 'notice-banner notice-info';
+        feedback.textContent = 'Testing connection with gemini-3.5-flash-lite...';
 
-        saveSyncCredsBtn.addEventListener('click', () => {
-            const url = syncUrlInput.value.trim();
-            const secret = syncSecretInput.value.trim();
-            SyncEngine.saveConfig(url, secret);
-            updateSyncBadge(SyncEngine.isConfigured() ? 'ready' : 'unconfigured');
-            alert('Cloudflare credentials saved!');
-        });
-
-        syncPushBtn.addEventListener('click', async () => {
-            if (!SyncEngine.isConfigured()) {
-                alert('Please enter and save your Worker URL and Secret Passkey first.');
-                return;
-            }
-
-            syncPushBtn.textContent = 'Pushing...';
-            const result = await SyncEngine.push();
-
-            if (result.conflict) {
-                const proceed = confirm('The cloud has newer edits than this device. Force overwrite?');
-                if (proceed) {
-                    await SyncEngine.push(true);
-                    alert('Cloud updated (forced overwrite).');
-                }
-            } else if (result.success) {
-                alert('Successfully pushed workspace to Cloudflare KV!');
-            } else {
-                alert('Push failed: ' + (result.error || result.reason));
-            }
-            syncPushBtn.textContent = '⬆️ Push to Cloud';
-        });
-
-        syncPullBtn.addEventListener('click', async () => {
-            if (!SyncEngine.isConfigured()) {
-                alert('Please enter and save your Worker URL and Secret Passkey first.');
-                return;
-            }
-
-            syncPullBtn.textContent = 'Pulling...';
-            const result = await SyncEngine.pull();
-
-            if (result.success) {
-                if (result.empty) {
-                    alert('Cloud bucket is currently empty.');
-                } else {
-                    renderWeekendSelector();
-                    renderTags();
-                    alert('Local workspace updated from Cloudflare KV!');
-                }
-            } else {
-                alert('Pull failed: ' + (result.error || result.reason));
-            }
-            syncPullBtn.textContent = '⬇️ Pull from Cloud';
-        });
-
-        // ==========================================
-        // SETTINGS & LOCAL BACKUP LOGIC
-        // ==========================================
-        function renderWeekendSelector() {
-            const settings = getSettings();
-            const pills = daysSelector.querySelectorAll('.day-pill');
-            pills.forEach(pill => {
-                const day = parseInt(pill.dataset.day, 10);
-                if ((settings.weekendDays || []).includes(day)) {
-                    pill.classList.add('selected');
-                } else {
-                    pill.classList.remove('selected');
-                }
+        try {
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: 'Ping test. Return the word OK.' }] }]
+                })
             });
-        }
 
-        daysSelector.addEventListener('click', (e) => {
-            const pill = e.target.closest('.day-pill');
-            if (!pill) return;
-            const day = parseInt(pill.dataset.day, 10);
-            const settings = getSettings();
-            settings.weekendDays = settings.weekendDays || [];
-            if (settings.weekendDays.includes(day)) {
-                settings.weekendDays = settings.weekendDays.filter(d => d !== day);
+            if (res.ok) {
+                feedback.className = 'notice-banner notice-info';
+                feedback.innerHTML = '<strong>Success!</strong> Gemini API key is valid and functional.';
             } else {
-                settings.weekendDays.push(day);
+                const errData = await res.json();
+                feedback.className = 'notice-banner notice-warning';
+                feedback.textContent = `API Error (${res.status}): ${errData.error?.message || 'Check key validity'}`;
             }
-            saveSettings(settings);
-            renderWeekendSelector();
-        });
+        } catch (err) {
+            feedback.className = 'notice-banner notice-warning';
+            feedback.textContent = `Network Error: ${err.message}`;
+        }
+    });
 
-        function renderTags() {
-            const settings = getSettings();
-            tagContainer.innerHTML = '';
-            (settings.tags || []).forEach(tag => {
-                const chip = document.createElement('span');
-                chip.className = 'tag-chip';
-                chip.style.backgroundColor = tag.color;
-                chip.innerHTML = `${escapeHtml(tag.name)} <button class="tag-delete-btn" data-id="${tag.id}">&times;</button>`;
-                chip.querySelector('.tag-delete-btn').addEventListener('click', () => removeTag(tag.id));
-                tagContainer.appendChild(chip);
-            });
+    // 3. Weekend & Emergency Tokens (4 Uses per week)
+    const weekendCheckboxes = document.querySelectorAll('input[name="weekendDay"]');
+    const savedWeekend = settings.weekend_days || [5, 6]; // Default Fri, Sat
+    weekendCheckboxes.forEach(cb => {
+        cb.checked = savedWeekend.includes(Number(cb.value));
+    });
+
+    function updateWorkweekNotice() {
+        const selected = Array.from(weekendCheckboxes)
+            .filter(cb => cb.checked)
+            .map(cb => Number(cb.value));
+        const res = calculateWorkweekStart(selected);
+        document.getElementById('workweekCalcNotice').innerHTML = 
+            `Calculated workweek start: <strong>${res.dayName} at 00:00</strong> (resets emergency quota to 4).`;
+    }
+    weekendCheckboxes.forEach(cb => cb.addEventListener('change', updateWorkweekNotice));
+    updateWorkweekNotice();
+
+    // Display remaining emergency tokens from state
+    const emergencyState = JSON.parse(localStorage.getItem('taskitator_emergency_state') || '{"uses_left": 4}');
+    const tokensLeft = typeof emergencyState.uses_left === 'number' ? emergencyState.uses_left : 4;
+    const emergencyBadge = document.getElementById('emergencyTokensBadge');
+    emergencyBadge.textContent = `${tokensLeft}/4 Uses Left`;
+    if (tokensLeft === 0) {
+        emergencyBadge.className = 'status-pill locked';
+    }
+
+    document.getElementById('saveWeekendBtn').addEventListener('click', () => {
+        const selected = Array.from(weekendCheckboxes)
+            .filter(cb => cb.checked)
+            .map(cb => Number(cb.value));
+        if (selected.length === 0) {
+            alert('Please select at least one weekend day.');
+            return;
+        }
+        settings.weekend_days = selected;
+        saveSettings(settings);
+        alert('Weekend schedule saved.');
+    });
+
+    // 4. Break Selection Window (Immutability Enforcement)
+    const breakStartInput = document.getElementById('breakWindowStart');
+    const breakEndInput = document.getElementById('breakWindowEnd');
+    const saveBreakBtn = document.getElementById('saveBreakWindowBtn');
+    const breakNotice = document.getElementById('breakLockNotice');
+    const breakBadge = document.getElementById('breakWindowStatusBadge');
+
+    const savedBreakWindow = settings.break_selection_window || null;
+    const isFirstTime = !savedBreakWindow || !savedBreakWindow.start || !savedBreakWindow.end;
+
+    if (savedBreakWindow) {
+        breakStartInput.value = savedBreakWindow.start;
+        breakEndInput.value = savedBreakWindow.end;
+    }
+
+    const currentlyInside = isInsideBreakWindow(
+        savedBreakWindow ? savedBreakWindow.start : null,
+        savedBreakWindow ? savedBreakWindow.end : null
+    );
+
+    if (isFirstTime || currentlyInside) {
+        // Unlocked
+        breakStartInput.disabled = false;
+        breakEndInput.disabled = false;
+        saveBreakBtn.disabled = false;
+        breakBadge.className = 'status-pill active';
+        breakBadge.textContent = isFirstTime ? 'Initial Setup' : 'Window Open';
+        breakNotice.className = 'notice-banner notice-info';
+        breakNotice.innerHTML = isFirstTime 
+            ? 'First-time configuration is unlocked. Choose your daily 1-hour window.' 
+            : 'You are currently inside your active selection window. Edits are <strong>allowed</strong>.';
+    } else {
+        // Strictly Locked
+        breakStartInput.disabled = true;
+        breakEndInput.disabled = true;
+        saveBreakBtn.disabled = true;
+        breakBadge.className = 'status-pill locked';
+        breakBadge.textContent = 'Locked';
+        breakNotice.className = 'notice-banner notice-warning';
+        breakNotice.innerHTML = `Window is <strong>locked</strong> until your next window starts at <strong>${savedBreakWindow.start}</strong>.`;
+    }
+
+    saveBreakBtn.addEventListener('click', () => {
+        const start = breakStartInput.value;
+        const end = breakEndInput.value;
+
+        if (!start || !end) {
+            alert('Please set both start and end times.');
+            return;
         }
 
-        function removeTag(tagId) {
-            const settings = getSettings();
-            settings.tags = (settings.tags || []).filter(t => t.id !== tagId);
-            saveSettings(settings);
-            renderTags();
+        const [sH, sM] = start.split(':').map(Number);
+        const [eH, eM] = end.split(':').map(Number);
+        let durationMins = (eH * 60 + eM) - (sH * 60 + sM);
+        if (durationMins < 0) durationMins += 24 * 60; // Midnight rollover
+
+        if (durationMins <= 0 || durationMins > 60) {
+            alert(`The selection window cannot exceed 1 hour (60 minutes). Selected: ${durationMins} minutes.`);
+            return;
         }
 
-        addTagForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const name = tagNameInput.value.trim();
-            const color = tagColorInput.value;
-            if (!name) return;
-            const settings = getSettings();
-            settings.tags = settings.tags || [];
-            settings.tags.push({ id: Date.now().toString(), name, color });
-            saveSettings(settings);
-            tagNameInput.value = '';
-            renderTags();
-        });
+        settings.break_selection_window = { start, end };
+        saveSettings(settings);
+        alert('Break selection window saved successfully.');
+        window.location.reload();
+    });
 
-        exportJsonBtn.addEventListener('click', () => {
-            const payload = SyncEngine.getPayload(false);
-            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `taskitator-backup-${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        });
+    // 5. Modals binding
+    const emergencyModal = document.getElementById('emergencyModal');
+    const breakModal = document.getElementById('breakWindowModal');
 
-        importFileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                try {
-                    const parsed = JSON.parse(event.target.result);
-                    if (!parsed || !Array.isArray(parsed.tasks)) throw new Error('Invalid backup file structure.');
-                    localStorage.setItem('taskitator_tasks', JSON.stringify(parsed.tasks));
-                    if (parsed.settings) saveSettings(parsed.settings);
-                    if (parsed.last_login) localStorage.setItem('taskitator_last_login', parsed.last_login);
-                    renderWeekendSelector();
-                    renderTags();
-                    initSyncUI();
-                    alert('Backup restored successfully!');
-                } catch (err) {
-                    alert('Import failed: ' + err.message);
-                }
-                importFileInput.value = '';
-            };
-            reader.readAsText(file);
-        });
+    document.getElementById('emergencyInfoBtn').addEventListener('click', () => emergencyModal.classList.add('open'));
+    document.getElementById('closeEmergencyModalBtn').addEventListener('click', () => emergencyModal.classList.remove('open'));
 
-        openSyncModalBtn.addEventListener('click', () => {
-            syncPayloadBox.value = JSON.stringify(SyncEngine.getPayload(false), null, 2);
-            syncModalOverlay.style.display = 'flex';
-        });
-
-        closeSyncModalBtn.addEventListener('click', () => syncModalOverlay.style.display = 'none');
-
-        copySyncBtn.addEventListener('click', () => {
-            syncPayloadBox.select();
-            navigator.clipboard.writeText(syncPayloadBox.value).then(() => {
-                copySyncBtn.textContent = '✅ Copied!';
-                setTimeout(() => copySyncBtn.textContent = '📋 Copy String', 1500);
-            });
-        });
-
-        restoreSyncBtn.addEventListener('click', () => {
-            try {
-                const parsed = JSON.parse(syncPayloadBox.value.trim());
-                if (!parsed || !Array.isArray(parsed.tasks)) throw new Error('Invalid backup payload.');
-                localStorage.setItem('taskitator_tasks', JSON.stringify(parsed.tasks));
-                if (parsed.settings) saveSettings(parsed.settings);
-                if (parsed.last_login) localStorage.setItem('taskitator_last_login', parsed.last_login);
-                renderWeekendSelector();
-                renderTags();
-                initSyncUI();
-                syncModalOverlay.style.display = 'none';
-                alert('Workspace restored from text!');
-            } catch (err) {
-                alert('Restore failed: ' + err.message);
-            }
-        });
-
-        const resetPrompts = [
-            { title: 'Step 1 of 3: Confirm Reset', text: 'Are you sure? This deletes active and trashed tasks on this device.', btn: 'I Understand, Continue' },
-            { title: 'Step 2 of 3: Double Check', text: 'Tags and settings will be wiped on this device.', btn: 'Proceed to Final Step' },
-            { title: 'Step 3 of 3: Final Warning', text: 'Irreversible action. Wipe everything on this device.', btn: 'Permanently Erase Everything' }
-        ];
-
-        function showResetStep(step) {
-            resetStep = step;
-            const config = resetPrompts[step];
-            resetModalTitle.textContent = config.title;
-            resetModalText.textContent = config.text;
-            confirmStepBtn.textContent = config.btn;
-            modalOverlay.classList.add('active');
-        }
-
-        function closeResetModal() {
-            modalOverlay.classList.remove('active');
-            resetStep = 0;
-        }
-
-        startResetBtn.addEventListener('click', () => showResetStep(0));
-        closeModalBtn.addEventListener('click', closeResetModal);
-        cancelResetBtn.addEventListener('click', closeResetModal);
-
-        confirmStepBtn.addEventListener('click', () => {
-            if (resetStep < 2) {
-                showResetStep(resetStep + 1);
-            } else {
-                localStorage.removeItem('taskitator_tasks');
-                localStorage.removeItem('taskitator_settings');
-                localStorage.removeItem('taskitator_last_login');
-                alert('All data has been erased successfully.');
-                window.location.href = 'index.html';
-            }
-        });
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        renderWeekendSelector();
-        renderTags();
-        initSyncUI();
-    </script>
+    document.getElementById('breakWindowInfoBtn').addEventListener('click', () => breakModal.classList.add('open'));
+    document.getElementById('closeBreakWindowModalBtn').addEventListener('click', () => breakModal.classList.remove('open'));
+});
+</script>
 </body>
 </html>
