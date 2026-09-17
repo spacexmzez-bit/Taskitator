@@ -15,33 +15,28 @@
             display: none;
         }
         .notice-info {
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-            color: #1e40af;
-        }
-        body.dark-mode .notice-info {
-            background: #1e3a8a33;
-            border-color: #1e3a8a;
-            color: #93c5fd;
+            background: var(--accent-light);
+            border: 1px solid var(--border-color);
+            color: var(--primary);
         }
         .notice-warning {
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-            color: #991b1b;
+            background: #fff1f2;
+            border: 1px solid #fecdd3;
+            color: #be123c;
         }
         body.dark-mode .notice-warning {
-            background: #450a0a33;
-            border-color: #7f1d1d;
-            color: #fca5a5;
+            background: #380d15;
+            border-color: #881337;
+            color: #fda4af;
         }
         .quota-indicator {
             display: inline-flex;
             align-items: center;
             gap: 6px;
             font-weight: 700;
-            padding: 4px 8px;
-            border-radius: 6px;
-            background: var(--bg-color);
+            padding: 6px 12px;
+            border-radius: 8px;
+            background: var(--card-subtle);
             border: 1px solid var(--border-color);
             margin-top: 6px;
         }
@@ -52,7 +47,7 @@
 <!-- Sidebar Drawer -->
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="sidebar-drawer" id="sidebarDrawer">
-    <div style="font-weight: 700; font-size: 1.15rem; margin-bottom: 24px;">Taskitator</div>
+    <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
     <nav class="drawer-links">
         <a href="index.html">📅 Today</a>
         <a href="general.html">🗂️ General Tasks</a>
@@ -73,7 +68,7 @@
 
     <!-- Gemini BYOK & Cascade Configuration -->
     <div class="settings-card">
-        <h3 style="margin-top: 0;">🤖 Gemini AI Verification (BYOK)</h3>
+        <h3 style="margin-top: 0; color: var(--primary);">🤖 Gemini AI Verification (BYOK)</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
             Audits task evidence using a 2-tier cascade: <strong>gemini-3.5-flash-lite</strong> as primary, automatically falling back to <strong>gemini-3.1-flash-lite</strong> on RPD limits.
         </p>
@@ -88,19 +83,15 @@
         <div id="geminiTestFeedback" class="notice-banner"></div>
     </div>
 
-    <!-- Cloudflare Worker Device Bridge -->
+    <!-- Universal Cloudflare Worker Passkey Bridge -->
     <div class="settings-card">
-        <h3 style="margin-top: 0;">🌐 Cloudflare Worker Bridge</h3>
+        <h3 style="margin-top: 0; color: var(--primary);">🌐 MacroDroid Automation Bridge</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Relays task completion status to MacroDroid for hardware device lock enforcement.
+            Enforces hardware lock contracts on your device. Enter your secret passkey to authenticate sync with the universal bridge.
         </p>
         <div class="form-group">
-            <label for="workerUrl">Worker URL</label>
-            <input type="text" id="workerUrl" placeholder="https://taskitator-bridge.your-subdomain.workers.dev">
-        </div>
-        <div class="form-group">
             <label for="workerPasskey">Secret Passkey (Bearer Token)</label>
-            <input type="password" id="workerPasskey" placeholder="Enter secure passkey">
+            <input type="password" id="workerPasskey" placeholder="Enter your secret passkey">
         </div>
         <div style="display: flex; gap: 10px;">
             <button class="icon-btn" id="testWorkerBtn">Test Worker Sync</button>
@@ -110,7 +101,7 @@
 
     <!-- Weekend & Emergency Cycle Engine -->
     <div class="settings-card">
-        <h3 style="margin-top: 0;">🚨 Emergency Bypass Quota</h3>
+        <h3 style="margin-top: 0; color: var(--primary);">🚨 Emergency Bypass Quota</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
             Grants 4 tokens per cycle to unlock tasks for 15 minutes. Automatically resets at 00:00 midnight immediately following your configured weekend.
         </p>
@@ -146,7 +137,7 @@
 
     <!-- Daily Break Scheduling Window -->
     <div class="settings-card">
-        <h3 style="margin-top: 0;">⏸️ Daily Break Selection Window</h3>
+        <h3 style="margin-top: 0; color: var(--primary);">⏸️ Daily Break Selection Window</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
             Configure the daily timeframe when you are permitted to schedule breaks. Once the window passes, settings lock permanently for the day.
         </p>
@@ -165,11 +156,11 @@
 
     <!-- Appearance -->
     <div class="settings-card">
-        <h3 style="margin-top: 0;">🎨 Appearance</h3>
+        <h3 style="margin-top: 0; color: var(--primary);">🎨 Appearance</h3>
         <div class="form-group">
             <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
                 <input type="checkbox" id="darkModeToggle">
-                <span>Enable Dark Theme</span>
+                <span style="font-weight: 600;">Enable Dark Theme</span>
             </label>
         </div>
     </div>
@@ -181,10 +172,10 @@
 
 <script src="audit-engine.js"></script>
 <script>
+const HARDCODED_WORKER_URL = 'https://gemini-todoist-verifier.spacexmzez.workers.dev';
 const SETTINGS_KEY = 'taskitator_settings';
 
 const geminiApiKeyInput = document.getElementById('geminiApiKey');
-const workerUrlInput = document.getElementById('workerUrl');
 const workerPasskeyInput = document.getElementById('workerPasskey');
 const weekendStartSelect = document.getElementById('weekendStartSelect');
 const weekendEndSelect = document.getElementById('weekendEndSelect');
@@ -201,7 +192,6 @@ function loadSettings() {
     }
 
     geminiApiKeyInput.value = settings.gemini_api_key || '';
-    workerUrlInput.value = settings.worker_url || '';
     workerPasskeyInput.value = settings.worker_passkey || '';
 
     weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
@@ -221,7 +211,7 @@ function loadSettings() {
 function saveSettings() {
     const settings = {
         gemini_api_key: geminiApiKeyInput.value.trim(),
-        worker_url: workerUrlInput.value.trim(),
+        worker_url: HARDCODED_WORKER_URL,
         worker_passkey: workerPasskeyInput.value.trim(),
         weekend_start: parseInt(weekendStartSelect.value, 10),
         weekend_end: parseInt(weekendEndSelect.value, 10),
@@ -257,11 +247,11 @@ function updateBreakWindowStatus() {
     const isOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
 
     if (isOpen) {
-        badge.innerHTML = '<span class="tag-chip" style="background: #dcfce7; color: #166534; font-weight: 600;">● Window Currently Open (Editable)</span>';
+        badge.innerHTML = '<span class="tag-chip" style="background: #dcfce7; color: #15803d; font-weight: 700;">● Window Currently Open (Editable)</span>';
         breakWindowStart.disabled = false;
         breakWindowEnd.disabled = false;
     } else {
-        badge.innerHTML = '<span class="tag-chip" style="background: #fee2e2; color: #991b1b; font-weight: 600;">● Window Closed for Today (Locked)</span>';
+        badge.innerHTML = '<span class="tag-chip" style="background: #fee2e2; color: #b91c1c; font-weight: 700;">● Window Closed for Today (Locked)</span>';
         breakWindowStart.disabled = true;
         breakWindowEnd.disabled = true;
     }
@@ -276,14 +266,13 @@ function updateWorkweekNotice() {
         `Weekend: ${days[s]} to ${days[e]}. Emergency tokens reset every ${days[resetDay]} at 00:00.`;
 }
 
-// Key Visibility Toggle
 document.getElementById('toggleKeyVisibilityBtn').addEventListener('click', () => {
     const isPassword = geminiApiKeyInput.type === 'password';
     geminiApiKeyInput.type = isPassword ? 'text' : 'password';
     document.getElementById('toggleKeyVisibilityBtn').textContent = isPassword ? 'Hide Key' : 'Show Key';
 });
 
-// Test Gemini API (Validates against gemini-3.5-flash-lite)
+// Test Gemini API with gemini-3.5-flash-lite
 document.getElementById('testGeminiBtn').addEventListener('click', async () => {
     const key = geminiApiKeyInput.value.trim();
     const feedback = document.getElementById('geminiTestFeedback');
@@ -322,24 +311,23 @@ document.getElementById('testGeminiBtn').addEventListener('click', async () => {
     }
 });
 
-// Test Worker Sync
+// Test Hardcoded Worker Sync
 document.getElementById('testWorkerBtn').addEventListener('click', async () => {
-    const url = workerUrlInput.value.trim();
     const passkey = workerPasskeyInput.value.trim();
     const feedback = document.getElementById('workerTestFeedback');
     feedback.style.display = 'block';
 
-    if (!url || !passkey) {
+    if (!passkey) {
         feedback.className = 'notice-banner notice-warning';
-        feedback.textContent = 'Enter both Worker URL and Passkey first.';
+        feedback.textContent = 'Enter your passkey first.';
         return;
     }
 
     feedback.className = 'notice-banner notice-info';
-    feedback.textContent = 'Pinging Cloudflare Worker status endpoint...';
+    feedback.textContent = 'Pinging hardcoded Cloudflare Worker bridge...';
 
     try {
-        const pingUrl = url.replace(/\/$/, '') + '/?action=status&format=text';
+        const pingUrl = `${HARDCODED_WORKER_URL}/?action=status&format=text`;
         const res = await fetch(pingUrl, {
             headers: { 'Authorization': `Bearer ${passkey}` }
         });
