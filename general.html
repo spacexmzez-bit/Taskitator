@@ -3,696 +3,1298 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Taskitator - General List</title>
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#0b111e">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="stylesheet" href="style.css?v=14">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taskitator - General Tasks</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #0f172a;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --danger: #ef4444;
+            --tag-bg: #e0f2fe;
+            --tag-text: #0369a1;
+        }
+
+        body.dark-mode {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --primary: #3b82f6;
+            --primary-hover: #60a5fa;
+            --tag-bg: #0c4a6e;
+            --tag-text: #bae6fd;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        .app-container {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 16px 16px 90px 16px;
+        }
+
+        /* Top Bar */
+        .top-navbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 0 16px 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 16px;
+        }
+
+        .nav-left, .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .icon-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 6px;
+            padding: 6px 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.15s ease;
+        }
+
+        .icon-btn:hover {
+            background: var(--border-color);
+        }
+
+        .emergency-pill-btn {
+            background: transparent;
+            border: 1px solid #fca5a5;
+            color: #dc2626;
+            border-radius: 16px;
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+        }
+
+        .emergency-pill-btn:hover {
+            background: #fee2e2;
+        }
+
+        body.dark-mode .emergency-pill-btn {
+            border-color: #7f1d1d;
+            color: #f87171;
+        }
+
+        body.dark-mode .emergency-pill-btn:hover {
+            background: #450a0a;
+        }
+
+        .info-tiny-btn {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            font-weight: bold;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Sidebar Drawer */
+        .sidebar-drawer {
+            position: fixed;
+            top: 0;
+            left: -260px;
+            width: 250px;
+            height: 100%;
+            background: var(--card-bg);
+            border-right: 1px solid var(--border-color);
+            box-shadow: 4px 0 12px rgba(0,0,0,0.1);
+            transition: left 0.25s ease;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            padding: 20px 16px;
+        }
+
+        .sidebar-drawer.open {
+            left: 0;
+        }
+
+        .drawer-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.4);
+            display: none;
+            z-index: 1999;
+        }
+
+        .drawer-backdrop.open {
+            display: block;
+        }
+
+        .drawer-links a {
+            display: block;
+            padding: 10px 12px;
+            color: var(--text-color);
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .drawer-links a:hover, .drawer-links a.active {
+            background: var(--border-color);
+            color: var(--primary);
+        }
+
+        /* Emergency Active Banner */
+        .banner-emergency {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        body.dark-mode .banner-emergency {
+            background: #450a0a33;
+            border-color: #7f1d1d;
+            color: #fca5a5;
+        }
+
+        /* Task Tree & Items */
+        .task-list-tree {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .task-node {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 6px;
+        }
+
+        .task-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            transition: border-color 0.15s ease;
+            cursor: pointer;
+        }
+
+        .task-row:hover {
+            border-color: #cbd5e1;
+        }
+
+        .task-main {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .collapse-toggle {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0 4px;
+            font-size: 0.75rem;
+            width: 18px;
+            height: 18px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .collapse-spacer {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+        }
+
+        .check-circle {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #94a3b8;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            background: transparent;
+            padding: 0;
+            color: #ffffff;
+            font-size: 0.75rem;
+        }
+
+        .task-node.completed > .task-row .check-circle {
+            background: #22c55e;
+            border-color: #22c55e;
+        }
+
+        .task-node.completed > .task-row .task-title {
+            text-decoration: line-through;
+            color: var(--text-muted);
+        }
+
+        .task-title {
+            font-size: 0.925rem;
+            word-break: break-word;
+        }
+
+        .ai-badge {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1d4ed8;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        body.dark-mode .ai-badge {
+            background: #1e3a8a33;
+            border-color: #1e3a8a;
+            color: #93c5fd;
+        }
+
+        .due-badge {
+            background: var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .tag-chip {
+            background: var(--tag-bg);
+            color: var(--tag-text);
+            font-size: 0.7rem;
+            font-weight: 500;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .task-subtree {
+            list-style: none;
+            padding: 0;
+            margin: 4px 0 0 0;
+        }
+
+        .task-subtree.collapsed {
+            display: none;
+        }
+
+        .action-del-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.85rem;
+            padding: 4px 6px;
+            border-radius: 4px;
+        }
+
+        .action-del-btn:hover {
+            color: var(--danger);
+        }
+
+        .action-del-btn:disabled {
+            opacity: 0.25;
+            cursor: not-allowed;
+        }
+
+        /* Floating Action Button */
+        .fab-add {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: #ffffff;
+            border: none;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            cursor: pointer;
+            z-index: 100;
+            transition: transform 0.15s ease, background 0.15s ease;
+        }
+
+        .fab-add:hover {
+            background: var(--primary-hover);
+            transform: scale(1.04);
+        }
+
+        /* Modals */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 3000;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal-box {
+            background: var(--card-bg);
+            border-radius: 12px;
+            max-width: 540px;
+            width: 90%;
+            padding: 22px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .form-group input[type="text"],
+        .form-group input[type="date"],
+        .form-group textarea {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-color);
+            color: var(--text-color);
+            box-sizing: border-box;
+            font-size: 0.9rem;
+        }
+
+        .form-group input:disabled,
+        .form-group textarea:disabled {
+            background: var(--border-color);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .subtask-builder-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+
+        .audit-critique-box {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.825rem;
+            margin-top: 10px;
+            line-height: 1.4;
+        }
+
+        body.dark-mode .audit-critique-box {
+            background: #450a0a33;
+            border-color: #7f1d1d;
+            color: #fca5a5;
+        }
+    </style>
 </head>
 <body>
 
-    <div id="backdrop"></div>
+<!-- Sidebar Drawer -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<aside class="sidebar-drawer" id="sidebarDrawer">
+    <div style="font-weight: 700; font-size: 1.15rem; margin-bottom: 24px;">Taskitator</div>
+    <nav class="drawer-links">
+        <a href="index.html">📅 Today</a>
+        <a href="general.html" class="active">🗂️ General Tasks</a>
+        <a href="settings.html">⚙️ Settings</a>
+    </nav>
+</aside>
 
-    <div id="mobile-header">
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <h2>Taskitator</h2>
-            <div class="sync-indicator-badge" id="mobile-sync-badge">
-                <span class="sync-dot"></span>
-                <span class="sync-text">Offline</span>
-            </div>
+<div class="app-container">
+    <!-- Top Navbar -->
+    <header class="top-navbar">
+        <div class="nav-left">
+            <button class="icon-btn" id="openDrawerBtn" title="Menu">☰</button>
+            <h2 style="margin: 0; font-size: 1.25rem;">General Tasks</h2>
         </div>
-        <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
+        <div class="nav-right">
+            <button class="emergency-pill-btn" id="emergencyTriggerBtn" title="Emergency Bypass">
+                🚨 <span id="emergencyCountDisplay">4/4</span>
+            </button>
+            <button class="info-tiny-btn" id="emergencyInfoBtn" title="Rules">!</button>
+        </div>
+    </header>
+
+    <!-- Active Emergency Alert Banner -->
+    <div id="activeEmergencyBanner" class="banner-emergency" style="display: none;">
+        <span>🚨 Emergency Mode Active: Task deletion & editing unlocked!</span>
+        <span id="emergencyCountdownTimer">15:00</span>
     </div>
 
-    <aside id="sidebar">
-        <h2>Taskitator</h2>
-        <a href="index.html" class="nav-link">📅 Today's Tasks</a>
-        <a href="general.html" class="nav-link active">📋 General List</a>
-        <a href="stats.html" class="nav-link">📊 Statistics</a>
-        <a href="settings.html" class="nav-link">⚙️ Settings</a>
-        <a href="trash.html" class="nav-link">🗑️ Trash Bin</a>
-    </aside>
+    <!-- Tree-Based Task Hierarchy -->
+    <ul class="task-list-tree" id="generalTaskList"></ul>
+</div>
 
-    <main id="main-content">
-        <header id="top-nav">
-            <a href="#" class="tab-link active" data-group="all">All Grandparents</a>
-            <a href="#" class="tab-link" data-group="date">By Date</a>
-            <a href="#" class="tab-link" data-group="priority">By Priority</a>
-            <a href="#" class="tab-link" data-group="tag">By Tag</a>
-            <div class="sync-indicator-badge" id="desktop-sync-badge" style="margin-left: auto;">
-                <span class="sync-dot"></span>
-                <span class="sync-text">Cloud Sync</span>
+<!-- Floating Action Button for Root Task -->
+<button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
+
+<!-- Modal: Comprehensive Task Creation -->
+<div class="modal-overlay" id="addTaskModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0;" id="addTaskModalTitle">Create New Task</h3>
+        <form id="taskCreateForm">
+            <input type="hidden" id="creationParentId" value="">
+
+            <div class="form-group">
+                <label for="taskTitleInput">Task Title</label>
+                <input type="text" id="taskTitleInput" placeholder="What needs to be done?" required autocomplete="off">
             </div>
-        </header>
 
-        <section id="view-area">
-            <h1>General To-Do List</h1>
-
-            <form id="add-task-form" class="add-task-bar">
-                <input type="text" id="task-title-input" class="task-input" placeholder="Add a new root grandparent task (Press '/' to focus)..." required maxlength="80">
-                <select id="quick-tag-input" class="quick-tag-select">
-                    <option value="">No Tag</option>
-                </select>
-                <button type="submit" class="add-btn">+</button>
-            </form>
-
-            <div id="general-task-list"></div>
-        </section>
-    </main>
-
-    <div id="modal-overlay">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3 id="modal-heading">Edit Task</h3>
-                <button class="close-modal-btn" id="close-modal">&times;</button>
+            <div class="form-group">
+                <label for="taskDescInput">Description (Mutable anytime)</label>
+                <textarea id="taskDescInput" rows="2" placeholder="Add optional details..."></textarea>
             </div>
-            <div class="modal-body">
-                <div class="modal-edit-field">
-                    <label class="modal-label" for="edit-title">Title</label>
-                    <input type="text" id="edit-title" class="modal-input" maxlength="80" required>
-                </div>
-                <div class="modal-edit-field">
-                    <label class="modal-label" for="edit-desc">Description</label>
-                    <textarea id="edit-desc" class="modal-textarea" rows="2" placeholder="Add details..."></textarea>
-                </div>
-                <div class="modal-row">
-                    <div class="modal-edit-field">
-                        <label class="modal-label" for="edit-priority">Priority</label>
-                        <select id="edit-priority" class="modal-select">
-                            <option value="high">High</option>
-                            <option value="med">Medium</option>
-                            <option value="low">Low</option>
-                        </select>
-                    </div>
-                    <div class="modal-edit-field">
-                        <label class="modal-label" for="edit-due">Due Date</label>
-                        <input type="date" id="edit-due" class="modal-input">
-                    </div>
-                </div>
-                <div class="modal-edit-field">
-                    <label class="modal-label">Tag</label>
-                    <div id="modal-tags" class="modal-tags-wrapper"></div>
-                </div>
-                <div class="modal-field-group">
-                    <label class="modal-checkbox-label">
-                        <input type="checkbox" id="modal-recur-checkbox">
-                        Repeat this task
-                    </label>
-                    <select id="modal-recur-rule" class="modal-recurrence-select" style="display: none;">
-                        <option value="daily">Every Day</option>
-                        <option value="weekdays">Weekdays Only (Skips Weekend)</option>
-                        <option value="weekly">Once a Week</option>
-                        <option value="monthly">Once a Month</option>
-                    </select>
-                </div>
-                <div class="modal-subtasks-section">
-                    <h4>Direct Sub-Tasks</h4>
-                    <div id="modal-subtasks-list"></div>
-                    <form id="modal-subtask-form" class="modal-subtask-form">
-                        <input type="text" id="subtask-input" class="modal-subtask-input" placeholder="Add a direct child task..." required maxlength="80">
-                        <button type="submit" class="modal-subtask-add-btn">+</button>
-                    </form>
-                </div>
+
+            <div class="form-group">
+                <label for="taskTagsInput">Tags (Comma-separated, mutable anytime)</label>
+                <input type="text" id="taskTagsInput" placeholder="e.g. Study, Work, Project">
             </div>
-            <div class="modal-actions">
-                <button class="trash-btn" id="trash-task-btn">Trash Task</button>
+
+            <div class="form-group">
+                <label for="taskDueDateInput">Due Date (Optional)</label>
+                <input type="date" id="taskDueDateInput">
+            </div>
+
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="aiLockCheckbox">
+                    <span>Require AI Proof Verification (Irrevocable)</span>
+                </label>
+            </div>
+
+            <div class="form-group" id="criteriaBoxContainer" style="display: none;">
+                <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt; (Visual Requirements)</label>
+                <textarea id="taskCriteriaInput" rows="2" placeholder="e.g. Photo clearly showing finished report with date and signature."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Quick Subtasks (Title only; due date unset)</label>
+                <div id="subtaskBuilderList"></div>
+                <button type="button" class="icon-btn" id="addSubtaskFieldBtn" style="padding: 4px 10px; font-size: 0.8rem; margin-top: 6px;">+ Quick Subtask</button>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button type="button" class="icon-btn" id="closeAddTaskModalBtn">Cancel</button>
+                <button type="submit" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Task</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Task Detail & Edit Panel -->
+<div class="modal-overlay" id="taskDetailModal">
+    <div class="modal-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <h3 style="margin: 0;" id="detailTaskTitleHeader">Task Details</h3>
+            <span id="detailLockStatusBadge"></span>
+        </div>
+
+        <div class="form-group">
+            <label for="editTaskTitle">Title</label>
+            <input type="text" id="editTaskTitle">
+        </div>
+
+        <div class="form-group">
+            <label for="editTaskDesc">Description (Always Editable)</label>
+            <textarea id="editTaskDesc" rows="2"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="editTaskTags">Tags (Always Editable, Comma-separated)</label>
+            <input type="text" id="editTaskTags">
+        </div>
+
+        <div class="form-group">
+            <label for="editTaskDueDate">Due Date</label>
+            <input type="date" id="editTaskDueDate">
+        </div>
+
+        <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="editAiLockCheckbox">
+                <span>AI Proof Required</span>
+            </label>
+        </div>
+
+        <div class="form-group" id="editCriteriaBoxContainer" style="display: none;">
+            <label for="editTaskCriteria">Proof Criteria &lt;PC&gt;</label>
+            <textarea id="editTaskCriteria" rows="2"></textarea>
+        </div>
+
+        <!-- Subtasks Section with + Button for Full Creation Pop-up -->
+        <div class="form-group" style="margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <label style="margin: 0;">Subtasks Under This Task</label>
+                <button type="button" class="icon-btn" id="openChildAddModalBtn" style="padding: 4px 10px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">+ Add Subtask</button>
+            </div>
+            <ul id="detailSubtasksList" style="list-style: none; padding: 0; margin: 0;"></ul>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
+            <button type="button" class="icon-btn" id="deleteFromDetailBtn" style="color: var(--danger); border-color: #fca5a5;">Delete Task</button>
+            <div style="display: flex; gap: 10px;">
+                <button type="button" class="icon-btn" id="closeDetailModalBtn">Cancel</button>
+                <button type="button" class="icon-btn" id="saveTaskDetailsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Changes</button>
             </div>
         </div>
     </div>
+</div>
 
-    <script src="sync-engine.js"></script>
-    <script>
-        const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
-        const toggleBtn = document.getElementById('menu-toggle');
-        const sidebar = document.getElementById('sidebar');
-        const backdrop = document.getElementById('backdrop');
-        const taskList = document.getElementById('general-task-list');
-        const taskForm = document.getElementById('add-task-form');
-        const taskInput = document.getElementById('task-title-input');
-        const quickTagInput = document.getElementById('quick-tag-input');
-        const navTabs = document.querySelectorAll('#top-nav .tab-link');
+<!-- Modal: Proof Verification Audit -->
+<div class="modal-overlay" id="auditModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0;">Submit AI Verification Proof</h3>
+        <p id="auditTaskTitleDisplay" style="font-weight: 600; margin-bottom: 6px;"></p>
+        <div id="auditCriteriaDisplay" style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 14px; background: var(--bg-color); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);"></div>
 
-        const modalOverlay = document.getElementById('modal-overlay');
-        const closeModalBtn = document.getElementById('close-modal');
-        const editTitle = document.getElementById('edit-title');
-        const editDesc = document.getElementById('edit-desc');
-        const editPriority = document.getElementById('edit-priority');
-        const editDue = document.getElementById('edit-due');
-        const modalTags = document.getElementById('modal-tags');
-        const modalRecurCheckbox = document.getElementById('modal-recur-checkbox');
-        const modalRecurRule = document.getElementById('modal-recur-rule');
+        <div class="form-group">
+            <label>Upload Photographic Evidence:</label>
+            <input type="file" id="auditImageInput" accept="image/*" capture="environment">
+        </div>
 
-        const modalSubtasksList = document.getElementById('modal-subtasks-list');
-        const modalSubtaskForm = document.getElementById('modal-subtask-form');
-        const subtaskInput = document.getElementById('subtask-input');
-        const trashTaskBtn = document.getElementById('trash-task-btn');
+        <div class="form-group">
+            <label>Optional Note / Clarification:</label>
+            <textarea id="auditContextInput" rows="2" placeholder="Any details for the auditor..."></textarea>
+        </div>
 
-        const desktopSyncBadge = document.getElementById('desktop-sync-badge');
-        const mobileSyncBadge = document.getElementById('mobile-sync-badge');
+        <div id="auditFeedbackContainer" style="display: none;"></div>
 
-        let currentGrouping = 'all';
-        let activeTaskId = null;
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+            <button type="button" class="icon-btn" id="closeAuditModalBtn">Cancel</button>
+            <button type="button" class="icon-btn" id="submitProofBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Submit Proof</button>
+        </div>
+    </div>
+</div>
 
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').catch(err => {
-                    console.warn('ServiceWorker registration failed: ', err);
-                });
-            });
-        }
+<!-- Modal: Emergency Confirmation -->
+<div class="modal-overlay" id="emergencyConfirmModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0; color: var(--danger);">🚨 Activate Emergency Bypass?</h3>
+        <p style="font-size: 0.875rem; line-height: 1.5;">
+            Activating this consumes <strong>1 of your 4 weekly tokens</strong>.<br>
+            It temporarily unfreezes editing, deletion, and criteria locks on AI-locked tasks for exactly <strong>15 minutes</strong>.
+        </p>
+        <p id="emergencyModalRemainingUses" style="font-size: 0.85rem; font-weight: 600;"></p>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+            <button class="icon-btn" id="cancelEmergencyBtn">Cancel</button>
+            <button class="icon-btn" id="confirmEmergencyBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 600;">Activate 15m</button>
+        </div>
+    </div>
+</div>
 
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                if (modalOverlay.classList.contains('active')) closeModal();
-            } else if (e.key === '/' && document.activeElement !== taskInput && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
-                e.preventDefault();
-                taskInput.focus();
-            }
-        });
+<!-- Modal: Emergency Info -->
+<div class="modal-overlay" id="emergencyInfoModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0;">ℹ️ Emergency Rules</h3>
+        <p style="font-size: 0.85rem; line-height: 1.5;">
+            • Maximum <strong>4 bypass uses</strong> per week.<br>
+            • Each use grants a <strong>15-minute unlock window</strong> to delete or edit locked task criteria.<br>
+            • Tokens reset automatically at <strong>00:00 on the day after your configured weekend</strong>.<br>
+            • Scheduled breaks release device locks, but never unlock AI task deletion.
+        </p>
+        <div style="text-align: right; margin-top: 16px;">
+            <button class="icon-btn" id="closeEmergencyInfoModalBtn" style="background: var(--primary); color: #fff; border: none;">Got it</button>
+        </div>
+    </div>
+</div>
 
-        toggleBtn.addEventListener('click', () => {
-            const isOpen = sidebar.classList.toggle('open');
-            backdrop.classList.toggle('active', isOpen);
-        });
+<script src="audit-engine.js"></script>
+<script src="sync-engine.js"></script>
+<script>
+// =========================================================================
+// State & Storage
+// =========================================================================
+const TASKS_KEY = 'taskitator_tasks';
+const COLLAPSED_STATE_KEY = 'taskitator_collapsed_nodes';
+let tasks = [];
+let collapsedNodes = new Set();
+let pendingAuditTaskId = null;
+let activeDetailTaskId = null;
+let emergencyTimerInterval = null;
 
-        backdrop.addEventListener('click', () => {
-            sidebar.classList.remove('open');
-            backdrop.classList.remove('active');
-        });
+function loadStorage() {
+    try {
+        tasks = JSON.parse(localStorage.getItem(TASKS_KEY) || '[]');
+        const savedCollapsed = JSON.parse(localStorage.getItem(COLLAPSED_STATE_KEY) || '[]');
+        collapsedNodes = new Set(savedCollapsed);
+    } catch (e) {
+        tasks = [];
+        collapsedNodes = new Set();
+    }
+}
 
-        // ==========================================
-        // SYNC ENGINE AUTO-LIFECYCLE TRIGGERS
-        // ==========================================
-        function updateGlobalSyncBadge(status, detail = null) {
-            const badges = [desktopSyncBadge, mobileSyncBadge];
-            badges.forEach(badge => {
-                if (!badge) return;
-                badge.className = 'sync-indicator-badge ' + status;
-                const label = badge.querySelector('.sync-text');
+function saveStorageAndPush() {
+    localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+    localStorage.setItem(COLLAPSED_STATE_KEY, JSON.stringify([...collapsedNodes]));
+    if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
+        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
+        SyncEngine.scheduleAutoPush(45000, { today_breaks: breaks });
+    }
+}
 
-                if (status === 'syncing') {
-                    label.textContent = 'Syncing...';
-                } else if (status === 'synced') {
-                    label.textContent = 'Synced';
-                } else if (status === 'conflict') {
-                    label.textContent = 'Conflict';
-                } else if (status === 'error') {
-                    label.textContent = 'Sync Error';
-                } else if (status === 'unconfigured') {
-                    label.textContent = 'Local Only';
+// =========================================================================
+// Tree Hierarchy Rendering & Scoped Collapsing (General View: All Tasks)
+// =========================================================================
+function renderGeneralTaskTree() {
+    const list = document.getElementById('generalTaskList');
+    list.innerHTML = '';
+
+    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
+
+    const childrenMap = new Map();
+    const taskMap = new Map();
+
+    tasks.forEach(t => {
+        if (t.status === 'trash') return;
+        taskMap.set(t.id, t);
+        const pId = t.parent_id || 'root';
+        if (!childrenMap.has(pId)) childrenMap.set(pId, []);
+        childrenMap.get(pId).push(t);
+    });
+
+    const rootTasks = childrenMap.get('root') || [];
+
+    if (rootTasks.length === 0) {
+        list.innerHTML = '<li style="text-align: center; color: var(--text-muted); padding: 24px;">No tasks created yet. Tap + to add one.</li>';
+        return;
+    }
+
+    function buildNodeElement(task, depth = 0) {
+        const li = document.createElement('li');
+        li.className = `task-node ${task.status === 'completed' ? 'completed' : ''}`;
+
+        const row = document.createElement('div');
+        row.className = 'task-row';
+        row.style.marginLeft = `${depth * 20}px`;
+
+        const main = document.createElement('div');
+        main.className = 'task-main';
+
+        const children = childrenMap.get(task.id) || [];
+        const hasChildren = children.length > 0;
+        const isCollapsed = collapsedNodes.has(task.id);
+
+        if (hasChildren) {
+            const toggleBtn = document.createElement('button');
+            toggleBtn.className = 'collapse-toggle';
+            toggleBtn.textContent = isCollapsed ? '▶' : '▼';
+            toggleBtn.title = isCollapsed ? 'Expand subtasks' : 'Collapse subtasks';
+            toggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (collapsedNodes.has(task.id)) {
+                    collapsedNodes.delete(task.id);
                 } else {
-                    label.textContent = 'Cloud Sync';
+                    collapsedNodes.add(task.id);
                 }
+                saveStorageAndPush();
+                renderGeneralTaskTree();
+            });
+            main.appendChild(toggleBtn);
+        } else {
+            const spacer = document.createElement('span');
+            spacer.className = 'collapse-spacer';
+            main.appendChild(spacer);
+        }
+
+        const checkBtn = document.createElement('button');
+        checkBtn.className = 'check-circle';
+        checkBtn.textContent = task.status === 'completed' ? '✓' : '';
+        checkBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            handleTaskCompletion(task.id);
+        });
+        main.appendChild(checkBtn);
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'task-title';
+        titleSpan.textContent = task.title;
+        main.appendChild(titleSpan);
+
+        if (task.ai_locked) {
+            const badge = document.createElement('span');
+            badge.className = 'ai-badge';
+            badge.innerHTML = '🔒 AI';
+            main.appendChild(badge);
+        }
+
+        if (task.due_date) {
+            const dueBadge = document.createElement('span');
+            dueBadge.className = 'due-badge';
+            dueBadge.textContent = task.due_date;
+            main.appendChild(dueBadge);
+        }
+
+        if (task.tags && task.tags.length > 0) {
+            task.tags.forEach(tag => {
+                const tagChip = document.createElement('span');
+                tagChip.className = 'tag-chip';
+                tagChip.textContent = tag;
+                main.appendChild(tagChip);
             });
         }
 
-        SyncEngine.onStatusChange((status, detail) => {
-            updateGlobalSyncBadge(status, detail);
-        });
+        row.appendChild(main);
 
-        function performAutoPull() {
-            if (SyncEngine.isConfigured()) {
-                SyncEngine.pull(() => {
-                    processDailyLoginRoutine();
-                    populateQuickTagSelect();
-                    renderGeneralView();
-                });
-            } else {
-                updateGlobalSyncBadge('unconfigured');
-            }
-        }
+        const delBtn = document.createElement('button');
+        delBtn.className = 'action-del-btn';
+        delBtn.textContent = '✕';
+        delBtn.title = 'Delete Task';
 
-        performAutoPull();
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                performAutoPull();
-            }
-        });
-
-        window.addEventListener('online', () => {
-            performAutoPull();
-        });
-
-        function getTasks() {
-            return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
-        }
-
-        function saveTasks(tasks) {
-            localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
-            SyncEngine.scheduleAutoPush();
-        }
-
-        function getSettings() {
-            return JSON.parse(localStorage.getItem('taskitator_settings')) || {
-                weekendDays: [5, 6],
-                tags: [
-                    { id: '1', name: 'Work', color: '#0284c7' },
-                    { id: '2', name: 'Personal', color: '#10b981' },
-                    { id: '3', name: 'Urgent', color: '#ef4444' }
-                ]
-            };
-        }
-
-        function purgeExpiredTasks() {
-            const now = Date.now();
-            const tasks = getTasks();
-            const cleanTasks = tasks.filter(task => {
-                if (task.status !== 'trashed') return true;
-                const trashedTime = task.trashed_at ? new Date(task.trashed_at).getTime() : now;
-                return (now - trashedTime) < FOURTEEN_DAYS_MS;
+        if (task.ai_locked && !isBypassActive) {
+            delBtn.disabled = true;
+            delBtn.title = 'AI tasks cannot be deleted without an active emergency bypass';
+        } else {
+            delBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteTask(task.id);
             });
-            if (cleanTasks.length !== tasks.length) saveTasks(cleanTasks);
         }
+        row.appendChild(delBtn);
 
-        function getDescendantIds(parentId, allTasks) {
-            let descendants = [];
-            const children = allTasks.filter(t => t.parent_id === parentId);
+        // Clicking task row opens full details panel
+        row.addEventListener('click', () => openTaskDetailModal(task.id));
+
+        li.appendChild(row);
+
+        if (hasChildren) {
+            const subUl = document.createElement('ul');
+            subUl.className = `task-subtree ${isCollapsed ? 'collapsed' : ''}`;
             children.forEach(child => {
-                descendants.push(child.id);
-                descendants = descendants.concat(getDescendantIds(child.id, allTasks));
+                subUl.appendChild(buildNodeElement(child, depth + 1));
             });
-            return descendants;
+            li.appendChild(subUl);
         }
 
-        function processDailyLoginRoutine() {
-            const todayStr = new Date().toISOString().split('T')[0];
-            const lastLogin = localStorage.getItem('taskitator_last_login');
-            const settings = getSettings();
-            const todayDayOfWeek = new Date().getDay();
+        return li;
+    }
 
-            let tasks = getTasks();
-            let changed = false;
+    rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
+}
 
-            if (lastLogin !== todayStr) {
-                tasks.forEach(task => {
-                    if (!task.is_recurring || task.status === 'trashed') return;
-                    if (task.status === 'completed') {
-                        let shouldSpawn = false;
-                        const rule = task.recurrence_rule || 'daily';
-                        const completedDate = task.completed_at ? new Date(task.completed_at) : new Date(0);
-                        const daysDiff = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
+function handleTaskCompletion(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
 
-                        if (rule === 'daily') {
-                            shouldSpawn = true;
-                        } else if (rule === 'weekdays') {
-                            const isWeekend = (settings.weekendDays || [5, 6]).includes(todayDayOfWeek);
-                            if (!isWeekend) shouldSpawn = true;
-                        } else if (rule === 'weekly') {
-                            if (daysDiff >= 7) shouldSpawn = true;
-                        } else if (rule === 'monthly') {
-                            if (daysDiff >= 30) shouldSpawn = true;
-                        }
+    if (task.status === 'completed') {
+        task.status = 'active';
+        task.completed_at = null;
+        saveStorageAndPush();
+        renderGeneralTaskTree();
+        return;
+    }
 
-                        if (shouldSpawn) {
-                            task.status = 'active';
-                            task.due_date = 'today';
-                            task.completed_at = null;
+    if (task.ai_locked) {
+        openAuditModal(task);
+        return;
+    }
 
-                            const descendantIds = new Set(getDescendantIds(task.id, tasks));
-                            tasks.forEach(dt => {
-                                if (descendantIds.has(dt.id) && dt.status !== 'trashed') {
-                                    dt.status = 'active';
-                                    dt.completed_at = null;
-                                }
-                            });
+    task.status = 'completed';
+    task.completed_at = new Date().toISOString();
+    saveStorageAndPush();
+    renderGeneralTaskTree();
+}
 
-                            changed = true;
-                        }
-                    }
-                });
-                localStorage.setItem('taskitator_last_login', todayStr);
-                if (changed) saveTasks(tasks);
-            }
+function deleteTask(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    if (task.ai_locked && !TaskitatorEngine.EmergencyManager.isBypassActive()) {
+        alert('Blocked: AI-locked tasks cannot be deleted without an active Emergency Bypass.');
+        return;
+    }
+
+    if (confirm(`Delete "${task.title}" and any associated subtasks?`)) {
+        function markTrash(id) {
+            const target = tasks.find(t => t.id === id);
+            if (target) target.status = 'trash';
+            tasks.filter(t => t.parent_id === id).forEach(k => markTrash(k.id));
         }
+        markTrash(taskId);
+        saveStorageAndPush();
+        renderGeneralTaskTree();
+    }
+}
 
-        function populateQuickTagSelect() {
-            const settings = getSettings();
-            const tags = settings.tags || [];
-            quickTagInput.innerHTML = '<option value="">No Tag</option>';
-            tags.forEach(tag => {
-                const opt = document.createElement('option');
-                opt.value = tag.name;
-                opt.textContent = tag.name;
-                quickTagInput.appendChild(opt);
-            });
-        }
+// =========================================================================
+// Task Detail & Edit Modal
+// =========================================================================
+const taskDetailModal = document.getElementById('taskDetailModal');
+const editTaskTitle = document.getElementById('editTaskTitle');
+const editTaskDesc = document.getElementById('editTaskDesc');
+const editTaskTags = document.getElementById('editTaskTags');
+const editTaskDueDate = document.getElementById('editTaskDueDate');
+const editAiLockCheckbox = document.getElementById('editAiLockCheckbox');
+const editCriteriaBoxContainer = document.getElementById('editCriteriaBoxContainer');
+const editTaskCriteria = document.getElementById('editTaskCriteria');
+const detailSubtasksList = document.getElementById('detailSubtasksList');
+const detailLockStatusBadge = document.getElementById('detailLockStatusBadge');
+const deleteFromDetailBtn = document.getElementById('deleteFromDetailBtn');
 
-        navTabs.forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                e.preventDefault();
-                navTabs.forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                currentGrouping = tab.dataset.group;
-                renderGeneralView();
-            });
-        });
+function openTaskDetailModal(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    activeDetailTaskId = taskId;
 
-        function getDateCategory(dueDateStr) {
-            if (!dueDateStr || dueDateStr.toLowerCase() === 'today') return 'Today';
-            if (dueDateStr.toLowerCase() === 'tomorrow') return 'Tomorrow';
+    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
+    const isLocked = Boolean(task.ai_locked);
 
-            const due = new Date(dueDateStr);
-            if (isNaN(due.getTime())) return 'Later / Unscheduled';
+    document.getElementById('detailTaskTitleHeader').textContent = task.title;
+    editTaskTitle.value = task.title || '';
+    editTaskDesc.value = task.description || '';
+    editTaskTags.value = (task.tags || []).join(', ');
+    editTaskDueDate.value = task.due_date === 'today' ? new Date().toISOString().split('T')[0] : (task.due_date || '');
 
-            const now = new Date();
-            now.setHours(0, 0, 0, 0);
-            due.setHours(0, 0, 0, 0);
+    editAiLockCheckbox.checked = isLocked;
+    editTaskCriteria.value = task.proof_criteria || '';
+    editCriteriaBoxContainer.style.display = isLocked ? 'block' : 'none';
 
-            const diffTime = due.getTime() - now.getTime();
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    // Immutability: Title, Date, AI-Lock, Criteria, and Delete are protected
+    const cannotModifyLocked = isLocked && !isBypassActive;
 
-            if (diffDays < 0) return 'Overdue';
-            if (diffDays === 0) return 'Today';
-            if (diffDays === 1) return 'Tomorrow';
-            if (diffDays <= 7) return 'This Week';
-            return 'Upcoming';
-        }
+    editTaskTitle.disabled = cannotModifyLocked;
+    editTaskDueDate.disabled = cannotModifyLocked;
+    editAiLockCheckbox.disabled = cannotModifyLocked;
+    editTaskCriteria.disabled = cannotModifyLocked;
+    deleteFromDetailBtn.disabled = cannotModifyLocked;
 
-        function renderGeneralView() {
-            const allTasks = getTasks();
-            const rootTasks = allTasks.filter(t => !t.parent_id && t.status === 'active');
+    if (isLocked) {
+        detailLockStatusBadge.innerHTML = isBypassActive
+            ? '<span class="tag-chip" style="background:#fef3c7;color:#92400e;">Bypass Active</span>'
+            : '<span class="ai-badge">🔒 Locked</span>';
+    } else {
+        detailLockStatusBadge.innerHTML = '<span class="tag-chip">Standard</span>';
+    }
 
-            taskList.innerHTML = '';
-
-            if (rootTasks.length === 0) {
-                taskList.innerHTML = '<p style="color: #64748b; font-size: 0.9rem; margin-top: 20px;">No grandparent tasks found. Add one above.</p>';
-                return;
-            }
-
-            if (currentGrouping === 'all') {
-                rootTasks.forEach(task => {
-                    taskList.appendChild(createTaskCard(task, allTasks));
-                });
-            } else if (currentGrouping === 'priority') {
-                renderGrouped(rootTasks, allTasks, t => (t.priority || 'med').toUpperCase(), ['HIGH', 'MED', 'LOW']);
-            } else if (currentGrouping === 'date') {
-                renderGrouped(rootTasks, allTasks, t => getDateCategory(t.due_date), ['Overdue', 'Today', 'Tomorrow', 'This Week', 'Upcoming', 'Later / Unscheduled']);
-            } else if (currentGrouping === 'tag') {
-                renderGrouped(rootTasks, allTasks, t => t.tag || 'Untagged');
-            }
-        }
-
-        function renderGrouped(tasks, allTasks, keyFn, customOrder = null) {
-            const groups = {};
-
-            tasks.forEach(t => {
-                const key = keyFn(t);
-                if (!groups[key]) groups[key] = [];
-                groups[key].push(t);
-            });
-
-            let keys = Object.keys(groups);
-            if (customOrder) {
-                keys = customOrder.filter(k => groups[k]).concat(keys.filter(k => !customOrder.includes(k)));
-            }
-
-            const settings = getSettings();
-
-            keys.forEach(key => {
-                const section = document.createElement('div');
-                section.className = 'group-section';
-
-                const title = document.createElement('div');
-                title.className = 'group-title';
-
-                const matchedTag = (settings.tags || []).find(tg => tg.name.toLowerCase() === key.toLowerCase());
-                const dotHtml = matchedTag ? `<span class="tag-color-dot" style="background-color: ${matchedTag.color}"></span>` : '';
-
-                title.innerHTML = `<span class="group-title-tag">${dotHtml}${escapeHtml(key)}</span> <span class="group-count">${groups[key].length}</span>`;
-                section.appendChild(title);
-
-                groups[key].forEach(t => {
-                    section.appendChild(createTaskCard(t, allTasks));
-                });
-
-                taskList.appendChild(section);
-            });
-        }
-
-        function createTaskCard(task, allTasks) {
-            const card = document.createElement('div');
-            card.className = 'task-card';
-            card.dataset.id = task.id;
-
-            const directSubtasks = allTasks.filter(t => t.parent_id === task.id && t.status !== 'trashed');
-            const completedCount = directSubtasks.filter(t => t.status === 'completed').length;
-            const subtaskBadge = directSubtasks.length > 0 
-                ? `<span class="subtask-badge">${completedCount}/${directSubtasks.length} subtasks</span>` 
-                : '';
-
-            const recurringBadge = task.is_recurring 
-                ? `<span class="badge-recurring">🔁 ${escapeHtml(task.recurrence_rule || 'daily')}</span>` 
-                : '';
-
-            const priorityClass = task.priority ? `badge-priority-${task.priority}` : '';
-
-            const settings = getSettings();
-            const tagObj = (settings.tags || []).find(t => t.name === task.tag);
-            const tagBadge = tagObj 
-                ? `<span class="badge" style="background-color: ${tagObj.color}; color: #ffffff;">${escapeHtml(tagObj.name)}</span>` 
-                : (task.tag ? `<span class="badge">${escapeHtml(task.tag)}</span>` : '');
-
-            card.innerHTML = `
-                <div class="check-circle" data-action="complete"></div>
-                <div class="task-info">
-                    <div class="task-title">${escapeHtml(task.title)}</div>
-                    <div class="task-desc">${escapeHtml(task.description || 'No description')}</div>
-                    <div class="task-meta">
-                        <span class="badge ${priorityClass}">${task.priority || 'Normal'}</span>
-                        <span class="due-badge">${task.due_date || 'Today'}</span>
-                        ${tagBadge}
-                        ${recurringBadge}
-                        ${subtaskBadge}
-                    </div>
-                </div>
+    // Populate direct subtasks
+    detailSubtasksList.innerHTML = '';
+    const directChildren = tasks.filter(t => t.parent_id === taskId && t.status !== 'trash');
+    if (directChildren.length === 0) {
+        detailSubtasksList.innerHTML = '<li style="font-size: 0.825rem; color: var(--text-muted); padding: 4px 0;">No subtasks yet.</li>';
+    } else {
+        directChildren.forEach(child => {
+            const sLi = document.createElement('li');
+            sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
+            sLi.innerHTML = `
+                <span>${child.status === 'completed' ? '✓ ' : ''}${child.title} ${child.ai_locked ? '<span class="ai-badge">🔒 AI</span>' : ''}</span>
+                <button type="button" class="icon-btn" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
             `;
-
-            card.addEventListener('click', (e) => {
-                if (e.target.dataset.action === 'complete') {
-                    triggerComplete(task.id, card);
-                } else {
-                    openModal(task.id);
-                }
+            sLi.querySelector('button').addEventListener('click', () => {
+                taskDetailModal.classList.remove('open');
+                openTaskDetailModal(child.id);
             });
-
-            return card;
-        }
-
-        function triggerComplete(taskId, card) {
-            card.classList.add('completing');
-            setTimeout(() => {
-                const tasks = getTasks();
-                const targetIds = new Set([taskId, ...getDescendantIds(taskId, tasks)]);
-                const nowIso = new Date().toISOString();
-
-                tasks.forEach(t => {
-                    if (targetIds.has(t.id)) {
-                        t.status = 'completed';
-                        t.completed_at = nowIso;
-                    }
-                });
-
-                saveTasks(tasks);
-                renderGeneralView();
-            }, 350);
-        }
-
-        function openModal(taskId) {
-            activeTaskId = taskId;
-            const tasks = getTasks();
-            const task = tasks.find(t => t.id === taskId);
-            if (!task) return;
-
-            editTitle.value = task.title || '';
-            editDesc.value = task.description || '';
-            editPriority.value = task.priority || 'med';
-            editDue.value = (task.due_date && task.due_date !== 'today') ? task.due_date : '';
-
-            modalRecurCheckbox.checked = !!task.is_recurring;
-            modalRecurRule.style.display = task.is_recurring ? 'block' : 'none';
-            modalRecurRule.value = task.recurrence_rule || 'daily';
-
-            renderModalTagPicker(task.tag);
-            renderModalSubtasks(task.id, tasks);
-            modalOverlay.classList.add('active');
-        }
-
-        function renderModalTagPicker(selectedTag) {
-            modalTags.innerHTML = '';
-            const settings = getSettings();
-            const tags = settings.tags || [];
-
-            if (tags.length === 0) {
-                modalTags.innerHTML = '<span style="color: #64748b; font-size: 0.8rem;">No tags created in Settings.</span>';
-                return;
-            }
-
-            tags.forEach(tag => {
-                const chip = document.createElement('span');
-                chip.className = `modal-tag-chip ${selectedTag === tag.name ? 'active' : ''}`;
-                chip.style.backgroundColor = tag.color;
-                chip.style.color = '#ffffff';
-                chip.textContent = tag.name;
-
-                chip.addEventListener('click', () => {
-                    const tasks = getTasks();
-                    const task = tasks.find(t => t.id === activeTaskId);
-                    if (!task) return;
-
-                    task.tag = task.tag === tag.name ? null : tag.name;
-
-                    saveTasks(tasks);
-                    renderModalTagPicker(task.tag);
-                    renderGeneralView();
-                });
-
-                modalTags.appendChild(chip);
-            });
-        }
-
-        function handleModalFieldChange() {
-            if (!activeTaskId) return;
-            const tasks = getTasks();
-            const task = tasks.find(t => t.id === activeTaskId);
-            if (!task) return;
-
-            task.title = editTitle.value.trim() || 'Untitled Task';
-            task.description = editDesc.value.trim();
-            task.priority = editPriority.value;
-            task.due_date = editDue.value || 'today';
-            task.is_recurring = modalRecurCheckbox.checked;
-            task.recurrence_rule = modalRecurCheckbox.checked ? modalRecurRule.value : null;
-
-            saveTasks(tasks);
-            renderGeneralView();
-        }
-
-        editTitle.addEventListener('input', handleModalFieldChange);
-        editDesc.addEventListener('input', handleModalFieldChange);
-        editPriority.addEventListener('change', handleModalFieldChange);
-        editDue.addEventListener('change', handleModalFieldChange);
-
-        modalRecurCheckbox.addEventListener('change', () => {
-            modalRecurRule.style.display = modalRecurCheckbox.checked ? 'block' : 'none';
-            handleModalFieldChange();
+            detailSubtasksList.appendChild(sLi);
         });
+    }
 
-        modalRecurRule.addEventListener('change', handleModalFieldChange);
+    taskDetailModal.classList.add('open');
+}
 
-        function renderModalSubtasks(parentId, allTasks) {
-            modalSubtasksList.innerHTML = '';
-            const subtasks = allTasks.filter(t => t.parent_id === parentId && t.status !== 'trashed');
+editAiLockCheckbox.addEventListener('change', () => {
+    editCriteriaBoxContainer.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
+});
 
-            if (subtasks.length === 0) {
-                modalSubtasksList.innerHTML = '<p style="color: #64748b; font-size: 0.8rem;">No sub-tasks yet.</p>';
-                return;
-            }
+document.getElementById('closeDetailModalBtn').addEventListener('click', () => {
+    taskDetailModal.classList.remove('open');
+    activeDetailTaskId = null;
+});
 
-            subtasks.forEach(st => {
-                const item = document.createElement('div');
-                item.className = 'modal-subtask-item';
-                const statusIcon = st.status === 'completed' ? '✓' : '○';
-                item.innerHTML = `
-                    <span>${statusIcon} ${escapeHtml(st.title)}</span>
-                    <span style="color: #64748b; font-size: 0.75rem;">${st.status}</span>
-                `;
-                modalSubtasksList.appendChild(item);
-            });
+document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
+    if (!activeDetailTaskId) return;
+    const task = tasks.find(t => t.id === activeDetailTaskId);
+    if (!task) return;
+
+    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
+    const willBeAiLocked = editAiLockCheckbox.checked;
+
+    // Post-creation AI lock confirmation
+    if (!task.ai_locked && willBeAiLocked) {
+        const confirmed = confirm(
+            "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
+            "Enabling AI Proof on this task is permanent.\n" +
+            "Once saved, this task cannot be un-checked, criteria cannot be changed, and it CANNOT be deleted without an Emergency Bypass.\n\n" +
+            "Do you want to permanently lock this task?"
+        );
+        if (!confirmed) return;
+    }
+
+    // Description and Tags are always mutable
+    task.description = editTaskDesc.value.trim();
+    task.tags = editTaskTags.value.split(',').map(s => s.trim()).filter(Boolean);
+
+    // Guard locked attributes unless unlocked or in emergency bypass
+    if (!task.ai_locked || isBypassActive) {
+        task.title = editTaskTitle.value.trim() || task.title;
+        task.due_date = editTaskDueDate.value || '';
+        task.ai_locked = willBeAiLocked;
+        task.proof_criteria = willBeAiLocked ? editTaskCriteria.value.trim() : '';
+    }
+
+    saveStorageAndPush();
+    taskDetailModal.classList.remove('open');
+    renderGeneralTaskTree();
+});
+
+deleteFromDetailBtn.addEventListener('click', () => {
+    if (!activeDetailTaskId) return;
+    deleteTask(activeDetailTaskId);
+    taskDetailModal.classList.remove('open');
+});
+
+// Full Pop-Up Subtask Creation from Detail View
+document.getElementById('openChildAddModalBtn').addEventListener('click', () => {
+    if (!activeDetailTaskId) return;
+    const parentTask = tasks.find(t => t.id === activeDetailTaskId);
+    taskDetailModal.classList.remove('open');
+    openTaskCreationModal(parentTask.id, `Add Subtask to "${parentTask.title}"`);
+});
+
+// =========================================================================
+// Proof Audit Modal
+// =========================================================================
+const auditModal = document.getElementById('auditModal');
+const auditTaskTitle = document.getElementById('auditTaskTitleDisplay');
+const auditCriteria = document.getElementById('auditCriteriaDisplay');
+const auditImage = document.getElementById('auditImageInput');
+const auditContext = document.getElementById('auditContextInput');
+const auditFeedback = document.getElementById('auditFeedbackContainer');
+const submitProofBtn = document.getElementById('submitProofBtn');
+
+function openAuditModal(task) {
+    pendingAuditTaskId = task.id;
+    auditTaskTitle.textContent = task.title;
+    auditCriteria.innerHTML = `<strong>Required Criteria &lt;PC&gt;:</strong> ${task.proof_criteria || 'General photographic confirmation of task completion.'}`;
+    auditImage.value = '';
+    auditContext.value = '';
+    auditFeedback.style.display = 'none';
+    submitProofBtn.disabled = false;
+    submitProofBtn.textContent = 'Submit Proof';
+    auditModal.classList.add('open');
+}
+
+document.getElementById('closeAuditModalBtn').addEventListener('click', () => {
+    auditModal.classList.remove('open');
+    pendingAuditTaskId = null;
+});
+
+submitProofBtn.addEventListener('click', async () => {
+    if (!pendingAuditTaskId) return;
+    const task = tasks.find(t => t.id === pendingAuditTaskId);
+    if (!task) return;
+
+    const file = auditImage.files[0];
+    if (!file) {
+        alert('Please attach an evidence photo.');
+        return;
+    }
+
+    submitProofBtn.disabled = true;
+    submitProofBtn.textContent = 'Verifying Evidence...';
+    auditFeedback.style.display = 'none';
+
+    const result = await TaskitatorEngine.AuditEngine.verifyProof({
+        imageFile: file,
+        taskTitle: task.title,
+        criteria: task.proof_criteria,
+        userContext: auditContext.value.trim()
+    });
+
+    if (!result.success) {
+        submitProofBtn.disabled = false;
+        submitProofBtn.textContent = 'Submit Proof';
+        auditFeedback.className = 'audit-critique-box';
+        auditFeedback.style.display = 'block';
+        auditFeedback.innerHTML = `<strong>Verification Halted:</strong> ${result.error}`;
+        return;
+    }
+
+    if (result.approved) {
+        task.status = 'completed';
+        task.completed_at = new Date().toISOString();
+        task.verified_model = result.model_used;
+        saveStorageAndPush();
+        auditModal.classList.remove('open');
+        renderGeneralTaskTree();
+    } else {
+        submitProofBtn.disabled = false;
+        submitProofBtn.textContent = 'Retry Submission';
+        auditFeedback.className = 'audit-critique-box';
+        auditFeedback.style.display = 'block';
+        auditFeedback.innerHTML = `<strong>Verdict: ${result.verdict.toUpperCase()}</strong><br>${result.critique}`;
+    }
+});
+
+// =========================================================================
+// Emergency Bypass Operations
+// =========================================================================
+const emergencyTriggerBtn = document.getElementById('emergencyTriggerBtn');
+const emergencyConfirmModal = document.getElementById('emergencyConfirmModal');
+const activeEmergencyBanner = document.getElementById('activeEmergencyBanner');
+const emergencyCountdownTimer = document.getElementById('emergencyCountdownTimer');
+
+function updateEmergencyUI() {
+    const state = TaskitatorEngine.EmergencyManager.getState();
+    document.getElementById('emergencyCountDisplay').textContent = `${state.uses_left}/4`;
+
+    if (TaskitatorEngine.EmergencyManager.isBypassActive()) {
+        activeEmergencyBanner.style.display = 'flex';
+        startEmergencyCountdown();
+    } else {
+        activeEmergencyBanner.style.display = 'none';
+        clearInterval(emergencyTimerInterval);
+    }
+    renderGeneralTaskTree();
+}
+
+function startEmergencyCountdown() {
+    clearInterval(emergencyTimerInterval);
+    emergencyTimerInterval = setInterval(() => {
+        const remaining = TaskitatorEngine.EmergencyManager.getRemainingWindowSeconds();
+        if (remaining <= 0) {
+            clearInterval(emergencyTimerInterval);
+            updateEmergencyUI();
+            return;
         }
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        emergencyCountdownTimer.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }, 1000);
+}
 
-        function closeModal() {
-            modalOverlay.classList.remove('active');
-            activeTaskId = null;
-        }
+emergencyTriggerBtn.addEventListener('click', () => {
+    if (TaskitatorEngine.EmergencyManager.isBypassActive()) {
+        alert('Emergency bypass is already active.');
+        return;
+    }
+    const state = TaskitatorEngine.EmergencyManager.getState();
+    if (state.uses_left <= 0) {
+        alert('All 4 emergency bypass uses for this week have been exhausted.');
+        return;
+    }
+    document.getElementById('emergencyModalRemainingUses').textContent = `Remaining tokens this week: ${state.uses_left}/4`;
+    emergencyConfirmModal.classList.add('open');
+});
 
-        closeModalBtn.addEventListener('click', closeModal);
-        modalOverlay.addEventListener('click', (e) => {
-            if (e.target === modalOverlay) closeModal();
-        });
+document.getElementById('cancelEmergencyBtn').addEventListener('click', () => {
+    emergencyConfirmModal.classList.remove('open');
+});
 
-        modalSubtaskForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const title = subtaskInput.value.trim();
-            if (!title || !activeTaskId) return;
+document.getElementById('confirmEmergencyBtn').addEventListener('click', () => {
+    const res = TaskitatorEngine.EmergencyManager.activateBypass();
+    emergencyConfirmModal.classList.remove('open');
+    if (res.success) {
+        updateEmergencyUI();
+    } else {
+        alert(res.error);
+    }
+});
 
-            const newSubtask = {
-                id: Date.now().toString(),
-                parent_id: activeTaskId,
-                title: title,
+document.getElementById('emergencyInfoBtn').addEventListener('click', () => {
+    document.getElementById('emergencyInfoModal').classList.add('open');
+});
+document.getElementById('closeEmergencyInfoModalBtn').addEventListener('click', () => {
+    document.getElementById('emergencyInfoModal').classList.remove('open');
+});
+
+// =========================================================================
+// Full Task Creation Modal Flow
+// =========================================================================
+const addTaskModal = document.getElementById('addTaskModal');
+const openRootAddModalBtn = document.getElementById('openRootAddModalBtn');
+const closeAddTaskModalBtn = document.getElementById('closeAddTaskModalBtn');
+const aiLockCheckbox = document.getElementById('aiLockCheckbox');
+const criteriaBoxContainer = document.getElementById('criteriaBoxContainer');
+const subtaskBuilderList = document.getElementById('subtaskBuilderList');
+const creationParentId = document.getElementById('creationParentId');
+const addTaskModalTitle = document.getElementById('addTaskModalTitle');
+
+function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task') {
+    document.getElementById('taskCreateForm').reset();
+    creationParentId.value = parentId || '';
+    addTaskModalTitle.textContent = titleLabel;
+    criteriaBoxContainer.style.display = 'none';
+    subtaskBuilderList.innerHTML = '';
+    addTaskModal.classList.add('open');
+}
+
+openRootAddModalBtn.addEventListener('click', () => openTaskCreationModal(null, 'Create New Task'));
+
+closeAddTaskModalBtn.addEventListener('click', () => {
+    addTaskModal.classList.remove('open');
+});
+
+aiLockCheckbox.addEventListener('change', () => {
+    criteriaBoxContainer.style.display = aiLockCheckbox.checked ? 'block' : 'none';
+});
+
+document.getElementById('addSubtaskFieldBtn').addEventListener('click', () => {
+    const div = document.createElement('div');
+    div.className = 'subtask-builder-item';
+    div.innerHTML = `
+        <input type="text" class="subtask-input-title" placeholder="Quick subtask title..." style="flex: 1;" required>
+        <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
+    `;
+    subtaskBuilderList.appendChild(div);
+});
+
+document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const title = document.getElementById('taskTitleInput').value.trim();
+    const desc = document.getElementById('taskDescInput').value.trim();
+    const tags = document.getElementById('taskTagsInput').value.split(',').map(s => s.trim()).filter(Boolean);
+    const dueDate = document.getElementById('taskDueDateInput').value || '';
+    const isAi = aiLockCheckbox.checked;
+    const criteria = document.getElementById('taskCriteriaInput').value.trim();
+    const parentId = creationParentId.value || null;
+
+    if (!title) return;
+
+    if (isAi) {
+        const confirmed = confirm(
+            "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
+            "Once created, AI-Checked tasks CANNOT be edited (except description/tags) and CANNOT be deleted.\n\n" +
+            "If phone lock is active, your device stays locked until verified by AI proof.\n\n" +
+            "Proceed with creation?"
+        );
+        if (!confirmed) return;
+    }
+
+    const newTaskId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+    const newTask = {
+        id: newTaskId,
+        parent_id: parentId,
+        title: title,
+        description: desc,
+        tags: tags,
+        status: 'active',
+        due_date: dueDate,
+        ai_locked: isAi,
+        proof_criteria: isAi ? criteria : '',
+        created_at: new Date().toISOString()
+    };
+    tasks.push(newTask);
+
+    // Quick-added subtasks default strictly to no due date
+    const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-input-title');
+    quickSubtaskInputs.forEach(input => {
+        const subTitle = input.value.trim();
+        if (subTitle) {
+            tasks.push({
+                id: 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                parent_id: newTaskId,
+                title: subTitle,
                 description: '',
-                priority: 'med',
-                due_date: 'today',
+                tags: [],
                 status: 'active',
-                tag: null,
-                is_recurring: false,
-                recurrence_rule: null
-            };
-
-            const tasks = getTasks();
-            tasks.push(newSubtask);
-            saveTasks(tasks);
-
-            subtaskInput.value = '';
-            renderModalSubtasks(activeTaskId, tasks);
-            renderGeneralView();
-        });
-
-        trashTaskBtn.addEventListener('click', () => {
-            if (!activeTaskId) return;
-            const tasks = getTasks();
-            const targetIds = new Set([activeTaskId, ...getDescendantIds(activeTaskId, tasks)]);
-            const timestamp = new Date().toISOString();
-
-            tasks.forEach(t => {
-                if (targetIds.has(t.id)) {
-                    t.status = 'trashed';
-                    t.trashed_at = timestamp;
-                }
+                due_date: '',
+                ai_locked: false,
+                proof_criteria: '',
+                created_at: new Date().toISOString()
             });
-
-            saveTasks(tasks);
-            closeModal();
-            renderGeneralView();
-        });
-
-        taskForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const title = taskInput.value.trim();
-            if (!title) return;
-
-            const newTask = {
-                id: Date.now().toString(),
-                parent_id: null,
-                title: title,
-                description: '',
-                priority: 'med',
-                due_date: 'today',
-                status: 'active',
-                tag: quickTagInput.value || null,
-                is_recurring: false,
-                recurrence_rule: null
-            };
-
-            const tasks = getTasks();
-            tasks.unshift(newTask);
-            saveTasks(tasks);
-            taskInput.value = '';
-            renderGeneralView();
-        });
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
         }
+    });
 
-        purgeExpiredTasks();
-        processDailyLoginRoutine();
-        populateQuickTagSelect();
-        renderGeneralView();
-    </script>
+    saveStorageAndPush();
+    addTaskModal.classList.remove('open');
+    renderGeneralTaskTree();
+});
+
+// =========================================================================
+// Drawer Navigation
+// =========================================================================
+const sidebarDrawer = document.getElementById('sidebarDrawer');
+const drawerBackdrop = document.getElementById('drawerBackdrop');
+
+document.getElementById('openDrawerBtn').addEventListener('click', () => {
+    sidebarDrawer.classList.add('open');
+    drawerBackdrop.classList.add('open');
+});
+
+drawerBackdrop.addEventListener('click', () => {
+    sidebarDrawer.classList.remove('open');
+    drawerBackdrop.classList.remove('open');
+});
+
+// =========================================================================
+// Initialization
+// =========================================================================
+document.addEventListener('DOMContentLoaded', () => {
+    loadStorage();
+    updateEmergencyUI();
+    renderGeneralTaskTree();
+});
+</script>
 </body>
 </html>
