@@ -1,14 +1,10 @@
 // audit-engine.js
 /**
- * File: audit-engine.js
- * Core AI Audit Engine, Emergency Bypass Manager, and Break Engine Validator
- * 
- * - Multi-tier Gemini Verification Cascade (gemini-3.5-flash-lite -> gemini-3.1-flash-lite).
- * - Mandatory forensic critique schema for task verification rejections.
- * - Daily 429 RPD exhaustion lockout until midnight (00:00).
- * - 4-use weekly emergency bypass token management (15-minute active window).
- * - Dynamic workweek start calculations based on weekend settings.
- * - Daily break window scheduling, overlap detection, and 3-hour limit validation.
+ * Taskitator Core Engine
+ * - EmergencyManager: 4 tokens/week quota, 15m unlock window, post-weekend midnight reset
+ * - BreakEngine: Selection window enforcement, <= 3 non-overlapping breaks, <= 3h total
+ * - AuditEngine: 2-tier cascade (gemini-3.5-flash-lite -> gemini-3.1-flash-lite),
+ *   automatic RPD failover, client-side midnight lockout with rate-limit alerts.
  */
 
 (function (root, factory) {
@@ -21,516 +17,387 @@
     }
 }(typeof self !== 'undefined' ? self : this, function () {
 
-    const SETTINGS_KEY = 'taskitator_settings';
-    const EMERGENCY_KEY = 'taskitator_emergency_state';
-    const DAILY_LOCKOUT_KEY = 'taskitator_ai_daily_lockout';
-    const BREAKS_KEY = 'taskitator_today_breaks';
+    // =========================================================================
+    // Storage Keys & Constants
+    // =========================================================================
+    const KEYS = {
+        SETTINGS: 'taskitator_settings',
+        EMERGENCY_STATE: 'taskitator_emergency_state',
+        BREAKS: 'taskitator_daily_breaks',
+        AI_LOCKOUT: 'taskitator_ai_daily_lockout'
+    };
 
     // =========================================================================
-    // 1. Settings & Persistence Utilities
+    // Helper Utilities
     // =========================================================================
+    function getTodayString() {
+        return new Date().toISOString().split('T')[0];
+    }
+
+    function parseMinutes(timeStr) {
+        if (!timeStr || typeof timeStr !== 'string') return null;
+        const [h, m] = timeStr.split(':').map(Number);
+        if (isNaN(h) || isNaN(m)) return null;
+        return h * 60 + m;
+    }
+
     function getSettings() {
         try {
-            return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+            return JSON.parse(localStorage.getItem(KEYS.SETTINGS) || '{}');
         } catch (e) {
             return {};
         }
     }
 
     // =========================================================================
-    // 2. Emergency Bypass Manager
+    // 1. Emergency Bypass Manager
     // =========================================================================
     const EmergencyManager = {
         MAX_USES_PER_WEEK: 4,
-        WINDOW_DURATION_MS: 15 * 60 * 1000, // 15 minutes
+        WINDOW_DURATION_MINUTES: 15,
 
-        getState: function () {
-            this.checkAndApplyWeeklyReset();
+        getState() {
             try {
-                const raw = localStorage.getItem(EMERGENCY_KEY);
-                return raw ? JSON.parse(raw) : this.getInitialState();
+                const raw = localStorage.getItem(KEYS.EMERGENCY_STATE);
+                const state = raw ? JSON.parse(raw) : null;
+                return this._checkAndResetQuota(state);
             } catch (e) {
-                return this.getInitialState();
+                return this._getDefaultState();
             }
         },
 
-        getInitialState: function () {
-            const state = {
+        _getDefaultState() {
+            return {
                 uses_left: this.MAX_USES_PER_WEEK,
-                active_until: null,
-                last_reset_week_id: this.getCurrentWeekId()
+                active_window_until: null,
+                last_reset_date: getTodayString()
             };
-            this.saveState(state);
+        },
+
+        _checkAndResetQuota(state) {
+            if (!state) state = this._getDefaultState();
+
+            const settings = getSettings();
+            const weekendEndDay = (settings.weekend_end !== undefined) ? parseInt(settings.weekend_end, 10) : 6;
+            const resetDay = (weekendEndDay + 1) % 7;
+
+            const now = new Date();
+            const lastReset = state.last_reset_date ? new Date(state.last_reset_date) : new Date(0);
+
+            let checkDate = new Date(lastReset);
+            checkDate.setDate(checkDate.getDate() + 1);
+            checkDate.setHours(0, 0, 0, 0);
+
+            let shouldReset = false;
+            while (checkDate <= now) {
+                if (checkDate.getDay() === resetDay) {
+                    shouldReset = true;
+                    break;
+                }
+                checkDate.setDate(checkDate.getDate() + 1);
+            }
+
+            if (shouldReset) {
+                state.uses_left = this.MAX_USES_PER_WEEK;
+                state.last_reset_date = getTodayString();
+                this._saveState(state);
+            }
+
             return state;
         },
 
-        saveState: function (state) {
-            localStorage.setItem(EMERGENCY_KEY, JSON.stringify(state));
+        _saveState(state) {
+            localStorage.setItem(KEYS.EMERGENCY_STATE, JSON.stringify(state));
         },
 
-        // Dynamically calculates the week identifier based on configured weekend
-        getCurrentWeekId: function () {
-            const settings = getSettings();
-            const weekendDays = settings.weekend_days || [5, 6]; // Default Fri, Sat
-            const sorted = [...weekendDays].sort((a, b) => a - b);
-            const lastWeekendDay = sorted.length > 0 ? sorted[sorted.length - 1] : 6;
-            const firstWorkday = (lastWeekendDay + 1) % 7;
-
-            const now = new Date();
-            const currentDay = now.getDay();
-            
-            // Calculate offset days back to the last workweek start
-            let diff = currentDay - firstWorkday;
-            if (diff < 0) diff += 7;
-
-            const resetDate = new Date(now);
-            resetDate.setDate(now.getDate() - diff);
-            resetDate.setHours(0, 0, 0, 0);
-
-            return resetDate.toISOString().split('T')[0];
-        },
-
-        checkAndApplyWeeklyReset: function () {
-            try {
-                const raw = localStorage.getItem(EMERGENCY_KEY);
-                if (!raw) return;
-                const state = JSON.parse(raw);
-                const currentWeekId = this.getCurrentWeekId();
-
-                if (state.last_reset_week_id !== currentWeekId) {
-                    state.uses_left = this.MAX_USES_PER_WEEK;
-                    state.last_reset_week_id = currentWeekId;
-                    state.active_until = null;
-                    this.saveState(state);
-                }
-            } catch (e) {
-                // Ignore parse errors
-            }
-        },
-
-        isBypassActive: function () {
+        isBypassActive() {
             const state = this.getState();
-            if (!state.active_until) return false;
-            const now = Date.now();
-            return now < state.active_until;
+            if (!state.active_window_until) return false;
+            return Date.now() < state.active_window_until;
         },
 
-        getRemainingWindowSeconds: function () {
+        getRemainingWindowSeconds() {
             const state = this.getState();
-            if (!state.active_until) return 0;
-            const diff = Math.max(0, Math.floor((state.active_until - Date.now()) / 1000));
+            if (!state.active_window_until) return 0;
+            const diff = Math.max(0, Math.floor((state.active_window_until - Date.now()) / 1000));
             return diff;
         },
 
-        activateBypass: function () {
+        activateBypass() {
             const state = this.getState();
-
             if (this.isBypassActive()) {
-                return { success: true, already_active: true, remaining: this.getRemainingWindowSeconds() };
+                return { success: false, error: 'Emergency bypass is already active.' };
             }
-
             if (state.uses_left <= 0) {
-                return { success: false, error: 'All 4 emergency bypass tokens for this week have been exhausted.' };
+                return { success: false, error: 'No emergency tokens remaining for this cycle.' };
             }
 
             state.uses_left -= 1;
-            state.active_until = Date.now() + this.WINDOW_DURATION_MS;
-            this.saveState(state);
+            state.active_window_until = Date.now() + (this.WINDOW_DURATION_MINUTES * 60 * 1000);
+            this._saveState(state);
 
-            return {
-                success: true,
-                uses_left: state.uses_left,
-                active_until: state.active_until,
-                duration_seconds: this.WINDOW_DURATION_MS / 1000
-            };
+            return { success: true, uses_left: state.uses_left, expires_at: state.active_window_until };
         }
     };
 
     // =========================================================================
-    // 3. Break Engine Validator & State Manager
+    // 2. Break Engine
     // =========================================================================
     const BreakEngine = {
         MAX_BREAKS_PER_DAY: 3,
-        MAX_TOTAL_MINUTES: 180, // 3 hours
+        MAX_TOTAL_MINUTES: 180,
 
-        // Check if current time is inside configured 1-hour selection window
-        isSelectionWindowOpen: function () {
+        isSelectionWindowOpen() {
             const settings = getSettings();
-            const win = settings.break_selection_window;
-            if (!win || !win.start || !win.end) return true; // Initial setup open
+            if (!settings.break_selection_start || !settings.break_selection_end) {
+                return false;
+            }
 
             const now = new Date();
-            const curMins = now.getHours() * 60 + now.getMinutes();
-            const [sH, sM] = win.start.split(':').map(Number);
-            const [eH, eM] = win.end.split(':').map(Number);
-            const startMins = sH * 60 + sM;
-            const endMins = eH * 60 + eM;
+            const curMinutes = now.getHours() * 60 + now.getMinutes();
+            const startMinutes = parseMinutes(settings.break_selection_start);
+            const endMinutes = parseMinutes(settings.break_selection_end);
 
-            if (endMins >= startMins) {
-                return curMins >= startMins && curMins <= endMins;
+            if (startMinutes === null || endMinutes === null) return false;
+
+            if (startMinutes <= endMinutes) {
+                return curMinutes >= startMinutes && curMinutes <= endMinutes;
             } else {
-                return curMins >= startMins || curMins <= endMins;
+                return curMinutes >= startMinutes || curMinutes <= endMinutes;
             }
         },
 
-        // Condition 7A: Same day, non-overlapping, max 3 breaks, total <= 180 mins
-        validateBreaks: function (breaksArray) {
+        getTodayBreaks() {
+            try {
+                const stored = JSON.parse(localStorage.getItem(KEYS.BREAKS) || '{}');
+                const today = getTodayString();
+                return stored[today] || [];
+            } catch (e) {
+                return [];
+            }
+        },
+
+        saveTodayBreaks(breaksArray) {
+            if (!this.isSelectionWindowOpen()) {
+                return { valid: false, error: 'Break selection window is closed.' };
+            }
+
             if (!Array.isArray(breaksArray)) {
-                return { valid: false, error: 'Breaks must be provided as an array.' };
+                return { valid: false, error: 'Invalid input format.' };
             }
 
             if (breaksArray.length > this.MAX_BREAKS_PER_DAY) {
                 return { valid: false, error: `Maximum ${this.MAX_BREAKS_PER_DAY} breaks allowed per day.` };
             }
 
+            const parsed = [];
             let totalMinutes = 0;
-            const parsedIntervals = [];
 
             for (let i = 0; i < breaksArray.length; i++) {
                 const b = breaksArray[i];
-                if (!b.start || !b.end) {
-                    return { valid: false, error: `Break #${i + 1} has missing start or end time.` };
+                const s = parseMinutes(b.start);
+                const e = parseMinutes(b.end);
+
+                if (s === null || e === null) {
+                    return { valid: false, error: 'Invalid time string provided.' };
+                }
+                if (s >= e) {
+                    return { valid: false, error: `Break start (${b.start}) must precede end (${b.end}).` };
                 }
 
-                const [sH, sM] = b.start.split(':').map(Number);
-                const [eH, eM] = b.end.split(':').map(Number);
-
-                if (isNaN(sH) || isNaN(sM) || isNaN(eH) || isNaN(eM)) {
-                    return { valid: false, error: `Break #${i + 1} contains invalid time format. Use HH:MM.` };
-                }
-
-                const startMin = sH * 60 + sM;
-                const endMin = eH * 60 + eM;
-
-                if (endMin <= startMin) {
-                    return { valid: false, error: `Break #${i + 1} must end after it starts and cannot cross midnight.` };
-                }
-
-                const duration = endMin - startMin;
+                const duration = e - s;
                 totalMinutes += duration;
-                parsedIntervals.push({ startMin, endMin, index: i + 1 });
+                parsed.push({ startMin: s, endMin: e, start: b.start, end: b.end });
             }
 
             if (totalMinutes > this.MAX_TOTAL_MINUTES) {
-                return {
-                    valid: false,
-                    error: `Total break duration (${totalMinutes} mins) exceeds the 3-hour daily maximum (${this.MAX_TOTAL_MINUTES} mins).`
-                };
+                return { valid: false, error: `Total break duration exceeds maximum limit of 3 hours (${totalMinutes} mins).` };
             }
 
-            // Check for overlaps
-            parsedIntervals.sort((a, b) => a.startMin - b.startMin);
-            for (let i = 0; i < parsedIntervals.length - 1; i++) {
-                if (parsedIntervals[i].endMin > parsedIntervals[i + 1].startMin) {
-                    return {
-                        valid: false,
-                        error: `Break intervals overlap between break #${parsedIntervals[i].index} and break #${parsedIntervals[i + 1].index}.`
-                    };
+            parsed.sort((a, b) => a.startMin - b.startMin);
+            for (let i = 0; i < parsed.length - 1; i++) {
+                if (parsed[i].endMin > parsed[i + 1].startMin) {
+                    return { valid: false, error: `Breaks overlap: [${parsed[i].start}-${parsed[i].end}] overlaps with [${parsed[i + 1].start}-${parsed[i + 1].end}].` };
                 }
             }
 
-            return { valid: true, totalMinutes };
-        },
+            const cleaned = parsed.map(p => ({ start: p.start, end: p.end }));
+            const today = getTodayString();
+            const stored = JSON.parse(localStorage.getItem(KEYS.BREAKS) || '{}');
+            stored[today] = cleaned;
+            localStorage.setItem(KEYS.BREAKS, JSON.stringify(stored));
 
-        saveTodayBreaks: function (breaksArray) {
-            const check = this.validateBreaks(breaksArray);
-            if (!check.valid) return check;
-
-            const todayStr = new Date().toISOString().split('T')[0];
-            const payload = {
-                date: todayStr,
-                breaks: breaksArray
-            };
-
-            localStorage.setItem(BREAKS_KEY, JSON.stringify(payload));
-            return { valid: true, data: payload };
-        },
-
-        getTodayBreaks: function () {
-            try {
-                const raw = localStorage.getItem(BREAKS_KEY);
-                if (!raw) return [];
-                const parsed = JSON.parse(raw);
-                const todayStr = new Date().toISOString().split('T')[0];
-                if (parsed.date !== todayStr) return [];
-                return Array.isArray(parsed.breaks) ? parsed.breaks : [];
-            } catch (e) {
-                return [];
-            }
-        },
-
-        isCurrentlyInBreak: function () {
-            const breaks = this.getTodayBreaks();
-            if (breaks.length === 0) return false;
-
-            const now = new Date();
-            const curMins = now.getHours() * 60 + now.getMinutes();
-
-            return breaks.some(b => {
-                const [sH, sM] = b.start.split(':').map(Number);
-                const [eH, eM] = b.end.split(':').map(Number);
-                const s = sH * 60 + sM;
-                const e = eH * 60 + eM;
-                return curMins >= s && curMins <= e;
-            });
+            return { valid: true, breaks: cleaned };
         }
     };
 
     // =========================================================================
-    // 4. Client-Side Image Pre-processor
-    // =========================================================================
-    const ImageCompressor = {
-        processFile: function (file, maxDimension = 1280, quality = 0.8) {
-            return new Promise((resolve, reject) => {
-                if (!file || !file.type.startsWith('image/')) {
-                    return reject(new Error('Provided file is not a valid image.'));
-                }
-
-                const reader = new FileReader();
-                reader.onerror = () => reject(new Error('Failed to read local file.'));
-                reader.onload = (e) => {
-                    const img = new Image();
-                    img.onerror = () => reject(new Error('Failed to decode image data.'));
-                    img.onload = () => {
-                        let width = img.width;
-                        let height = img.height;
-
-                        if (width > maxDimension || height > maxDimension) {
-                            if (width > height) {
-                                height = Math.round((height * maxDimension) / width);
-                                width = maxDimension;
-                            } else {
-                                width = Math.round((width * maxDimension) / height);
-                                height = maxDimension;
-                            }
-                        }
-
-                        const canvas = document.createElement('canvas');
-                        canvas.width = width;
-                        canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, width, height);
-
-                        const base64Url = canvas.toDataURL('image/jpeg', quality);
-                        const base64Data = base64Url.split(',')[1];
-                        resolve({
-                            mimeType: 'image/jpeg',
-                            data: base64Data,
-                            dataUrl: base64Url
-                        });
-                    };
-                    img.src = e.target.result;
-                };
-                reader.readAsDataURL(file);
-            });
-        }
-    };
-
-    // =========================================================================
-    // 5. AI Audit Engine (Two-Tier Model Cascade & Structured Evaluation)
+    // 3. Audit Engine (Cascade 3.5 -> 3.1 & Daily Midnight RPD Lock)
     // =========================================================================
     const AuditEngine = {
         PRIMARY_MODEL: 'gemini-3.5-flash-lite',
         FALLBACK_MODEL: 'gemini-3.1-flash-lite',
 
-        // Daily Lockout Checks (RPD bottleneck protection)
-        checkDailyLockout: function () {
-            try {
-                const lockoutDate = localStorage.getItem(DAILY_LOCKOUT_KEY);
-                if (!lockoutDate) return { locked: false };
+        isLockedOutToday() {
+            const lockoutDate = localStorage.getItem(KEYS.AI_LOCKOUT);
+            return lockoutDate === getTodayString();
+        },
 
-                const todayStr = new Date().toISOString().split('T')[0];
-                if (lockoutDate === todayStr) {
-                    return {
-                        locked: true,
-                        message: 'Daily AI audit quota (RPD) exhausted across all models. Proof auditing is locked until midnight (00:00).'
-                    };
-                } else {
-                    localStorage.removeItem(DAILY_LOCKOUT_KEY);
-                    return { locked: false };
-                }
-            } catch (e) {
-                return { locked: false };
+        setDailyLockout() {
+            localStorage.setItem(KEYS.AI_LOCKOUT, getTodayString());
+        },
+
+        fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const result = reader.result;
+                    const base64 = result.substring(result.indexOf(',') + 1);
+                    resolve(base64);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        },
+
+        async verifyProof({ imageFile, taskTitle, criteria, userContext = '' }) {
+            if (this.isLockedOutToday()) {
+                return {
+                    success: false,
+                    error: 'Daily rate limit exceeded for both verification models (3.5 & 3.1). Feature locked until 00:00 midnight.'
+                };
             }
-        },
 
-        setDailyLockout: function () {
-            const todayStr = new Date().toISOString().split('T')[0];
-            localStorage.setItem(DAILY_LOCKOUT_KEY, todayStr);
-        },
+            const settings = getSettings();
+            const apiKey = settings.gemini_api_key;
+            if (!apiKey) {
+                return { success: false, error: 'Gemini API key is not configured in Settings.' };
+            }
 
-        buildSystemInstruction: function () {
-            return (
-                "You are an incorruptible, skeptical, and meticulous forensic task verification auditor for the Taskitator system. " +
-                "Your objective is to evaluate whether visual evidence (a photograph) conclusively proves the completion of a user's task based on their specific Proof Criteria. " +
-                "Strict Rules:\n" +
-                "1. Zero Benefit of the Doubt: If the photograph is blurry, ambiguous, missing core context, or could easily depict an unrelated scene, you MUST reject it.\n" +
-                "2. Outcome Classification: Output one of three verdicts strictly:\n" +
-                "   - 'approved': Indisputable, clear evidence proving the task and criteria were satisfied.\n" +
-                "   - 'not-enough': The image is genuine but lacks sufficient detail, clarity, or proof to confirm full completion.\n" +
-                "   - 'inadmissible': The image is entirely irrelevant, deceptive, completely unrelated, or blank.\n" +
-                "3. Mandatory Critique Rule: If the verdict is 'not-enough' or 'inadmissible', you MUST populate the 'critique' field with a direct, specific critique explaining exactly why the proof was rejected and what specific visual evidence is missing.\n" +
-                "4. Return strictly a JSON object adhering to the schema: {\"verdict\": \"approved\"|\"not-enough\"|\"inadmissible\", \"critique\": \"string\"}."
-            );
-        },
+            let base64Image;
+            try {
+                base64Image = await this.fileToBase64(imageFile);
+            } catch (e) {
+                return { success: false, error: 'Failed to process evidence image file.' };
+            }
 
-        callGeminiApi: async function (model, apiKey, imageBase64, mimeType, taskTitle, criteria, userContext) {
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const prompt = `You are the strict, forensic verification auditor for "Taskitator".
+Your sole mission is to examine user-submitted photographic proof against task completion criteria.
 
-            const userPromptText = 
-                `TASK TITLE: ${taskTitle}\n` +
-                `PROOF CRITERIA: ${criteria || 'General clear visual verification of task completion.'}\n` +
-                `USER EXPLANATION / CONTEXT: ${userContext || 'No additional explanation provided.'}\n\n` +
-                `Carefully examine the attached image evidence against the criteria above. Provide your verdict and mandatory critique.`;
+TASK SPECIFICATIONS:
+- Task Title: "${taskTitle}"
+- Proof Criteria <PC>: "${criteria || 'General clear photographic proof of completion'}"
+- User Notes: "${userContext || 'None provided'}"
 
-            const requestBody = {
+RULES OF AUDIT:
+1. Be rigorous and objective. If the proof is ambiguous, partial, blurry, or missing key elements specified in <PC>, you must REJECT it.
+2. Reject screenshots or photos showing unverified screens, stock images, or unrelated physical items.
+3. You must output your verdict strictly in valid JSON matching this schema:
+{
+  "approved": boolean,
+  "verdict": "verified" | "not-enough" | "inadmissible",
+  "critique": "A concise, objective critique (max 2 sentences) describing why it passed or specifically what proof element was missing."
+}`;
+
+            const payload = {
                 contents: [
                     {
                         parts: [
-                            { text: userPromptText },
+                            { text: prompt },
                             {
-                                inline_data: {
-                                    mime_type: mimeType,
-                                    data: imageBase64
+                                inlineData: {
+                                    mimeType: imageFile.type || 'image/jpeg',
+                                    data: base64Image
                                 }
                             }
                         ]
                     }
                 ],
-                systemInstruction: {
-                    parts: [{ text: this.buildSystemInstruction() }]
-                },
                 generationConfig: {
                     responseMimeType: "application/json",
                     temperature: 0.1
                 }
             };
 
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
-            });
+            // Tier 1: Try Primary Model (gemini-3.5-flash-lite)
+            let result = await this._callModel(this.PRIMARY_MODEL, apiKey, payload);
 
-            return response;
-        },
+            // Automatic Failover on 429 RPD Exhaustion
+            if (result.status === 429) {
+                console.warn(`[AuditEngine] Model ${this.PRIMARY_MODEL} exhausted RPD. Cascading to fallback: ${this.FALLBACK_MODEL}...`);
+                
+                // Tier 2: Try Fallback Model (gemini-3.1-flash-lite)
+                result = await this._callModel(this.FALLBACK_MODEL, apiKey, payload);
 
-        verifyProof: async function (options) {
-            const { imageFile, taskTitle, criteria, userContext } = options;
-
-            // 1. Quota Pre-Check
-            const lockout = this.checkDailyLockout();
-            if (lockout.locked) {
-                return { success: false, rateLimited: true, error: lockout.message };
-            }
-
-            // 2. Settings check
-            const settings = getSettings();
-            const apiKey = settings.gemini_api_key;
-            if (!apiKey) {
-                return {
-                    success: false,
-                    error: 'Gemini API key is not configured. Please enter your API key in Settings.'
-                };
-            }
-
-            // 3. Compress / encode evidence image
-            let processedImage;
-            try {
-                processedImage = await ImageCompressor.processFile(imageFile);
-            } catch (err) {
-                return { success: false, error: `Image processing failed: ${err.message}` };
-            }
-
-            // 4. Primary Model Execution (gemini-3.5-flash-lite)
-            let rawResponse = null;
-            let currentModel = this.PRIMARY_MODEL;
-
-            try {
-                rawResponse = await this.callGeminiApi(
-                    this.PRIMARY_MODEL,
-                    apiKey,
-                    processedImage.data,
-                    processedImage.mimeType,
-                    taskTitle,
-                    criteria,
-                    userContext
-                );
-            } catch (netErr) {
-                return { success: false, error: `Network error reaching AI service: ${netErr.message}` };
-            }
-
-            // 5. Fallback Cascade on HTTP 429 (Resource Exhausted / RPD Cap)
-            if (rawResponse.status === 429) {
-                currentModel = this.FALLBACK_MODEL;
-                try {
-                    rawResponse = await this.callGeminiApi(
-                        this.FALLBACK_MODEL,
-                        apiKey,
-                        processedImage.data,
-                        processedImage.mimeType,
-                        taskTitle,
-                        criteria,
-                        userContext
-                    );
-                } catch (netErr2) {
-                    return { success: false, error: `Network error reaching fallback AI service: ${netErr2.message}` };
-                }
-
-                // If fallback model also returns 429: lock out system until midnight
-                if (rawResponse.status === 429) {
+                // If fallback also hits 429, lock out for the day
+                if (result.status === 429) {
                     this.setDailyLockout();
                     return {
                         success: false,
-                        rateLimited: true,
-                        error: 'Daily API quota exhausted across both primary and fallback models. Auditing is locked until midnight (00:00).'
+                        error: 'Daily rate limit exceeded for all available models (3.5 & 3.1). Verification locked until 00:00 midnight.'
                     };
                 }
             }
 
-            // 6. Handle other API response failures
-            if (!rawResponse.ok) {
-                const errJson = await rawResponse.json().catch(() => ({}));
+            if (!result.ok) {
                 return {
                     success: false,
-                    error: `AI verification failed [${rawResponse.status}]: ${errJson.error?.message || rawResponse.statusText}`
+                    error: `Gemini API Error (${result.status}): ${result.errorMessage || 'Audit call failed'}`
                 };
             }
 
-            // 7. Parse Structured JSON Evaluation
             try {
-                const resultData = await rawResponse.json();
-                const rawText = resultData.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!rawText) {
-                    return { success: false, error: 'AI model returned an empty evaluation candidate.' };
+                const responseData = result.data;
+                const textContent = responseData.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!textContent) {
+                    return { success: false, error: 'Received empty response from auditor model.' };
                 }
 
-                const evaluation = JSON.parse(rawText);
-                const verdict = String(evaluation.verdict || '').toLowerCase().trim();
-                const critique = evaluation.critique || 'No detailed critique provided by auditor.';
-
+                const parsed = JSON.parse(textContent);
                 return {
                     success: true,
-                    model_used: currentModel,
-                    verdict: verdict,
-                    critique: critique,
-                    approved: verdict === 'approved'
+                    approved: Boolean(parsed.approved),
+                    verdict: parsed.verdict || (parsed.approved ? 'verified' : 'not-enough'),
+                    critique: parsed.critique || (parsed.approved ? 'Criteria fully satisfied.' : 'Insufficient evidence.'),
+                    model_used: result.model
                 };
+            } catch (e) {
+                return { success: false, error: 'Auditor model returned invalid JSON structure.' };
+            }
+        },
 
-            } catch (parseErr) {
-                return {
-                    success: false,
-                    error: `Failed to parse AI evaluation response: ${parseErr.message}`
-                };
+        async _callModel(modelName, apiKey, payload) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    return { ok: true, status: res.status, data: data, model: modelName };
+                }
+
+                let errMsg = '';
+                try {
+                    const errObj = await res.json();
+                    errMsg = errObj.error?.message || res.statusText;
+                } catch (e) {
+                    errMsg = res.statusText;
+                }
+
+                return { ok: false, status: res.status, errorMessage: errMsg, model: modelName };
+            } catch (networkErr) {
+                return { ok: false, status: 0, errorMessage: networkErr.message, model: modelName };
             }
         }
     };
 
-    // Public module surface
     return {
         EmergencyManager,
         BreakEngine,
-        ImageCompressor,
         AuditEngine
     };
 }));
