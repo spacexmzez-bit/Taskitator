@@ -1,273 +1,238 @@
-<!DOCTYPE html>
 <!-- stats.html -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Taskitator - Statistics</title>
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#0b111e">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="stylesheet" href="style.css?v=14">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taskitator - Stats</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .stat-box {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 4px;
+        }
+        .stat-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .chart-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .chart-card h3 {
+            margin-top: 0;
+            font-size: 1rem;
+            margin-bottom: 12px;
+        }
+        .bar-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+        }
+        .bar-label {
+            width: 90px;
+            color: var(--text-muted);
+        }
+        .bar-outer {
+            flex: 1;
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            height: 18px;
+            overflow: hidden;
+            margin: 0 10px;
+        }
+        .bar-fill {
+            height: 100%;
+            background: var(--primary);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+        .bar-count {
+            width: 30px;
+            text-align: right;
+            font-weight: 600;
+        }
+    </style>
 </head>
 <body>
 
-    <div id="backdrop"></div>
+<!-- Sidebar Drawer -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<aside class="sidebar-drawer" id="sidebarDrawer">
+    <div style="font-weight: 700; font-size: 1.15rem; margin-bottom: 24px;">Taskitator</div>
+    <nav class="drawer-links">
+        <a href="index.html">📅 Today</a>
+        <a href="general.html">🗂️ General Tasks</a>
+        <a href="stats.html" class="active">📊 Stats</a>
+        <a href="trash.html">🗑️ Trash</a>
+        <a href="settings.html">⚙️ Settings</a>
+    </nav>
+</aside>
 
-    <div id="mobile-header">
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <h2>Taskitator</h2>
-            <div class="sync-indicator-badge" id="mobile-sync-badge">
-                <span class="sync-dot"></span>
-                <span class="sync-text">Offline</span>
-            </div>
+<div class="app-container">
+    <!-- Top Navbar -->
+    <header class="top-navbar">
+        <div class="nav-left">
+            <button class="icon-btn" id="openDrawerBtn" title="Menu">☰</button>
+            <h2 style="margin: 0; font-size: 1.25rem;">Productivity Stats</h2>
         </div>
-        <button id="menu-toggle" aria-label="Toggle navigation">☰</button>
+    </header>
+
+    <!-- Key Metrics Grid -->
+    <div class="stats-grid">
+        <div class="stat-box">
+            <div class="stat-value" id="statCompletedToday">0</div>
+            <div class="stat-label">Done Today</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value" id="statPendingToday">0</div>
+            <div class="stat-label">Pending Today</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value" id="statAiVerified">0</div>
+            <div class="stat-label">AI Verified</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value" id="statTotalActive">0</div>
+            <div class="stat-label">Total Active</div>
+        </div>
     </div>
 
-    <aside id="sidebar">
-        <h2>Taskitator</h2>
-        <a href="index.html" class="nav-link">📅 Today's Tasks</a>
-        <a href="general.html" class="nav-link">📋 General List</a>
-        <a href="stats.html" class="nav-link active">📊 Statistics</a>
-        <a href="settings.html" class="nav-link">⚙️ Settings</a>
-        <a href="trash.html" class="nav-link">🗑️ Trash Bin</a>
-    </aside>
+    <!-- Task Breakdown Card -->
+    <div class="chart-card">
+        <h3>Task Distribution</h3>
+        <div class="bar-container">
+            <span class="bar-label">Completed</span>
+            <div class="bar-outer"><div class="bar-fill" id="barCompleted" style="width: 0%;"></div></div>
+            <span class="bar-count" id="countCompleted">0</span>
+        </div>
+        <div class="bar-container">
+            <span class="bar-label">Active</span>
+            <div class="bar-outer"><div class="bar-fill" id="barActive" style="width: 0%; background: #eab308;"></div></div>
+            <span class="bar-count" id="countActive">0</span>
+        </div>
+        <div class="bar-container">
+            <span class="bar-label">In Trash</span>
+            <div class="bar-outer"><div class="bar-fill" id="barTrash" style="width: 0%; background: var(--danger);"></div></div>
+            <span class="bar-count" id="countTrash">0</span>
+        </div>
+    </div>
 
-    <main id="main-content">
-        <header id="top-nav">
-            <span style="font-size: 0.9rem; font-weight: 600; color: #94a3b8;">Workspace Analytics</span>
-            <div class="sync-indicator-badge" id="desktop-sync-badge" style="margin-left: auto;">
-                <span class="sync-dot"></span>
-                <span class="sync-text">Cloud Sync</span>
-            </div>
-        </header>
+    <!-- AI Verification Summary Card -->
+    <div class="chart-card">
+        <h3>AI Verification Gate</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0;">
+            Tasks guarded by automated forensic inspection via Gemini.
+        </p>
+        <div class="bar-container">
+            <span class="bar-label">AI Locked</span>
+            <div class="bar-outer"><div class="bar-fill" id="barAiLocked" style="width: 0%; background: #6366f1;"></div></div>
+            <span class="bar-count" id="countAiLocked">0</span>
+        </div>
+        <div class="bar-container">
+            <span class="bar-label">Standard</span>
+            <div class="bar-outer"><div class="bar-fill" id="barStandard" style="width: 0%; background: #94a3b8;"></div></div>
+            <span class="bar-count" id="countStandard">0</span>
+        </div>
+    </div>
+</div>
 
-        <section id="view-area">
-            <h1>Productivity Statistics</h1>
+<script>
+const TASKS_KEY = 'taskitator_tasks';
 
-            <div class="stats-overview-grid">
-                <div class="stat-card">
-                    <div class="stat-card-title">Completed Today</div>
-                    <div class="stat-card-value" id="stat-completed-today">0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-card-title">Active Today</div>
-                    <div class="stat-card-value" id="stat-active-today">0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-card-title">Completion Rate</div>
-                    <div class="stat-card-value" id="stat-completion-rate">0%</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-card-title">Total Active in System</div>
-                    <div class="stat-card-value" id="stat-total-active">0</div>
-                </div>
-            </div>
+function renderStats() {
+    let tasks = [];
+    try {
+        tasks = JSON.parse(localStorage.getItem(TASKS_KEY) || '[]');
+    } catch (e) {
+        tasks = [];
+    }
 
-            <div class="settings-section" style="margin-top: 24px;">
-                <h3>Priority Distribution</h3>
-                <p>Breakdown of all active tasks across priority levels.</p>
-                <div class="stats-distribution-list">
-                    <div class="dist-row">
-                        <span class="badge badge-priority-high">High</span>
-                        <span class="dist-count" id="stat-priority-high">0</span>
-                    </div>
-                    <div class="dist-row">
-                        <span class="badge badge-priority-med">Medium</span>
-                        <span class="dist-count" id="stat-priority-med">0</span>
-                    </div>
-                    <div class="dist-row">
-                        <span class="badge badge-priority-low">Low</span>
-                        <span class="dist-count" id="stat-priority-low">0</span>
-                    </div>
-                </div>
-            </div>
+    const todayStr = new Date().toISOString().split('T')[0];
 
-            <div class="settings-section">
-                <h3>Tag Distribution</h3>
-                <p>Breakdown of active tasks categorized by custom tags.</p>
-                <div id="stats-tags-container" class="stats-distribution-list"></div>
-            </div>
-        </section>
-    </main>
+    // Basic Metrics
+    const completedTasks = tasks.filter(t => t.status === 'completed');
+    const activeTasks = tasks.filter(t => t.status === 'active');
+    const trashedTasks = tasks.filter(t => t.status === 'trash');
 
-    <script src="sync-engine.js"></script>
-    <script>
-        const toggleBtn = document.getElementById('menu-toggle');
-        const sidebar = document.getElementById('sidebar');
-        const backdrop = document.getElementById('backdrop');
+    const completedToday = completedTasks.filter(t => {
+        if (!t.completed_at) return false;
+        return t.completed_at.startsWith(todayStr);
+    }).length;
 
-        const statCompletedToday = document.getElementById('stat-completed-today');
-        const statActiveToday = document.getElementById('stat-active-today');
-        const statCompletionRate = document.getElementById('stat-completion-rate');
-        const statTotalActive = document.getElementById('stat-total-active');
+    const pendingToday = activeTasks.filter(t => {
+        const due = String(t.due_date || 'today').trim().toLowerCase();
+        return due === 'today' || due === todayStr;
+    }).length;
 
-        const statPriorityHigh = document.getElementById('stat-priority-high');
-        const statPriorityMed = document.getElementById('stat-priority-med');
-        const statPriorityLow = document.getElementById('stat-priority-low');
-        const statsTagsContainer = document.getElementById('stats-tags-container');
+    const aiVerifiedCount = completedTasks.filter(t => t.ai_locked).length;
+    const aiLockedActiveCount = activeTasks.filter(t => t.ai_locked).length;
+    const standardActiveCount = activeTasks.filter(t => !t.ai_locked).length;
 
-        const desktopSyncBadge = document.getElementById('desktop-sync-badge');
-        const mobileSyncBadge = document.getElementById('mobile-sync-badge');
+    // Populate Counters
+    document.getElementById('statCompletedToday').textContent = completedToday;
+    document.getElementById('statPendingToday').textContent = pendingToday;
+    document.getElementById('statAiVerified').textContent = aiVerifiedCount;
+    document.getElementById('statTotalActive').textContent = activeTasks.length;
 
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').catch(err => {
-                    console.warn('ServiceWorker registration failed: ', err);
-                });
-            });
-        }
+    // Distribution Bars
+    const totalAll = Math.max(1, tasks.length);
+    document.getElementById('countCompleted').textContent = completedTasks.length;
+    document.getElementById('barCompleted').style.width = `${(completedTasks.length / totalAll) * 100}%`;
 
-        toggleBtn.addEventListener('click', () => {
-            const isOpen = sidebar.classList.toggle('open');
-            backdrop.classList.toggle('active', isOpen);
-        });
+    document.getElementById('countActive').textContent = activeTasks.length;
+    document.getElementById('barActive').style.width = `${(activeTasks.length / totalAll) * 100}%`;
 
-        backdrop.addEventListener('click', () => {
-            sidebar.classList.remove('open');
-            backdrop.classList.remove('active');
-        });
+    document.getElementById('countTrash').textContent = trashedTasks.length;
+    document.getElementById('barTrash').style.width = `${(trashedTasks.length / totalAll) * 100}%`;
 
-        // ==========================================
-        // SYNC ENGINE BADGE & AUTO-PULL
-        // ==========================================
-        function updateGlobalSyncBadge(status, detail = null) {
-            const badges = [desktopSyncBadge, mobileSyncBadge];
-            badges.forEach(badge => {
-                if (!badge) return;
-                badge.className = 'sync-indicator-badge ' + status;
-                const label = badge.querySelector('.sync-text');
+    // AI Breakdown Bars
+    const totalActiveScoped = Math.max(1, activeTasks.length);
+    document.getElementById('countAiLocked').textContent = aiLockedActiveCount;
+    document.getElementById('barAiLocked').style.width = `${(aiLockedActiveCount / totalActiveScoped) * 100}%`;
 
-                if (status === 'syncing') {
-                    label.textContent = 'Syncing...';
-                } else if (status === 'synced') {
-                    label.textContent = 'Synced';
-                } else if (status === 'conflict') {
-                    label.textContent = 'Conflict';
-                } else if (status === 'error') {
-                    label.textContent = 'Sync Error';
-                } else if (status === 'unconfigured') {
-                    label.textContent = 'Local Only';
-                } else {
-                    label.textContent = 'Cloud Sync';
-                }
-            });
-        }
+    document.getElementById('countStandard').textContent = standardActiveCount;
+    document.getElementById('barStandard').style.width = `${(standardActiveCount / totalActiveScoped) * 100}%`;
+}
 
-        SyncEngine.onStatusChange((status, detail) => {
-            updateGlobalSyncBadge(status, detail);
-        });
+// Drawer Navigation
+const sidebarDrawer = document.getElementById('sidebarDrawer');
+const drawerBackdrop = document.getElementById('drawerBackdrop');
 
-        function performAutoPull() {
-            if (SyncEngine.isConfigured()) {
-                SyncEngine.pull(() => {
-                    calculateStatistics();
-                });
-            } else {
-                updateGlobalSyncBadge('unconfigured');
-            }
-        }
+document.getElementById('openDrawerBtn').addEventListener('click', () => {
+    sidebarDrawer.classList.add('open');
+    drawerBackdrop.classList.add('open');
+});
 
-        performAutoPull();
+drawerBackdrop.addEventListener('click', () => {
+    sidebarDrawer.classList.remove('open');
+    drawerBackdrop.classList.remove('open');
+});
 
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                performAutoPull();
-            }
-        });
-
-        window.addEventListener('online', () => {
-            performAutoPull();
-        });
-
-        function getTasks() {
-            return JSON.parse(localStorage.getItem('taskitator_tasks')) || [];
-        }
-
-        function getSettings() {
-            return JSON.parse(localStorage.getItem('taskitator_settings')) || {
-                tags: []
-            };
-        }
-
-        function calculateStatistics() {
-            const tasks = getTasks();
-            const settings = getSettings();
-            const todayStr = new Date().toISOString().split('T')[0];
-
-            const activeTasks = tasks.filter(t => t.status === 'active');
-            const completedToday = tasks.filter(t => {
-                if (t.status !== 'completed' || !t.completed_at) return false;
-                return t.completed_at.split('T')[0] === todayStr;
-            });
-
-            const activeToday = activeTasks.filter(t => {
-                return !t.due_date || t.due_date.toLowerCase() === 'today' || t.due_date === todayStr;
-            });
-
-            const totalTodayActions = completedToday.length + activeToday.length;
-            const completionRate = totalTodayActions > 0 
-                ? Math.round((completedToday.length / totalTodayActions) * 100) 
-                : 0;
-
-            statCompletedToday.textContent = completedToday.length;
-            statActiveToday.textContent = activeToday.length;
-            statCompletionRate.textContent = `${completionRate}%`;
-            statTotalActive.textContent = activeTasks.length;
-
-            let high = 0, med = 0, low = 0;
-            activeTasks.forEach(t => {
-                const p = (t.priority || 'med').toLowerCase();
-                if (p === 'high') high++;
-                else if (p === 'low') low++;
-                else med++;
-            });
-
-            statPriorityHigh.textContent = high;
-            statPriorityMed.textContent = med;
-            statPriorityLow.textContent = low;
-
-            const tagCounts = {};
-            (settings.tags || []).forEach(tg => { tagCounts[tg.name] = 0; });
-            let untaggedCount = 0;
-
-            activeTasks.forEach(t => {
-                if (t.tag && tagCounts.hasOwnProperty(t.tag)) {
-                    tagCounts[t.tag]++;
-                } else {
-                    untaggedCount++;
-                }
-            });
-
-            statsTagsContainer.innerHTML = '';
-            (settings.tags || []).forEach(tg => {
-                const row = document.createElement('div');
-                row.className = 'dist-row';
-                row.innerHTML = `
-                    <span class="badge" style="background-color: ${tg.color}; color: #ffffff;">${escapeHtml(tg.name)}</span>
-                    <span class="dist-count">${tagCounts[tg.name]}</span>
-                `;
-                statsTagsContainer.appendChild(row);
-            });
-
-            const untaggedRow = document.createElement('div');
-            untaggedRow.className = 'dist-row';
-            untaggedRow.innerHTML = `
-                <span class="badge">Untagged</span>
-                <span class="dist-count">${untaggedCount}</span>
-            `;
-            statsTagsContainer.appendChild(untaggedRow);
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        calculateStatistics();
-    </script>
+document.addEventListener('DOMContentLoaded', renderStats);
+</script>
 </body>
 </html>
