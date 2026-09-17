@@ -16,6 +16,8 @@
             --primary: #3b82f6;
             --primary-hover: #2563eb;
             --danger: #ef4444;
+            --tag-bg: #e0f2fe;
+            --tag-text: #0369a1;
         }
 
         body.dark-mode {
@@ -26,6 +28,8 @@
             --border-color: #334155;
             --primary: #3b82f6;
             --primary-hover: #60a5fa;
+            --tag-bg: #0c4a6e;
+            --tag-text: #bae6fd;
         }
 
         body {
@@ -52,16 +56,10 @@
             margin-bottom: 16px;
         }
 
-        .nav-left {
+        .nav-left, .nav-right {
             display: flex;
             align-items: center;
-            gap: 12px;
-        }
-
-        .nav-right {
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
 
         .icon-btn {
@@ -69,13 +67,12 @@
             border: 1px solid var(--border-color);
             color: var(--text-color);
             border-radius: 6px;
-            width: 34px;
-            height: 34px;
+            padding: 6px 10px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            font-size: 1rem;
+            font-size: 0.9rem;
             transition: background 0.15s ease;
         }
 
@@ -111,13 +108,13 @@
         }
 
         .info-tiny-btn {
-            width: 20px;
-            height: 20px;
+            width: 22px;
+            height: 22px;
             border-radius: 50%;
             background: transparent;
             border: 1px solid var(--border-color);
             color: var(--text-muted);
-            font-size: 0.7rem;
+            font-size: 0.75rem;
             font-weight: bold;
             cursor: pointer;
             display: inline-flex;
@@ -177,7 +174,7 @@
             color: var(--primary);
         }
 
-        /* Banner Messages */
+        /* Banners */
         .banner-emergency {
             background: #fef2f2;
             border: 1px solid #fecaca;
@@ -235,6 +232,7 @@
             border-radius: 8px;
             padding: 10px 12px;
             transition: border-color 0.15s ease;
+            cursor: pointer;
         }
 
         .task-row:hover {
@@ -246,6 +244,7 @@
             align-items: center;
             gap: 8px;
             flex: 1;
+            overflow: hidden;
         }
 
         .collapse-toggle {
@@ -319,6 +318,15 @@
             color: #93c5fd;
         }
 
+        .tag-chip {
+            background: var(--tag-bg);
+            color: var(--tag-text);
+            font-size: 0.7rem;
+            font-weight: 500;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
         .task-subtree {
             list-style: none;
             padding: 0;
@@ -348,7 +356,7 @@
             cursor: not-allowed;
         }
 
-        /* Floating Action Button for Add Task */
+        /* Floating Action Button */
         .fab-add {
             position: fixed;
             bottom: 24px;
@@ -395,7 +403,7 @@
         .modal-box {
             background: var(--card-bg);
             border-radius: 12px;
-            max-width: 520px;
+            max-width: 540px;
             width: 90%;
             padding: 22px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.2);
@@ -427,6 +435,13 @@
             font-size: 0.9rem;
         }
 
+        .form-group input:disabled,
+        .form-group textarea:disabled {
+            background: var(--border-color);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
         .subtask-builder-item {
             display: flex;
             align-items: center;
@@ -454,10 +469,10 @@
 </head>
 <body>
 
-<!-- Sidebar Backdrop & Drawer -->
+<!-- Sidebar Drawer -->
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="sidebar-drawer" id="sidebarDrawer">
-    <div style="font-weight: 700; font-size: 1.1rem; margin-bottom: 24px;">Taskitator</div>
+    <div style="font-weight: 700; font-size: 1.15rem; margin-bottom: 24px;">Taskitator</div>
     <nav class="drawer-links">
         <a href="index.html" class="active">📅 Today</a>
         <a href="general.html">🗂️ General Tasks</a>
@@ -482,7 +497,7 @@
 
     <!-- Active Emergency Alert Banner -->
     <div id="activeEmergencyBanner" class="banner-emergency" style="display: none;">
-        <span>🚨 Emergency Mode Active: Task deletion unlocked!</span>
+        <span>🚨 Emergency Mode Active: Task deletion & editing unlocked!</span>
         <span id="emergencyCountdownTimer">15:00</span>
     </div>
 
@@ -492,12 +507,12 @@
             <strong style="font-size: 0.9rem;">⏸️ Daily Break Scheduling Window Open</strong>
         </div>
         <p style="font-size: 0.8rem; margin: 0 0 10px 0;">
-            Schedule up to 3 non-overlapping breaks (&le; 3 hrs total). Window locks after closing.
+            Schedule up to 3 non-overlapping breaks (&le; 3 hrs total). Window locks permanently after closing.
         </p>
         <div id="breakInputsList"></div>
         <div style="display: flex; gap: 8px; margin-top: 10px;">
-            <button class="icon-btn" id="addBreakRowBtn" style="width: auto; padding: 0 10px; font-size: 0.8rem;">+ Add</button>
-            <button class="icon-btn" id="saveBreaksBtn" style="width: auto; padding: 0 12px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">Save Breaks</button>
+            <button class="icon-btn" id="addBreakRowBtn" style="padding: 4px 10px; font-size: 0.8rem;">+ Add Break</button>
+            <button class="icon-btn" id="saveBreaksBtn" style="padding: 4px 12px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">Save Breaks</button>
         </div>
     </section>
 
@@ -505,17 +520,29 @@
     <ul class="task-list-tree" id="todayTaskList"></ul>
 </div>
 
-<!-- Floating Action Button -->
-<button class="fab-add" id="openAddTaskModalBtn" title="Create Task">+</button>
+<!-- Floating Action Button for Root Task -->
+<button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
 
 <!-- Modal: Comprehensive Task Creation -->
 <div class="modal-overlay" id="addTaskModal">
     <div class="modal-box">
-        <h3 style="margin-top: 0;">Create New Task</h3>
+        <h3 style="margin-top: 0;" id="addTaskModalTitle">Create New Task</h3>
         <form id="taskCreateForm">
+            <input type="hidden" id="creationParentId" value="">
+
             <div class="form-group">
                 <label for="taskTitleInput">Task Title</label>
                 <input type="text" id="taskTitleInput" placeholder="What needs to be done?" required autocomplete="off">
+            </div>
+
+            <div class="form-group">
+                <label for="taskDescInput">Description (Mutable anytime)</label>
+                <textarea id="taskDescInput" rows="2" placeholder="Add optional details..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="taskTagsInput">Tags (Comma-separated, mutable anytime)</label>
+                <input type="text" id="taskTagsInput" placeholder="e.g. Study, Urgent, Routine">
             </div>
 
             <div class="form-group">
@@ -531,25 +558,84 @@
             </div>
 
             <div class="form-group" id="criteriaBoxContainer" style="display: none;">
-                <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt; (Visual Requirements)</label>
-                <textarea id="taskCriteriaInput" rows="2" placeholder="e.g. Photo clearly showing completed review worksheet #3 with current date handwritten."></textarea>
+                <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt; (Visual Verification Requirements)</label>
+                <textarea id="taskCriteriaInput" rows="2" placeholder="e.g. Photo clearly showing completed worksheet #4 with current date handwritten."></textarea>
             </div>
 
             <div class="form-group">
-                <label>Subtasks</label>
+                <label>Quick Subtasks (Title only; due date unset)</label>
                 <div id="subtaskBuilderList"></div>
-                <button type="button" class="icon-btn" id="addSubtaskFieldBtn" style="width: auto; padding: 4px 10px; font-size: 0.8rem; margin-top: 6px;">+ Add Subtask</button>
+                <button type="button" class="icon-btn" id="addSubtaskFieldBtn" style="padding: 4px 10px; font-size: 0.8rem; margin-top: 6px;">+ Quick Subtask</button>
             </div>
 
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
-                <button type="button" class="icon-btn" id="closeAddTaskModalBtn" style="width: auto; padding: 6px 14px;">Cancel</button>
-                <button type="submit" class="icon-btn" style="width: auto; padding: 6px 18px; background: var(--primary); color: #fff; border: none; font-weight: 600;">Create Task</button>
+                <button type="button" class="icon-btn" id="closeAddTaskModalBtn">Cancel</button>
+                <button type="submit" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Task</button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Modal: AI Proof Verification Audit -->
+<!-- Modal: Task Detail & Edit Panel -->
+<div class="modal-overlay" id="taskDetailModal">
+    <div class="modal-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <h3 style="margin: 0;" id="detailTaskTitleHeader">Task Details</h3>
+            <span id="detailLockStatusBadge"></span>
+        </div>
+
+        <div class="form-group">
+            <label for="editTaskTitle">Title</label>
+            <input type="text" id="editTaskTitle">
+        </div>
+
+        <div class="form-group">
+            <label for="editTaskDesc">Description (Always Editable)</label>
+            <textarea id="editTaskDesc" rows="2"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="editTaskTags">Tags (Always Editable, Comma-separated)</label>
+            <input type="text" id="editTaskTags">
+        </div>
+
+        <div class="form-group">
+            <label for="editTaskDueDate">Due Date</label>
+            <input type="date" id="editTaskDueDate">
+        </div>
+
+        <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="editAiLockCheckbox">
+                <span>AI Proof Required</span>
+            </label>
+        </div>
+
+        <div class="form-group" id="editCriteriaBoxContainer" style="display: none;">
+            <label for="editTaskCriteria">Proof Criteria &lt;PC&gt;</label>
+            <textarea id="editTaskCriteria" rows="2"></textarea>
+        </div>
+
+        <!-- Subtasks Section with + Button for Full Creation Pop-up -->
+        <div class="form-group" style="margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <label style="margin: 0;">Subtasks Under This Task</label>
+                <button type="button" class="icon-btn" id="openChildAddModalBtn" style="padding: 4px 10px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">+ Add Subtask</button>
+            </div>
+            <ul id="detailSubtasksList" style="list-style: none; padding: 0; margin: 0;"></ul>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
+            <button type="button" class="icon-btn" id="deleteFromDetailBtn" style="color: var(--danger); border-color: #fca5a5;">Delete Task</button>
+            <div style="display: flex; gap: 10px;">
+                <button type="button" class="icon-btn" id="closeDetailModalBtn">Cancel</button>
+                <button type="button" class="icon-btn" id="saveTaskDetailsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Proof Verification Audit -->
 <div class="modal-overlay" id="auditModal">
     <div class="modal-box">
         <h3 style="margin-top: 0;">Submit AI Verification Proof</h3>
@@ -569,8 +655,8 @@
         <div id="auditFeedbackContainer" style="display: none;"></div>
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
-            <button type="button" class="icon-btn" id="closeAuditModalBtn" style="width: auto; padding: 6px 12px;">Cancel</button>
-            <button type="button" class="icon-btn" id="submitProofBtn" style="width: auto; padding: 6px 16px; background: var(--primary); color: #fff; border: none; font-weight: 600;">Submit Proof</button>
+            <button type="button" class="icon-btn" id="closeAuditModalBtn">Cancel</button>
+            <button type="button" class="icon-btn" id="submitProofBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Submit Proof</button>
         </div>
     </div>
 </div>
@@ -578,15 +664,15 @@
 <!-- Modal: Emergency Confirmation -->
 <div class="modal-overlay" id="emergencyConfirmModal">
     <div class="modal-box">
-        <h3 style="margin-top: 0; color: var(--danger);">🚨 Consume Emergency Bypass?</h3>
+        <h3 style="margin-top: 0; color: var(--danger);">🚨 Activate Emergency Bypass?</h3>
         <p style="font-size: 0.875rem; line-height: 1.5;">
             Activating this consumes <strong>1 of your 4 weekly tokens</strong>.<br>
-            It lifts editing and deletion restrictions on AI-locked tasks for exactly <strong>15 minutes</strong>.
+            It temporarily unfreezes editing, deletion, and criteria locks on AI-locked tasks for exactly <strong>15 minutes</strong>.
         </p>
         <p id="emergencyModalRemainingUses" style="font-size: 0.85rem; font-weight: 600;"></p>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
-            <button class="icon-btn" id="cancelEmergencyBtn" style="width: auto; padding: 6px 12px;">Cancel</button>
-            <button class="icon-btn" id="confirmEmergencyBtn" style="width: auto; padding: 6px 16px; background: var(--danger); color: #fff; border: none; font-weight: 600;">Activate 15m</button>
+            <button class="icon-btn" id="cancelEmergencyBtn">Cancel</button>
+            <button class="icon-btn" id="confirmEmergencyBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 600;">Activate 15m</button>
         </div>
     </div>
 </div>
@@ -597,12 +683,12 @@
         <h3 style="margin-top: 0;">ℹ️ Emergency Rules</h3>
         <p style="font-size: 0.85rem; line-height: 1.5;">
             • Maximum <strong>4 bypass uses</strong> per week.<br>
-            • Each use grants a <strong>15-minute unlock window</strong> to delete or edit tasks.<br>
+            • Each use grants a <strong>15-minute unlock window</strong> to delete or edit locked task criteria.<br>
             • Tokens reset automatically at <strong>00:00 on the day after your configured weekend</strong>.<br>
             • Scheduled breaks release device locks, but never unlock AI task deletion.
         </p>
         <div style="text-align: right; margin-top: 16px;">
-            <button class="icon-btn" id="closeEmergencyInfoModalBtn" style="width: auto; padding: 6px 14px; background: var(--primary); color: #fff; border: none;">Got it</button>
+            <button class="icon-btn" id="closeEmergencyInfoModalBtn" style="background: var(--primary); color: #fff; border: none;">Got it</button>
         </div>
     </div>
 </div>
@@ -618,6 +704,7 @@ const COLLAPSED_STATE_KEY = 'taskitator_collapsed_nodes';
 let tasks = [];
 let collapsedNodes = new Set();
 let pendingAuditTaskId = null;
+let activeDetailTaskId = null;
 let emergencyTimerInterval = null;
 
 function loadStorage() {
@@ -650,7 +737,6 @@ function renderTaskTree() {
     const todayStr = new Date().toISOString().split('T')[0];
     const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
 
-    // Map parent-child relationships
     const childrenMap = new Map();
     const taskMap = new Map();
 
@@ -662,7 +748,6 @@ function renderTaskTree() {
         childrenMap.get(pId).push(t);
     });
 
-    // Helper: Determine if a task or any descendant qualifies for "Today"
     function belongsToToday(task) {
         const due = String(task.due_date || 'today').trim().toLowerCase();
         if (due === 'today' || due === todayStr) return true;
@@ -692,7 +777,6 @@ function renderTaskTree() {
         const hasChildren = children.length > 0;
         const isCollapsed = collapsedNodes.has(task.id);
 
-        // Per-task collapse toggle
         if (hasChildren) {
             const toggleBtn = document.createElement('button');
             toggleBtn.className = 'collapse-toggle';
@@ -715,20 +799,20 @@ function renderTaskTree() {
             main.appendChild(spacer);
         }
 
-        // Completion checkbox
         const checkBtn = document.createElement('button');
         checkBtn.className = 'check-circle';
         checkBtn.textContent = task.status === 'completed' ? '✓' : '';
-        checkBtn.addEventListener('click', () => handleTaskCompletion(task.id));
+        checkBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            handleTaskCompletion(task.id);
+        });
         main.appendChild(checkBtn);
 
-        // Title
         const titleSpan = document.createElement('span');
         titleSpan.className = 'task-title';
         titleSpan.textContent = task.title;
         main.appendChild(titleSpan);
 
-        // AI Badge
         if (task.ai_locked) {
             const badge = document.createElement('span');
             badge.className = 'ai-badge';
@@ -736,9 +820,17 @@ function renderTaskTree() {
             main.appendChild(badge);
         }
 
+        if (task.tags && task.tags.length > 0) {
+            task.tags.forEach(tag => {
+                const tagChip = document.createElement('span');
+                tagChip.className = 'tag-chip';
+                tagChip.textContent = tag;
+                main.appendChild(tagChip);
+            });
+        }
+
         row.appendChild(main);
 
-        // Actions
         const delBtn = document.createElement('button');
         delBtn.className = 'action-del-btn';
         delBtn.textContent = '✕';
@@ -748,13 +840,18 @@ function renderTaskTree() {
             delBtn.disabled = true;
             delBtn.title = 'AI tasks cannot be deleted without an active emergency bypass';
         } else {
-            delBtn.addEventListener('click', () => deleteTask(task.id));
+            delBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteTask(task.id);
+            });
         }
-
         row.appendChild(delBtn);
+
+        // Clicking task row opens full details panel
+        row.addEventListener('click', () => openTaskDetailModal(task.id));
+
         li.appendChild(row);
 
-        // Child subtasks recursion
         if (hasChildren) {
             const subUl = document.createElement('ul');
             subUl.className = `task-subtree ${isCollapsed ? 'collapsed' : ''}`;
@@ -803,7 +900,6 @@ function deleteTask(taskId) {
     }
 
     if (confirm(`Delete "${task.title}" and any associated subtasks?`)) {
-        // Recursively trash task and child subtasks
         function markTrash(id) {
             const target = tasks.find(t => t.id === id);
             if (target) target.status = 'trash';
@@ -814,6 +910,139 @@ function deleteTask(taskId) {
         renderTaskTree();
     }
 }
+
+// =========================================================================
+// Task Detail & Edit Modal (Handles mutable tags/desc & AI lock protection)
+// =========================================================================
+const taskDetailModal = document.getElementById('taskDetailModal');
+const editTaskTitle = document.getElementById('editTaskTitle');
+const editTaskDesc = document.getElementById('editTaskDesc');
+const editTaskTags = document.getElementById('editTaskTags');
+const editTaskDueDate = document.getElementById('editTaskDueDate');
+const editAiLockCheckbox = document.getElementById('editAiLockCheckbox');
+const editCriteriaBoxContainer = document.getElementById('editCriteriaBoxContainer');
+const editTaskCriteria = document.getElementById('editTaskCriteria');
+const detailSubtasksList = document.getElementById('detailSubtasksList');
+const detailLockStatusBadge = document.getElementById('detailLockStatusBadge');
+const deleteFromDetailBtn = document.getElementById('deleteFromDetailBtn');
+
+function openTaskDetailModal(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    activeDetailTaskId = taskId;
+
+    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
+    const isLocked = Boolean(task.ai_locked);
+
+    document.getElementById('detailTaskTitleHeader').textContent = task.title;
+    editTaskTitle.value = task.title || '';
+    editTaskDesc.value = task.description || '';
+    editTaskTags.value = (task.tags || []).join(', ');
+    editTaskDueDate.value = task.due_date === 'today' ? new Date().toISOString().split('T')[0] : (task.due_date || '');
+
+    editAiLockCheckbox.checked = isLocked;
+    editTaskCriteria.value = task.proof_criteria || '';
+    editCriteriaBoxContainer.style.display = isLocked ? 'block' : 'none';
+
+    // Immutability enforcement: Title, Due Date, AI-Lock, Criteria, and Delete are protected
+    const cannotModifyLocked = isLocked && !isBypassActive;
+
+    editTaskTitle.disabled = cannotModifyLocked;
+    editTaskDueDate.disabled = cannotModifyLocked;
+    editAiLockCheckbox.disabled = cannotModifyLocked;
+    editTaskCriteria.disabled = cannotModifyLocked;
+    deleteFromDetailBtn.disabled = cannotModifyLocked;
+
+    if (isLocked) {
+        detailLockStatusBadge.innerHTML = isBypassActive
+            ? '<span class="tag-chip" style="background:#fef3c7;color:#92400e;">Bypass Active</span>'
+            : '<span class="ai-badge">🔒 Locked</span>';
+    } else {
+        detailLockStatusBadge.innerHTML = '<span class="tag-chip">Standard</span>';
+    }
+
+    // Populate direct subtasks
+    detailSubtasksList.innerHTML = '';
+    const directChildren = tasks.filter(t => t.parent_id === taskId && t.status !== 'trash');
+    if (directChildren.length === 0) {
+        detailSubtasksList.innerHTML = '<li style="font-size: 0.825rem; color: var(--text-muted); padding: 4px 0;">No subtasks yet.</li>';
+    } else {
+        directChildren.forEach(child => {
+            const sLi = document.createElement('li');
+            sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
+            sLi.innerHTML = `
+                <span>${child.status === 'completed' ? '✓ ' : ''}${child.title} ${child.ai_locked ? '<span class="ai-badge">🔒 AI</span>' : ''}</span>
+                <button type="button" class="icon-btn" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
+            `;
+            sLi.querySelector('button').addEventListener('click', () => {
+                taskDetailModal.classList.remove('open');
+                openTaskDetailModal(child.id);
+            });
+            detailSubtasksList.appendChild(sLi);
+        });
+    }
+
+    taskDetailModal.classList.add('open');
+}
+
+editAiLockCheckbox.addEventListener('change', () => {
+    editCriteriaBoxContainer.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
+});
+
+document.getElementById('closeDetailModalBtn').addEventListener('click', () => {
+    taskDetailModal.classList.remove('open');
+    activeDetailTaskId = null;
+});
+
+document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
+    if (!activeDetailTaskId) return;
+    const task = tasks.find(t => t.id === activeDetailTaskId);
+    if (!task) return;
+
+    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
+    const willBeAiLocked = editAiLockCheckbox.checked;
+
+    // Post-creation AI lock confirmation
+    if (!task.ai_locked && willBeAiLocked) {
+        const confirmed = confirm(
+            "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
+            "Enabling AI Proof on this task is permanent.\n" +
+            "Once saved, this task cannot be un-checked, criteria cannot be changed, and it CANNOT be deleted without an Emergency Bypass.\n\n" +
+            "Do you want to permanently lock this task?"
+        );
+        if (!confirmed) return;
+    }
+
+    // Description and Tags are always mutable
+    task.description = editTaskDesc.value.trim();
+    task.tags = editTaskTags.value.split(',').map(s => s.trim()).filter(Boolean);
+
+    // Guard locked attributes unless unlocked or in emergency bypass
+    if (!task.ai_locked || isBypassActive) {
+        task.title = editTaskTitle.value.trim() || task.title;
+        task.due_date = editTaskDueDate.value || '';
+        task.ai_locked = willBeAiLocked;
+        task.proof_criteria = willBeAiLocked ? editTaskCriteria.value.trim() : '';
+    }
+
+    saveStorageAndPush();
+    taskDetailModal.classList.remove('open');
+    renderTaskTree();
+});
+
+deleteFromDetailBtn.addEventListener('click', () => {
+    if (!activeDetailTaskId) return;
+    deleteTask(activeDetailTaskId);
+    taskDetailModal.classList.remove('open');
+});
+
+// Full Pop-Up Subtask Creation from Detail View
+document.getElementById('openChildAddModalBtn').addEventListener('click', () => {
+    if (!activeDetailTaskId) return;
+    const parentTask = tasks.find(t => t.id === activeDetailTaskId);
+    taskDetailModal.classList.remove('open');
+    openTaskCreationModal(parentTask.id, `Add Subtask to "${parentTask.title}"`);
+});
 
 // =========================================================================
 // Proof Audit Modal
@@ -891,7 +1120,7 @@ submitProofBtn.addEventListener('click', async () => {
 });
 
 // =========================================================================
-// Emergency Engine UI
+// Emergency Bypass Operations
 // =========================================================================
 const emergencyTriggerBtn = document.getElementById('emergencyTriggerBtn');
 const emergencyConfirmModal = document.getElementById('emergencyConfirmModal');
@@ -1022,22 +1251,28 @@ document.getElementById('saveBreaksBtn').addEventListener('click', () => {
 });
 
 // =========================================================================
-// Full Task Creation Modal & Subtask Builder
+// Full Task Creation Modal Flow
 // =========================================================================
 const addTaskModal = document.getElementById('addTaskModal');
-const openAddTaskModalBtn = document.getElementById('openAddTaskModalBtn');
+const openRootAddModalBtn = document.getElementById('openRootAddModalBtn');
 const closeAddTaskModalBtn = document.getElementById('closeAddTaskModalBtn');
 const aiLockCheckbox = document.getElementById('aiLockCheckbox');
 const criteriaBoxContainer = document.getElementById('criteriaBoxContainer');
 const subtaskBuilderList = document.getElementById('subtaskBuilderList');
+const creationParentId = document.getElementById('creationParentId');
+const addTaskModalTitle = document.getElementById('addTaskModalTitle');
 
-openAddTaskModalBtn.addEventListener('click', () => {
+function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task') {
     document.getElementById('taskCreateForm').reset();
+    creationParentId.value = parentId || '';
+    addTaskModalTitle.textContent = titleLabel;
     criteriaBoxContainer.style.display = 'none';
     subtaskBuilderList.innerHTML = '';
     document.getElementById('taskDueDateInput').value = new Date().toISOString().split('T')[0];
     addTaskModal.classList.add('open');
-});
+}
+
+openRootAddModalBtn.addEventListener('click', () => openTaskCreationModal(null, 'Create New Task'));
 
 closeAddTaskModalBtn.addEventListener('click', () => {
     addTaskModal.classList.remove('open');
@@ -1051,7 +1286,7 @@ document.getElementById('addSubtaskFieldBtn').addEventListener('click', () => {
     const div = document.createElement('div');
     div.className = 'subtask-builder-item';
     div.innerHTML = `
-        <input type="text" class="subtask-input-title" placeholder="Subtask title..." style="flex: 1;" required>
+        <input type="text" class="subtask-input-title" placeholder="Quick subtask title..." style="flex: 1;" required>
         <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
     `;
     subtaskBuilderList.appendChild(div);
@@ -1060,48 +1295,55 @@ document.getElementById('addSubtaskFieldBtn').addEventListener('click', () => {
 document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const title = document.getElementById('taskTitleInput').value.trim();
+    const desc = document.getElementById('taskDescInput').value.trim();
+    const tags = document.getElementById('taskTagsInput').value.split(',').map(s => s.trim()).filter(Boolean);
     const dueDate = document.getElementById('taskDueDateInput').value || 'today';
     const isAi = aiLockCheckbox.checked;
     const criteria = document.getElementById('taskCriteriaInput').value.trim();
+    const parentId = creationParentId.value || null;
 
     if (!title) return;
 
     if (isAi) {
         const confirmed = confirm(
             "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
-            "Once created, AI-Checked tasks CANNOT be edited and CANNOT be deleted.\n\n" +
+            "Once created, AI-Checked tasks CANNOT be edited (except description/tags) and CANNOT be deleted.\n\n" +
             "If phone lock is active, your device stays locked until verified by AI proof.\n\n" +
             "Proceed with creation?"
         );
         if (!confirmed) return;
     }
 
-    const parentId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-    const parentTask = {
-        id: parentId,
-        parent_id: null,
+    const newTaskId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+    const newTask = {
+        id: newTaskId,
+        parent_id: parentId,
         title: title,
+        description: desc,
+        tags: tags,
         status: 'active',
         due_date: dueDate,
         ai_locked: isAi,
         proof_criteria: isAi ? criteria : '',
         created_at: new Date().toISOString()
     };
-    tasks.push(parentTask);
+    tasks.push(newTask);
 
-    // Save subtasks
-    const subtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-input-title');
-    subtaskInputs.forEach(input => {
+    // Quick-added subtasks default strictly to no due date (empty string)
+    const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-input-title');
+    quickSubtaskInputs.forEach(input => {
         const subTitle = input.value.trim();
         if (subTitle) {
             tasks.push({
                 id: 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-                parent_id: parentId,
+                parent_id: newTaskId,
                 title: subTitle,
+                description: '',
+                tags: [],
                 status: 'active',
-                due_date: dueDate,
-                ai_locked: isAi, // Child inherits lock contract
-                proof_criteria: isAi ? criteria : '',
+                due_date: '', // Default strictly to none
+                ai_locked: false,
+                proof_criteria: '',
                 created_at: new Date().toISOString()
             });
         }
