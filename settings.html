@@ -390,6 +390,13 @@ weekendStartSelect.addEventListener('change', updateWorkweekNotice);
 weekendEndSelect.addEventListener('change', updateWorkweekNotice);
 
 document.addEventListener('DOMContentLoaded', loadSettings);
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .catch(err => console.error('SW Registration failed:', err));
+    });
+}
+
 </script>
 </body>
 </html>
