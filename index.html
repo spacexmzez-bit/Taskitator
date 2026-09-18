@@ -5,56 +5,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Taskitator - Today</title>
+    <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="style.css">
     <style>
-        /* Scoped elevation for Today view: slightly lighter energetic dark blue */
-        :root {
-            --bg-color: #0c1b38;
-            --card-bg: #142952;
-            --card-subtle: #1a3466;
-            --border-color: #244680;
-            --border-hover: #3b6ec2;
-        }
-
-        /* Sync Dot Indicator */
-        .sync-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            display: inline-block;
-            cursor: pointer;
-            transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
-        }
-        .sync-dot:hover {
-            transform: scale(1.3);
-        }
-        .sync-dot.local-only {
-            background-color: #64748b; /* Gray: Local Only */
-            box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.25);
-        }
-        .sync-dot.pending {
-            background-color: #eab308; /* Yellow: Not Synced / Pending */
-            box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.3);
-        }
-        .sync-dot.synced {
-            background-color: #22c55e; /* Green: Synced up to date */
-            box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
-        }
-        .sync-dot.error {
-            background-color: #ef4444; /* Red: Sync Error / Offline */
-            box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
-        }
-
-        /* Sync Legend Items */
-        .sync-legend-item {
-            display: flex;
+        .sync-modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            display: none;
             align-items: center;
-            gap: 12px;
-            padding: 10px;
-            border-radius: 8px;
-            background: var(--card-subtle);
-            border: 1px solid var(--border-color);
-            margin-bottom: 8px;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .sync-modal-backdrop.open {
+            display: flex;
+        }
+        .sync-modal-content {
+            background: var(--card-bg, #111827);
+            border: 1px solid var(--border-color, #1f2937);
+            border-radius: 12px;
+            padding: 20px;
+            width: 90%;
+            max-width: 360px;
+            color: var(--text-color, #f9fafb);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
         }
     </style>
 </head>
@@ -80,257 +58,36 @@
             <button class="icon-btn" id="openDrawerBtn" title="Menu">☰</button>
             <h2 style="margin: 0; font-size: 1.25rem;">Today's Focus</h2>
         </div>
-        <div class="nav-right">
-            <!-- Sync Dot Indicator -->
-            <span class="sync-dot local-only" id="syncStatusDot" title="Click to view Sync Status details"></span>
-
-            <button class="emergency-pill-btn" id="emergencyTriggerBtn" title="Emergency Bypass">
-                🚨 <span id="emergencyCountDisplay">4/4</span>
-            </button>
-            <button class="info-tiny-btn" id="emergencyInfoBtn" title="Rules">!</button>
+        <div class="nav-right" style="display: flex; align-items: center; gap: 10px;">
+            <!-- Real-time Sync Status Indicator -->
+            <button id="syncStatusDot" class="sync-dot-btn local-only" title="Sync Status: Local Only"></button>
+            <div id="emergencyBadgeContainer" style="display: flex; align-items: center;"></div>
         </div>
     </header>
 
-    <!-- Active Emergency Alert Banner -->
-    <div id="activeEmergencyBanner" class="banner-emergency" style="display: none;">
-        <span>🚨 Emergency Mode Active: Task deletion & editing unlocked!</span>
-        <span id="emergencyCountdownTimer">15:00</span>
+    <!-- Break Notification Banner -->
+    <div id="activeBreakBanner" class="break-banner" style="display: none;">
+        <span>☕ Active Break Interval — Device Unlocked</span>
     </div>
 
-    <!-- Daily Break Scheduler -->
-    <section id="breakSchedulerContainer" class="banner-break-window" style="display: none;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <strong style="font-size: 0.9rem;">⏸️ Daily Break Scheduling Window Open</strong>
+    <!-- Active Task Tree View -->
+    <main id="taskListContainer" class="task-list-flow">
+        <div style="text-align: center; color: var(--text-muted); margin-top: 40px;">Loading workspace...</div>
+    </main>
+</div>
+
+<!-- Sync Status & Force Action Modal -->
+<div class="sync-modal-backdrop" id="syncModal">
+    <div class="sync-modal-content">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="margin: 0; font-size: 1.1rem; color: var(--primary);">Cloud Sync</h3>
+            <button class="icon-btn" id="closeSyncModalBtn" style="padding: 2px 6px;">✕</button>
         </div>
-        <p style="font-size: 0.8rem; margin: 0 0 10px 0; color: #86efac;">
-            Schedule up to 3 non-overlapping breaks (&le; 3 hrs total). Window locks permanently after closing.
+        <p id="syncModalDetailText" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+            Checking status...
         </p>
-        <div id="breakInputsList"></div>
-        <div style="display: flex; gap: 8px; margin-top: 10px;">
-            <button class="icon-btn" id="addBreakRowBtn" style="padding: 4px 10px; font-size: 0.8rem;">+ Add Break</button>
-            <button class="icon-btn" id="saveBreaksBtn" style="padding: 4px 12px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">Save Breaks</button>
-        </div>
-    </section>
-
-    <!-- Tree-Based Task Hierarchy -->
-    <ul class="task-list-tree" id="todayTaskList"></ul>
-</div>
-
-<!-- Floating Action Button for Root Task -->
-<button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
-
-<!-- Modal: Sync Information -->
-<div class="modal-overlay" id="syncInfoModal">
-    <div class="modal-box">
-        <h3 style="margin-top: 0; color: var(--primary);">🌐 Sync Status Guide</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
-            The indicator dot represents the sync state between your local storage and the universal Cloudflare Worker bridge.
-        </p>
-
-        <div class="sync-legend-item">
-            <span class="sync-dot local-only" style="cursor: default;"></span>
-            <div style="font-size: 0.85rem;">
-                <strong style="color: #94a3b8;">Gray: Local Only</strong>
-                <div style="color: var(--text-muted); font-size: 0.8rem;">No secret passkey configured in Settings. Tasks reside solely on this device.</div>
-            </div>
-        </div>
-
-        <div class="sync-legend-item">
-            <span class="sync-dot pending" style="cursor: default;"></span>
-            <div style="font-size: 0.85rem;">
-                <strong style="color: #facc15;">Yellow: Not Synced</strong>
-                <div style="color: var(--text-muted); font-size: 0.8rem;">Unsaved local modifications queued or awaiting the 45-second auto-sync batch.</div>
-            </div>
-        </div>
-
-        <div class="sync-legend-item">
-            <span class="sync-dot synced" style="cursor: default;"></span>
-            <div style="font-size: 0.85rem;">
-                <strong style="color: #4ade80;">Green: Synced Up to Date</strong>
-                <div style="color: var(--text-muted); font-size: 0.8rem;">All local changes are fully saved and matched with the automation bridge.</div>
-            </div>
-        </div>
-
-        <div class="sync-legend-item">
-            <span class="sync-dot error" style="cursor: default;"></span>
-            <div style="font-size: 0.85rem;">
-                <strong style="color: #f87171;">Red: Sync Failed / Offline</strong>
-                <div style="color: var(--text-muted); font-size: 0.8rem;">Network error or worker rejection. Check passkey or internet connection.</div>
-            </div>
-        </div>
-
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
-            <button class="icon-btn" id="forceSyncFromModalBtn" style="background: var(--primary); color: #fff; border: none; font-size: 0.85rem;">Force Sync Now</button>
-            <button class="icon-btn" id="closeSyncInfoModalBtn">Close</button>
-        </div>
-    </div>
-</div>
-
-<!-- Modal: Comprehensive Task Creation -->
-<div class="modal-overlay" id="addTaskModal">
-    <div class="modal-box">
-        <h3 style="margin-top: 0; color: var(--primary);" id="addTaskModalTitle">Create New Task</h3>
-        <form id="taskCreateForm">
-            <input type="hidden" id="creationParentId" value="">
-
-            <div class="form-group">
-                <label for="taskTitleInput">Task Title</label>
-                <input type="text" id="taskTitleInput" placeholder="What needs to be done?" required autocomplete="off">
-            </div>
-
-            <div class="form-group">
-                <label for="taskDescInput">Description (Mutable anytime)</label>
-                <textarea id="taskDescInput" rows="2" placeholder="Add optional details..."></textarea>
-            </div>
-
-            <div class="form-group">
-                <label for="taskTagsInput">Tags (Comma-separated, mutable anytime)</label>
-                <input type="text" id="taskTagsInput" placeholder="e.g. Study, Urgent, Routine">
-            </div>
-
-            <div class="form-group">
-                <label for="taskDueDateInput">Due Date</label>
-                <input type="date" id="taskDueDateInput">
-            </div>
-
-            <div class="form-group">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" id="aiLockCheckbox">
-                    <span>Require AI Proof Verification (Irrevocable)</span>
-                </label>
-            </div>
-
-            <div class="form-group" id="criteriaBoxContainer" style="display: none;">
-                <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt; (Visual Verification Requirements)</label>
-                <textarea id="taskCriteriaInput" rows="2" placeholder="e.g. Photo clearly showing completed worksheet #4 with current date handwritten."></textarea>
-            </div>
-
-            <div class="form-group">
-                <label>Quick Subtasks (Title only; due date unset)</label>
-                <div id="subtaskBuilderList"></div>
-                <button type="button" class="icon-btn" id="addSubtaskFieldBtn" style="padding: 4px 10px; font-size: 0.8rem; margin-top: 6px;">+ Quick Subtask</button>
-            </div>
-
-            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
-                <button type="button" class="icon-btn" id="closeAddTaskModalBtn">Cancel</button>
-                <button type="submit" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Task</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Modal: Task Detail & Edit Panel -->
-<div class="modal-overlay" id="taskDetailModal">
-    <div class="modal-box">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-            <h3 style="margin: 0; color: var(--primary);" id="detailTaskTitleHeader">Task Details</h3>
-            <span id="detailLockStatusBadge"></span>
-        </div>
-
-        <div class="form-group">
-            <label for="editTaskTitle">Title</label>
-            <input type="text" id="editTaskTitle">
-        </div>
-
-        <div class="form-group">
-            <label for="editTaskDesc">Description (Always Editable)</label>
-            <textarea id="editTaskDesc" rows="2"></textarea>
-        </div>
-
-        <div class="form-group">
-            <label for="editTaskTags">Tags (Always Editable, Comma-separated)</label>
-            <input type="text" id="editTaskTags">
-        </div>
-
-        <div class="form-group">
-            <label for="editTaskDueDate">Due Date</label>
-            <input type="date" id="editTaskDueDate">
-        </div>
-
-        <div class="form-group">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                <input type="checkbox" id="editAiLockCheckbox">
-                <span>AI Proof Required</span>
-            </label>
-        </div>
-
-        <div class="form-group" id="editCriteriaBoxContainer" style="display: none;">
-            <label for="editTaskCriteria">Proof Criteria &lt;PC&gt;</label>
-            <textarea id="editTaskCriteria" rows="2"></textarea>
-        </div>
-
-        <div class="form-group" style="margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <label style="margin: 0;">Subtasks Under This Task</label>
-                <button type="button" class="icon-btn" id="openChildAddModalBtn" style="padding: 4px 10px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">+ Add Subtask</button>
-            </div>
-            <ul id="detailSubtasksList" style="list-style: none; padding: 0; margin: 0;"></ul>
-        </div>
-
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
-            <button type="button" class="icon-btn" id="deleteFromDetailBtn" style="color: var(--danger); border-color: #7f1d1d;">Delete Task</button>
-            <div style="display: flex; gap: 10px;">
-                <button type="button" class="icon-btn" id="closeDetailModalBtn">Cancel</button>
-                <button type="button" class="icon-btn" id="saveTaskDetailsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Changes</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Modal: Proof Verification Audit -->
-<div class="modal-overlay" id="auditModal">
-    <div class="modal-box">
-        <h3 style="margin-top: 0; color: var(--primary);">Submit AI Verification Proof</h3>
-        <p id="auditTaskTitleDisplay" style="font-weight: 600; margin-bottom: 6px;"></p>
-        <div id="auditCriteriaDisplay" style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 14px; background: var(--card-subtle); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);"></div>
-
-        <div class="form-group">
-            <label>Upload Photographic Evidence:</label>
-            <input type="file" id="auditImageInput" accept="image/*" capture="environment">
-        </div>
-
-        <div class="form-group">
-            <label>Optional Note / Clarification:</label>
-            <textarea id="auditContextInput" rows="2" placeholder="Any details for the auditor..."></textarea>
-        </div>
-
-        <div id="auditFeedbackContainer" style="display: none;"></div>
-
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
-            <button type="button" class="icon-btn" id="closeAuditModalBtn">Cancel</button>
-            <button type="button" class="icon-btn" id="submitProofBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Submit Proof</button>
-        </div>
-    </div>
-</div>
-
-<!-- Modal: Emergency Confirmation -->
-<div class="modal-overlay" id="emergencyConfirmModal">
-    <div class="modal-box">
-        <h3 style="margin-top: 0; color: var(--danger);">🚨 Activate Emergency Bypass?</h3>
-        <p style="font-size: 0.875rem; line-height: 1.5;">
-            Activating this consumes <strong>1 of your 4 weekly tokens</strong>.<br>
-            It temporarily unfreezes editing, deletion, and criteria locks on AI-locked tasks for exactly <strong>15 minutes</strong>.
-        </p>
-        <p id="emergencyModalRemainingUses" style="font-size: 0.85rem; font-weight: 600;"></p>
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
-            <button class="icon-btn" id="cancelEmergencyBtn">Cancel</button>
-            <button class="icon-btn" id="confirmEmergencyBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 600;">Activate 15m</button>
-        </div>
-    </div>
-</div>
-
-<!-- Modal: Emergency Info -->
-<div class="modal-overlay" id="emergencyInfoModal">
-    <div class="modal-box">
-        <h3 style="margin-top: 0; color: var(--primary);">ℹ️ Emergency Rules</h3>
-        <p style="font-size: 0.85rem; line-height: 1.5;">
-            • Maximum <strong>4 bypass uses</strong> per week.<br>
-            • Each use grants a <strong>15-minute unlock window</strong> to delete or edit locked task criteria.<br>
-            • Tokens reset automatically at <strong>00:00 on the day after your configured weekend</strong>.<br>
-            • Scheduled breaks release device locks, but never unlock AI task deletion.
-        </p>
-        <div style="text-align: right; margin-top: 16px;">
-            <button class="icon-btn" id="closeEmergencyInfoModalBtn" style="background: var(--primary); color: #fff; border: none;">Got it</button>
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <button class="icon-btn" id="forceSyncNowBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 6px 14px;">Force Sync Now</button>
         </div>
     </div>
 </div>
@@ -338,750 +95,196 @@
 <script src="audit-engine.js"></script>
 <script src="sync-engine.js"></script>
 <script>
-// =========================================================================
-// State & Storage
-// =========================================================================
+const SETTINGS_KEY = 'taskitator_settings';
 const TASKS_KEY = 'taskitator_tasks';
-const COLLAPSED_STATE_KEY = 'taskitator_collapsed_nodes';
-let tasks = [];
-let collapsedNodes = new Set();
-let pendingAuditTaskId = null;
-let activeDetailTaskId = null;
-let emergencyTimerInterval = null;
 
 const syncStatusDot = document.getElementById('syncStatusDot');
-const syncInfoModal = document.getElementById('syncInfoModal');
+const syncModal = document.getElementById('syncModal');
+const closeSyncModalBtn = document.getElementById('closeSyncModalBtn');
+const forceSyncNowBtn = document.getElementById('forceSyncNowBtn');
+const syncModalDetailText = document.getElementById('syncModalDetailText');
+const taskListContainer = document.getElementById('taskListContainer');
 
-function updateSyncDot(state) {
-    if (!syncStatusDot) return;
-    syncStatusDot.className = `sync-dot ${state}`;
-    if (state === 'synced') syncStatusDot.title = 'Sync Status: Synced up to date (Click for info)';
-    else if (state === 'pending') syncStatusDot.title = 'Sync Status: Not synced / Pending (Click for info)';
-    else if (state === 'error') syncStatusDot.title = 'Sync Status: Sync Failed / Offline (Click for info)';
-    else syncStatusDot.title = 'Sync Status: Local only (Click for info)';
-}
+let currentSyncState = 'local-only';
+let currentSyncDetail = null;
 
-function initSyncIndicator() {
-    let settings = {};
+// =========================================================================
+// 1. Task Management & UI Rendering
+// =========================================================================
+function getTasks() {
     try {
-        settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+        return JSON.parse(localStorage.getItem(TASKS_KEY) || '[]');
     } catch (e) {
-        settings = {};
-    }
-
-    if (!settings.worker_passkey) {
-        updateSyncDot('local-only');
-    } else {
-        updateSyncDot('synced');
+        return [];
     }
 }
 
-function loadStorage() {
-    try {
-        tasks = JSON.parse(localStorage.getItem(TASKS_KEY) || '[]');
-        const savedCollapsed = JSON.parse(localStorage.getItem(COLLAPSED_STATE_KEY) || '[]');
-        collapsedNodes = new Set(savedCollapsed);
-    } catch (e) {
-        tasks = [];
-        collapsedNodes = new Set();
-    }
-}
-
-function saveStorageAndPush() {
+function saveTasks(tasks, triggerSync = true) {
     localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
-    localStorage.setItem(COLLAPSED_STATE_KEY, JSON.stringify([...collapsedNodes]));
-
-    let settings = {};
-    try {
-        settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
-    } catch (e) {
-        settings = {};
+    if (triggerSync && window.SyncEngine) {
+        updateSyncUI('pending', { message: 'Changes pending auto-sync...' });
+        SyncEngine.scheduleAutoPush(45000);
     }
-
-    if (!settings.worker_passkey) {
-        updateSyncDot('local-only');
-    } else {
-        updateSyncDot('pending');
-    }
-
-    if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
-        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
-        SyncEngine.scheduleAutoPush(45000, { today_breaks: breaks });
-    }
+    renderTaskTree();
 }
 
-// Background sync confirmation listener
-window.addEventListener('taskitator-synced', () => {
-    updateSyncDot('synced');
-});
+function toggleTaskStatus(taskId) {
+    const tasks = getTasks();
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
 
-// Background sync failure listener
-window.addEventListener('taskitator-sync-error', () => {
-    updateSyncDot('error');
-});
-
-// Click dot to open explanatory information modal
-if (syncStatusDot) {
-    syncStatusDot.addEventListener('click', () => {
-        syncInfoModal.classList.add('open');
-    });
+    task.status = task.status === 'completed' ? 'active' : 'completed';
+    task.completed_at = task.status === 'completed' ? new Date().toISOString() : null;
+    saveTasks(tasks);
 }
 
-document.getElementById('closeSyncInfoModalBtn').addEventListener('click', () => {
-    syncInfoModal.classList.remove('open');
-});
-
-document.getElementById('forceSyncFromModalBtn').addEventListener('click', async () => {
-    let settings = {};
-    try {
-        settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
-    } catch (e) {
-        settings = {};
-    }
-
-    if (!settings.worker_passkey) {
-        alert('Cannot sync: No secret passkey configured in Settings.');
-        updateSyncDot('local-only');
-        return;
-    }
-
-    updateSyncDot('pending');
-    syncInfoModal.classList.remove('open');
-
-    if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
-        const ok = await SyncEngine.forceImmediateSync();
-        if (ok) {
-            updateSyncDot('synced');
-        } else {
-            updateSyncDot('error');
-        }
-    } else {
-        setTimeout(() => updateSyncDot('synced'), 500);
-    }
-});
-
-// =========================================================================
-// Tree Hierarchy Rendering & Scoped Collapsing
-// =========================================================================
 function renderTaskTree() {
-    const list = document.getElementById('todayTaskList');
-    list.innerHTML = '';
-
+    const tasks = getTasks();
     const todayStr = new Date().toISOString().split('T')[0];
-    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
 
-    const childrenMap = new Map();
-    const taskMap = new Map();
-
-    tasks.forEach(t => {
-        if (t.status === 'trash') return;
-        taskMap.set(t.id, t);
-        const pId = t.parent_id || 'root';
-        if (!childrenMap.has(pId)) childrenMap.set(pId, []);
-        childrenMap.get(pId).push(t);
+    // Filter today's active & completed tasks
+    const todayTasks = tasks.filter(t => {
+        const due = String(t.due_date || 'today').trim().toLowerCase();
+        return due === 'today' || due === todayStr;
     });
 
-    function belongsToToday(task) {
-        const due = String(task.due_date || 'today').trim().toLowerCase();
-        if (due === 'today' || due === todayStr) return true;
-        const kids = childrenMap.get(task.id) || [];
-        return kids.some(k => belongsToToday(k));
-    }
-
-    const rootTasks = (childrenMap.get('root') || []).filter(belongsToToday);
-
-    if (rootTasks.length === 0) {
-        list.innerHTML = '<li style="text-align: center; color: var(--text-muted); padding: 32px;">No tasks scheduled for today.</li>';
+    if (todayTasks.length === 0) {
+        taskListContainer.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); margin-top: 60px;">
+                <p style="font-size: 1.1rem; margin-bottom: 8px;">🎉 No tasks scheduled for today.</p>
+                <small>Add tasks in General Tasks or pull updates from cloud.</small>
+            </div>
+        `;
         return;
     }
 
-    function buildNodeElement(task, depth = 0) {
-        const li = document.createElement('li');
-        li.className = `task-node ${task.status === 'completed' ? 'completed' : ''}`;
+    let html = '';
+    todayTasks.forEach(task => {
+        const isDone = task.status === 'completed';
+        html += `
+            <div class="task-card ${isDone ? 'completed-card' : ''}" style="margin-bottom: 10px; padding: 12px 14px; background: var(--card-bg, #1e293b); border: 1px solid var(--border-color, #334155); border-radius: 8px; display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+                    <input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleTaskStatus('${task.id}')" style="width: 18px; height: 18px; cursor: pointer;">
+                    <div>
+                        <div style="font-weight: 600; text-decoration: ${isDone ? 'line-through' : 'none'}; color: ${isDone ? 'var(--text-muted)' : 'inherit'};">
+                            ${task.title || 'Untitled Task'}
+                        </div>
+                        ${task.proof_criteria ? `<small style="color: var(--text-muted); display: block; font-size: 0.75rem;">Criteria: ${task.proof_criteria}</small>` : ''}
+                    </div>
+                </div>
+                ${task.subtasks && task.subtasks.length > 0 ? `<span class="tag-chip" style="font-size: 0.75rem;">${task.subtasks.filter(s => s.status === 'completed').length}/${task.subtasks.length} Subtasks</span>` : ''}
+            </div>
+        `;
+    });
 
-        const row = document.createElement('div');
-        row.className = 'task-row';
-        row.style.marginLeft = `${depth * 20}px`;
+    taskListContainer.innerHTML = html;
+}
 
-        const main = document.createElement('div');
-        main.className = 'task-main';
+// =========================================================================
+// 2. Real-Time Cloud Sync Engine Integration
+// =========================================================================
+function updateSyncUI(status, detail) {
+    currentSyncState = status;
+    currentSyncDetail = detail;
 
-        const children = childrenMap.get(task.id) || [];
-        const hasChildren = children.length > 0;
-        const isCollapsed = collapsedNodes.has(task.id);
+    syncStatusDot.className = 'sync-dot-btn';
 
-        if (hasChildren) {
-            const toggleBtn = document.createElement('button');
-            toggleBtn.className = 'collapse-toggle';
-            toggleBtn.textContent = isCollapsed ? '▶' : '▼';
-            toggleBtn.title = isCollapsed ? 'Expand subtasks' : 'Collapse subtasks';
-            toggleBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (collapsedNodes.has(task.id)) {
-                    collapsedNodes.delete(task.id);
-                } else {
-                    collapsedNodes.add(task.id);
-                }
-                saveStorageAndPush();
+    if (status === 'synced') {
+        syncStatusDot.classList.add('synced');
+        syncStatusDot.title = 'Sync: All changes saved to cloud';
+        syncModalDetailText.innerHTML = `<strong>Status:</strong> Synced<br><small>Last synced: ${detail?.timestamp ? new Date(detail.timestamp).toLocaleTimeString() : 'Just now'}</small>`;
+    } else if (status === 'syncing') {
+        syncStatusDot.classList.add('pending');
+        syncStatusDot.title = 'Sync: Communicating with cloud...';
+        syncModalDetailText.innerHTML = '<strong>Status:</strong> Synchronizing data with Cloudflare KV...';
+    } else if (status === 'pending') {
+        syncStatusDot.classList.add('pending');
+        syncStatusDot.title = 'Sync: Local modifications pending (45s debounce)';
+        syncModalDetailText.innerHTML = '<strong>Status:</strong> Changes queued for auto-push.';
+    } else if (status === 'error') {
+        syncStatusDot.classList.add('error');
+        syncStatusDot.title = `Sync Error: ${detail || 'Failed'}`;
+        syncModalDetailText.innerHTML = `<strong style="color: #f87171;">Error:</strong> ${detail || 'Network handshake failed.'}`;
+    } else {
+        syncStatusDot.classList.add('local-only');
+        syncStatusDot.title = 'Sync: Local Only (No Passkey)';
+        syncModalDetailText.innerHTML = '<strong>Status:</strong> Local Only.<br><small>Configure your secret passkey in Settings to enable cloud sync.</small>';
+    }
+}
+
+// Force Sync Action with Instant Visual UI Re-render
+forceSyncNowBtn.addEventListener('click', async () => {
+    if (!window.SyncEngine) return;
+    
+    forceSyncNowBtn.disabled = true;
+    forceSyncNowBtn.textContent = 'Syncing...';
+
+    try {
+        await SyncEngine.forceImmediateSync();
+        // Immediately re-render tasks so freshly pulled remote items display instantly
+        renderTaskTree();
+    } catch (e) {
+        console.error('Manual force sync failed:', e);
+    } finally {
+        forceSyncNowBtn.disabled = false;
+        forceSyncNowBtn.textContent = 'Force Sync Now';
+        syncModal.classList.remove('open');
+    }
+});
+
+// Event listener for cloud updates triggered anywhere in the window
+window.addEventListener('taskitator-synced', () => {
+    renderTaskTree();
+});
+
+// Sync Status Modal Triggers
+syncStatusDot.addEventListener('click', () => {
+    syncModal.classList.add('open');
+});
+
+closeSyncModalBtn.addEventListener('click', () => {
+    syncModal.classList.remove('open');
+});
+
+syncModal.addEventListener('click', (e) => {
+    if (e.target === syncModal) {
+        syncModal.classList.remove('open');
+    }
+});
+
+// =========================================================================
+// 3. App Initialization & Drawer Handling
+// =========================================================================
+document.addEventListener('DOMContentLoaded', async () => {
+    renderTaskTree();
+
+    if (window.SyncEngine) {
+        SyncEngine.onStatusChange((status, detail) => {
+            updateSyncUI(status, detail);
+        });
+
+        if (SyncEngine.isConfigured()) {
+            updateSyncUI('syncing');
+            // Pull cloud updates and instantly redraw tree if remote tasks arrived
+            await SyncEngine.pull(() => {
                 renderTaskTree();
             });
-            main.appendChild(toggleBtn);
         } else {
-            const spacer = document.createElement('span');
-            spacer.className = 'collapse-spacer';
-            main.appendChild(spacer);
+            updateSyncUI('local-only');
         }
+    }
 
-        const checkBtn = document.createElement('button');
-        checkBtn.className = 'check-circle';
-        checkBtn.textContent = task.status === 'completed' ? '✓' : '';
-        checkBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            handleTaskCompletion(task.id);
-        });
-        main.appendChild(checkBtn);
-
-        const titleSpan = document.createElement('span');
-        titleSpan.className = 'task-title';
-        titleSpan.textContent = task.title;
-        main.appendChild(titleSpan);
-
-        if (task.ai_locked) {
-            const badge = document.createElement('span');
-            badge.className = 'ai-badge';
-            badge.innerHTML = '🔒 AI';
-            main.appendChild(badge);
+    // Check Active Break Status
+    if (window.TaskitatorEngine) {
+        const onBreak = TaskitatorEngine.BreakEngine.isCurrentlyOnBreak();
+        const breakBanner = document.getElementById('activeBreakBanner');
+        if (breakBanner) {
+            breakBanner.style.display = onBreak ? 'block' : 'none';
         }
-
-        if (task.tags && task.tags.length > 0) {
-            task.tags.forEach(tag => {
-                const tagChip = document.createElement('span');
-                tagChip.className = 'tag-chip';
-                tagChip.textContent = tag;
-                main.appendChild(tagChip);
-            });
-        }
-
-        row.appendChild(main);
-
-        const delBtn = document.createElement('button');
-        delBtn.className = 'action-del-btn';
-        delBtn.textContent = '✕';
-        delBtn.title = 'Delete Task';
-
-        if (task.ai_locked && !isBypassActive) {
-            delBtn.disabled = true;
-            delBtn.title = 'AI tasks cannot be deleted without an active emergency bypass';
-        } else {
-            delBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                deleteTask(task.id);
-            });
-        }
-        row.appendChild(delBtn);
-
-        row.addEventListener('click', () => openTaskDetailModal(task.id));
-
-        li.appendChild(row);
-
-        if (hasChildren) {
-            const subUl = document.createElement('ul');
-            subUl.className = `task-subtree ${isCollapsed ? 'collapsed' : ''}`;
-            children.forEach(child => {
-                subUl.appendChild(buildNodeElement(child, depth + 1));
-            });
-            li.appendChild(subUl);
-        }
-
-        return li;
-    }
-
-    rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
-}
-
-function handleTaskCompletion(taskId) {
-    const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-
-    if (task.status === 'completed') {
-        task.status = 'active';
-        task.completed_at = null;
-        saveStorageAndPush();
-        renderTaskTree();
-        return;
-    }
-
-    if (task.ai_locked) {
-        openAuditModal(task);
-        return;
-    }
-
-    task.status = 'completed';
-    task.completed_at = new Date().toISOString();
-    saveStorageAndPush();
-    renderTaskTree();
-}
-
-function deleteTask(taskId) {
-    const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-
-    if (task.ai_locked && !TaskitatorEngine.EmergencyManager.isBypassActive()) {
-        alert('Blocked: AI-locked tasks cannot be deleted without an active Emergency Bypass.');
-        return;
-    }
-
-    if (confirm(`Delete "${task.title}" and any associated subtasks?`)) {
-        function markTrash(id) {
-            const target = tasks.find(t => t.id === id);
-            if (target) target.status = 'trash';
-            tasks.filter(t => t.parent_id === id).forEach(k => markTrash(k.id));
-        }
-        markTrash(taskId);
-        saveStorageAndPush();
-        renderTaskTree();
-    }
-}
-
-// =========================================================================
-// Task Detail & Edit Modal
-// =========================================================================
-const taskDetailModal = document.getElementById('taskDetailModal');
-const editTaskTitle = document.getElementById('editTaskTitle');
-const editTaskDesc = document.getElementById('editTaskDesc');
-const editTaskTags = document.getElementById('editTaskTags');
-const editTaskDueDate = document.getElementById('editTaskDueDate');
-const editAiLockCheckbox = document.getElementById('editAiLockCheckbox');
-const editCriteriaBoxContainer = document.getElementById('editCriteriaBoxContainer');
-const editTaskCriteria = document.getElementById('editTaskCriteria');
-const detailSubtasksList = document.getElementById('detailSubtasksList');
-const detailLockStatusBadge = document.getElementById('detailLockStatusBadge');
-const deleteFromDetailBtn = document.getElementById('deleteFromDetailBtn');
-
-function openTaskDetailModal(taskId) {
-    const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-    activeDetailTaskId = taskId;
-
-    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
-    const isLocked = Boolean(task.ai_locked);
-
-    document.getElementById('detailTaskTitleHeader').textContent = task.title;
-    editTaskTitle.value = task.title || '';
-    editTaskDesc.value = task.description || '';
-    editTaskTags.value = (task.tags || []).join(', ');
-    editTaskDueDate.value = task.due_date === 'today' ? new Date().toISOString().split('T')[0] : (task.due_date || '');
-
-    editAiLockCheckbox.checked = isLocked;
-    editTaskCriteria.value = task.proof_criteria || '';
-    editCriteriaBoxContainer.style.display = isLocked ? 'block' : 'none';
-
-    const cannotModifyLocked = isLocked && !isBypassActive;
-
-    editTaskTitle.disabled = cannotModifyLocked;
-    editTaskDueDate.disabled = cannotModifyLocked;
-    editAiLockCheckbox.disabled = cannotModifyLocked;
-    editTaskCriteria.disabled = cannotModifyLocked;
-    deleteFromDetailBtn.disabled = cannotModifyLocked;
-
-    if (isLocked) {
-        detailLockStatusBadge.innerHTML = isBypassActive
-            ? '<span class="tag-chip" style="background:#451a03;color:#fde68a;">Bypass Active</span>'
-            : '<span class="ai-badge">🔒 Locked</span>';
-    } else {
-        detailLockStatusBadge.innerHTML = '<span class="tag-chip">Standard</span>';
-    }
-
-    detailSubtasksList.innerHTML = '';
-    const directChildren = tasks.filter(t => t.parent_id === taskId && t.status !== 'trash');
-    if (directChildren.length === 0) {
-        detailSubtasksList.innerHTML = '<li style="font-size: 0.825rem; color: var(--text-muted); padding: 4px 0;">No subtasks yet.</li>';
-    } else {
-        directChildren.forEach(child => {
-            const sLi = document.createElement('li');
-            sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
-            sLi.innerHTML = `
-                <span>${child.status === 'completed' ? '✓ ' : ''}${child.title} ${child.ai_locked ? '<span class="ai-badge">🔒 AI</span>' : ''}</span>
-                <button type="button" class="icon-btn" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
-            `;
-            sLi.querySelector('button').addEventListener('click', () => {
-                taskDetailModal.classList.remove('open');
-                openTaskDetailModal(child.id);
-            });
-            detailSubtasksList.appendChild(sLi);
-        });
-    }
-
-    taskDetailModal.classList.add('open');
-}
-
-editAiLockCheckbox.addEventListener('change', () => {
-    editCriteriaBoxContainer.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
-});
-
-document.getElementById('closeDetailModalBtn').addEventListener('click', () => {
-    taskDetailModal.classList.remove('open');
-    activeDetailTaskId = null;
-});
-
-document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
-    if (!activeDetailTaskId) return;
-    const task = tasks.find(t => t.id === activeDetailTaskId);
-    if (!task) return;
-
-    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
-    const willBeAiLocked = editAiLockCheckbox.checked;
-
-    if (!task.ai_locked && willBeAiLocked) {
-        const confirmed = confirm(
-            "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
-            "Enabling AI Proof on this task is permanent.\n" +
-            "Once saved, this task cannot be un-checked, criteria cannot be changed, and it CANNOT be deleted without an Emergency Bypass.\n\n" +
-            "Do you want to permanently lock this task?"
-        );
-        if (!confirmed) return;
-    }
-
-    task.description = editTaskDesc.value.trim();
-    task.tags = editTaskTags.value.split(',').map(s => s.trim()).filter(Boolean);
-
-    if (!task.ai_locked || isBypassActive) {
-        task.title = editTaskTitle.value.trim() || task.title;
-        task.due_date = editTaskDueDate.value || '';
-        task.ai_locked = willBeAiLocked;
-        task.proof_criteria = willBeAiLocked ? editTaskCriteria.value.trim() : '';
-    }
-
-    saveStorageAndPush();
-    taskDetailModal.classList.remove('open');
-    renderTaskTree();
-});
-
-deleteFromDetailBtn.addEventListener('click', () => {
-    if (!activeDetailTaskId) return;
-    deleteTask(activeDetailTaskId);
-    taskDetailModal.classList.remove('open');
-});
-
-document.getElementById('openChildAddModalBtn').addEventListener('click', () => {
-    if (!activeDetailTaskId) return;
-    const parentTask = tasks.find(t => t.id === activeDetailTaskId);
-    taskDetailModal.classList.remove('open');
-    openTaskCreationModal(parentTask.id, `Add Subtask to "${parentTask.title}"`);
-});
-
-// =========================================================================
-// Proof Audit Modal
-// =========================================================================
-const auditModal = document.getElementById('auditModal');
-const auditTaskTitle = document.getElementById('auditTaskTitleDisplay');
-const auditCriteria = document.getElementById('auditCriteriaDisplay');
-const auditImage = document.getElementById('auditImageInput');
-const auditContext = document.getElementById('auditContextInput');
-const auditFeedback = document.getElementById('auditFeedbackContainer');
-const submitProofBtn = document.getElementById('submitProofBtn');
-
-function openAuditModal(task) {
-    pendingAuditTaskId = task.id;
-    auditTaskTitle.textContent = task.title;
-    auditCriteria.innerHTML = `<strong>Required Criteria &lt;PC&gt;:</strong> ${task.proof_criteria || 'General photographic confirmation of task completion.'}`;
-    auditImage.value = '';
-    auditContext.value = '';
-    auditFeedback.style.display = 'none';
-    submitProofBtn.disabled = false;
-    submitProofBtn.textContent = 'Submit Proof';
-    auditModal.classList.add('open');
-}
-
-document.getElementById('closeAuditModalBtn').addEventListener('click', () => {
-    auditModal.classList.remove('open');
-    pendingAuditTaskId = null;
-});
-
-submitProofBtn.addEventListener('click', async () => {
-    if (!pendingAuditTaskId) return;
-    const task = tasks.find(t => t.id === pendingAuditTaskId);
-    if (!task) return;
-
-    const file = auditImage.files[0];
-    if (!file) {
-        alert('Please attach an evidence photo.');
-        return;
-    }
-
-    submitProofBtn.disabled = true;
-    submitProofBtn.textContent = 'Verifying Evidence...';
-    auditFeedback.style.display = 'none';
-
-    const result = await TaskitatorEngine.AuditEngine.verifyProof({
-        imageFile: file,
-        taskTitle: task.title,
-        criteria: task.proof_criteria,
-        userContext: auditContext.value.trim()
-    });
-
-    if (!result.success) {
-        submitProofBtn.disabled = false;
-        submitProofBtn.textContent = 'Submit Proof';
-        auditFeedback.className = 'audit-critique-box';
-        auditFeedback.style.display = 'block';
-        auditFeedback.innerHTML = `<strong>Verification Halted:</strong> ${result.error}`;
-        return;
-    }
-
-    if (result.approved) {
-        task.status = 'completed';
-        task.completed_at = new Date().toISOString();
-        task.verified_model = result.model_used;
-        saveStorageAndPush();
-        auditModal.classList.remove('open');
-        renderTaskTree();
-    } else {
-        submitProofBtn.disabled = false;
-        submitProofBtn.textContent = 'Retry Submission';
-        auditFeedback.className = 'audit-critique-box';
-        auditFeedback.style.display = 'block';
-        auditFeedback.innerHTML = `<strong>Verdict: ${result.verdict.toUpperCase()}</strong><br>${result.critique}`;
     }
 });
 
-// =========================================================================
-// Emergency Bypass Operations
-// =========================================================================
-const emergencyTriggerBtn = document.getElementById('emergencyTriggerBtn');
-const emergencyConfirmModal = document.getElementById('emergencyConfirmModal');
-const activeEmergencyBanner = document.getElementById('activeEmergencyBanner');
-const emergencyCountdownTimer = document.getElementById('emergencyCountdownTimer');
-
-function updateEmergencyUI() {
-    const state = TaskitatorEngine.EmergencyManager.getState();
-    document.getElementById('emergencyCountDisplay').textContent = `${state.uses_left}/4`;
-
-    if (TaskitatorEngine.EmergencyManager.isBypassActive()) {
-        activeEmergencyBanner.style.display = 'flex';
-        startEmergencyCountdown();
-    } else {
-        activeEmergencyBanner.style.display = 'none';
-        clearInterval(emergencyTimerInterval);
-    }
-    renderTaskTree();
-}
-
-function startEmergencyCountdown() {
-    clearInterval(emergencyTimerInterval);
-    emergencyTimerInterval = setInterval(() => {
-        const remaining = TaskitatorEngine.EmergencyManager.getRemainingWindowSeconds();
-        if (remaining <= 0) {
-            clearInterval(emergencyTimerInterval);
-            updateEmergencyUI();
-            return;
-        }
-        const m = Math.floor(remaining / 60);
-        const s = remaining % 60;
-        emergencyCountdownTimer.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    }, 1000);
-}
-
-emergencyTriggerBtn.addEventListener('click', () => {
-    if (TaskitatorEngine.EmergencyManager.isBypassActive()) {
-        alert('Emergency bypass is already active.');
-        return;
-    }
-    const state = TaskitatorEngine.EmergencyManager.getState();
-    if (state.uses_left <= 0) {
-        alert('All 4 emergency bypass uses for this week have been exhausted.');
-        return;
-    }
-    document.getElementById('emergencyModalRemainingUses').textContent = `Remaining tokens this week: ${state.uses_left}/4`;
-    emergencyConfirmModal.classList.add('open');
-});
-
-document.getElementById('cancelEmergencyBtn').addEventListener('click', () => {
-    emergencyConfirmModal.classList.remove('open');
-});
-
-document.getElementById('confirmEmergencyBtn').addEventListener('click', () => {
-    const res = TaskitatorEngine.EmergencyManager.activateBypass();
-    emergencyConfirmModal.classList.remove('open');
-    if (res.success) {
-        updateEmergencyUI();
-    } else {
-        alert(res.error);
-    }
-});
-
-document.getElementById('emergencyInfoBtn').addEventListener('click', () => {
-    document.getElementById('emergencyInfoModal').classList.add('open');
-});
-document.getElementById('closeEmergencyInfoModalBtn').addEventListener('click', () => {
-    document.getElementById('emergencyInfoModal').classList.remove('open');
-});
-
-// =========================================================================
-// Break Window Scheduler
-// =========================================================================
-const breakSchedulerContainer = document.getElementById('breakSchedulerContainer');
-const breakInputsList = document.getElementById('breakInputsList');
-
-function renderBreakScheduler() {
-    if (!TaskitatorEngine.BreakEngine.isSelectionWindowOpen()) {
-        breakSchedulerContainer.style.display = 'none';
-        return;
-    }
-
-    breakSchedulerContainer.style.display = 'block';
-    const existing = TaskitatorEngine.BreakEngine.getTodayBreaks();
-    breakInputsList.innerHTML = '';
-
-    if (existing.length === 0) {
-        addBreakRow();
-    } else {
-        existing.forEach(b => addBreakRow(b.start, b.end));
-    }
-}
-
-function addBreakRow(sVal = '', eVal = '') {
-    if (breakInputsList.children.length >= 3) {
-        alert('Maximum 3 breaks allowed per day.');
-        return;
-    }
-    const row = document.createElement('div');
-    row.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 6px;';
-    row.innerHTML = `
-        <input type="time" class="b-start" value="${sVal}" style="padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
-        <span style="color: var(--text-muted); font-size: 0.85rem;">to</span>
-        <input type="time" class="b-end" value="${eVal}" style="padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
-        <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
-    `;
-    breakInputsList.appendChild(row);
-}
-
-document.getElementById('addBreakRowBtn').addEventListener('click', () => addBreakRow());
-
-document.getElementById('saveBreaksBtn').addEventListener('click', () => {
-    const rows = breakInputsList.querySelectorAll('div');
-    const breaks = [];
-    rows.forEach(r => {
-        const s = r.querySelector('.b-start').value;
-        const e = r.querySelector('.b-end').value;
-        if (s && e) breaks.push({ start: s, end: e });
-    });
-
-    const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(breaks);
-    if (!res.valid) {
-        alert(`Break Error: ${res.error}`);
-    } else {
-        alert('Breaks successfully saved.');
-        saveStorageAndPush();
-    }
-});
-
-// =========================================================================
-// Full Task Creation Modal Flow
-// =========================================================================
-const addTaskModal = document.getElementById('addTaskModal');
-const openRootAddModalBtn = document.getElementById('openRootAddModalBtn');
-const closeAddTaskModalBtn = document.getElementById('closeAddTaskModalBtn');
-const aiLockCheckbox = document.getElementById('aiLockCheckbox');
-const criteriaBoxContainer = document.getElementById('criteriaBoxContainer');
-const subtaskBuilderList = document.getElementById('subtaskBuilderList');
-const creationParentId = document.getElementById('creationParentId');
-const addTaskModalTitle = document.getElementById('addTaskModalTitle');
-
-function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task') {
-    document.getElementById('taskCreateForm').reset();
-    creationParentId.value = parentId || '';
-    addTaskModalTitle.textContent = titleLabel;
-    criteriaBoxContainer.style.display = 'none';
-    subtaskBuilderList.innerHTML = '';
-    document.getElementById('taskDueDateInput').value = new Date().toISOString().split('T')[0];
-    addTaskModal.classList.add('open');
-}
-
-openRootAddModalBtn.addEventListener('click', () => openTaskCreationModal(null, 'Create New Task'));
-
-closeAddTaskModalBtn.addEventListener('click', () => {
-    addTaskModal.classList.remove('open');
-});
-
-aiLockCheckbox.addEventListener('change', () => {
-    criteriaBoxContainer.style.display = aiLockCheckbox.checked ? 'block' : 'none';
-});
-
-document.getElementById('addSubtaskFieldBtn').addEventListener('click', () => {
-    const div = document.createElement('div');
-    div.className = 'subtask-builder-item';
-    div.innerHTML = `
-        <input type="text" class="subtask-input-title" placeholder="Quick subtask title..." style="flex: 1;" required>
-        <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
-    `;
-    subtaskBuilderList.appendChild(div);
-});
-
-document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const title = document.getElementById('taskTitleInput').value.trim();
-    const desc = document.getElementById('taskDescInput').value.trim();
-    const tags = document.getElementById('taskTagsInput').value.split(',').map(s => s.trim()).filter(Boolean);
-    const dueDate = document.getElementById('taskDueDateInput').value || 'today';
-    const isAi = aiLockCheckbox.checked;
-    const criteria = document.getElementById('taskCriteriaInput').value.trim();
-    const parentId = creationParentId.value || null;
-
-    if (!title) return;
-
-    if (isAi) {
-        const confirmed = confirm(
-            "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
-            "Once created, AI-Checked tasks CANNOT be edited (except description/tags) and CANNOT be deleted.\n\n" +
-            "If phone lock is active, your device stays locked until verified by AI proof.\n\n" +
-            "Proceed with creation?"
-        );
-        if (!confirmed) return;
-    }
-
-    const newTaskId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-    const newTask = {
-        id: newTaskId,
-        parent_id: parentId,
-        title: title,
-        description: desc,
-        tags: tags,
-        status: 'active',
-        due_date: dueDate,
-        ai_locked: isAi,
-        proof_criteria: isAi ? criteria : '',
-        created_at: new Date().toISOString()
-    };
-    tasks.push(newTask);
-
-    const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-input-title');
-    quickSubtaskInputs.forEach(input => {
-        const subTitle = input.value.trim();
-        if (subTitle) {
-            tasks.push({
-                id: 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-                parent_id: newTaskId,
-                title: subTitle,
-                description: '',
-                tags: [],
-                status: 'active',
-                due_date: '',
-                ai_locked: false,
-                proof_criteria: '',
-                created_at: new Date().toISOString()
-            });
-        }
-    });
-
-    saveStorageAndPush();
-    addTaskModal.classList.remove('open');
-    renderTaskTree();
-});
-
-// =========================================================================
-// Drawer Navigation
-// =========================================================================
+// Sidebar Drawer
 const sidebarDrawer = document.getElementById('sidebarDrawer');
 const drawerBackdrop = document.getElementById('drawerBackdrop');
 
@@ -1093,25 +296,6 @@ document.getElementById('openDrawerBtn').addEventListener('click', () => {
 drawerBackdrop.addEventListener('click', () => {
     sidebarDrawer.classList.remove('open');
     drawerBackdrop.classList.remove('open');
-});
-
-// =========================================================================
-// Initialization
-// =========================================================================
-document.addEventListener('DOMContentLoaded', () => {
-    initSyncIndicator();
-    loadStorage();
-    updateEmergencyUI();
-    renderBreakScheduler();
-    renderTaskTree();
-
-    // Auto-pull fresh cloud state on app launch
-    if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
-        SyncEngine.pull(() => {
-            loadStorage();
-            renderTaskTree();
-        });
-    }
 });
 
 // =========================================================================
