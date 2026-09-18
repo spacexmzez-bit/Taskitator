@@ -9,7 +9,7 @@
  * - Auto-purges legacy caches on activation.
  */
 
-const CACHE_NAME = 'taskitator-v17';
+const CACHE_NAME = 'taskitator-v18';
 
 const ASSETS_TO_CACHE = [
     './',
