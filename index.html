@@ -23,7 +23,10 @@
             border-radius: 50%;
             display: inline-block;
             cursor: pointer;
-            transition: background-color 0.2s ease, box-shadow 0.2s ease;
+            transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+        }
+        .sync-dot:hover {
+            transform: scale(1.3);
         }
         .sync-dot.local-only {
             background-color: #64748b; /* Gray: Local Only */
@@ -36,6 +39,18 @@
         .sync-dot.synced {
             background-color: #22c55e; /* Green: Synced up to date */
             box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
+        }
+
+        /* Sync Legend Items */
+        .sync-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            border-radius: 8px;
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            margin-bottom: 8px;
         }
     </style>
 </head>
@@ -63,7 +78,7 @@
         </div>
         <div class="nav-right">
             <!-- Sync Dot: Gray = Local, Yellow = Pending, Green = Synced -->
-            <span class="sync-dot local-only" id="syncStatusDot" title="Sync Status: Local Only"></span>
+            <span class="sync-dot local-only" id="syncStatusDot" title="Click to view Sync Status details"></span>
 
             <button class="emergency-pill-btn" id="emergencyTriggerBtn" title="Emergency Bypass">
                 🚨 <span id="emergencyCountDisplay">4/4</span>
@@ -99,6 +114,45 @@
 
 <!-- Floating Action Button for Root Task -->
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
+
+<!-- Modal: Sync Information -->
+<div class="modal-overlay" id="syncInfoModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0; color: var(--primary);">🌐 Sync Status Guide</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+            The indicator dot represents the sync state between your local storage and the universal Cloudflare Worker bridge.
+        </p>
+
+        <div class="sync-legend-item">
+            <span class="sync-dot local-only" style="cursor: default;"></span>
+            <div style="font-size: 0.85rem;">
+                <strong style="color: #94a3b8;">Gray: Local Only</strong>
+                <div style="color: var(--text-muted); font-size: 0.8rem;">No secret passkey configured in Settings. Tasks reside solely on this device.</div>
+            </div>
+        </div>
+
+        <div class="sync-legend-item">
+            <span class="sync-dot pending" style="cursor: default;"></span>
+            <div style="font-size: 0.85rem;">
+                <strong style="color: #facc15;">Yellow: Not Synced</strong>
+                <div style="color: var(--text-muted); font-size: 0.8rem;">Unsaved local modifications queued or awaiting the 45-second auto-sync batch.</div>
+            </div>
+        </div>
+
+        <div class="sync-legend-item">
+            <span class="sync-dot synced" style="cursor: default;"></span>
+            <div style="font-size: 0.85rem;">
+                <strong style="color: #4ade80;">Green: Synced Up to Date</strong>
+                <div style="color: var(--text-muted); font-size: 0.8rem;">All local changes are fully saved and matched with the automation bridge.</div>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+            <button class="icon-btn" id="forceSyncFromModalBtn" style="background: var(--primary); color: #fff; border: none; font-size: 0.85rem;">Force Sync Now</button>
+            <button class="icon-btn" id="closeSyncInfoModalBtn">Close</button>
+        </div>
+    </div>
+</div>
 
 <!-- Modal: Comprehensive Task Creation -->
 <div class="modal-overlay" id="addTaskModal">
@@ -284,13 +338,14 @@ let activeDetailTaskId = null;
 let emergencyTimerInterval = null;
 
 const syncStatusDot = document.getElementById('syncStatusDot');
+const syncInfoModal = document.getElementById('syncInfoModal');
 
 function updateSyncDot(state) {
     if (!syncStatusDot) return;
     syncStatusDot.className = `sync-dot ${state}`;
-    if (state === 'synced') syncStatusDot.title = 'Sync Status: Synced up to date';
-    else if (state === 'pending') syncStatusDot.title = 'Sync Status: Not synced (Pending)';
-    else syncStatusDot.title = 'Sync Status: Local only';
+    if (state === 'synced') syncStatusDot.title = 'Sync Status: Synced up to date (Click for info)';
+    else if (state === 'pending') syncStatusDot.title = 'Sync Status: Not synced / Pending (Click for info)';
+    else syncStatusDot.title = 'Sync Status: Local only (Click for info)';
 }
 
 function initSyncIndicator() {
@@ -347,30 +402,41 @@ window.addEventListener('taskitator-synced', () => {
     updateSyncDot('synced');
 });
 
-// Click dot to trigger immediate sync
+// Click dot to open explanatory information modal
 if (syncStatusDot) {
-    syncStatusDot.addEventListener('click', async () => {
-        let settings = {};
-        try {
-            settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
-        } catch (e) {
-            settings = {};
-        }
-
-        if (!settings.worker_passkey) {
-            updateSyncDot('local-only');
-            return;
-        }
-
-        updateSyncDot('pending');
-        if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
-            const ok = await SyncEngine.forceImmediateSync();
-            if (ok) updateSyncDot('synced');
-        } else {
-            setTimeout(() => updateSyncDot('synced'), 500);
-        }
+    syncStatusDot.addEventListener('click', () => {
+        syncInfoModal.classList.add('open');
     });
 }
+
+document.getElementById('closeSyncInfoModalBtn').addEventListener('click', () => {
+    syncInfoModal.classList.remove('open');
+});
+
+document.getElementById('forceSyncFromModalBtn').addEventListener('click', async () => {
+    let settings = {};
+    try {
+        settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+    } catch (e) {
+        settings = {};
+    }
+
+    if (!settings.worker_passkey) {
+        alert('Cannot sync: No secret passkey configured in Settings.');
+        updateSyncDot('local-only');
+        return;
+    }
+
+    updateSyncDot('pending');
+    syncInfoModal.classList.remove('open');
+
+    if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
+        const ok = await SyncEngine.forceImmediateSync();
+        if (ok) updateSyncDot('synced');
+    } else {
+        setTimeout(() => updateSyncDot('synced'), 500);
+    }
+});
 
 // =========================================================================
 // Tree Hierarchy Rendering & Scoped Collapsing
