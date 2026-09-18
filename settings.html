@@ -155,12 +155,19 @@
             </div>
         </div>
 
-        <!-- Gemini BYOK Configuration -->
+        <!-- Gemini BYOK & AI Copilot Identity -->
         <div class="settings-card">
-            <h3 style="margin-top: 0; color: var(--primary);">🤖 Gemini AI Verification (BYOK)</h3>
+            <h3 style="margin-top: 0; color: var(--primary);">🤖 Gemini AI Verification & Copilot</h3>
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                Audits task evidence using a 2-tier cascade: <strong>gemini-3.5-flash-lite</strong> as primary, automatically falling back to <strong>gemini-3.1-flash-lite</strong> on RPD limits.
+                Audits task evidence and drives your personal AI assistant. Dual-model cascade: <strong>gemini-3.5-flash-lite</strong> primary, falling back to <strong>gemini-3.1-flash-lite</strong> on quota exhaustion.
             </p>
+            
+            <div class="form-group">
+                <label for="copilotNameInput">Copilot Name (Max 20 characters)</label>
+                <input type="text" id="copilotNameInput" maxlength="20" placeholder="Focus Copilot" autocomplete="off">
+                <small style="color: var(--text-muted); font-size: 0.75rem;">This custom name updates the copilot header, navigation buttons, and AI persona system-wide.</small>
+            </div>
+
             <div class="form-group">
                 <label for="geminiApiKey">Google AI Studio API Key</label>
                 <input type="password" id="geminiApiKey" placeholder="AIzaSy...">
@@ -295,6 +302,7 @@ const SETTINGS_KEY = 'taskitator_settings';
 let hasUnsavedChanges = false;
 
 const authenticatedSettingsContainer = document.getElementById('authenticatedSettingsContainer');
+const copilotNameInput = document.getElementById('copilotNameInput');
 const geminiApiKeyInput = document.getElementById('geminiApiKey');
 const activeUsernameDisplay = document.getElementById('activeUsernameDisplay');
 const weekendStartSelect = document.getElementById('weekendStartSelect');
@@ -346,7 +354,6 @@ document.querySelectorAll('.drawer-links a, .link-guarded').forEach(link => {
 });
 
 function loadSettings() {
-    // Reveal all settings options only when configured
     if (!window.SyncEngine || !SyncEngine.isConfigured()) {
         authenticatedSettingsContainer.style.display = 'none';
         return;
@@ -365,6 +372,7 @@ function loadSettings() {
     activeUsernameDisplay.textContent = `@${config.username}`;
     macroBearerToken.value = config.secret || '';
 
+    copilotNameInput.value = settings.copilot_name || 'Focus Copilot';
     geminiApiKeyInput.value = settings.gemini_api_key || '';
     weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
     weekendEndSelect.value = settings.weekend_end !== undefined ? settings.weekend_end : '6';
@@ -402,6 +410,7 @@ async function saveSettings(silent = false) {
         }
     }
 
+    settings.copilot_name = (copilotNameInput.value.trim() || 'Focus Copilot').slice(0, 20);
     settings.gemini_api_key = geminiApiKeyInput.value.trim();
     settings.worker_url = HARDCODED_WORKER_URL;
     settings.weekend_start = parseInt(weekendStartSelect.value, 10);
@@ -499,7 +508,7 @@ toggleTokenVisibilityBtn.addEventListener('click', () => {
 });
 
 // Detect dirty inputs
-[geminiApiKeyInput, weekendStartSelect, weekendEndSelect, breakWindowStart, breakWindowEnd].forEach(el => {
+[copilotNameInput, geminiApiKeyInput, weekendStartSelect, weekendEndSelect, breakWindowStart, breakWindowEnd].forEach(el => {
     el.addEventListener('input', markUnsaved);
     el.addEventListener('change', markUnsaved);
 });
