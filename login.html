@@ -1,0 +1,162 @@
+<!-- login.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taskitator - Sign In</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            background-color: var(--bg-color, #081226);
+            color: var(--text-color, #f0f7ff);
+        }
+        .login-card {
+            background: var(--card-bg, #0f1d3a);
+            border: 1.5px solid var(--border-color, #1e3a6e);
+            border-radius: 16px;
+            padding: 28px;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: var(--card-shadow, 0 16px 40px rgba(0, 0, 0, 0.6));
+        }
+        .login-header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        .login-header h1 {
+            color: var(--primary, #3b82f6);
+            font-size: 1.7rem;
+            margin: 0 0 6px 0;
+            font-weight: 800;
+        }
+        .login-header p {
+            color: var(--text-muted, #8bb3e8);
+            font-size: 0.85rem;
+            margin: 0;
+            line-height: 1.4;
+        }
+        .notice-banner {
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            margin-top: 14px;
+            display: none;
+            line-height: 1.4;
+        }
+        .notice-info {
+            background: var(--accent-light, #172554);
+            border: 1px solid var(--border-color, #1e3a6e);
+            color: var(--text-color, #f0f7ff);
+        }
+        .notice-warning {
+            background: #380d15;
+            border: 1px solid #881337;
+            color: #fda4af;
+        }
+    </style>
+</head>
+<body>
+
+<div class="login-card">
+    <div class="login-header">
+        <h1>Taskitator</h1>
+        <p>Enforced productivity & digital lockdown.<br>Sign in or enter new credentials to connect.</p>
+    </div>
+
+    <form id="loginForm">
+        <div class="form-group">
+            <label for="usernameInput">Username</label>
+            <input type="text" id="usernameInput" placeholder="Choose or enter username" required autocomplete="username">
+        </div>
+
+        <div class="form-group">
+            <label for="passwordInput">Password</label>
+            <input type="password" id="passwordInput" placeholder="Enter password" required autocomplete="current-password">
+        </div>
+
+        <button type="submit" id="submitBtn" class="icon-btn" style="width: 100%; background: var(--primary, #3b82f6); color: #fff; border: none; font-weight: 700; padding: 12px; font-size: 0.95rem; margin-top: 10px;">
+            Connect & Unlock App
+        </button>
+    </form>
+
+    <div id="loginFeedback" class="notice-banner"></div>
+</div>
+
+<script src="audit-engine.js"></script>
+<script src="sync-engine.js"></script>
+<script>
+const loginForm = document.getElementById('loginForm');
+const usernameInput = document.getElementById('usernameInput');
+const passwordInput = document.getElementById('passwordInput');
+const submitBtn = document.getElementById('submitBtn');
+const feedback = document.getElementById('loginFeedback');
+
+// If the device already has valid credentials stored, bounce straight to the dashboard
+if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
+    window.location.replace('index.html');
+}
+
+loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const user = usernameInput.value.trim().toLowerCase();
+    const pass = passwordInput.value.trim();
+
+    if (!user || !pass) return;
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Authenticating...';
+    feedback.style.display = 'none';
+
+    try {
+        const token = await SyncEngine.hashCredentials(user, pass);
+
+        // Seed initial connection configuration
+        let settings = {};
+        try {
+            settings = JSON.parse(localStorage.getItem(SyncEngine.STORAGE_KEY_SETTINGS) || '{}');
+        } catch (err) {
+            settings = {};
+        }
+
+        settings.worker_username = user;
+        settings.worker_passkey = token;
+        settings.worker_url = SyncEngine.HARDCODED_WORKER_URL;
+        localStorage.setItem(SyncEngine.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+
+        // Immediately pull remote cloud snapshot (tasks, daily breaks, API keys, etc.)
+        const pullRes = await SyncEngine.pull();
+
+        if (pullRes.success) {
+            feedback.className = 'notice-banner notice-info';
+            feedback.style.display = 'block';
+            feedback.textContent = 'Account connected! Loading dashboard...';
+            setTimeout(() => {
+                window.location.replace('index.html');
+            }, 400);
+        } else {
+            // Revert session keys on network/auth failure to avoid broken local state
+            SyncEngine.logout();
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Connect & Unlock App';
+            feedback.className = 'notice-banner notice-warning';
+            feedback.style.display = 'block';
+            feedback.textContent = `Login failed: ${pullRes.error || 'Check credentials or internet connection.'}`;
+        }
+    } catch (err) {
+        SyncEngine.logout();
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Connect & Unlock App';
+        feedback.className = 'notice-banner notice-warning';
+        feedback.style.display = 'block';
+        feedback.textContent = `Error: ${err.message}`;
+    }
+});
+</script>
+</body>
+</html>
