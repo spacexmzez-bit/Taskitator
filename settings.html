@@ -5,6 +5,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Taskitator - Settings</title>
+
+    <!-- PWA Installation Manifest & Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#081226">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icon/icon-192.png">
+
     <link rel="stylesheet" href="style.css">
     <style>
         .notice-banner {
@@ -102,7 +111,7 @@
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="sidebar-drawer" id="sidebarDrawer">
     <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
-    <nav class="drawer-links">
+    <nav class="drawer-links" id="drawerNavLinks">
         <a href="index.html">📅 Today</a>
         <a href="general.html">🗂️ General Tasks</a>
         <a href="stats.html">📊 Stats</a>
@@ -196,7 +205,7 @@
                     <strong style="display: block; font-size: 0.9rem; color: var(--text-color);">Want to block your phone?</strong>
                     <span style="font-size: 0.78rem; color: var(--text-muted);">Step-by-step setup guide for the MacroDroid lock and bridge.</span>
                 </div>
-                <a href="blocker-guide.html" class="icon-btn" style="text-decoration: none; background: var(--primary); color: #fff; border: none; font-weight: 600; white-space: nowrap; padding: 8px 14px;">
+                <a href="blocker-guide.html" class="icon-btn link-guarded" style="text-decoration: none; background: var(--primary); color: #fff; border: none; font-weight: 600; white-space: nowrap; padding: 8px 14px;">
                     Open Setup Guide &rarr;
                 </a>
             </div>
@@ -283,6 +292,8 @@
 const HARDCODED_WORKER_URL = 'https://taskitator-sync.spacexmzez.workers.dev';
 const SETTINGS_KEY = 'taskitator_settings';
 
+let hasUnsavedChanges = false;
+
 const authenticatedSettingsContainer = document.getElementById('authenticatedSettingsContainer');
 const geminiApiKeyInput = document.getElementById('geminiApiKey');
 const activeUsernameDisplay = document.getElementById('activeUsernameDisplay');
@@ -301,16 +312,38 @@ const copyTokenBtn = document.getElementById('copyTokenBtn');
 const toggleTokenVisibilityBtn = document.getElementById('toggleTokenVisibilityBtn');
 
 function markUnsaved() {
+    hasUnsavedChanges = true;
     if (unsavedIndicator) {
         unsavedIndicator.style.display = 'inline-block';
     }
 }
 
 function markSaved() {
+    hasUnsavedChanges = false;
     if (unsavedIndicator) {
         unsavedIndicator.style.display = 'none';
     }
 }
+
+// 1. Intercept browser reloads, tab closing, and back/forward buttons
+window.addEventListener('beforeunload', (e) => {
+    if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = ''; // Standard trigger for browser exit warning
+    }
+});
+
+// 2. Intercept internal app navigation (drawer links & external guide links)
+document.querySelectorAll('.drawer-links a, .link-guarded').forEach(link => {
+    link.addEventListener('click', (e) => {
+        if (hasUnsavedChanges) {
+            const leave = confirm("You have unsaved changes in Settings.\n\nAre you sure you want to leave without saving?");
+            if (!leave) {
+                e.preventDefault();
+            }
+        }
+    });
+});
 
 function loadSettings() {
     // Reveal all settings options only when configured
@@ -520,6 +553,7 @@ document.getElementById('cancelLogoutBtn').addEventListener('click', () => {
 });
 
 document.getElementById('confirmLogoutBtn').addEventListener('click', () => {
+    markSaved(); // Prevent unneeded exit warning on intended logout
     SyncEngine.logout();
     localStorage.removeItem('taskitator_tasks');
     localStorage.removeItem('taskitator_daily_breaks');
