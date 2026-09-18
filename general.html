@@ -103,7 +103,7 @@
     </div>
 </div>
 
-<!-- Modal: Task Detail & Edit Panel -->
+<!-- Modal: Task Detail & Edit Panel (With Inbound Overwrite Guard) -->
 <div class="modal-overlay" id="taskDetailModal">
     <div class="modal-box">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
@@ -259,10 +259,12 @@ function saveStorageAndPush() {
     }
 }
 
-// Bug 2 Fix: Automatically update General Task Tree on background cloud sync
+// Automatically update General Task Tree on background cloud sync safely
 window.addEventListener('taskitator-synced', () => {
-    loadStorage();
-    renderGeneralTaskTree();
+    if (!activeDetailTaskId) {
+        loadStorage();
+        renderGeneralTaskTree();
+    }
 });
 
 // =========================================================================
@@ -448,7 +450,7 @@ function deleteTask(taskId) {
 }
 
 // =========================================================================
-// Task Detail & Edit Modal
+// Task Detail & Edit Modal (With Inbound Overwrite Guard)
 // =========================================================================
 const taskDetailModal = document.getElementById('taskDetailModal');
 const editTaskTitle = document.getElementById('editTaskTitle');
@@ -530,8 +532,17 @@ document.getElementById('closeDetailModalBtn').addEventListener('click', () => {
 
 document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
     if (!activeDetailTaskId) return;
+
+    // Refresh database array from storage first, preserving any freshly synced tasks
+    loadStorage();
     const task = tasks.find(t => t.id === activeDetailTaskId);
-    if (!task) return;
+    if (!task) {
+        alert('This task was removed in a background synchronization.');
+        taskDetailModal.classList.remove('open');
+        activeDetailTaskId = null;
+        renderGeneralTaskTree();
+        return;
+    }
 
     const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
     const willBeAiLocked = editAiLockCheckbox.checked;
@@ -558,6 +569,7 @@ document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
 
     saveStorageAndPush();
     taskDetailModal.classList.remove('open');
+    activeDetailTaskId = null;
     renderGeneralTaskTree();
 });
 
@@ -565,12 +577,14 @@ deleteFromDetailBtn.addEventListener('click', () => {
     if (!activeDetailTaskId) return;
     deleteTask(activeDetailTaskId);
     taskDetailModal.classList.remove('open');
+    activeDetailTaskId = null;
 });
 
 document.getElementById('openChildAddModalBtn').addEventListener('click', () => {
     if (!activeDetailTaskId) return;
     const parentTask = tasks.find(t => t.id === activeDetailTaskId);
     taskDetailModal.classList.remove('open');
+    activeDetailTaskId = null;
     openTaskCreationModal(parentTask.id, `Add Subtask to "${parentTask.title}"`);
 });
 
@@ -639,6 +653,7 @@ submitProofBtn.addEventListener('click', async () => {
         task.verified_model = result.model_used;
         saveStorageAndPush();
         auditModal.classList.remove('open');
+        pendingAuditTaskId = null;
         renderGeneralTaskTree();
     } else {
         submitProofBtn.disabled = false;
@@ -847,11 +862,12 @@ document.addEventListener('DOMContentLoaded', () => {
     updateEmergencyUI();
     renderGeneralTaskTree();
 
-    // Auto-pull fresh cloud state on app launch
     if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
         SyncEngine.pull(() => {
-            loadStorage();
-            renderGeneralTaskTree();
+            if (!activeDetailTaskId) {
+                loadStorage();
+                renderGeneralTaskTree();
+            }
         });
     }
 });
