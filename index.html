@@ -79,6 +79,16 @@
             font-weight: 700;
             cursor: pointer;
         }
+        .subtasks-count-badge {
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-3px); }
             to { opacity: 1; transform: translateY(0); }
@@ -376,8 +386,8 @@ let pendingAuditTaskId = null;
 let activeDetailTaskId = null;
 let emergencyTimerInterval = null;
 
-// Phase 2: In-Memory 10-Second Grace Period Tracker
-const pendingGraceCompletions = new Map(); // taskId -> { timerId, remainingSec, intervalId }
+// In-Memory 10-Second Grace Period Tracker
+const pendingGraceCompletions = new Map();
 
 const syncStatusDot = document.getElementById('syncStatusDot');
 const syncInfoModal = document.getElementById('syncInfoModal');
@@ -502,8 +512,17 @@ document.getElementById('forceSyncFromModalBtn').addEventListener('click', async
 });
 
 // =========================================================================
-// Tree Hierarchy Rendering & Scoped Collapsing
+// Tree Hierarchy Rendering & Scoped Collapsing (Phase 3: Active Tree Filtering)
 // =========================================================================
+function isTaskVisuallyActive(task) {
+    if (task.status === 'trash') return false;
+    // If active, it is always visible
+    if (task.status === 'active') return true;
+    // If completed, only visible if actively in 10-second grace countdown
+    if (task.status === 'completed' && pendingGraceCompletions.has(task.id)) return true;
+    return false;
+}
+
 function renderTaskTree() {
     const list = document.getElementById('todayTaskList');
     list.innerHTML = '';
@@ -511,36 +530,56 @@ function renderTaskTree() {
     const todayStr = new Date().toISOString().split('T')[0];
     const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
 
-    const childrenMap = new Map();
-    const taskMap = new Map();
+    // Map all tasks (including completed ones for counting badges)
+    const allChildrenMap = new Map();
+    const visibleChildrenMap = new Map();
 
     tasks.forEach(t => {
         if (t.status === 'trash') return;
-        taskMap.set(t.id, t);
         const pId = t.parent_id || 'root';
-        if (!childrenMap.has(pId)) childrenMap.set(pId, []);
-        childrenMap.get(pId).push(t);
+
+        // Full children map for badge counting
+        if (!allChildrenMap.has(pId)) allChildrenMap.set(pId, []);
+        allChildrenMap.get(pId).push(t);
+
+        // Filtered visible children map (active or currently within 10s undo grace)
+        if (isTaskVisuallyActive(t)) {
+            if (!visibleChildrenMap.has(pId)) visibleChildrenMap.set(pId, []);
+            visibleChildrenMap.get(pId).push(t);
+        }
     });
 
     function belongsToToday(task) {
         const due = String(task.due_date || 'today').trim().toLowerCase();
         if (due === 'today' || due === todayStr) return true;
-        const kids = childrenMap.get(task.id) || [];
+        const kids = allChildrenMap.get(task.id) || [];
         return kids.some(k => belongsToToday(k));
     }
 
-    const rootTasks = (childrenMap.get('root') || []).filter(belongsToToday);
+    // Root tasks must belong to today AND be visually active (or have visually active descendants)
+    function hasVisibleDescendant(taskId) {
+        const kids = visibleChildrenMap.get(taskId) || [];
+        if (kids.length > 0) return true;
+        const allKids = allChildrenMap.get(taskId) || [];
+        return allKids.some(k => hasVisibleDescendant(k.id));
+    }
+
+    const rootTasks = (allChildrenMap.get('root') || []).filter(t => {
+        if (!belongsToToday(t)) return false;
+        return isTaskVisuallyActive(t) || hasVisibleDescendant(t.id);
+    });
 
     if (rootTasks.length === 0) {
-        list.innerHTML = '<li style="text-align: center; color: var(--text-muted); padding: 32px;">No tasks scheduled for today.</li>';
+        list.innerHTML = '<li style="text-align: center; color: var(--text-muted); padding: 32px;">No active tasks scheduled for today.</li>';
         return;
     }
 
     function buildNodeElement(task, depth = 0) {
         const li = document.createElement('li');
-        li.className = `task-node ${task.status === 'completed' ? 'completed' : ''}`;
+        const isDone = task.status === 'completed';
+        li.className = `task-node ${isDone ? 'completed' : ''}`;
 
-        // Phase 2: If task is within 10-second grace period, show inline Undo row
+        // If task is within 10-second grace period, show inline Undo row
         if (pendingGraceCompletions.has(task.id)) {
             const graceInfo = pendingGraceCompletions.get(task.id);
             const graceRow = document.createElement('div');
@@ -568,11 +607,12 @@ function renderTaskTree() {
         const main = document.createElement('div');
         main.className = 'task-main';
 
-        const children = childrenMap.get(task.id) || [];
-        const hasChildren = children.length > 0;
+        const allChildren = allChildrenMap.get(task.id) || [];
+        const visibleChildren = visibleChildrenMap.get(task.id) || [];
+        const hasVisibleChildren = visibleChildren.length > 0;
         const isCollapsed = collapsedNodes.has(task.id);
 
-        if (hasChildren) {
+        if (hasVisibleChildren) {
             const toggleBtn = document.createElement('button');
             toggleBtn.className = 'collapse-toggle';
             toggleBtn.textContent = isCollapsed ? '▶' : '▼';
@@ -596,7 +636,7 @@ function renderTaskTree() {
 
         const checkBtn = document.createElement('button');
         checkBtn.className = 'check-circle';
-        checkBtn.textContent = task.status === 'completed' ? '✓' : '';
+        checkBtn.textContent = isDone ? '✓' : '';
         checkBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             handleTaskCompletion(task.id);
@@ -613,6 +653,15 @@ function renderTaskTree() {
             badge.className = 'ai-badge';
             badge.innerHTML = '🔒 AI';
             main.appendChild(badge);
+        }
+
+        // Subtask Counter Pill (Completed / Total)
+        if (allChildren.length > 0) {
+            const doneKidsCount = allChildren.filter(k => k.status === 'completed').length;
+            const countBadge = document.createElement('span');
+            countBadge.className = 'subtasks-count-badge';
+            countBadge.textContent = `✓ ${doneKidsCount}/${allChildren.length} Subtasks`;
+            main.appendChild(countBadge);
         }
 
         if (task.tags && task.tags.length > 0) {
@@ -646,10 +695,11 @@ function renderTaskTree() {
 
         li.appendChild(row);
 
-        if (hasChildren) {
+        // Only render active/grace visible children into subtree
+        if (hasVisibleChildren) {
             const subUl = document.createElement('ul');
             subUl.className = `task-subtree ${isCollapsed ? 'collapsed' : ''}`;
-            children.forEach(child => {
+            visibleChildren.forEach(child => {
                 subUl.appendChild(buildNodeElement(child, depth + 1));
             });
             li.appendChild(subUl);
@@ -661,7 +711,7 @@ function renderTaskTree() {
     rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
 }
 
-// Phase 1 Model Transition: Recursive timestamp-synchronized state cascade
+// Recursive timestamp-synchronized state cascade
 function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
     const target = tasks.find(t => t.id === targetTaskId);
     if (!target) return;
@@ -679,7 +729,7 @@ function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
     cascadeChildren(targetTaskId);
 }
 
-// Phase 2: Start 10-Second Grace Period Timer for Undo
+// Start 10-Second Grace Period Timer for Undo
 function startGraceCompletionTimer(taskId) {
     if (pendingGraceCompletions.has(taskId)) {
         const existing = pendingGraceCompletions.get(taskId);
@@ -700,13 +750,14 @@ function startGraceCompletionTimer(taskId) {
     const timerId = setTimeout(() => {
         clearInterval(intervalId);
         pendingGraceCompletions.delete(taskId);
+        // Expiration transitions the task out of the active tree
         renderTaskTree();
     }, 10000);
 
     pendingGraceCompletions.set(taskId, { timerId, intervalId, remainingSec: remaining });
 }
 
-// Phase 2: Undo Task Completion within 10-Second Window
+// Undo Task Completion within 10-Second Window
 function undoTaskCompletion(taskId) {
     if (pendingGraceCompletions.has(taskId)) {
         const grace = pendingGraceCompletions.get(taskId);
@@ -715,7 +766,6 @@ function undoTaskCompletion(taskId) {
         pendingGraceCompletions.delete(taskId);
     }
 
-    // Revert task and its descendants back to active
     cascadeTaskStatus(taskId, 'active', null);
     saveStorageAndPush();
     renderTaskTree();
