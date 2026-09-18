@@ -391,6 +391,10 @@ function saveStorageAndPush() {
     localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
     localStorage.setItem(COLLAPSED_STATE_KEY, JSON.stringify([...collapsedNodes]));
 
+    if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
+        SyncEngine.markLocalModified();
+    }
+
     let settings = {};
     try {
         settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
@@ -410,11 +414,14 @@ function saveStorageAndPush() {
     }
 }
 
-// Background sync confirmation listener: reload and re-render in real time
+// Background sync confirmation listener: reload and re-render safely
 window.addEventListener('taskitator-synced', () => {
     updateSyncDot('synced');
-    loadStorage();
-    renderTaskTree();
+    // If user is not currently in the middle of editing details inside the modal, reload
+    if (!activeDetailTaskId) {
+        loadStorage();
+        renderTaskTree();
+    }
 });
 
 // Background sync failure listener
@@ -451,10 +458,10 @@ document.getElementById('forceSyncFromModalBtn').addEventListener('click', async
     syncInfoModal.classList.remove('open');
 
     if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
-        const ok = await SyncEngine.forceImmediateSync();
+        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
+        const ok = await SyncEngine.forceImmediateSync({ today_breaks: breaks });
         if (ok) {
             updateSyncDot('synced');
-            // Instantly reload tasks and redraw the tree without reloading the page
             loadStorage();
             renderTaskTree();
         } else {
@@ -649,7 +656,7 @@ function deleteTask(taskId) {
 }
 
 // =========================================================================
-// Task Detail & Edit Modal
+// Task Detail & Edit Modal (With Inbound Overwrite Guard)
 // =========================================================================
 const taskDetailModal = document.getElementById('taskDetailModal');
 const editTaskTitle = document.getElementById('editTaskTitle');
@@ -731,8 +738,17 @@ document.getElementById('closeDetailModalBtn').addEventListener('click', () => {
 
 document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
     if (!activeDetailTaskId) return;
+
+    // Refresh database array from storage first, preserving any freshly synced tasks
+    loadStorage();
     const task = tasks.find(t => t.id === activeDetailTaskId);
-    if (!task) return;
+    if (!task) {
+        alert('This task was removed in a background synchronization.');
+        taskDetailModal.classList.remove('open');
+        activeDetailTaskId = null;
+        renderTaskTree();
+        return;
+    }
 
     const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
     const willBeAiLocked = editAiLockCheckbox.checked;
@@ -759,6 +775,7 @@ document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
 
     saveStorageAndPush();
     taskDetailModal.classList.remove('open');
+    activeDetailTaskId = null;
     renderTaskTree();
 });
 
@@ -766,12 +783,14 @@ deleteFromDetailBtn.addEventListener('click', () => {
     if (!activeDetailTaskId) return;
     deleteTask(activeDetailTaskId);
     taskDetailModal.classList.remove('open');
+    activeDetailTaskId = null;
 });
 
 document.getElementById('openChildAddModalBtn').addEventListener('click', () => {
     if (!activeDetailTaskId) return;
     const parentTask = tasks.find(t => t.id === activeDetailTaskId);
     taskDetailModal.classList.remove('open');
+    activeDetailTaskId = null;
     openTaskCreationModal(parentTask.id, `Add Subtask to "${parentTask.title}"`);
 });
 
@@ -840,6 +859,7 @@ submitProofBtn.addEventListener('click', async () => {
         task.verified_model = result.model_used;
         saveStorageAndPush();
         auditModal.classList.remove('open');
+        pendingAuditTaskId = null;
         renderTaskTree();
     } else {
         submitProofBtn.disabled = false;
@@ -1110,11 +1130,12 @@ document.addEventListener('DOMContentLoaded', () => {
     renderBreakScheduler();
     renderTaskTree();
 
-    // Auto-pull fresh cloud state on app launch
     if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
         SyncEngine.pull(() => {
-            loadStorage();
-            renderTaskTree();
+            if (!activeDetailTaskId) {
+                loadStorage();
+                renderTaskTree();
+            }
         });
     }
 });
