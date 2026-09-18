@@ -8,7 +8,7 @@ const SyncEngine = {
     STORAGE_KEY_SETTINGS: 'taskitator_settings',
     STORAGE_KEY_TASKS: 'taskitator_tasks',
     STORAGE_KEY_LAST_LOGIN: 'taskitator_last_login',
-    HARDCODED_WORKER_URL: 'https://gemini-todoist-verifier.spacexmzez.workers.dev',
+    HARDCODED_WORKER_URL: 'https://taskitator-sync.spacexmzez.workers.dev',
 
     debounceTimer: null,
     hasUnsavedChanges: false,
