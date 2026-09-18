@@ -1,7 +1,7 @@
 // sw.js
 /**
  * Taskitator Service Worker
- * Version: taskitator-v21
+ * Version: taskitator-v22
  * 
  * Features:
  * - Network-First for core shell assets with offline cache fallback.
@@ -9,7 +9,7 @@
  * - Automatic stale cache eviction on activation.
  */
 
-const CACHE_NAME = 'taskitator-v21';
+const CACHE_NAME = 'taskitator-v22';
 
 const ASSETS_TO_CACHE = [
     './',
@@ -22,7 +22,9 @@ const ASSETS_TO_CACHE = [
     './style.css',
     './sync-engine.js',
     './audit-engine.js',
-    './manifest.json'
+    './manifest.json',
+    './icon/icon-192.png',
+    './icon/icon-512.png'
 ];
 
 // =========================================================================
