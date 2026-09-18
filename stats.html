@@ -220,6 +220,9 @@ function renderStats() {
     document.getElementById('barStandard').style.width = `${(standardActiveCount / totalActiveScoped) * 100}%`;
 }
 
+// Automatically update metrics on background cloud sync
+window.addEventListener('taskitator-synced', renderStats);
+
 // Drawer Navigation
 const sidebarDrawer = document.getElementById('sidebarDrawer');
 const drawerBackdrop = document.getElementById('drawerBackdrop');
@@ -235,19 +238,14 @@ drawerBackdrop.addEventListener('click', () => {
 });
 
 document.addEventListener('DOMContentLoaded', renderStats);
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-            .catch(err => console.error('SW Registration failed:', err));
-    });
-}
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-            .catch(err => console.error('SW Registration failed:', err));
-    });
-}
 
+// Single Service Worker Registration
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .catch(err => console.error('SW Registration failed:', err));
+    });
+}
 </script>
 </body>
 </html>
