@@ -472,3 +472,58 @@ body {
     margin-top: 10px;
     line-height: 1.4;
 }
+/* Sync Dot Indicator (Today's Page) */
+.sync-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    cursor: pointer;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sync-dot.local-only {
+    background-color: #64748b; /* Gray */
+    box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.2);
+}
+
+.sync-dot.pending {
+    background-color: #eab308; /* Yellow */
+    box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.25);
+}
+
+.sync-dot.synced {
+    background-color: #22c55e; /* Green */
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
+}
+
+/* Full Sync Status Badge (Settings Page) */
+.sync-badge-word {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: var(--card-subtle);
+    border: 1px solid var(--border-color);
+    text-transform: capitalize;
+}
+
+.sync-badge-word.local-only {
+    border-color: #475569;
+    color: #94a3b8;
+}
+
+.sync-badge-word.pending {
+    border-color: #854d0e;
+    color: #facc15;
+    background: #422006;
+}
+
+.sync-badge-word.synced {
+    border-color: #166534;
+    color: #4ade80;
+    background: #052e16;
+}
