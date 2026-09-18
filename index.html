@@ -157,6 +157,45 @@
     </nav>
 </aside>
 
+<!-- Right-Hand Copilot Slide-Over Drawer -->
+<div class="copilot-backdrop" id="copilotBackdrop"></div>
+<aside class="copilot-drawer" id="copilotDrawer">
+    <div class="copilot-header">
+        <div class="copilot-title-group">
+            <span>🤖 Focus Copilot</span>
+            <span class="copilot-model-chip">3.5 Flash Lite</span>
+        </div>
+        <button class="icon-btn" id="closeCopilotBtn" style="padding: 2px 8px;">✕</button>
+    </div>
+
+    <div class="copilot-body">
+        <!-- Standby View (Before User Clicks Connect) -->
+        <div class="copilot-standby-view" id="copilotStandbyView">
+            <div class="copilot-standby-icon">🎯</div>
+            <div class="copilot-standby-title">Focus Copilot</div>
+            <div class="copilot-standby-desc">
+                On-call task orchestrator and setup guide. Ask for subtask breakdowns, scheduling, or MacroDroid lock verification.
+            </div>
+            <button class="icon-btn" id="startCopilotBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 10px 22px;">
+                Start Conversation
+            </button>
+        </div>
+
+        <!-- Live Chat Container -->
+        <div class="copilot-chat-view" id="copilotChatView">
+            <div class="copilot-messages" id="copilotMessages">
+                <div class="chat-bubble bot">
+                    Ready. Tell me what tasks you need to organize, breakdown, or check.
+                </div>
+            </div>
+            <form class="copilot-input-bar" id="copilotForm">
+                <input type="text" id="copilotInput" placeholder="Ask Copilot..." autocomplete="off" required>
+                <button type="submit" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Send</button>
+            </form>
+        </div>
+    </div>
+</aside>
+
 <div class="app-container">
     <!-- Top Navbar -->
     <header class="top-navbar">
@@ -165,6 +204,9 @@
             <h2 style="margin: 0; font-size: 1.25rem;">Today's Focus</h2>
         </div>
         <div class="nav-right">
+            <!-- Open Copilot Navbar Trigger Button -->
+            <button class="nav-link-btn" id="openCopilotNavBtn" title="Open AI Copilot">💬 Copilot</button>
+
             <!-- Completed List Trigger Button -->
             <button class="nav-link-btn" id="openCompletedModalBtn" title="View Completed Tasks">✓ Completed</button>
 
@@ -205,6 +247,9 @@
 
 <!-- Floating Action Button for Root Task -->
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
+
+<!-- Floating Action Button for Copilot Launcher -->
+<button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot">🤖</button>
 
 <!-- Modal: Dedicated Completed List View -->
 <div class="modal-overlay" id="completedModal">
@@ -437,6 +482,7 @@
 
 <script src="audit-engine.js"></script>
 <script src="sync-engine.js"></script>
+<script src="agent-engine.js"></script>
 <script>
 // =========================================================================
 // State & Storage
@@ -1435,7 +1481,7 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
 });
 
 // =========================================================================
-// Drawer Navigation
+// Left Sidebar & Right Copilot Drawer Toggles
 // =========================================================================
 const sidebarDrawer = document.getElementById('sidebarDrawer');
 const drawerBackdrop = document.getElementById('drawerBackdrop');
@@ -1449,6 +1495,41 @@ drawerBackdrop.addEventListener('click', () => {
     sidebarDrawer.classList.remove('open');
     drawerBackdrop.classList.remove('open');
 });
+
+// Right Copilot Drawer Wiring
+const copilotDrawer = document.getElementById('copilotDrawer');
+const copilotBackdrop = document.getElementById('copilotBackdrop');
+const openCopilotNavBtn = document.getElementById('openCopilotNavBtn');
+const openCopilotFabBtn = document.getElementById('openCopilotFabBtn');
+const closeCopilotBtn = document.getElementById('closeCopilotBtn');
+
+function openCopilot() {
+    copilotDrawer.classList.add('open');
+    copilotBackdrop.classList.add('open');
+}
+
+function closeCopilot() {
+    copilotDrawer.classList.remove('open');
+    copilotBackdrop.classList.remove('open');
+}
+
+if (openCopilotNavBtn) openCopilotNavBtn.addEventListener('click', openCopilot);
+if (openCopilotFabBtn) openCopilotFabBtn.addEventListener('click', openCopilot);
+if (closeCopilotBtn) closeCopilotBtn.addEventListener('click', closeCopilot);
+if (copilotBackdrop) copilotBackdrop.addEventListener('click', closeCopilot);
+
+// Standby "Start Conversation" Gate
+const startCopilotBtn = document.getElementById('startCopilotBtn');
+const copilotStandbyView = document.getElementById('copilotStandbyView');
+const copilotChatView = document.getElementById('copilotChatView');
+
+if (startCopilotBtn) {
+    startCopilotBtn.addEventListener('click', () => {
+        copilotStandbyView.style.display = 'none';
+        copilotChatView.classList.add('active');
+        document.getElementById('copilotInput').focus();
+    });
+}
 
 // =========================================================================
 // Initialization
