@@ -572,6 +572,15 @@ window.addEventListener('taskitator-synced', () => {
     }
 });
 
+// Live UI Reactive listener for agent mutations
+window.addEventListener('taskitator-tasks-updated', () => {
+    if (!activeDetailTaskId) {
+        loadStorage();
+        renderTaskTree();
+        renderCompletedModalList();
+    }
+});
+
 // Background sync failure listener
 window.addEventListener('taskitator-sync-error', () => {
     updateSyncDot('error');
