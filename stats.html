@@ -241,6 +241,12 @@ if ('serviceWorker' in navigator) {
             .catch(err => console.error('SW Registration failed:', err));
     });
 }
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .catch(err => console.error('SW Registration failed:', err));
+    });
+}
 
 </script>
 </body>
