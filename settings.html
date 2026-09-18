@@ -77,7 +77,7 @@
             margin-left: 8px;
             display: none;
         }
-        button:disabled {
+        button:disabled, input:disabled, select:disabled {
             opacity: 0.5;
             cursor: not-allowed !important;
         }
@@ -210,11 +210,11 @@
         <div id="workweekCalcNotice" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;"></div>
     </div>
 
-    <!-- Daily Break Scheduling Window -->
+    <!-- Daily Break Scheduling Window (Synced & Anti-Bypass Enforced) -->
     <div class="settings-card">
         <h3 style="margin-top: 0; color: var(--primary);">⏸️ Daily Break Selection Window</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Configure the daily timeframe when you are permitted to schedule breaks. Leave unset (empty) to keep break scheduling open all day.
+            Defines the only time of day when you are permitted to configure or adjust your breaks. This window is synchronized across all your devices and cannot be bypassed or modified outside the active timeframe.
         </p>
         <div class="form-group" style="display: flex; gap: 12px;">
             <div style="flex: 1;">
@@ -225,9 +225,6 @@
                 <label for="breakWindowEnd">Window End</label>
                 <input type="time" id="breakWindowEnd">
             </div>
-        </div>
-        <div style="display: flex; gap: 10px; margin-top: 6px;">
-            <button type="button" class="icon-btn" id="clearBreakWindowBtn" style="font-size: 0.8rem; padding: 4px 10px;">Clear (Unset / All Day)</button>
         </div>
         <div id="breakWindowStatusBadge" style="margin-top: 8px;"></div>
     </div>
@@ -345,12 +342,29 @@ async function saveSettings(silent = false) {
         settings = {};
     }
 
+    // Anti-tampering check: verify that the user cannot edit the break window outside the window
+    const startStr = breakWindowStart.value.trim();
+    const endStr = breakWindowEnd.value.trim();
+    const savedStart = settings.break_selection_start || '';
+    const savedEnd = settings.break_selection_end || '';
+
+    if (savedStart && savedEnd && (savedStart !== startStr || savedEnd !== endStr)) {
+        const isOpen = window.TaskitatorEngine && TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
+        if (!isOpen) {
+            alert('Cannot modify break selection window while it is closed for the day.');
+            breakWindowStart.value = savedStart;
+            breakWindowEnd.value = savedEnd;
+            updateBreakWindowStatus();
+            return false;
+        }
+    }
+
     settings.gemini_api_key = geminiApiKeyInput.value.trim();
     settings.worker_url = HARDCODED_WORKER_URL;
     settings.weekend_start = parseInt(weekendStartSelect.value, 10);
     settings.weekend_end = parseInt(weekendEndSelect.value, 10);
-    settings.break_selection_start = breakWindowStart.value.trim();
-    settings.break_selection_end = breakWindowEnd.value.trim();
+    settings.break_selection_start = startStr;
+    settings.break_selection_end = endStr;
 
     const username = workerUsernameInput.value.trim().toLowerCase();
     const password = workerPasswordInput.value.trim();
@@ -372,9 +386,8 @@ async function saveSettings(silent = false) {
         if (typeof SyncEngine.markLocalModified === 'function') {
             SyncEngine.markLocalModified();
         }
-        if (typeof SyncEngine.scheduleAutoPush === 'function') {
-            SyncEngine.scheduleAutoPush(1000);
-        }
+        // Force immediate push to sync the updated settings across all devices immediately
+        await SyncEngine.forceImmediateSync();
     }
 
     refreshSyncWordStatus();
@@ -383,7 +396,7 @@ async function saveSettings(silent = false) {
     markSaved();
 
     if (!silent) {
-        alert('Settings saved successfully.');
+        alert('Settings saved and synchronized successfully.');
     }
     return true;
 }
@@ -402,7 +415,7 @@ function updateBreakWindowStatus() {
     const isOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
 
     if (!startStr || !endStr) {
-        badge.innerHTML = '<span class="tag-chip" style="background: #052e16; color: #86efac; font-weight: 700;">● Unset (Open All Day)</span>';
+        badge.innerHTML = '<span class="tag-chip" style="background: #3f2c06; color: #fde047; font-weight: 700;">⚠️ Not Set (Configure your daily window)</span>';
         breakWindowStart.disabled = false;
         breakWindowEnd.disabled = false;
     } else if (isOpen) {
@@ -410,7 +423,7 @@ function updateBreakWindowStatus() {
         breakWindowStart.disabled = false;
         breakWindowEnd.disabled = false;
     } else {
-        badge.innerHTML = '<span class="tag-chip" style="background: #380d15; color: #fda4af; font-weight: 700;">● Window Closed for Today (Locked)</span>';
+        badge.innerHTML = '<span class="tag-chip" style="background: #380d15; color: #fda4af; font-weight: 700;">🔒 Window Closed for Today (Locked across devices)</span>';
         breakWindowStart.disabled = true;
         breakWindowEnd.disabled = true;
     }
@@ -424,14 +437,6 @@ function updateWorkweekNotice() {
     document.getElementById('workweekCalcNotice').textContent =
         `Weekend: ${days[s]} to ${days[e]}. Emergency tokens reset every ${days[resetDay]} at 00:00.`;
 }
-
-// Clear break window
-document.getElementById('clearBreakWindowBtn').addEventListener('click', () => {
-    breakWindowStart.value = '';
-    breakWindowEnd.value = '';
-    markUnsaved();
-    updateBreakWindowStatus();
-});
 
 // Toggle Gemini Key visibility
 document.getElementById('toggleKeyVisibilityBtn').addEventListener('click', () => {
@@ -581,6 +586,11 @@ document.getElementById('confirmLogoutBtn').addEventListener('click', () => {
     alert('Logged out. Taskitator is now running in Local-Only mode.');
 });
 
+// Auto-update if settings change from another device via cloud pull
+window.addEventListener('taskitator-synced', () => {
+    loadSettings();
+});
+
 // Sidebar Drawer
 const sidebarDrawer = document.getElementById('sidebarDrawer');
 const drawerBackdrop = document.getElementById('drawerBackdrop');
@@ -601,7 +611,12 @@ document.getElementById('saveAllSettingsBtn').addEventListener('click', () => sa
 weekendStartSelect.addEventListener('change', updateWorkweekNotice);
 weekendEndSelect.addEventListener('change', updateWorkweekNotice);
 
-document.addEventListener('DOMContentLoaded', loadSettings);
+document.addEventListener('DOMContentLoaded', async () => {
+    loadSettings();
+    if (window.SyncEngine && SyncEngine.isConfigured()) {
+        await SyncEngine.pull(loadSettings);
+    }
+});
 
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
