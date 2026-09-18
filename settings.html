@@ -222,9 +222,13 @@ function saveSettings() {
 
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     
-    // Automatically push updated configuration to Cloudflare Worker
-    if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
-        SyncEngine.scheduleAutoPush(1000);
+    if (window.SyncEngine) {
+        if (typeof SyncEngine.markLocalModified === 'function') {
+            SyncEngine.markLocalModified();
+        }
+        if (typeof SyncEngine.scheduleAutoPush === 'function') {
+            SyncEngine.scheduleAutoPush(1000);
+        }
     }
 
     refreshSyncWordStatus();
@@ -321,7 +325,7 @@ document.getElementById('testGeminiBtn').addEventListener('click', async () => {
     }
 });
 
-// Test Hardcoded Worker Sync
+// Test Worker Sync with the active worker URL
 document.getElementById('testWorkerBtn').addEventListener('click', async () => {
     const passkey = workerPasskeyInput.value.trim();
     const feedback = document.getElementById('workerTestFeedback');
@@ -386,9 +390,6 @@ weekendEndSelect.addEventListener('change', updateWorkweekNotice);
 
 document.addEventListener('DOMContentLoaded', loadSettings);
 
-// =========================================================================
-// Service Worker Registration
-// =========================================================================
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
