@@ -1,7 +1,7 @@
 // sw.js
 /**
  * Taskitator Service Worker
- * Version: taskitator-v20
+ * Version: taskitator-v21
  * 
  * Features:
  * - Network-First for core shell assets with offline cache fallback.
@@ -9,15 +9,16 @@
  * - Automatic stale cache eviction on activation.
  */
 
-const CACHE_NAME = 'taskitator-v20';
+const CACHE_NAME = 'taskitator-v21';
 
 const ASSETS_TO_CACHE = [
     './',
+    './login.html',
     './index.html',
     './general.html',
     './stats.html',
-    './trash.html',
     './settings.html',
+    './blocker-guide.html',
     './style.css',
     './sync-engine.js',
     './audit-engine.js',
@@ -94,9 +95,9 @@ self.addEventListener('fetch', (event) => {
                     if (cachedResponse) {
                         return cachedResponse;
                     }
-                    // If navigating to an uncached page offline, fallback to index
+                    // If navigating to an uncached page offline, fallback to login/index
                     if (event.request.mode === 'navigate') {
-                        return caches.match('./index.html');
+                        return caches.match('./login.html') || caches.match('./index.html');
                     }
                 });
             })
