@@ -15,6 +15,28 @@
             --border-color: #244680;
             --border-hover: #3b6ec2;
         }
+
+        /* Sync Dot Indicator */
+        .sync-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            cursor: pointer;
+            transition: background-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .sync-dot.local-only {
+            background-color: #64748b; /* Gray: Local Only */
+            box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.25);
+        }
+        .sync-dot.pending {
+            background-color: #eab308; /* Yellow: Not Synced / Pending */
+            box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.3);
+        }
+        .sync-dot.synced {
+            background-color: #22c55e; /* Green: Synced up to date */
+            box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
+        }
     </style>
 </head>
 <body>
@@ -40,6 +62,9 @@
             <h2 style="margin: 0; font-size: 1.25rem;">Today's Focus</h2>
         </div>
         <div class="nav-right">
+            <!-- Sync Dot: Gray = Local, Yellow = Pending, Green = Synced -->
+            <span class="sync-dot local-only" id="syncStatusDot" title="Sync Status: Local Only"></span>
+
             <button class="emergency-pill-btn" id="emergencyTriggerBtn" title="Emergency Bypass">
                 🚨 <span id="emergencyCountDisplay">4/4</span>
             </button>
@@ -53,7 +78,7 @@
         <span id="emergencyCountdownTimer">15:00</span>
     </div>
 
-    <!-- Daily Break Scheduler (Visible during active selection window) -->
+    <!-- Daily Break Scheduler -->
     <section id="breakSchedulerContainer" class="banner-break-window" style="display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <strong style="font-size: 0.9rem;">⏸️ Daily Break Scheduling Window Open</strong>
@@ -258,6 +283,31 @@ let pendingAuditTaskId = null;
 let activeDetailTaskId = null;
 let emergencyTimerInterval = null;
 
+const syncStatusDot = document.getElementById('syncStatusDot');
+
+function updateSyncDot(state) {
+    if (!syncStatusDot) return;
+    syncStatusDot.className = `sync-dot ${state}`;
+    if (state === 'synced') syncStatusDot.title = 'Sync Status: Synced up to date';
+    else if (state === 'pending') syncStatusDot.title = 'Sync Status: Not synced (Pending)';
+    else syncStatusDot.title = 'Sync Status: Local only';
+}
+
+function initSyncIndicator() {
+    let settings = {};
+    try {
+        settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+    } catch (e) {
+        settings = {};
+    }
+
+    if (!settings.worker_passkey) {
+        updateSyncDot('local-only');
+    } else {
+        updateSyncDot('synced');
+    }
+}
+
 function loadStorage() {
     try {
         tasks = JSON.parse(localStorage.getItem(TASKS_KEY) || '[]');
@@ -272,10 +322,54 @@ function loadStorage() {
 function saveStorageAndPush() {
     localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
     localStorage.setItem(COLLAPSED_STATE_KEY, JSON.stringify([...collapsedNodes]));
+
+    let settings = {};
+    try {
+        settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+    } catch (e) {
+        settings = {};
+    }
+
+    if (!settings.worker_passkey) {
+        updateSyncDot('local-only');
+    } else {
+        updateSyncDot('pending');
+    }
+
     if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
         const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
         SyncEngine.scheduleAutoPush(45000, { today_breaks: breaks });
     }
+}
+
+// Background sync confirmation listener
+window.addEventListener('taskitator-synced', () => {
+    updateSyncDot('synced');
+});
+
+// Click dot to trigger immediate sync
+if (syncStatusDot) {
+    syncStatusDot.addEventListener('click', async () => {
+        let settings = {};
+        try {
+            settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+        } catch (e) {
+            settings = {};
+        }
+
+        if (!settings.worker_passkey) {
+            updateSyncDot('local-only');
+            return;
+        }
+
+        updateSyncDot('pending');
+        if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
+            const ok = await SyncEngine.forceImmediateSync();
+            if (ok) updateSyncDot('synced');
+        } else {
+            setTimeout(() => updateSyncDot('synced'), 500);
+        }
+    });
 }
 
 // =========================================================================
@@ -917,6 +1011,7 @@ drawerBackdrop.addEventListener('click', () => {
 // Initialization
 // =========================================================================
 document.addEventListener('DOMContentLoaded', () => {
+    initSyncIndicator();
     loadStorage();
     updateEmergencyUI();
     renderBreakScheduler();
