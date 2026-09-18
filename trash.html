@@ -94,8 +94,13 @@ function loadTasks() {
 
 function saveTasksAndPush() {
     localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
-    if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
-        SyncEngine.scheduleAutoPush(45000);
+    if (window.SyncEngine) {
+        if (typeof SyncEngine.markLocalModified === 'function') {
+            SyncEngine.markLocalModified();
+        }
+        if (typeof SyncEngine.scheduleAutoPush === 'function') {
+            SyncEngine.scheduleAutoPush(45000);
+        }
     }
 }
 
@@ -144,17 +149,46 @@ function renderTrash() {
     });
 }
 
+// Bug 1 Fix: Recursive restoration to prevent orphaned subtasks
 function restoreTask(taskId) {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
+
+    // Check if the task's parent is in trash or missing. If so, promote to root.
+    if (task.parent_id) {
+        const parent = tasks.find(t => t.id === task.parent_id);
+        if (!parent || parent.status === 'trash') {
+            task.parent_id = null;
+        }
+    }
+
     task.status = 'active';
+
+    // Recursively restore all trashed subtasks belonging to this task
+    function recursiveRestoreChildren(parentId) {
+        tasks.filter(t => t.parent_id === parentId && t.status === 'trash').forEach(child => {
+            child.status = 'active';
+            recursiveRestoreChildren(child.id);
+        });
+    }
+    recursiveRestoreChildren(taskId);
+
     saveTasksAndPush();
     renderTrash();
 }
 
+// Bug 1 Fix: Recursive permanent deletion of all descendants
 function permanentlyDeleteTask(taskId) {
-    if (!confirm('Permanently delete this task? This cannot be undone.')) return;
-    tasks = tasks.filter(t => t.id !== taskId);
+    if (!confirm('Permanently delete this task and all its subtasks? This cannot be undone.')) return;
+
+    const idsToDelete = new Set();
+    function collectIds(targetId) {
+        idsToDelete.add(targetId);
+        tasks.filter(t => t.parent_id === targetId).forEach(child => collectIds(child.id));
+    }
+    collectIds(taskId);
+
+    tasks = tasks.filter(t => !idsToDelete.has(t.id));
     saveTasksAndPush();
     renderTrash();
 }
@@ -172,7 +206,13 @@ document.getElementById('emptyTrashBtn').addEventListener('click', () => {
     }
 });
 
-// Drawer Navigation
+// Bug 2 Fix: Listen for background cloud sync and refresh trash view automatically
+window.addEventListener('taskitator-synced', () => {
+    loadTasks();
+    renderTrash();
+});
+
+// Sidebar Drawer
 const sidebarDrawer = document.getElementById('sidebarDrawer');
 const drawerBackdrop = document.getElementById('drawerBackdrop');
 
@@ -190,13 +230,13 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTasks();
     renderTrash();
 });
+
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
             .catch(err => console.error('SW Registration failed:', err));
     });
 }
-
 </script>
 </body>
 </html>
