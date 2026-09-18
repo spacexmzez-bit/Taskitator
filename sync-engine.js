@@ -2,12 +2,14 @@
 /**
  * Taskitator Unified Cloud Sync Engine
  * Automated debounced push/pull bridge for Cloudflare Worker KV
+ * Supports Zero-Knowledge Client-Side Hashing & Local-Only Mode Transitions
  */
 
 const SyncEngine = {
     STORAGE_KEY_SETTINGS: 'taskitator_settings',
     STORAGE_KEY_TASKS: 'taskitator_tasks',
     STORAGE_KEY_LAST_LOGIN: 'taskitator_last_login',
+    STORAGE_KEY_LAST_MODIFIED: 'taskitator_tasks_last_modified',
     HARDCODED_WORKER_URL: 'https://taskitator-sync.spacexmzez.workers.dev',
 
     debounceTimer: null,
@@ -25,7 +27,26 @@ const SyncEngine = {
             window.dispatchEvent(new CustomEvent('taskitator-synced', { detail }));
         } else if (status === 'error') {
             window.dispatchEvent(new CustomEvent('taskitator-sync-error', { detail }));
+        } else if (status === 'local-only') {
+            window.dispatchEvent(new CustomEvent('taskitator-local-only', { detail }));
         }
+    },
+
+    /**
+     * Derives an irreversible 64-character SHA-256 authentication token client-side.
+     * Prevents raw password exposure across the network or in Cloudflare KV.
+     */
+    async hashCredentials(username, password) {
+        const cleanUser = String(username || '').trim().toLowerCase();
+        const cleanPass = String(password || '').trim();
+        const salt = 'taskitator-client-v1';
+
+        const encoder = new TextEncoder();
+        const payloadData = encoder.encode(`${cleanUser}:${cleanPass}:${salt}`);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', payloadData);
+        
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     },
 
     getConfig() {
@@ -38,14 +59,20 @@ const SyncEngine = {
 
         return {
             url: this.HARDCODED_WORKER_URL,
-            secret: (settings.worker_passkey || '').trim(),
+            username: (settings.worker_username || '').trim().toLowerCase(),
+            secret: (settings.worker_passkey || '').trim(), // Stores derived SHA-256 bearer token
             last_synced: settings.last_synced || null
         };
     },
 
     isConfigured() {
         const config = this.getConfig();
-        return Boolean(config.secret);
+        return Boolean(config.secret && config.username);
+    },
+
+    markLocalModified() {
+        localStorage.setItem(this.STORAGE_KEY_LAST_MODIFIED, new Date().toISOString());
+        this.hasUnsavedChanges = true;
     },
 
     getPayload(force = false, extraData = {}) {
@@ -60,10 +87,12 @@ const SyncEngine = {
         }
 
         const lastLogin = localStorage.getItem(this.STORAGE_KEY_LAST_LOGIN) || null;
+        const nowIso = new Date().toISOString();
 
         return {
             app: 'Taskitator',
-            updated_at: new Date().toISOString(),
+            username: settings.worker_username || null,
+            updated_at: nowIso,
             force: force,
             tasks: tasks,
             settings: settings,
@@ -74,7 +103,7 @@ const SyncEngine = {
 
     async push(force = false, extraData = {}) {
         const config = this.getConfig();
-        if (!config.secret) {
+        if (!config.secret || !config.username) {
             this.notify('unconfigured');
             return { success: false, reason: 'unconfigured' };
         }
@@ -87,7 +116,8 @@ const SyncEngine = {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${config.secret}`
+                    'Authorization': `Bearer ${config.secret}`,
+                    'X-Taskitator-User': config.username
                 },
                 body: JSON.stringify(payload)
             });
@@ -120,7 +150,7 @@ const SyncEngine = {
 
     scheduleAutoPush(delayMs = 45000, extraData = {}) {
         if (!this.isConfigured()) return;
-        this.hasUnsavedChanges = true;
+        this.markLocalModified();
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
         this.debounceTimer = setTimeout(() => {
             if (this.hasUnsavedChanges) {
@@ -140,16 +170,20 @@ const SyncEngine = {
         if (!this.isConfigured()) return false;
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
         
-        // PUSH immediately to persist local changes to Cloudflare KV
         const res = await this.push(true, extraData);
         return res.success;
     },
 
     async pull(onUpdateCallback = null) {
         const config = this.getConfig();
-        if (!config.secret) {
+        if (!config.secret || !config.username) {
             this.notify('unconfigured');
             return { success: false, reason: 'unconfigured' };
+        }
+
+        if (this.hasUnsavedChanges) {
+            await this.push(false);
+            return { success: true, localPushed: true };
         }
 
         this.notify('syncing');
@@ -158,7 +192,8 @@ const SyncEngine = {
             const res = await fetch(config.url, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${config.secret}`
+                    'Authorization': `Bearer ${config.secret}`,
+                    'X-Taskitator-User': config.username
                 }
             });
 
@@ -176,6 +211,16 @@ const SyncEngine = {
 
             if (!Array.isArray(data.tasks)) {
                 throw new Error('Malformed snapshot: tasks array missing.');
+            }
+
+            const localLastMod = localStorage.getItem(this.STORAGE_KEY_LAST_MODIFIED);
+            if (localLastMod && data.updated_at) {
+                const localTime = new Date(localLastMod).getTime();
+                const remoteTime = new Date(data.updated_at).getTime();
+                if (localTime > remoteTime) {
+                    await this.push(true);
+                    return { success: true, localWasFresher: true };
+                }
             }
 
             const localTasksRaw = localStorage.getItem(this.STORAGE_KEY_TASKS);
@@ -203,6 +248,31 @@ const SyncEngine = {
             this.notify('error', err.message);
             return { success: false, error: err.message };
         }
+    },
+
+    /**
+     * Wipes active session credentials to safely transition the PWA to local-only mode.
+     */
+    logout() {
+        if (this.debounceTimer) clearTimeout(this.debounceTimer);
+        this.hasUnsavedChanges = false;
+
+        let settings = {};
+        try {
+            settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
+        } catch (e) {
+            settings = {};
+        }
+
+        delete settings.worker_username;
+        delete settings.worker_passkey;
+        delete settings.last_synced;
+
+        localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+        localStorage.removeItem(this.STORAGE_KEY_LAST_LOGIN);
+
+        this.notify('local-only');
+        return true;
     }
 };
 
