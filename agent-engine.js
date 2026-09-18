@@ -3,7 +3,7 @@
  * Taskitator Focus Copilot - Complete Engine
  * 
  * Capabilities:
- * - Dynamic Name Binding: Adopts custom copilot_name across UI headers, nav buttons, and persona prompt.
+ * - Dynamic Name Binding: Adopts custom copilot_name across UI headers, nav buttons, input placeholders, and persona prompt.
  * - Dual-model cascade: gemini-3.5-flash-lite -> gemini-3.1-flash-lite on HTTP 429.
  * - Session fallback latch to prevent wasteful double roundtrips after quota exhaustion.
  * - External SYSTEM_PROMPT.md loader with runtime caching and offline fallback.
@@ -477,6 +477,12 @@ window.TaskitatorAgent = (() => {
         const fabBtn = document.getElementById('openCopilotFabBtn');
         if (fabBtn) {
             fabBtn.title = `Open ${name}`;
+        }
+
+        // 4. Update Input Bar Placeholder
+        const inputField = document.getElementById('copilotInput');
+        if (inputField) {
+            inputField.placeholder = `Ask ${name}...`;
         }
     }
 
