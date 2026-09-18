@@ -1,15 +1,15 @@
 // sw.js
 /**
  * Taskitator Service Worker
- * Version: taskitator-v22
+ * Version: taskitator-v23
  * 
  * Features:
  * - Network-First for core shell assets with offline cache fallback.
- * - Strict bypass for Cloudflare sync APIs and non-GET requests to prevent sync interference.
+ * - Strict bypass for Cloudflare sync APIs, Gemini endpoints, and non-GET requests to prevent sync interference.
  * - Automatic stale cache eviction on activation.
  */
 
-const CACHE_NAME = 'taskitator-v22';
+const CACHE_NAME = 'taskitator-v23';
 
 const ASSETS_TO_CACHE = [
     './',
@@ -19,9 +19,12 @@ const ASSETS_TO_CACHE = [
     './stats.html',
     './settings.html',
     './blocker-guide.html',
+    './trash.html',
     './style.css',
     './sync-engine.js',
     './audit-engine.js',
+    './agent-engine.js',
+    './SYSTEM_PROMPT.md',
     './manifest.json',
     './icon/icon-192.png',
     './icon/icon-512.png'
