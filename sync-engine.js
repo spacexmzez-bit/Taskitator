@@ -140,8 +140,7 @@ const SyncEngine = {
         if (!this.isConfigured()) return false;
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
         
-        // PULL fresh data first to merge before pushing local changes
-        await this.pull();
+        // PUSH immediately to persist local changes to Cloudflare KV
         const res = await this.push(true, extraData);
         return res.success;
     },
