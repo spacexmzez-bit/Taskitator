@@ -137,6 +137,9 @@ const SyncEngine = {
     async forceImmediateSync(extraData = {}) {
         if (!this.isConfigured()) return false;
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
+        
+        // PULL fresh data first to merge before pushing local changes
+        await this.pull();
         const res = await this.push(true, extraData);
         return res.success;
     },
