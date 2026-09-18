@@ -45,16 +45,6 @@
             border-radius: 8px;
             margin-bottom: 12px;
         }
-        .security-notice {
-            font-size: 0.78rem;
-            color: var(--text-muted);
-            line-height: 1.4;
-            margin-top: 8px;
-            background: rgba(0, 0, 0, 0.2);
-            padding: 8px 10px;
-            border-radius: 6px;
-            border-left: 3px solid var(--primary);
-        }
         .save-prompt-bar {
             display: flex;
             align-items: center;
@@ -66,7 +56,6 @@
             margin-bottom: 16px;
         }
         .unsaved-pill {
-            display: inline-block;
             font-size: 0.75rem;
             font-weight: 700;
             color: #f59e0b;
@@ -132,182 +121,158 @@
         </div>
     </header>
 
-    <!-- Global Instructions Banner -->
-    <div class="save-prompt-bar">
-        <div style="font-size: 0.85rem; color: var(--text-muted);">
-            ℹ️ Changes to settings or credentials will not take effect until you click <strong>Save</strong>.
-        </div>
-    </div>
-
-    <!-- Gemini BYOK & Cascade Configuration -->
-    <div class="settings-card">
-        <h3 style="margin-top: 0; color: var(--primary);">🤖 Gemini AI Verification (BYOK)</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Audits task evidence using a 2-tier cascade: <strong>gemini-3.5-flash-lite</strong> as primary, automatically falling back to <strong>gemini-3.1-flash-lite</strong> on RPD limits.
-        </p>
-        <div class="form-group">
-            <label for="geminiApiKey">Google AI Studio API Key</label>
-            <input type="password" id="geminiApiKey" placeholder="AIzaSy...">
-        </div>
-        <div style="display: flex; gap: 10px;">
-            <button class="icon-btn" id="testGeminiBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Test Connection</button>
-            <button class="icon-btn" id="toggleKeyVisibilityBtn">Show Key</button>
-        </div>
-        <div id="geminiTestFeedback" class="notice-banner"></div>
-    </div>
-
-    <!-- Sync Configuration (Zero-Knowledge Username & Password) -->
-    <div class="settings-card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <h3 style="margin: 0; color: var(--primary);">🌐 Cloud Sync & Account</h3>
-            <span id="syncWordBadge" class="sync-badge-word local-only">Local Only</span>
-        </div>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Synchronizes tasks across devices via zero-knowledge client-side hashing. Passwords are never sent or stored in plaintext.
-        </p>
-
-        <!-- Active Session Status (Visible when logged in) -->
-        <div id="activeSessionBox" class="account-session-box" style="display: none;">
-            <div>
-                <div style="font-size: 0.8rem; color: var(--text-muted);">Signed in as:</div>
-                <strong id="activeUsernameDisplay" style="color: var(--primary); font-size: 0.95rem;"></strong>
+    <!-- Master Authenticated Container: Hidden until log-in state is confirmed -->
+    <div id="authenticatedSettingsContainer" style="display: none;">
+        <!-- Global Instructions Banner -->
+        <div class="save-prompt-bar">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">
+                ℹ️ Changes to settings or keys will not take effect until you click <strong>Save All Settings</strong>.
             </div>
-            <button type="button" class="icon-btn" id="openLogoutModalBtn" style="color: var(--danger); border-color: #881337;">Log Out</button>
         </div>
 
-        <!-- Credential Input Fields -->
-        <div id="credentialInputsContainer">
+        <!-- Account Session & Status -->
+        <div class="settings-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 style="margin: 0; color: var(--primary);">👤 Cloud Account</h3>
+                <span id="syncWordBadge" class="sync-badge-word synced">Synced</span>
+            </div>
+
+            <div class="account-session-box">
+                <div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">Signed in as:</div>
+                    <strong id="activeUsernameDisplay" style="color: var(--primary); font-size: 0.95rem;"></strong>
+                </div>
+                <button type="button" class="icon-btn" id="openLogoutModalBtn" style="color: var(--danger); border-color: #881337;">Log Out</button>
+            </div>
+        </div>
+
+        <!-- Gemini BYOK Configuration -->
+        <div class="settings-card">
+            <h3 style="margin-top: 0; color: var(--primary);">🤖 Gemini AI Verification (BYOK)</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                Audits task evidence using a 2-tier cascade: <strong>gemini-3.5-flash-lite</strong> as primary, automatically falling back to <strong>gemini-3.1-flash-lite</strong> on RPD limits.
+            </p>
             <div class="form-group">
-                <label for="workerUsername">Username</label>
-                <input type="text" id="workerUsername" placeholder="Enter username" autocomplete="username">
+                <label for="geminiApiKey">Google AI Studio API Key</label>
+                <input type="password" id="geminiApiKey" placeholder="AIzaSy...">
             </div>
+            <div style="display: flex; gap: 10px;">
+                <button type="button" class="icon-btn" id="testGeminiBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Test Connection</button>
+                <button type="button" class="icon-btn" id="toggleKeyVisibilityBtn">Show Key</button>
+            </div>
+            <div id="geminiTestFeedback" class="notice-banner"></div>
+        </div>
+
+        <!-- MacroDroid Device Lockdown Integration Bridge -->
+        <div class="settings-card" id="macrodroidCard">
+            <h3 style="margin-top: 0; color: var(--primary);">📲 MacroDroid Lock Integration</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                Copy these exact credentials directly into MacroDroid's HTTP Request action to automate your device lock.
+            </p>
+            
             <div class="form-group">
-                <label for="workerPassword">Password</label>
-                <input type="password" id="workerPassword" placeholder="Enter password" autocomplete="current-password">
+                <label for="macroEndpointUrl">1. Status URL (HTTP GET)</label>
+                <div class="copy-group">
+                    <input type="text" id="macroEndpointUrl" class="copy-input" readonly value="https://taskitator-sync.spacexmzez.workers.dev/?action=status&format=text">
+                    <button type="button" class="icon-btn" id="copyUrlBtn">Copy</button>
+                </div>
             </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;">
-                <button type="button" class="icon-btn" id="saveCredentialsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Credentials & Connect</button>
-                <button type="button" class="icon-btn" id="testWorkerBtn">Test Connection</button>
-                <button type="button" class="icon-btn" id="togglePasswordVisibilityBtn" disabled>Show Password</button>
+
+            <div class="form-group" style="margin-top: 12px;">
+                <label for="macroBearerToken">2. Authorization Header Token</label>
+                <div class="copy-group">
+                    <input type="password" id="macroBearerToken" class="copy-input" readonly>
+                    <button type="button" class="icon-btn" id="toggleTokenVisibilityBtn">Show</button>
+                    <button type="button" class="icon-btn" id="copyTokenBtn">Copy</button>
+                </div>
+                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px;">
+                    MacroDroid Header format: <code>Authorization</code> &rarr; <code>Bearer &lt;token&gt;</code>
+                </small>
             </div>
-            <div class="security-notice">
-                🔒 <strong>Zero-Knowledge Security:</strong> Your password is converted into an irreversible SHA-256 token inside your browser before transmission.
+
+            <!-- Setup Guide Link -->
+            <div class="guide-banner-card">
+                <div>
+                    <strong style="display: block; font-size: 0.9rem; color: var(--text-color);">Want to block your phone?</strong>
+                    <span style="font-size: 0.78rem; color: var(--text-muted);">Step-by-step setup guide for the MacroDroid lock and bridge.</span>
+                </div>
+                <a href="blocker-guide.html" class="icon-btn" style="text-decoration: none; background: var(--primary); color: #fff; border: none; font-weight: 600; white-space: nowrap; padding: 8px 14px;">
+                    Open Setup Guide &rarr;
+                </a>
             </div>
         </div>
 
-        <div id="workerTestFeedback" class="notice-banner"></div>
-    </div>
-
-    <!-- MacroDroid Device Lockdown Integration Bridge -->
-    <div class="settings-card" id="macrodroidCard" style="display: none;">
-        <h3 style="margin-top: 0; color: var(--primary);">📲 MacroDroid Lock Integration</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Copy these exact credentials directly into MacroDroid's HTTP Request action to automate your device lock.
-        </p>
-        
-        <div class="form-group">
-            <label for="macroEndpointUrl">1. Status URL (HTTP GET)</label>
-            <div class="copy-group">
-                <input type="text" id="macroEndpointUrl" class="copy-input" readonly value="https://taskitator-sync.spacexmzez.workers.dev/?action=status&format=text">
-                <button type="button" class="icon-btn" id="copyUrlBtn">Copy</button>
+        <!-- Weekend & Emergency Cycle Engine -->
+        <div class="settings-card">
+            <h3 style="margin-top: 0; color: var(--primary);">🚨 Emergency Bypass Quota</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                Grants 4 tokens per cycle to unlock tasks for 15 minutes. Automatically resets at 00:00 midnight immediately following your configured weekend.
+            </p>
+            <div class="form-group">
+                <label>Remaining Tokens for This Cycle:</label>
+                <div class="quota-indicator">
+                    <span>🚨</span>
+                    <span id="emergencyTokensDisplay">4 / 4 Uses Remaining</span>
+                </div>
             </div>
+            <div class="form-group" style="display: flex; gap: 12px; margin-top: 14px;">
+                <div style="flex: 1;">
+                    <label for="weekendStartSelect">Weekend Start</label>
+                    <select id="weekendStartSelect">
+                        <option value="5">Friday</option>
+                        <option value="6">Saturday</option>
+                        <option value="0">Sunday</option>
+                        <option value="1">Monday</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label for="weekendEndSelect">Weekend End</label>
+                    <select id="weekendEndSelect">
+                        <option value="6">Saturday</option>
+                        <option value="0">Sunday</option>
+                        <option value="1">Monday</option>
+                        <option value="5">Friday</option>
+                    </select>
+                </div>
+            </div>
+            <div id="workweekCalcNotice" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;"></div>
         </div>
 
-        <div class="form-group" style="margin-top: 12px;">
-            <label for="macroBearerToken">2. Authorization Header Token</label>
-            <div class="copy-group">
-                <input type="password" id="macroBearerToken" class="copy-input" readonly placeholder="Save credentials to generate token">
-                <button type="button" class="icon-btn" id="toggleTokenVisibilityBtn">Show</button>
-                <button type="button" class="icon-btn" id="copyTokenBtn">Copy</button>
+        <!-- Daily Break Scheduling Window -->
+        <div class="settings-card">
+            <h3 style="margin-top: 0; color: var(--primary);">⏸️ Daily Break Selection Window</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                Defines the only time of day when you are permitted to configure or adjust your breaks. This window is synchronized across all your devices and cannot be bypassed or modified outside the active timeframe.
+            </p>
+            <div class="form-group" style="display: flex; gap: 12px;">
+                <div style="flex: 1;">
+                    <label for="breakWindowStart">Window Start</label>
+                    <input type="time" id="breakWindowStart">
+                </div>
+                <div style="flex: 1;">
+                    <label for="breakWindowEnd">Window End</label>
+                    <input type="time" id="breakWindowEnd">
+                </div>
             </div>
-            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px;">
-                MacroDroid Header format: <code>Authorization</code> &rarr; <code>Bearer &lt;token&gt;</code>
-            </small>
+            <div id="breakWindowStatusBadge" style="margin-top: 8px;"></div>
         </div>
 
-        <!-- Setup Guide Call To Action -->
-        <div class="guide-banner-card">
-            <div>
-                <strong style="display: block; font-size: 0.9rem; color: var(--text-color);">Want to block your phone?</strong>
-                <span style="font-size: 0.78rem; color: var(--text-muted);">Step-by-step setup guide for the MacroDroid lock and bridge.</span>
-            </div>
-            <a href="blocker-guide.html" class="icon-btn" style="text-decoration: none; background: var(--primary); color: #fff; border: none; font-weight: 600; white-space: nowrap; padding: 8px 14px;">
-                Open Setup Guide &rarr;
-            </a>
+        <div style="text-align: right; margin-top: 20px;">
+            <button type="button" class="icon-btn" id="saveAllSettingsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 10px 20px; font-size: 1rem;">Save All Settings</button>
         </div>
-    </div>
-
-    <!-- Weekend & Emergency Cycle Engine -->
-    <div class="settings-card">
-        <h3 style="margin-top: 0; color: var(--primary);">🚨 Emergency Bypass Quota</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Grants 4 tokens per cycle to unlock tasks for 15 minutes. Automatically resets at 00:00 midnight immediately following your configured weekend.
-        </p>
-        <div class="form-group">
-            <label>Remaining Tokens for This Cycle:</label>
-            <div class="quota-indicator">
-                <span>🚨</span>
-                <span id="emergencyTokensDisplay">4 / 4 Uses Remaining</span>
-            </div>
-        </div>
-        <div class="form-group" style="display: flex; gap: 12px; margin-top: 14px;">
-            <div style="flex: 1;">
-                <label for="weekendStartSelect">Weekend Start</label>
-                <select id="weekendStartSelect">
-                    <option value="5">Friday</option>
-                    <option value="6">Saturday</option>
-                    <option value="0">Sunday</option>
-                    <option value="1">Monday</option>
-                </select>
-            </div>
-            <div style="flex: 1;">
-                <label for="weekendEndSelect">Weekend End</label>
-                <select id="weekendEndSelect">
-                    <option value="6">Saturday</option>
-                    <option value="0">Sunday</option>
-                    <option value="1">Monday</option>
-                    <option value="5">Friday</option>
-                </select>
-            </div>
-        </div>
-        <div id="workweekCalcNotice" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;"></div>
-    </div>
-
-    <!-- Daily Break Scheduling Window (Synced & Anti-Bypass Enforced) -->
-    <div class="settings-card">
-        <h3 style="margin-top: 0; color: var(--primary);">⏸️ Daily Break Selection Window</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Defines the only time of day when you are permitted to configure or adjust your breaks. This window is synchronized across all your devices and cannot be bypassed or modified outside the active timeframe.
-        </p>
-        <div class="form-group" style="display: flex; gap: 12px;">
-            <div style="flex: 1;">
-                <label for="breakWindowStart">Window Start</label>
-                <input type="time" id="breakWindowStart">
-            </div>
-            <div style="flex: 1;">
-                <label for="breakWindowEnd">Window End</label>
-                <input type="time" id="breakWindowEnd">
-            </div>
-        </div>
-        <div id="breakWindowStatusBadge" style="margin-top: 8px;"></div>
-    </div>
-
-    <div style="text-align: right; margin-top: 20px;">
-        <button class="icon-btn" id="saveAllSettingsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 10px 20px; font-size: 1rem;">Save All Settings</button>
     </div>
 </div>
 
-<!-- Modal: Logout / Local-Only Warning -->
+<!-- Modal: Logout Confirmation -->
 <div class="modal-overlay" id="logoutConfirmModal">
     <div class="modal-box">
-        <h3 style="margin-top: 0; color: var(--danger);">⚠️ Switch to Local-Only Mode?</h3>
+        <h3 style="margin-top: 0; color: var(--danger);">⚠️ Log Out of Taskitator?</h3>
         <p style="font-size: 0.85rem; line-height: 1.5; color: var(--text-color);">
-            Logging out will disconnect your device from cloud backups.<br><br>
-            <strong>Warning:</strong> In Local-Only mode, tasks exist <em>only</em> inside this browser's temporary storage. If you clear site cookies, clear browser cache, or change devices, <strong>all your tasks will be permanently lost</strong>.
+            Logging out removes active credentials, tasks, and breaks from this browser. Your data remains safe on the cloud server.
         </p>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
             <button type="button" class="icon-btn" id="cancelLogoutBtn">Cancel</button>
-            <button type="button" class="icon-btn" id="confirmLogoutBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 600;">Log Out to Local-Only</button>
+            <button type="button" class="icon-btn" id="confirmLogoutBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 600;">Log Out</button>
         </div>
     </div>
 </div>
@@ -318,11 +283,8 @@
 const HARDCODED_WORKER_URL = 'https://taskitator-sync.spacexmzez.workers.dev';
 const SETTINGS_KEY = 'taskitator_settings';
 
+const authenticatedSettingsContainer = document.getElementById('authenticatedSettingsContainer');
 const geminiApiKeyInput = document.getElementById('geminiApiKey');
-const workerUsernameInput = document.getElementById('workerUsername');
-const workerPasswordInput = document.getElementById('workerPassword');
-const togglePasswordVisibilityBtn = document.getElementById('togglePasswordVisibilityBtn');
-const activeSessionBox = document.getElementById('activeSessionBox');
 const activeUsernameDisplay = document.getElementById('activeUsernameDisplay');
 const weekendStartSelect = document.getElementById('weekendStartSelect');
 const weekendEndSelect = document.getElementById('weekendEndSelect');
@@ -333,7 +295,6 @@ const logoutConfirmModal = document.getElementById('logoutConfirmModal');
 const unsavedIndicator = document.getElementById('unsavedIndicator');
 
 // MacroDroid integration elements
-const macrodroidCard = document.getElementById('macrodroidCard');
 const macroBearerToken = document.getElementById('macroBearerToken');
 const copyUrlBtn = document.getElementById('copyUrlBtn');
 const copyTokenBtn = document.getElementById('copyTokenBtn');
@@ -351,38 +312,15 @@ function markSaved() {
     }
 }
 
-function refreshSyncWordStatus() {
-    if (!syncWordBadge) return;
-    const isConfigured = window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured();
-
-    if (!isConfigured) {
-        syncWordBadge.className = 'sync-badge-word local-only';
-        syncWordBadge.textContent = 'Local Only';
-        activeSessionBox.style.display = 'none';
-        macrodroidCard.style.display = 'none';
-        macroBearerToken.value = '';
-    } else {
-        const config = SyncEngine.getConfig();
-        syncWordBadge.className = 'sync-badge-word synced';
-        syncWordBadge.textContent = 'Synced';
-        activeSessionBox.style.display = 'flex';
-        activeUsernameDisplay.textContent = `@${config.username}`;
-        macrodroidCard.style.display = 'block';
-        macroBearerToken.value = config.secret || '';
-    }
-}
-
-function updatePasswordVisibilityState() {
-    const hasText = workerPasswordInput.value.length > 0;
-    togglePasswordVisibilityBtn.disabled = !hasText;
-
-    if (!hasText && workerPasswordInput.type === 'text') {
-        workerPasswordInput.type = 'password';
-        togglePasswordVisibilityBtn.textContent = 'Show Password';
-    }
-}
-
 function loadSettings() {
+    // Reveal all settings options only when configured
+    if (!window.SyncEngine || !SyncEngine.isConfigured()) {
+        authenticatedSettingsContainer.style.display = 'none';
+        return;
+    }
+
+    authenticatedSettingsContainer.style.display = 'block';
+
     let settings = {};
     try {
         settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
@@ -390,18 +328,17 @@ function loadSettings() {
         settings = {};
     }
 
-    geminiApiKeyInput.value = settings.gemini_api_key || '';
-    workerUsernameInput.value = settings.worker_username || '';
-    workerPasswordInput.value = '';
-    updatePasswordVisibilityState();
+    const config = SyncEngine.getConfig();
+    activeUsernameDisplay.textContent = `@${config.username}`;
+    macroBearerToken.value = config.secret || '';
 
+    geminiApiKeyInput.value = settings.gemini_api_key || '';
     weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
     weekendEndSelect.value = settings.weekend_end !== undefined ? settings.weekend_end : '6';
 
     breakWindowStart.value = settings.break_selection_start || '';
     breakWindowEnd.value = settings.break_selection_end || '';
 
-    refreshSyncWordStatus();
     updateEmergencyDisplay();
     updateBreakWindowStatus();
     updateWorkweekNotice();
@@ -439,34 +376,16 @@ async function saveSettings(silent = false) {
     settings.break_selection_start = startStr;
     settings.break_selection_end = endStr;
 
-    const username = workerUsernameInput.value.trim().toLowerCase();
-    const password = workerPasswordInput.value.trim();
-
-    if (username && password) {
-        const tokenHash = await SyncEngine.hashCredentials(username, password);
-        settings.worker_username = username;
-        settings.worker_passkey = tokenHash;
-        workerPasswordInput.value = '';
-        updatePasswordVisibilityState();
-    } else if (username && !password && !settings.worker_passkey) {
-        alert('Please enter a password to connect your account.');
-        return false;
-    }
-
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     
     if (window.SyncEngine) {
-        if (typeof SyncEngine.markLocalModified === 'function') {
-            SyncEngine.markLocalModified();
-        }
-        // Retrieve current breaks snapshot to avoid clearing breaks on worker
+        SyncEngine.markLocalModified();
         const todayBreaks = window.TaskitatorEngine && TaskitatorEngine.BreakEngine 
             ? TaskitatorEngine.BreakEngine.getTodayBreaks() 
             : [];
         await SyncEngine.forceImmediateSync({ today_breaks: todayBreaks });
     }
 
-    refreshSyncWordStatus();
     updateBreakWindowStatus();
     updateWorkweekNotice();
     markSaved();
@@ -521,20 +440,6 @@ document.getElementById('toggleKeyVisibilityBtn').addEventListener('click', () =
     document.getElementById('toggleKeyVisibilityBtn').textContent = isPassword ? 'Hide Key' : 'Show Key';
 });
 
-// Enable/disable the toggle button based on typed input
-workerPasswordInput.addEventListener('input', () => {
-    updatePasswordVisibilityState();
-    markUnsaved();
-});
-
-// Toggle password visibility
-togglePasswordVisibilityBtn.addEventListener('click', () => {
-    if (togglePasswordVisibilityBtn.disabled) return;
-    const isPassword = workerPasswordInput.type === 'password';
-    workerPasswordInput.type = isPassword ? 'text' : 'password';
-    togglePasswordVisibilityBtn.textContent = isPassword ? 'Hide Password' : 'Show Password';
-});
-
 // Copy helpers for MacroDroid setup
 copyUrlBtn.addEventListener('click', () => {
     const urlInput = document.getElementById('macroEndpointUrl');
@@ -560,13 +465,13 @@ toggleTokenVisibilityBtn.addEventListener('click', () => {
     toggleTokenVisibilityBtn.textContent = isPass ? 'Hide' : 'Show';
 });
 
-// Detect dirty inputs to show unsaved banner
-[geminiApiKeyInput, workerUsernameInput, weekendStartSelect, weekendEndSelect, breakWindowStart, breakWindowEnd].forEach(el => {
+// Detect dirty inputs
+[geminiApiKeyInput, weekendStartSelect, weekendEndSelect, breakWindowStart, breakWindowEnd].forEach(el => {
     el.addEventListener('input', markUnsaved);
     el.addEventListener('change', markUnsaved);
 });
 
-// Test Gemini API with gemini-3.5-flash-lite
+// Test Gemini API connection
 document.getElementById('testGeminiBtn').addEventListener('click', async () => {
     const key = geminiApiKeyInput.value.trim();
     const feedback = document.getElementById('geminiTestFeedback');
@@ -605,69 +510,7 @@ document.getElementById('testGeminiBtn').addEventListener('click', async () => {
     }
 });
 
-// Test Worker Sync with Zero-Knowledge Hash Token
-document.getElementById('testWorkerBtn').addEventListener('click', async () => {
-    const username = workerUsernameInput.value.trim().toLowerCase();
-    const password = workerPasswordInput.value.trim();
-    const feedback = document.getElementById('workerTestFeedback');
-    feedback.style.display = 'block';
-
-    let token = '';
-    const config = SyncEngine.getConfig();
-
-    if (username && password) {
-        token = await SyncEngine.hashCredentials(username, password);
-    } else if (config.username && config.secret) {
-        token = config.secret;
-    } else {
-        feedback.className = 'notice-banner notice-warning';
-        feedback.textContent = 'Please provide both username and password to test connection.';
-        return;
-    }
-
-    feedback.className = 'notice-banner notice-info';
-    feedback.textContent = 'Testing cloud sync connection...';
-
-    try {
-        const pingUrl = `${HARDCODED_WORKER_URL}/?action=status&format=text`;
-        const res = await fetch(pingUrl, {
-            method: 'GET',
-            headers: { 
-                'Authorization': `Bearer ${token}`,
-                'X-Taskitator-User': username || config.username
-            }
-        });
-
-        const resText = await res.text();
-
-        if (res.ok) {
-            feedback.className = 'notice-banner notice-info';
-            feedback.innerHTML = `<strong>Connected!</strong> Sync active.<br><code>${resText}</code>`;
-            syncWordBadge.className = 'sync-badge-word synced';
-            syncWordBadge.textContent = 'Synced';
-        } else {
-            feedback.className = 'notice-banner notice-warning';
-            feedback.textContent = `Connection error (HTTP ${res.status}): ${resText || res.statusText}`;
-            syncWordBadge.className = 'sync-badge-word pending';
-            syncWordBadge.textContent = 'Not Synced';
-        }
-    } catch (err) {
-        feedback.className = 'notice-banner notice-warning';
-        feedback.innerHTML = `<strong>Sync Failed:</strong> ${err.message}<br><small>Check internet connection or worker settings</small>`;
-        syncWordBadge.className = 'sync-badge-word error';
-        syncWordBadge.textContent = 'Error';
-    }
-});
-
-// Dedicated Sync Credentials Save Action
-document.getElementById('saveCredentialsBtn').addEventListener('click', async () => {
-    const ok = await saveSettings(true);
-    if (ok) {
-        alert('Sync credentials and all settings saved successfully.');
-    }
-});
-
-// Logout / Local-Only Modal Handlers
+// Logout Modal Handlers
 document.getElementById('openLogoutModalBtn').addEventListener('click', () => {
     logoutConfirmModal.classList.add('open');
 });
@@ -678,19 +521,14 @@ document.getElementById('cancelLogoutBtn').addEventListener('click', () => {
 
 document.getElementById('confirmLogoutBtn').addEventListener('click', () => {
     SyncEngine.logout();
-    workerPasswordInput.value = '';
-    workerUsernameInput.value = '';
-    updatePasswordVisibilityState();
+    localStorage.removeItem('taskitator_tasks');
+    localStorage.removeItem('taskitator_daily_breaks');
     logoutConfirmModal.classList.remove('open');
-    refreshSyncWordStatus();
-    markSaved();
-    alert('Logged out. Taskitator is now running in Local-Only mode.');
+    window.location.replace('login.html');
 });
 
-// Auto-update if settings change from another device via cloud pull
-window.addEventListener('taskitator-synced', () => {
-    loadSettings();
-});
+// Sync listeners
+window.addEventListener('taskitator-synced', loadSettings);
 
 // Sidebar Drawer
 const sidebarDrawer = document.getElementById('sidebarDrawer');
