@@ -15,10 +15,11 @@
         }
         .stat-box {
             background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
+            border: 1.5px solid var(--border-color);
+            border-radius: 12px;
             padding: 16px;
             text-align: center;
+            box-shadow: var(--card-shadow);
         }
         .stat-value {
             font-size: 1.8rem;
@@ -35,31 +36,34 @@
         }
         .chart-card {
             background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 16px;
+            border: 1.5px solid var(--border-color);
+            border-radius: 12px;
+            padding: 18px;
             margin-bottom: 16px;
+            box-shadow: var(--card-shadow);
         }
         .chart-card h3 {
             margin-top: 0;
             font-size: 1rem;
-            margin-bottom: 12px;
+            color: var(--primary);
+            margin-bottom: 14px;
         }
         .bar-container {
             display: flex;
             align-items: center;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             font-size: 0.85rem;
         }
         .bar-label {
             width: 90px;
             color: var(--text-muted);
+            font-weight: 500;
         }
         .bar-outer {
             flex: 1;
-            background: var(--bg-color);
+            background: var(--card-subtle);
             border: 1px solid var(--border-color);
-            border-radius: 4px;
+            border-radius: 6px;
             height: 18px;
             overflow: hidden;
             margin: 0 10px;
@@ -67,13 +71,14 @@
         .bar-fill {
             height: 100%;
             background: var(--primary);
-            border-radius: 3px;
+            border-radius: 4px;
             transition: width 0.3s ease;
         }
         .bar-count {
             width: 30px;
             text-align: right;
-            font-weight: 600;
+            font-weight: 700;
+            color: var(--text-color);
         }
     </style>
 </head>
@@ -82,7 +87,7 @@
 <!-- Sidebar Drawer -->
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="sidebar-drawer" id="sidebarDrawer">
-    <div style="font-weight: 700; font-size: 1.15rem; margin-bottom: 24px;">Taskitator</div>
+    <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
     <nav class="drawer-links">
         <a href="index.html">📅 Today</a>
         <a href="general.html">🗂️ General Tasks</a>
@@ -126,7 +131,7 @@
         <h3>Task Distribution</h3>
         <div class="bar-container">
             <span class="bar-label">Completed</span>
-            <div class="bar-outer"><div class="bar-fill" id="barCompleted" style="width: 0%;"></div></div>
+            <div class="bar-outer"><div class="bar-fill" id="barCompleted" style="width: 0%; background: var(--success);"></div></div>
             <span class="bar-count" id="countCompleted">0</span>
         </div>
         <div class="bar-container">
@@ -154,12 +159,13 @@
         </div>
         <div class="bar-container">
             <span class="bar-label">Standard</span>
-            <div class="bar-outer"><div class="bar-fill" id="barStandard" style="width: 0%; background: #94a3b8;"></div></div>
+            <div class="bar-outer"><div class="bar-fill" id="barStandard" style="width: 0%; background: #64748b;"></div></div>
             <span class="bar-count" id="countStandard">0</span>
         </div>
     </div>
 </div>
 
+<script src="sync-engine.js"></script>
 <script>
 const TASKS_KEY = 'taskitator_tasks';
 
@@ -173,7 +179,6 @@ function renderStats() {
 
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // Basic Metrics
     const completedTasks = tasks.filter(t => t.status === 'completed');
     const activeTasks = tasks.filter(t => t.status === 'active');
     const trashedTasks = tasks.filter(t => t.status === 'trash');
@@ -192,13 +197,11 @@ function renderStats() {
     const aiLockedActiveCount = activeTasks.filter(t => t.ai_locked).length;
     const standardActiveCount = activeTasks.filter(t => !t.ai_locked).length;
 
-    // Populate Counters
     document.getElementById('statCompletedToday').textContent = completedToday;
     document.getElementById('statPendingToday').textContent = pendingToday;
     document.getElementById('statAiVerified').textContent = aiVerifiedCount;
     document.getElementById('statTotalActive').textContent = activeTasks.length;
 
-    // Distribution Bars
     const totalAll = Math.max(1, tasks.length);
     document.getElementById('countCompleted').textContent = completedTasks.length;
     document.getElementById('barCompleted').style.width = `${(completedTasks.length / totalAll) * 100}%`;
@@ -209,7 +212,6 @@ function renderStats() {
     document.getElementById('countTrash').textContent = trashedTasks.length;
     document.getElementById('barTrash').style.width = `${(trashedTasks.length / totalAll) * 100}%`;
 
-    // AI Breakdown Bars
     const totalActiveScoped = Math.max(1, activeTasks.length);
     document.getElementById('countAiLocked').textContent = aiLockedActiveCount;
     document.getElementById('barAiLocked').style.width = `${(aiLockedActiveCount / totalActiveScoped) * 100}%`;
