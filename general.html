@@ -103,7 +103,7 @@
     </div>
 </div>
 
-<!-- Modal: Task Detail & Edit Panel (With Inbound Overwrite Guard) -->
+<!-- Modal: Task Detail & Edit Panel -->
 <div class="modal-overlay" id="taskDetailModal">
     <div class="modal-box">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
@@ -405,13 +405,32 @@ function renderGeneralTaskTree() {
     rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
 }
 
+// Cascading completion logic: Parent completes all descendants; Child completion does NOT affect parent
+function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
+    const target = tasks.find(t => t.id === targetTaskId);
+    if (!target) return;
+
+    target.status = newStatus;
+    target.completed_at = timestamp;
+
+    // Recursively apply status down the whole subtree
+    function cascadeChildren(parentId) {
+        tasks.filter(t => t.parent_id === parentId && t.status !== 'trash').forEach(child => {
+            child.status = newStatus;
+            child.completed_at = timestamp;
+            cascadeChildren(child.id);
+        });
+    }
+    cascadeChildren(targetTaskId);
+}
+
 function handleTaskCompletion(taskId) {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
     if (task.status === 'completed') {
-        task.status = 'active';
-        task.completed_at = null;
+        // Uncheck parent: reactivates parent and all its descendants
+        cascadeTaskStatus(taskId, 'active', null);
         saveStorageAndPush();
         renderGeneralTaskTree();
         return;
@@ -422,8 +441,8 @@ function handleTaskCompletion(taskId) {
         return;
     }
 
-    task.status = 'completed';
-    task.completed_at = new Date().toISOString();
+    // Check parent: completes parent and all its descendants
+    cascadeTaskStatus(taskId, 'completed', new Date().toISOString());
     saveStorageAndPush();
     renderGeneralTaskTree();
 }
@@ -450,7 +469,7 @@ function deleteTask(taskId) {
 }
 
 // =========================================================================
-// Task Detail & Edit Modal (With Inbound Overwrite Guard)
+// Task Detail & Edit Modal
 // =========================================================================
 const taskDetailModal = document.getElementById('taskDetailModal');
 const editTaskTitle = document.getElementById('editTaskTitle');
@@ -533,7 +552,6 @@ document.getElementById('closeDetailModalBtn').addEventListener('click', () => {
 document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
     if (!activeDetailTaskId) return;
 
-    // Refresh database array from storage first, preserving any freshly synced tasks
     loadStorage();
     const task = tasks.find(t => t.id === activeDetailTaskId);
     if (!task) {
@@ -648,9 +666,8 @@ submitProofBtn.addEventListener('click', async () => {
     }
 
     if (result.approved) {
-        task.status = 'completed';
-        task.completed_at = new Date().toISOString();
         task.verified_model = result.model_used;
+        cascadeTaskStatus(pendingAuditTaskId, 'completed', new Date().toISOString());
         saveStorageAndPush();
         auditModal.classList.remove('open');
         pendingAuditTaskId = null;
