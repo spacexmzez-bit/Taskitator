@@ -11,6 +11,7 @@
  * - Absolute Lock-in Guardrails: Rejects any attempt to trash or alter ai_locked tasks.
  * - Event-Driven: Dispatches 'taskitator-tasks-updated' for reactive UI rerendering.
  * - Ephemeral UI Controller: In-memory session, sliding-window payload trimmer (last 6-8 messages).
+ * - Valid API Roles: Maps function responses to role 'user' compliant with Gemini API schema.
  */
 
 window.TaskitatorAgent = (() => {
@@ -405,9 +406,9 @@ window.TaskitatorAgent = (() => {
                     const fnArgs = toolCallPart.functionCall.args || {};
                     const toolResult = executeToolCall(fnName, fnArgs);
 
-                    // Append tool execution response
+                    // Append tool execution response: role MUST be 'user' in Gemini API
                     conversationHistory.push({
-                        role: 'function',
+                        role: 'user',
                         parts: [{
                             functionResponse: {
                                 name: fnName,
