@@ -248,11 +248,22 @@ function loadStorage() {
 function saveStorageAndPush() {
     localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
     localStorage.setItem(COLLAPSED_STATE_KEY, JSON.stringify([...collapsedNodes]));
-    if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
-        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
-        SyncEngine.scheduleAutoPush(45000, { today_breaks: breaks });
+    if (window.SyncEngine) {
+        if (typeof SyncEngine.markLocalModified === 'function') {
+            SyncEngine.markLocalModified();
+        }
+        if (typeof SyncEngine.scheduleAutoPush === 'function') {
+            const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
+            SyncEngine.scheduleAutoPush(45000, { today_breaks: breaks });
+        }
     }
 }
+
+// Bug 2 Fix: Automatically update General Task Tree on background cloud sync
+window.addEventListener('taskitator-synced', () => {
+    loadStorage();
+    renderGeneralTaskTree();
+});
 
 // =========================================================================
 // Tree Hierarchy Rendering & Scoped Collapsing (General View: All Tasks)
