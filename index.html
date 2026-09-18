@@ -1082,14 +1082,25 @@ document.addEventListener('DOMContentLoaded', () => {
     updateEmergencyUI();
     renderBreakScheduler();
     renderTaskTree();
+
+    // Auto-pull fresh cloud state on app launch
+    if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
+        SyncEngine.pull(() => {
+            loadStorage();
+            renderTaskTree();
+        });
+    }
 });
+
+// =========================================================================
+// Service Worker Registration
+// =========================================================================
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
             .catch(err => console.error('SW Registration failed:', err));
     });
 }
-
 </script>
 </body>
 </html>
