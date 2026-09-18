@@ -17,7 +17,7 @@
             border: 1px solid var(--border-color, #334155);
             border-radius: 12px;
             padding: 20px;
-            margin-bottom: 20px;
+            margin-bottom: 24px;
         }
         .step-badge {
             display: inline-block;
@@ -30,17 +30,25 @@
             text-transform: uppercase;
             margin-bottom: 10px;
         }
-        .code-box {
-            background: rgba(0, 0, 0, 0.4);
+        .guide-screenshot-container {
+            margin: 16px 0;
+            text-align: center;
+        }
+        .guide-screenshot {
+            width: 100%;
+            max-width: 320px;
+            height: auto;
+            border-radius: 10px;
             border: 1px solid var(--border-color, #334155);
-            border-radius: 8px;
-            padding: 12px;
-            font-family: monospace;
-            font-size: 0.85rem;
-            color: #93c5fd;
-            overflow-x: auto;
-            margin: 10px 0;
-            line-height: 1.5;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+            display: block;
+            margin: 0 auto;
+        }
+        .screenshot-caption {
+            font-size: 0.78rem;
+            color: var(--text-muted, #94a3b8);
+            margin-top: 8px;
+            display: block;
         }
         .visual-tree {
             background: rgba(0, 0, 0, 0.25);
@@ -49,7 +57,7 @@
             font-family: monospace;
             font-size: 0.82rem;
             line-height: 1.6;
-            margin: 10px 0;
+            margin: 12px 0;
             border-radius: 0 8px 8px 0;
         }
         .warning-callout {
@@ -60,7 +68,18 @@
             border-radius: 8px;
             font-size: 0.82rem;
             line-height: 1.5;
-            margin: 12px 0;
+            margin: 14px 0;
+        }
+        .code-box {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border-color, #334155);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #93c5fd;
+            overflow-x: auto;
+            margin: 10px 0;
         }
         .back-nav {
             display: inline-flex;
@@ -82,78 +101,103 @@
     <a href="settings.html" class="back-nav">&larr; Back to Settings</a>
     
     <header style="margin-bottom: 24px;">
-        <h1 style="font-size: 1.5rem; margin: 0 0 6px 0; color: var(--primary);">📲 Automated Phone Lockdown Guide</h1>
+        <h1 style="font-size: 1.5rem; margin: 0 0 6px 0; color: var(--primary);">📲 Phone Lockdown Setup Guide</h1>
         <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0;">
-            Follow this guide to bind your Android device to Taskitator. Your phone will automatically remain completely blocked until all today's tasks are verified or an approved break window is active.
+            Follow this guide step-by-step to bind MacroDroid directly to Taskitator.
         </p>
     </header>
 
-    <!-- Architecture Overview -->
+    <!-- PHASE 1: App Blocker Macro -->
     <div class="step-card">
-        <h3 style="margin-top: 0;">How It Works</h3>
+        <span class="step-badge">Phase 1: Macro 1</span>
+        <h2 style="margin: 4px 0 10px 0; font-size: 1.2rem;">Building the App Blocker</h2>
         <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
-            The system works through two independent macros inside <strong>MacroDroid</strong>:
+            This macro monitors your device and immediately terminates distracting apps whenever tasks remain unfinished.
         </p>
-        <ol style="font-size: 0.85rem; color: var(--text-color); line-height: 1.6; padding-left: 20px; margin: 0;">
-            <li><strong>Macro 1 (The Blocker):</strong> An aggressive macro that kicks you to the Home Screen or launches Taskitator whenever you try to open social media, games, or distracting apps.</li>
-            <li><strong>Macro 2 (The Cloud Bridge):</strong> A background poller that checks Taskitator every 5 minutes. If all tasks are completed or you are on break, it automatically <em>disables</em> Macro 1. If tasks remain, it turns Macro 1 back on.</li>
-        </ol>
-    </div>
 
-    <!-- Step 1: Macro 1 Setup -->
-    <div class="step-card">
-        <span class="step-badge">Step 1</span>
-        <h3 style="margin-top: 4px;">Build the Blocker Macro (Macro 1)</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted);">
-            If you already have a functional blocker macro, skip to Step 2. Otherwise, create it in MacroDroid:
+        <!-- Substep 1 -->
+        <h4 style="margin: 16px 0 6px 0; color: #f8fafc;">1. Open the Macros Tab</h4>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 8px 0;">
+            Open MacroDroid and tap the <strong>Macros</strong> tab on the bottom bar to open your macros list. Tap the floating <strong>+</strong> button (or select <strong>Add Macro</strong> from the home grid).
         </p>
-        <div class="visual-tree">
-            <strong>Macro Name:</strong> App Blocker<br><br>
-            <strong>🔴 TRIGGERS:</strong><br>
-            &nbsp;&nbsp;&bull; Applications &rarr; Application Launched &rarr; Select distracting apps (Instagram, YouTube, X, Games, etc.)<br><br>
-            <strong>🔵 ACTIONS:</strong><br>
-            &nbsp;&nbsp;&bull; Device Settings &rarr; Home Screen (Force exit to home)<br>
-            &nbsp;&nbsp;&bull; <em>(Optional)</em> Applications &rarr; Launch Application &rarr; Select Taskitator Web/PWA<br>
-            &nbsp;&nbsp;&bull; Notification &rarr; Display Pop-Up Message &rarr; <em>"Tasks incomplete! Complete them first."</em>
+        <div class="guide-screenshot-container">
+            <img src="image/phase1/Ph1_S1_2.png" alt="MacroDroid Home Tab" class="guide-screenshot" loading="lazy">
+            <span class="screenshot-caption">Fig 1: Tap Macros at the bottom bar to view and manage macros.</span>
+        </div>
+
+        <!-- Substep 2 -->
+        <h4 style="margin: 20px 0 6px 0; color: #f8fafc;">2. Name the Macro & Add the Trigger</h4>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 8px 0;">
+            Tap the top text field <code>(#1)</code> and enter the name <code>App Blocker</code>. Next, tap the <strong>+</strong> button on the red <strong>Triggers</strong> card <code>(#2)</code>.
+        </p>
+        <div class="guide-screenshot-container">
+            <img src="image/phase1/Ph1_S2_2.png" alt="MacroDroid Macro Editor" class="guide-screenshot" loading="lazy">
+            <span class="screenshot-caption">Fig 2: Enter App Blocker at (#1) and tap the red Triggers plus button at (#2).</span>
+        </div>
+
+        <!-- Substep 3 -->
+        <h4 style="margin: 20px 0 6px 0; color: #f8fafc;">3. Choose Application Launched</h4>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 8px 0;">
+            Select <strong>Applications</strong> &rarr; <strong>Application Launched/Closed</strong>. Choose <strong>Application Launched</strong>, then select all apps you want to restrict during work hours (e.g., YouTube, Instagram, Games).
+        </p>
+        <div class="guide-screenshot-container">
+            <img src="image/phase1/Ph1_S3_2.png" alt="Add Trigger - Applications" class="guide-screenshot" loading="lazy">
+            <span class="screenshot-caption">Fig 3: Tap Application Launched/Closed (ignore the crossed-out options).</span>
         </div>
         <div class="warning-callout">
-            ⚠️ <strong>Anti-Lockout Rule:</strong> Never add the <strong>Phone Dialer</strong>, <strong>SMS/Messages</strong>, <strong>Settings</strong>, or <strong>MacroDroid</strong> itself to the blocked applications list during testing.
+            ⚠️ <strong>Anti-Lockout Protection:</strong> Never check the <strong>Phone Dialer</strong>, <strong>SMS Messages</strong>, <strong>Android Settings</strong>, or <strong>MacroDroid</strong> itself. Keep all emergency and critical tools accessible.
         </div>
+
+        <!-- Substep 4 -->
+        <h4 style="margin: 20px 0 6px 0; color: #f8fafc;">4. Add Lockdown Actions</h4>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 8px 0;">
+            Tap the <strong>+</strong> button on the blue <strong>Actions</strong> card <code>(#3)</code> to add your block handlers:
+        </p>
+        <div class="guide-screenshot-container">
+            <img src="image/phase1/Ph1_S4_2.png" alt="Actions Section" class="guide-screenshot" loading="lazy">
+            <span class="screenshot-caption">Fig 4: Tap the blue Actions plus button at (#3) to attach exit actions.</span>
+        </div>
+
+        <div class="visual-tree">
+            <strong>Recommended Action Chain:</strong><br>
+            &bull; Device Settings &rarr; Home Screen (Forcefully kicks you out of the app)<br>
+            &bull; Notification &rarr; Display Pop-Up Message &rarr; <em>"Tasks incomplete! Complete them first."</em>
+        </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 10px;">
+            Tap the checkmark in the bottom-right corner to save your <strong>App Blocker</strong> macro.
+        </p>
     </div>
 
-    <!-- Step 2: Macro 2 Setup -->
+    <!-- PHASE 2: Cloud Bridge Macro -->
     <div class="step-card">
-        <span class="step-badge">Step 2</span>
-        <h3 style="margin-top: 4px;">Build the Cloud Bridge Macro (Macro 2)</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted);">
-            This is the brain that queries the Taskitator cloud server.
+        <span class="step-badge">Phase 2: Macro 2</span>
+        <h2 style="margin: 4px 0 10px 0; font-size: 1.2rem;">Building the Cloud Bridge</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+            This macro monitors your Taskitator account status in the background and automatically enables or disables the <strong>App Blocker</strong> macro.
         </p>
+        
         <ol style="font-size: 0.85rem; color: var(--text-color); line-height: 1.6; padding-left: 20px;">
-            <li>Open MacroDroid &rarr; tap <strong>Add Macro</strong>.</li>
-            <li>Name it: <code>Taskitator Cloud Bridge</code>.</li>
-            <li>Tap the <strong>Variables</strong> bar at the bottom drawer &rarr; tap <strong>+</strong> &rarr; Name: <code>http_response</code> &rarr; Type: <strong>String</strong> &rarr; OK.</li>
-            <li>Add the 3 <strong>Triggers</strong> (Red section):
+            <li>Create a second macro and name it: <code>Taskitator Cloud Bridge</code>.</li>
+            <li>Expand the <strong>Local Variables</strong> drawer at the bottom &rarr; tap <strong>+</strong> &rarr; Name: <code>http_response</code> (Type: <strong>String</strong>).</li>
+            <li>Add 3 <strong>Triggers</strong> (Red card):
                 <ul>
-                    <li><strong>Regular Interval:</strong> Time/Date &rarr; Regular Interval &rarr; <code>5 Minutes</code>.</li>
-                    <li><strong>Screen Unlock:</strong> Device Events &rarr; Screen On / Screen Unlocked &rarr; <code>Screen Unlocked</code>.</li>
-                    <li><strong>Connectivity:</strong> Connectivity &rarr; Network Connected &rarr; <code>Any Network</code>.</li>
+                    <li><strong>Date/Time &rarr; Regular Interval:</strong> Set to <code>5 Minutes</code>.</li>
+                    <li><strong>Device Events &rarr; Screen On / Screen Unlocked:</strong> Select <code>Screen Unlocked</code>.</li>
+                    <li><strong>Connectivity &rarr; Network Connected:</strong> Select <code>Any Network</code>.</li>
                 </ul>
             </li>
-            <li>Add the <strong>HTTP Request</strong> Action (Blue section):
+            <li>Add the <strong>HTTP Request</strong> Action (Blue card):
                 <ul>
                     <li>Tap <strong>+</strong> &rarr; <strong>Web / HTTP</strong> &rarr; <strong>HTTP Request</strong>.</li>
                     <li>Request Type: <code>GET</code>.</li>
-                    <li>URL: Copy from the Settings page:
-                        <div class="code-box">https://taskitator-sync.spacexmzez.workers.dev/?action=status&format=text</div>
-                    </li>
-                    <li>Headers: Tap <strong>+</strong> to add a header:
-                        <div class="code-box">Header: Authorization<br>Value: Bearer YOUR_TOKEN_FROM_SETTINGS</div>
-                    </li>
+                    <li>URL: Copy directly from the <a href="settings.html" style="color: var(--primary);">Settings</a> page.</li>
+                    <li>Add Header: <code>Authorization</code> &rarr; Value: <code>Bearer &lt;your_copied_token&gt;</code>.</li>
                     <li>Check <strong>Block next actions until complete</strong>.</li>
                     <li>Check <strong>Save HTTP response to string variable</strong> &rarr; pick <code>http_response</code>.</li>
                 </ul>
             </li>
-            <li>Add the <strong>If / Else Branching</strong>:
+            <li>Add Conditional Branching:
                 <div class="visual-tree">
                     ▼ If (http_response contains "device_unlocked = true")<br>
                     &nbsp;&nbsp;&nbsp;&nbsp;► MacroDroid Specific &rarr; Macro Enable/Disable &rarr; Disable [App Blocker]<br>
@@ -163,40 +207,6 @@
                 </div>
             </li>
         </ol>
-    </div>
-
-    <!-- Step 3: Copying Credentials -->
-    <div class="step-card">
-        <span class="step-badge">Step 3</span>
-        <h3 style="margin-top: 4px;">Linking with Taskitator Settings</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
-            To get your live URL and Bearer token:
-        </p>
-        <ol style="font-size: 0.85rem; color: var(--text-color); line-height: 1.6; padding-left: 20px;">
-            <li>Go back to <a href="settings.html" style="color: var(--primary);">Settings</a>.</li>
-            <li>Ensure you are logged into your sync account.</li>
-            <li>Look at the <strong>MacroDroid Lock Integration</strong> card.</li>
-            <li>Tap <strong>Copy</strong> next to the Status URL and paste it into MacroDroid's URL input.</li>
-            <li>Tap <strong>Copy</strong> next to the Authorization Header Token and paste it after <code>Bearer </code> in MacroDroid's Headers section.</li>
-        </ol>
-    </div>
-
-    <!-- Step 4: Verification -->
-    <div class="step-card">
-        <span class="step-badge">Step 4</span>
-        <h3 style="margin-top: 4px;">Testing the Lock</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
-            Inside the MacroDroid macro editor for <strong>Taskitator Cloud Bridge</strong>:
-        </p>
-        <ul style="font-size: 0.85rem; color: var(--text-color); line-height: 1.6; padding-left: 20px;">
-            <li>Tap the <strong>three dots</strong> in the upper right &rarr; tap <strong>Test Actions</strong>.</li>
-            <li>Check your <strong>App Blocker</strong> macro on MacroDroid's main screen:
-                <ul>
-                    <li>If you have pending tasks for today, its toggle will automatically turn <strong>ON</strong>.</li>
-                    <li>If all tasks are checked off, its toggle will turn <strong>OFF</strong>.</li>
-                </ul>
-            </li>
-        </ul>
     </div>
 
     <div style="text-align: center; margin: 30px 0;">
