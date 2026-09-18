@@ -2,7 +2,7 @@
 /**
  * Taskitator Unified Cloud Sync Engine
  * Automated debounced push/pull bridge for Cloudflare Worker KV
- * Supports Zero-Knowledge Client-Side Hashing & Local-Only Mode Transitions
+ * Supports Zero-Knowledge Client-Side Hashing & Mandatory Authentication Gate
  */
 
 const SyncEngine = {
@@ -27,8 +27,8 @@ const SyncEngine = {
             window.dispatchEvent(new CustomEvent('taskitator-synced', { detail }));
         } else if (status === 'error') {
             window.dispatchEvent(new CustomEvent('taskitator-sync-error', { detail }));
-        } else if (status === 'local-only') {
-            window.dispatchEvent(new CustomEvent('taskitator-local-only', { detail }));
+        } else if (status === 'unconfigured') {
+            window.dispatchEvent(new CustomEvent('taskitator-unconfigured', { detail }));
         }
     },
 
@@ -86,6 +86,11 @@ const SyncEngine = {
             settings = {};
         }
 
+        // Automatically fetch current daily breaks snapshot if engine is loaded
+        const todayBreaks = window.TaskitatorEngine && TaskitatorEngine.BreakEngine
+            ? TaskitatorEngine.BreakEngine.getTodayBreaks()
+            : [];
+
         const lastLogin = localStorage.getItem(this.STORAGE_KEY_LAST_LOGIN) || null;
         const nowIso = new Date().toISOString();
 
@@ -96,6 +101,7 @@ const SyncEngine = {
             force: force,
             tasks: tasks,
             settings: settings,
+            today_breaks: todayBreaks,
             last_login: lastLogin,
             ...extraData
         };
@@ -230,7 +236,26 @@ const SyncEngine = {
             
             if (data.settings) {
                 data.settings.last_synced = new Date().toISOString();
+                // Retain active auth passkey when overwriting settings from remote
+                if (config.secret && !data.settings.worker_passkey) {
+                    data.settings.worker_passkey = config.secret;
+                }
+                if (config.username && !data.settings.worker_username) {
+                    data.settings.worker_username = config.username;
+                }
                 localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(data.settings));
+            }
+
+            if (data.today_breaks && Array.isArray(data.today_breaks)) {
+                const todayStr = new Date().toISOString().split('T')[0];
+                let breaksMap = {};
+                try {
+                    breaksMap = JSON.parse(localStorage.getItem('taskitator_daily_breaks') || '{}');
+                } catch (e) {
+                    breaksMap = {};
+                }
+                breaksMap[todayStr] = data.today_breaks;
+                localStorage.setItem('taskitator_daily_breaks', JSON.stringify(breaksMap));
             }
 
             if (data.last_login) {
@@ -251,7 +276,7 @@ const SyncEngine = {
     },
 
     /**
-     * Wipes active session credentials to safely transition the PWA to local-only mode.
+     * Wipes active session credentials and returns the client to an unauthenticated state.
      */
     logout() {
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
@@ -271,7 +296,7 @@ const SyncEngine = {
         localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
         localStorage.removeItem(this.STORAGE_KEY_LAST_LOGIN);
 
-        this.notify('local-only');
+        this.notify('unconfigured');
         return true;
     }
 };
@@ -287,5 +312,17 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('beforeunload', () => {
     SyncEngine.flushIfDirty();
 });
+
+// Centralized Authentication Gatekeeper
+(function enforceAuthenticationGuard() {
+    const isLoginPage = window.location.pathname.endsWith('login.html');
+    const isConfigured = SyncEngine.isConfigured();
+
+    if (!isConfigured && !isLoginPage) {
+        window.location.replace('login.html');
+    } else if (isConfigured && isLoginPage) {
+        window.location.replace('index.html');
+    }
+})();
 
 window.SyncEngine = SyncEngine;
