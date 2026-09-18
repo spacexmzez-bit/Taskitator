@@ -1,255 +1,541 @@
-// worker.js
-/**
- * Taskitator Cloudflare Worker Bridge
- * 
- * - Multi-tenant cloud synchronization via partitioned KV storage.
- * - Zero-knowledge client-side token verification with username collision protection.
- * - Test connection ping endpoint for Settings.
- * - MacroDroid device-lock evaluation engine: checks task completion and active break windows.
- * 
- * Required Binding:
- * - KV Namespace: TASKITATOR_KV
- */
-
-const CORS_HEADERS = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Taskitator-User',
-    'Access-Control-Max-Age': '86400',
-};
-
-// Local timezone offset in hours (UTC+3 for Riyadh)
-const TIMEZONE_OFFSET_HOURS = 3;
-
-export default {
-    async fetch(request, env) {
-        // 1. Preflight CORS handling
-        if (request.method === 'OPTIONS') {
-            return new Response(null, {
-                status: 204,
-                headers: CORS_HEADERS
-            });
+<!-- settings.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taskitator - Settings</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .notice-banner {
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            margin-top: 10px;
+            display: none;
         }
+        .notice-info {
+            background: var(--accent-light);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+        }
+        .notice-warning {
+            background: #380d15;
+            border: 1px solid #881337;
+            color: #fda4af;
+        }
+        .quota-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 8px;
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            margin-top: 6px;
+        }
+        .account-session-box {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            padding: 12px 14px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .security-notice {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+            margin-top: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 8px 10px;
+            border-radius: 6px;
+            border-left: 3px solid var(--primary);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed !important;
+        }
+    </style>
+</head>
+<body>
 
-        try {
-            // 2. Authentication check
-            const authHeader = request.headers.get('Authorization') || '';
-            if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
-                return new Response(JSON.stringify({ error: 'Unauthorized: Missing or malformed Bearer token.' }), {
-                    status: 401,
-                    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-                });
-            }
+<!-- Sidebar Drawer -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<aside class="sidebar-drawer" id="sidebarDrawer">
+    <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
+    <nav class="drawer-links">
+        <a href="index.html">📅 Today</a>
+        <a href="general.html">🗂️ General Tasks</a>
+        <a href="stats.html">📊 Stats</a>
+        <a href="trash.html">🗑️ Trash</a>
+        <a href="settings.html" class="active">⚙️ Settings</a>
+    </nav>
+</aside>
 
-            const secretKey = authHeader.replace(/^Bearer\s+/i, '').trim();
-            if (!secretKey) {
-                return new Response(JSON.stringify({ error: 'Unauthorized: Empty token.' }), {
-                    status: 401,
-                    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-                });
-            }
+<div class="app-container">
+    <!-- Top Navbar -->
+    <header class="top-navbar">
+        <div class="nav-left">
+            <button class="icon-btn" id="openDrawerBtn" title="Menu">☰</button>
+            <h2 style="margin: 0; font-size: 1.25rem;">Settings</h2>
+        </div>
+    </header>
 
-            // 3. Username validation & collision protection
-            const rawUser = request.headers.get('X-Taskitator-User') || '';
-            const cleanUser = rawUser.trim().toLowerCase();
+    <!-- Gemini BYOK & Cascade Configuration -->
+    <div class="settings-card">
+        <h3 style="margin-top: 0; color: var(--primary);">🤖 Gemini AI Verification (BYOK)</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+            Audits task evidence using a 2-tier cascade: <strong>gemini-3.5-flash-lite</strong> as primary, automatically falling back to <strong>gemini-3.1-flash-lite</strong> on RPD limits.
+        </p>
+        <div class="form-group">
+            <label for="geminiApiKey">Google AI Studio API Key</label>
+            <input type="password" id="geminiApiKey" placeholder="AIzaSy...">
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="icon-btn" id="testGeminiBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Test Connection</button>
+            <button class="icon-btn" id="toggleKeyVisibilityBtn">Show Key</button>
+        </div>
+        <div id="geminiTestFeedback" class="notice-banner"></div>
+    </div>
 
-            if (cleanUser) {
-                const regKey = `user_reg:${cleanUser}`;
-                const registration = await env.TASKITATOR_KV.get(regKey, { type: 'json' });
+    <!-- Sync Configuration (Zero-Knowledge Username & Password) -->
+    <div class="settings-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h3 style="margin: 0; color: var(--primary);">🌐 Cloud Sync & Account</h3>
+            <span id="syncWordBadge" class="sync-badge-word local-only">Local Only</span>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+            Synchronizes tasks across devices via zero-knowledge client-side hashing. Passwords are never sent or stored in plaintext.
+        </p>
 
-                if (!registration) {
-                    // First time seeing this username: register it to this secret token hash
-                    await env.TASKITATOR_KV.put(regKey, JSON.stringify({
-                        token_hash: secretKey,
-                        created_at: new Date().toISOString()
-                    }));
-                } else if (registration.token_hash !== secretKey) {
-                    // Collision: Username exists, but token hash does not match
-                    return new Response(JSON.stringify({
-                        error: 'Unauthorized: Incorrect credentials or username already claimed.'
-                    }), {
-                        status: 401,
-                        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-                    });
-                }
-            }
+        <!-- Active Session Status (Visible when logged in) -->
+        <div id="activeSessionBox" class="account-session-box" style="display: none;">
+            <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Signed in as:</div>
+                <strong id="activeUsernameDisplay" style="color: var(--primary); font-size: 0.95rem;"></strong>
+            </div>
+            <button type="button" class="icon-btn" id="openLogoutModalBtn" style="color: var(--danger); border-color: #881337;">Log Out</button>
+        </div>
 
-            const url = new URL(request.url);
-            const kvKey = `user_data:${secretKey}`;
+        <!-- Credential Input Fields -->
+        <div id="credentialInputsContainer">
+            <div class="form-group">
+                <label for="workerUsername">Username</label>
+                <input type="text" id="workerUsername" placeholder="Enter username" autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="workerPassword">Password</label>
+                <input type="password" id="workerPassword" placeholder="Enter password" autocomplete="current-password">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 6px;">
+                <button class="icon-btn" id="togglePasswordVisibilityBtn" disabled>Show Password</button>
+                <button class="icon-btn" id="testWorkerBtn">Test Connection</button>
+            </div>
+            <div class="security-notice">
+                🔒 <strong>Zero-Knowledge Security:</strong> Your password is converted into an irreversible SHA-256 token inside your browser before transmission. Never reuse primary email or banking passwords.
+            </div>
+        </div>
 
-            // =========================================================================
-            // GET Requests
-            // =========================================================================
-            if (request.method === 'GET') {
-                const action = url.searchParams.get('action');
+        <div id="workerTestFeedback" class="notice-banner"></div>
+    </div>
 
-                // --- Route A: Status / Health Ping & MacroDroid Evaluator ---
-                if (action === 'status') {
-                    const record = await env.TASKITATOR_KV.get(kvKey, { type: 'json' });
+    <!-- Weekend & Emergency Cycle Engine -->
+    <div class="settings-card">
+        <h3 style="margin-top: 0; color: var(--primary);">🚨 Emergency Bypass Quota</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+            Grants 4 tokens per cycle to unlock tasks for 15 minutes. Automatically resets at 00:00 midnight immediately following your configured weekend.
+        </p>
+        <div class="form-group">
+            <label>Remaining Tokens for This Cycle:</label>
+            <div class="quota-indicator">
+                <span>🚨</span>
+                <span id="emergencyTokensDisplay">4 / 4 Uses Remaining</span>
+            </div>
+        </div>
+        <div class="form-group" style="display: flex; gap: 12px; margin-top: 14px;">
+            <div style="flex: 1;">
+                <label for="weekendStartSelect">Weekend Start</label>
+                <select id="weekendStartSelect">
+                    <option value="5">Friday</option>
+                    <option value="6">Saturday</option>
+                    <option value="0">Sunday</option>
+                    <option value="1">Monday</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label for="weekendEndSelect">Weekend End</label>
+                <select id="weekendEndSelect">
+                    <option value="6">Saturday</option>
+                    <option value="0">Sunday</option>
+                    <option value="1">Monday</option>
+                    <option value="5">Friday</option>
+                </select>
+            </div>
+        </div>
+        <div id="workweekCalcNotice" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;"></div>
+    </div>
 
-                    if (!record) {
-                        return buildStatusResponse({
-                            status: 'ok',
-                            device_unlocked: true,
-                            finished: true,
-                            in_break: false,
-                            message: 'No tasks configured; unlocked by default.'
-                        }, url);
-                    }
+    <!-- Daily Break Scheduling Window -->
+    <div class="settings-card">
+        <h3 style="margin-top: 0; color: var(--primary);">⏸️ Daily Break Selection Window</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+            Configure the daily timeframe when you are permitted to schedule breaks. Leave unset (empty) to keep break scheduling open all day.
+        </p>
+        <div class="form-group" style="display: flex; gap: 12px;">
+            <div style="flex: 1;">
+                <label for="breakWindowStart">Window Start</label>
+                <input type="time" id="breakWindowStart">
+            </div>
+            <div style="flex: 1;">
+                <label for="breakWindowEnd">Window End</label>
+                <input type="time" id="breakWindowEnd">
+            </div>
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 6px;">
+            <button type="button" class="icon-btn" id="clearBreakWindowBtn" style="font-size: 0.8rem; padding: 4px 10px;">Clear (Unset / All Day)</button>
+        </div>
+        <div id="breakWindowStatusBadge" style="margin-top: 8px;"></div>
+    </div>
 
-                    const tasks = Array.isArray(record.tasks) ? record.tasks : [];
-                    const breaks = Array.isArray(record.today_breaks) ? record.today_breaks : [];
+    <div style="text-align: right; margin-top: 20px;">
+        <button class="icon-btn" id="saveAllSettingsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 10px 20px; font-size: 1rem;">Save All Settings</button>
+    </div>
+</div>
 
-                    // Adjust UTC to target local timezone
-                    const nowUTC = new Date();
-                    const localNow = new Date(nowUTC.getTime() + (TIMEZONE_OFFSET_HOURS * 60 * 60 * 1000));
-                    const todayStr = localNow.toISOString().split('T')[0];
-                    const currentMinutes = localNow.getUTCHours() * 60 + localNow.getUTCMinutes();
+<!-- Modal: Logout / Local-Only Warning -->
+<div class="modal-overlay" id="logoutConfirmModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0; color: var(--danger);">⚠️ Switch to Local-Only Mode?</h3>
+        <p style="font-size: 0.85rem; line-height: 1.5; color: var(--text-color);">
+            Logging out will disconnect your device from cloud backups.<br><br>
+            <strong>Warning:</strong> In Local-Only mode, tasks exist <em>only</em> inside this browser's temporary storage. If you clear site cookies, clear browser cache, or change devices, <strong>all your tasks will be permanently lost</strong>.
+        </p>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button type="button" class="icon-btn" id="cancelLogoutBtn">Cancel</button>
+            <button type="button" class="icon-btn" id="confirmLogoutBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 600;">Log Out to Local-Only</button>
+        </div>
+    </div>
+</div>
 
-                    // 1. Evaluate Task Completion
-                    const hasUnfinishedToday = tasks.some(t => {
-                        if (t.status !== 'active') return false;
-                        const due = String(t.due_date || 'today').trim().toLowerCase();
-                        return due === 'today' || due === todayStr;
-                    });
-                    const isFinished = !hasUnfinishedToday;
+<script src="audit-engine.js"></script>
+<script src="sync-engine.js"></script>
+<script>
+const HARDCODED_WORKER_URL = 'https://taskitator-sync.spacexmzez.workers.dev';
+const SETTINGS_KEY = 'taskitator_settings';
 
-                    // 2. Evaluate Active Break Interval
-                    const isInBreak = breaks.some(b => {
-                        if (!b || !b.start || !b.end) return false;
-                        if (b.date && b.date !== todayStr) return false;
+const geminiApiKeyInput = document.getElementById('geminiApiKey');
+const workerUsernameInput = document.getElementById('workerUsername');
+const workerPasswordInput = document.getElementById('workerPassword');
+const togglePasswordVisibilityBtn = document.getElementById('togglePasswordVisibilityBtn');
+const activeSessionBox = document.getElementById('activeSessionBox');
+const activeUsernameDisplay = document.getElementById('activeUsernameDisplay');
+const weekendStartSelect = document.getElementById('weekendStartSelect');
+const weekendEndSelect = document.getElementById('weekendEndSelect');
+const breakWindowStart = document.getElementById('breakWindowStart');
+const breakWindowEnd = document.getElementById('breakWindowEnd');
+const syncWordBadge = document.getElementById('syncWordBadge');
+const logoutConfirmModal = document.getElementById('logoutConfirmModal');
 
-                        if (b.start.includes('T')) {
-                            const startTime = new Date(b.start).getTime();
-                            const endTime = new Date(b.end).getTime();
-                            const cur = nowUTC.getTime();
-                            return cur >= startTime && cur <= endTime;
-                        }
+function refreshSyncWordStatus() {
+    if (!syncWordBadge) return;
+    const isConfigured = window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured();
 
-                        const [startH, startM] = b.start.split(':').map(Number);
-                        const [endH, endM] = b.end.split(':').map(Number);
-                        const startMins = startH * 60 + startM;
-                        const endMins = endH * 60 + endM;
+    if (!isConfigured) {
+        syncWordBadge.className = 'sync-badge-word local-only';
+        syncWordBadge.textContent = 'Local Only';
+        activeSessionBox.style.display = 'none';
+    } else {
+        const config = SyncEngine.getConfig();
+        syncWordBadge.className = 'sync-badge-word synced';
+        syncWordBadge.textContent = 'Synced';
+        activeSessionBox.style.display = 'flex';
+        activeUsernameDisplay.textContent = `@${config.username}`;
+    }
+}
 
-                        if (startMins <= endMins) {
-                            return currentMinutes >= startMins && currentMinutes <= endMins;
-                        } else {
-                            // Overnight break
-                            return currentMinutes >= startMins || currentMinutes <= endMins;
-                        }
-                    });
+function updatePasswordVisibilityState() {
+    const hasText = workerPasswordInput.value.length > 0;
+    togglePasswordVisibilityBtn.disabled = !hasText;
 
-                    const isDeviceUnlocked = isFinished || isInBreak;
+    if (!hasText && workerPasswordInput.type === 'text') {
+        workerPasswordInput.type = 'password';
+        togglePasswordVisibilityBtn.textContent = 'Show Password';
+    }
+}
 
-                    return buildStatusResponse({
-                        status: 'ok',
-                        device_unlocked: isDeviceUnlocked,
-                        finished: isFinished,
-                        in_break: isInBreak
-                    }, url);
-                }
+function loadSettings() {
+    let settings = {};
+    try {
+        settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    } catch (e) {
+        settings = {};
+    }
 
-                // --- Route B: Standard Sync Pull ---
-                const record = await env.TASKITATOR_KV.get(kvKey, { type: 'json' });
-                if (!record) {
-                    return new Response(JSON.stringify({ empty: true, message: 'No cloud record found.' }), {
-                        status: 200,
-                        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-                    });
-                }
+    geminiApiKeyInput.value = settings.gemini_api_key || '';
+    workerUsernameInput.value = settings.worker_username || '';
+    workerPasswordInput.value = ''; // Never preserve plaintext password in UI input
+    updatePasswordVisibilityState();
 
-                return new Response(JSON.stringify(record), {
-                    status: 200,
-                    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-                });
-            }
+    weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
+    weekendEndSelect.value = settings.weekend_end !== undefined ? settings.weekend_end : '6';
 
-            // =========================================================================
-            // POST Requests (Sync Push)
-            // =========================================================================
-            if (request.method === 'POST') {
-                const incoming = await request.json().catch(() => null);
+    breakWindowStart.value = settings.break_selection_start || '';
+    breakWindowEnd.value = settings.break_selection_end || '';
 
-                if (!incoming || !Array.isArray(incoming.tasks)) {
-                    return new Response(JSON.stringify({ error: 'Invalid payload: tasks array required.' }), {
-                        status: 400,
-                        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-                    });
-                }
+    refreshSyncWordStatus();
+    updateEmergencyDisplay();
+    updateBreakWindowStatus();
+    updateWorkweekNotice();
+}
 
-                const existing = await env.TASKITATOR_KV.get(kvKey, { type: 'json' });
+async function saveSettings() {
+    let settings = {};
+    try {
+        settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    } catch (e) {
+        settings = {};
+    }
 
-                // Conflict detection: prevent stale overwrites unless forced
-                if (existing && !incoming.force && existing.updated_at && incoming.updated_at) {
-                    const remoteTime = new Date(existing.updated_at).getTime();
-                    const localTime = new Date(incoming.updated_at).getTime();
+    settings.gemini_api_key = geminiApiKeyInput.value.trim();
+    settings.worker_url = HARDCODED_WORKER_URL;
+    settings.weekend_start = parseInt(weekendStartSelect.value, 10);
+    settings.weekend_end = parseInt(weekendEndSelect.value, 10);
+    settings.break_selection_start = breakWindowStart.value.trim();
+    settings.break_selection_end = breakWindowEnd.value.trim();
 
-                    if (remoteTime > localTime) {
-                        return new Response(JSON.stringify({
-                            error: 'Conflict: Remote data is newer than local state.',
-                            conflict: true,
-                            remote_updated_at: existing.updated_at
-                        }), {
-                            status: 409,
-                            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-                        });
-                    }
-                }
+    const username = workerUsernameInput.value.trim().toLowerCase();
+    const password = workerPasswordInput.value.trim();
 
-                const newVersion = existing && existing.version ? existing.version + 1 : 1;
-                const recordToStore = {
-                    ...incoming,
-                    version: newVersion,
-                    saved_at: new Date().toISOString()
-                };
+    if (username && password) {
+        const tokenHash = await SyncEngine.hashCredentials(username, password);
+        settings.worker_username = username;
+        settings.worker_passkey = tokenHash;
+        workerPasswordInput.value = '';
+        updatePasswordVisibilityState();
+    } else if (username && !password && !settings.worker_passkey) {
+        alert('Please enter a password to connect your account.');
+        return;
+    }
 
-                await env.TASKITATOR_KV.put(kvKey, JSON.stringify(recordToStore));
-
-                return new Response(JSON.stringify({
-                    success: true,
-                    version: newVersion,
-                    updated_at: recordToStore.updated_at
-                }), {
-                    status: 200,
-                    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-                });
-            }
-
-            return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
-                status: 405,
-                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-            });
-
-        } catch (err) {
-            return new Response(JSON.stringify({ error: 'Internal Worker Exception: ' + err.message }), {
-                status: 500,
-                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-            });
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    
+    if (window.SyncEngine) {
+        if (typeof SyncEngine.markLocalModified === 'function') {
+            SyncEngine.markLocalModified();
+        }
+        if (typeof SyncEngine.scheduleAutoPush === 'function') {
+            SyncEngine.scheduleAutoPush(1000);
         }
     }
-};
 
-/**
- * Format helper for MacroDroid and Settings test responses
- */
-function buildStatusResponse(state, url) {
-    const format = url.searchParams.get('format');
+    refreshSyncWordStatus();
+    updateBreakWindowStatus();
+    updateWorkweekNotice();
+    alert('Settings saved successfully.');
+}
 
-    if (format === 'text') {
-        return new Response(`device_unlocked = ${state.device_unlocked}`, {
-            status: 200,
-            headers: {
-                ...CORS_HEADERS,
-                'Content-Type': 'text/plain; charset=utf-8'
+function updateEmergencyDisplay() {
+    if (!window.TaskitatorEngine) return;
+    const state = TaskitatorEngine.EmergencyManager.getState();
+    document.getElementById('emergencyTokensDisplay').textContent = `${state.uses_left} / 4 Uses Remaining`;
+}
+
+function updateBreakWindowStatus() {
+    if (!window.TaskitatorEngine) return;
+    const badge = document.getElementById('breakWindowStatusBadge');
+    const startStr = breakWindowStart.value.trim();
+    const endStr = breakWindowEnd.value.trim();
+    const isOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
+
+    if (!startStr || !endStr) {
+        badge.innerHTML = '<span class="tag-chip" style="background: #052e16; color: #86efac; font-weight: 700;">● Unset (Open All Day)</span>';
+        breakWindowStart.disabled = false;
+        breakWindowEnd.disabled = false;
+    } else if (isOpen) {
+        badge.innerHTML = '<span class="tag-chip" style="background: #052e16; color: #86efac; font-weight: 700;">● Window Currently Open (Editable)</span>';
+        breakWindowStart.disabled = false;
+        breakWindowEnd.disabled = false;
+    } else {
+        badge.innerHTML = '<span class="tag-chip" style="background: #380d15; color: #fda4af; font-weight: 700;">● Window Closed for Today (Locked)</span>';
+        breakWindowStart.disabled = true;
+        breakWindowEnd.disabled = true;
+    }
+}
+
+function updateWorkweekNotice() {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const s = parseInt(weekendStartSelect.value, 10);
+    const e = parseInt(weekendEndSelect.value, 10);
+    const resetDay = (e + 1) % 7;
+    document.getElementById('workweekCalcNotice').textContent =
+        `Weekend: ${days[s]} to ${days[e]}. Emergency tokens reset every ${days[resetDay]} at 00:00.`;
+}
+
+document.getElementById('clearBreakWindowBtn').addEventListener('click', () => {
+    breakWindowStart.value = '';
+    breakWindowEnd.value = '';
+    updateBreakWindowStatus();
+});
+
+document.getElementById('toggleKeyVisibilityBtn').addEventListener('click', () => {
+    const isPassword = geminiApiKeyInput.type === 'password';
+    geminiApiKeyInput.type = isPassword ? 'text' : 'password';
+    document.getElementById('toggleKeyVisibilityBtn').textContent = isPassword ? 'Hide Key' : 'Show Key';
+});
+
+// Dynamic enable/disable of the toggle button based on typed input
+workerPasswordInput.addEventListener('input', updatePasswordVisibilityState);
+
+// Toggle password visibility
+togglePasswordVisibilityBtn.addEventListener('click', () => {
+    if (togglePasswordVisibilityBtn.disabled) return;
+    const isPassword = workerPasswordInput.type === 'password';
+    workerPasswordInput.type = isPassword ? 'text' : 'password';
+    togglePasswordVisibilityBtn.textContent = isPassword ? 'Hide Password' : 'Show Password';
+});
+
+// Test Gemini API with gemini-3.5-flash-lite
+document.getElementById('testGeminiBtn').addEventListener('click', async () => {
+    const key = geminiApiKeyInput.value.trim();
+    const feedback = document.getElementById('geminiTestFeedback');
+    feedback.style.display = 'block';
+
+    if (!key) {
+        feedback.className = 'notice-banner notice-warning';
+        feedback.textContent = 'Please enter an API key first.';
+        return;
+    }
+
+    feedback.className = 'notice-banner notice-info';
+    feedback.textContent = 'Testing connection with primary model (gemini-3.5-flash-lite)...';
+
+    try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${key}`;
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: 'Ping test. Respond with OK.' }] }]
+            })
+        });
+
+        if (res.ok) {
+            feedback.className = 'notice-banner notice-info';
+            feedback.innerHTML = '<strong>Success!</strong> API key valid and connected to gemini-3.5-flash-lite.';
+        } else {
+            const errData = await res.json();
+            feedback.className = 'notice-banner notice-warning';
+            feedback.textContent = `API Error (${res.status}): ${errData.error?.message || 'Check key validity'}`;
+        }
+    } catch (err) {
+        feedback.className = 'notice-banner notice-warning';
+        feedback.textContent = `Network Error: ${err.message}`;
+    }
+});
+
+// Test Worker Sync with Zero-Knowledge Hash Token
+document.getElementById('testWorkerBtn').addEventListener('click', async () => {
+    const username = workerUsernameInput.value.trim().toLowerCase();
+    const password = workerPasswordInput.value.trim();
+    const feedback = document.getElementById('workerTestFeedback');
+    feedback.style.display = 'block';
+
+    let token = '';
+    const config = SyncEngine.getConfig();
+
+    if (username && password) {
+        token = await SyncEngine.hashCredentials(username, password);
+    } else if (config.username && config.secret) {
+        token = config.secret;
+    } else {
+        feedback.className = 'notice-banner notice-warning';
+        feedback.textContent = 'Please provide both username and password to test connection.';
+        return;
+    }
+
+    feedback.className = 'notice-banner notice-info';
+    feedback.textContent = 'Testing cloud sync connection...';
+
+    try {
+        const pingUrl = `${HARDCODED_WORKER_URL}/?action=status&format=text`;
+        const res = await fetch(pingUrl, {
+            method: 'GET',
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'X-Taskitator-User': username || config.username
             }
         });
-    }
 
-    return new Response(JSON.stringify(state), {
-        status: 200,
-        headers: {
-            ...CORS_HEADERS,
-            'Content-Type': 'application/json'
+        const resText = await res.text();
+
+        if (res.ok) {
+            feedback.className = 'notice-banner notice-info';
+            feedback.innerHTML = `<strong>Connected!</strong> Sync active.<br><code>${resText}</code>`;
+            syncWordBadge.className = 'sync-badge-word synced';
+            syncWordBadge.textContent = 'Synced';
+        } else {
+            feedback.className = 'notice-banner notice-warning';
+            feedback.textContent = `Connection error (HTTP ${res.status}): ${resText || res.statusText}`;
+            syncWordBadge.className = 'sync-badge-word pending';
+            syncWordBadge.textContent = 'Not Synced';
         }
+    } catch (err) {
+        feedback.className = 'notice-banner notice-warning';
+        feedback.innerHTML = `<strong>Sync Failed:</strong> ${err.message}<br><small>Check internet connection or worker settings</small>`;
+        syncWordBadge.className = 'sync-badge-word error';
+        syncWordBadge.textContent = 'Error';
+    }
+});
+
+// Logout / Local-Only Modal Handlers
+document.getElementById('openLogoutModalBtn').addEventListener('click', () => {
+    logoutConfirmModal.classList.add('open');
+});
+
+document.getElementById('cancelLogoutBtn').addEventListener('click', () => {
+    logoutConfirmModal.classList.remove('open');
+});
+
+document.getElementById('confirmLogoutBtn').addEventListener('click', () => {
+    SyncEngine.logout();
+    workerPasswordInput.value = '';
+    workerUsernameInput.value = '';
+    updatePasswordVisibilityState();
+    logoutConfirmModal.classList.remove('open');
+    refreshSyncWordStatus();
+    alert('Logged out. Taskitator is now running in Local-Only mode.');
+});
+
+// Sidebar Drawer
+const sidebarDrawer = document.getElementById('sidebarDrawer');
+const drawerBackdrop = document.getElementById('drawerBackdrop');
+
+document.getElementById('openDrawerBtn').addEventListener('click', () => {
+    sidebarDrawer.classList.add('open');
+    drawerBackdrop.classList.add('open');
+});
+
+drawerBackdrop.addEventListener('click', () => {
+    sidebarDrawer.classList.remove('open');
+    drawerBackdrop.classList.remove('open');
+});
+
+document.getElementById('saveAllSettingsBtn').addEventListener('click', saveSettings);
+weekendStartSelect.addEventListener('change', updateWorkweekNotice);
+weekendEndSelect.addEventListener('change', updateWorkweekNotice);
+
+document.addEventListener('DOMContentLoaded', loadSettings);
+
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .catch(err => console.error('SW Registration failed:', err));
     });
 }
+</script>
+</body>
+</html>
