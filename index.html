@@ -7,463 +7,13 @@
     <title>Taskitator - Today</title>
     <link rel="stylesheet" href="style.css">
     <style>
+        /* Scoped elevation for Today view: slightly lighter energetic dark blue */
         :root {
-            --bg-color: #f8fafc;
-            --card-bg: #ffffff;
-            --text-color: #0f172a;
-            --text-muted: #64748b;
-            --border-color: #e2e8f0;
-            --primary: #3b82f6;
-            --primary-hover: #2563eb;
-            --danger: #ef4444;
-            --tag-bg: #e0f2fe;
-            --tag-text: #0369a1;
-        }
-
-        body.dark-mode {
-            --bg-color: #0f172a;
-            --card-bg: #1e293b;
-            --text-color: #f8fafc;
-            --text-muted: #94a3b8;
-            --border-color: #334155;
-            --primary: #3b82f6;
-            --primary-hover: #60a5fa;
-            --tag-bg: #0c4a6e;
-            --tag-text: #bae6fd;
-        }
-
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            margin: 0;
-            padding: 0;
-        }
-
-        .app-container {
-            max-width: 720px;
-            margin: 0 auto;
-            padding: 16px 16px 90px 16px;
-        }
-
-        /* Top Bar */
-        .top-navbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px 0 16px 0;
-            border-bottom: 1px solid var(--border-color);
-            margin-bottom: 16px;
-        }
-
-        .nav-left, .nav-right {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .icon-btn {
-            background: transparent;
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            border-radius: 6px;
-            padding: 6px 10px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: background 0.15s ease;
-        }
-
-        .icon-btn:hover {
-            background: var(--border-color);
-        }
-
-        .emergency-pill-btn {
-            background: transparent;
-            border: 1px solid #fca5a5;
-            color: #dc2626;
-            border-radius: 16px;
-            padding: 4px 10px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            cursor: pointer;
-        }
-
-        .emergency-pill-btn:hover {
-            background: #fee2e2;
-        }
-
-        body.dark-mode .emergency-pill-btn {
-            border-color: #7f1d1d;
-            color: #f87171;
-        }
-
-        body.dark-mode .emergency-pill-btn:hover {
-            background: #450a0a;
-        }
-
-        .info-tiny-btn {
-            width: 22px;
-            height: 22px;
-            border-radius: 50%;
-            background: transparent;
-            border: 1px solid var(--border-color);
-            color: var(--text-muted);
-            font-size: 0.75rem;
-            font-weight: bold;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        /* Sidebar Drawer */
-        .sidebar-drawer {
-            position: fixed;
-            top: 0;
-            left: -260px;
-            width: 250px;
-            height: 100%;
-            background: var(--card-bg);
-            border-right: 1px solid var(--border-color);
-            box-shadow: 4px 0 12px rgba(0,0,0,0.1);
-            transition: left 0.25s ease;
-            z-index: 2000;
-            display: flex;
-            flex-direction: column;
-            padding: 20px 16px;
-        }
-
-        .sidebar-drawer.open {
-            left: 0;
-        }
-
-        .drawer-backdrop {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.4);
-            display: none;
-            z-index: 1999;
-        }
-
-        .drawer-backdrop.open {
-            display: block;
-        }
-
-        .drawer-links a {
-            display: block;
-            padding: 10px 12px;
-            color: var(--text-color);
-            text-decoration: none;
-            border-radius: 6px;
-            font-size: 0.95rem;
-            font-weight: 500;
-            margin-bottom: 4px;
-        }
-
-        .drawer-links a:hover, .drawer-links a.active {
-            background: var(--border-color);
-            color: var(--primary);
-        }
-
-        /* Banners */
-        .banner-emergency {
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-            color: #991b1b;
-            padding: 10px 14px;
-            border-radius: 8px;
-            margin-bottom: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 0.85rem;
-            font-weight: 600;
-        }
-
-        body.dark-mode .banner-emergency {
-            background: #450a0a33;
-            border-color: #7f1d1d;
-            color: #fca5a5;
-        }
-
-        .banner-break-window {
-            background: #f0fdf4;
-            border: 1px solid #bbf7d0;
-            color: #166534;
-            padding: 12px 14px;
-            border-radius: 8px;
-            margin-bottom: 16px;
-        }
-
-        body.dark-mode .banner-break-window {
-            background: #052e1633;
-            border-color: #166534;
-            color: #86efac;
-        }
-
-        /* Task Tree & Items */
-        .task-list-tree {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-
-        .task-node {
-            display: flex;
-            flex-direction: column;
-            margin-bottom: 6px;
-        }
-
-        .task-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 10px 12px;
-            transition: border-color 0.15s ease;
-            cursor: pointer;
-        }
-
-        .task-row:hover {
-            border-color: #cbd5e1;
-        }
-
-        .task-main {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex: 1;
-            overflow: hidden;
-        }
-
-        .collapse-toggle {
-            background: transparent;
-            border: none;
-            color: var(--text-muted);
-            cursor: pointer;
-            padding: 0 4px;
-            font-size: 0.75rem;
-            width: 18px;
-            height: 18px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-
-        .collapse-spacer {
-            width: 18px;
-            height: 18px;
-            flex-shrink: 0;
-        }
-
-        .check-circle {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            border: 2px solid #94a3b8;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            background: transparent;
-            padding: 0;
-            color: #ffffff;
-            font-size: 0.75rem;
-        }
-
-        .task-node.completed > .task-row .check-circle {
-            background: #22c55e;
-            border-color: #22c55e;
-        }
-
-        .task-node.completed > .task-row .task-title {
-            text-decoration: line-through;
-            color: var(--text-muted);
-        }
-
-        .task-title {
-            font-size: 0.925rem;
-            word-break: break-word;
-        }
-
-        .ai-badge {
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-            color: #1d4ed8;
-            font-size: 0.7rem;
-            font-weight: 600;
-            padding: 2px 6px;
-            border-radius: 12px;
-            display: inline-flex;
-            align-items: center;
-            gap: 3px;
-        }
-
-        body.dark-mode .ai-badge {
-            background: #1e3a8a33;
-            border-color: #1e3a8a;
-            color: #93c5fd;
-        }
-
-        .tag-chip {
-            background: var(--tag-bg);
-            color: var(--tag-text);
-            font-size: 0.7rem;
-            font-weight: 500;
-            padding: 2px 6px;
-            border-radius: 4px;
-        }
-
-        .task-subtree {
-            list-style: none;
-            padding: 0;
-            margin: 4px 0 0 0;
-        }
-
-        .task-subtree.collapsed {
-            display: none;
-        }
-
-        .action-del-btn {
-            background: transparent;
-            border: none;
-            color: var(--text-muted);
-            cursor: pointer;
-            font-size: 0.85rem;
-            padding: 4px 6px;
-            border-radius: 4px;
-        }
-
-        .action-del-btn:hover {
-            color: var(--danger);
-        }
-
-        .action-del-btn:disabled {
-            opacity: 0.25;
-            cursor: not-allowed;
-        }
-
-        /* Floating Action Button */
-        .fab-add {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            width: 54px;
-            height: 54px;
-            border-radius: 50%;
-            background: var(--primary);
-            color: #ffffff;
-            border: none;
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.8rem;
-            cursor: pointer;
-            z-index: 100;
-            transition: transform 0.15s ease, background 0.15s ease;
-        }
-
-        .fab-add:hover {
-            background: var(--primary-hover);
-            transform: scale(1.04);
-        }
-
-        /* Modals */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 3000;
-        }
-
-        .modal-overlay.open {
-            display: flex;
-        }
-
-        .modal-box {
-            background: var(--card-bg);
-            border-radius: 12px;
-            max-width: 540px;
-            width: 90%;
-            padding: 22px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .form-group {
-            margin-bottom: 14px;
-        }
-
-        .form-group label {
-            display: block;
-            font-size: 0.85rem;
-            font-weight: 600;
-            margin-bottom: 6px;
-        }
-
-        .form-group input[type="text"],
-        .form-group input[type="date"],
-        .form-group textarea {
-            width: 100%;
-            padding: 8px 10px;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            background: var(--bg-color);
-            color: var(--text-color);
-            box-sizing: border-box;
-            font-size: 0.9rem;
-        }
-
-        .form-group input:disabled,
-        .form-group textarea:disabled {
-            background: var(--border-color);
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-
-        .subtask-builder-item {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            margin-bottom: 6px;
-        }
-
-        .audit-critique-box {
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-            color: #991b1b;
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 0.825rem;
-            margin-top: 10px;
-            line-height: 1.4;
-        }
-
-        body.dark-mode .audit-critique-box {
-            background: #450a0a33;
-            border-color: #7f1d1d;
-            color: #fca5a5;
+            --bg-color: #0c1b38;
+            --card-bg: #142952;
+            --card-subtle: #1a3466;
+            --border-color: #244680;
+            --border-hover: #3b6ec2;
         }
     </style>
 </head>
@@ -472,7 +22,7 @@
 <!-- Sidebar Drawer -->
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="sidebar-drawer" id="sidebarDrawer">
-    <div style="font-weight: 700; font-size: 1.15rem; margin-bottom: 24px;">Taskitator</div>
+    <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
     <nav class="drawer-links">
         <a href="index.html" class="active">📅 Today</a>
         <a href="general.html">🗂️ General Tasks</a>
@@ -481,7 +31,6 @@
         <a href="settings.html">⚙️ Settings</a>
     </nav>
 </aside>
-
 
 <div class="app-container">
     <!-- Top Navbar -->
@@ -509,7 +58,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <strong style="font-size: 0.9rem;">⏸️ Daily Break Scheduling Window Open</strong>
         </div>
-        <p style="font-size: 0.8rem; margin: 0 0 10px 0;">
+        <p style="font-size: 0.8rem; margin: 0 0 10px 0; color: #86efac;">
             Schedule up to 3 non-overlapping breaks (&le; 3 hrs total). Window locks permanently after closing.
         </p>
         <div id="breakInputsList"></div>
@@ -529,7 +78,7 @@
 <!-- Modal: Comprehensive Task Creation -->
 <div class="modal-overlay" id="addTaskModal">
     <div class="modal-box">
-        <h3 style="margin-top: 0;" id="addTaskModalTitle">Create New Task</h3>
+        <h3 style="margin-top: 0; color: var(--primary);" id="addTaskModalTitle">Create New Task</h3>
         <form id="taskCreateForm">
             <input type="hidden" id="creationParentId" value="">
 
@@ -583,7 +132,7 @@
 <div class="modal-overlay" id="taskDetailModal">
     <div class="modal-box">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-            <h3 style="margin: 0;" id="detailTaskTitleHeader">Task Details</h3>
+            <h3 style="margin: 0; color: var(--primary);" id="detailTaskTitleHeader">Task Details</h3>
             <span id="detailLockStatusBadge"></span>
         </div>
 
@@ -619,7 +168,6 @@
             <textarea id="editTaskCriteria" rows="2"></textarea>
         </div>
 
-        <!-- Subtasks Section with + Button for Full Creation Pop-up -->
         <div class="form-group" style="margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                 <label style="margin: 0;">Subtasks Under This Task</label>
@@ -629,7 +177,7 @@
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
-            <button type="button" class="icon-btn" id="deleteFromDetailBtn" style="color: var(--danger); border-color: #fca5a5;">Delete Task</button>
+            <button type="button" class="icon-btn" id="deleteFromDetailBtn" style="color: var(--danger); border-color: #7f1d1d;">Delete Task</button>
             <div style="display: flex; gap: 10px;">
                 <button type="button" class="icon-btn" id="closeDetailModalBtn">Cancel</button>
                 <button type="button" class="icon-btn" id="saveTaskDetailsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Changes</button>
@@ -641,9 +189,9 @@
 <!-- Modal: Proof Verification Audit -->
 <div class="modal-overlay" id="auditModal">
     <div class="modal-box">
-        <h3 style="margin-top: 0;">Submit AI Verification Proof</h3>
+        <h3 style="margin-top: 0; color: var(--primary);">Submit AI Verification Proof</h3>
         <p id="auditTaskTitleDisplay" style="font-weight: 600; margin-bottom: 6px;"></p>
-        <div id="auditCriteriaDisplay" style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 14px; background: var(--bg-color); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);"></div>
+        <div id="auditCriteriaDisplay" style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 14px; background: var(--card-subtle); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);"></div>
 
         <div class="form-group">
             <label>Upload Photographic Evidence:</label>
@@ -683,7 +231,7 @@
 <!-- Modal: Emergency Info -->
 <div class="modal-overlay" id="emergencyInfoModal">
     <div class="modal-box">
-        <h3 style="margin-top: 0;">ℹ️ Emergency Rules</h3>
+        <h3 style="margin-top: 0; color: var(--primary);">ℹ️ Emergency Rules</h3>
         <p style="font-size: 0.85rem; line-height: 1.5;">
             • Maximum <strong>4 bypass uses</strong> per week.<br>
             • Each use grants a <strong>15-minute unlock window</strong> to delete or edit locked task criteria.<br>
@@ -761,7 +309,7 @@ function renderTaskTree() {
     const rootTasks = (childrenMap.get('root') || []).filter(belongsToToday);
 
     if (rootTasks.length === 0) {
-        list.innerHTML = '<li style="text-align: center; color: var(--text-muted); padding: 24px;">No tasks scheduled for today.</li>';
+        list.innerHTML = '<li style="text-align: center; color: var(--text-muted); padding: 32px;">No tasks scheduled for today.</li>';
         return;
     }
 
@@ -850,7 +398,6 @@ function renderTaskTree() {
         }
         row.appendChild(delBtn);
 
-        // Clicking task row opens full details panel
         row.addEventListener('click', () => openTaskDetailModal(task.id));
 
         li.appendChild(row);
@@ -915,7 +462,7 @@ function deleteTask(taskId) {
 }
 
 // =========================================================================
-// Task Detail & Edit Modal (Handles mutable tags/desc & AI lock protection)
+// Task Detail & Edit Modal
 // =========================================================================
 const taskDetailModal = document.getElementById('taskDetailModal');
 const editTaskTitle = document.getElementById('editTaskTitle');
@@ -947,7 +494,6 @@ function openTaskDetailModal(taskId) {
     editTaskCriteria.value = task.proof_criteria || '';
     editCriteriaBoxContainer.style.display = isLocked ? 'block' : 'none';
 
-    // Immutability enforcement: Title, Due Date, AI-Lock, Criteria, and Delete are protected
     const cannotModifyLocked = isLocked && !isBypassActive;
 
     editTaskTitle.disabled = cannotModifyLocked;
@@ -958,13 +504,12 @@ function openTaskDetailModal(taskId) {
 
     if (isLocked) {
         detailLockStatusBadge.innerHTML = isBypassActive
-            ? '<span class="tag-chip" style="background:#fef3c7;color:#92400e;">Bypass Active</span>'
+            ? '<span class="tag-chip" style="background:#451a03;color:#fde68a;">Bypass Active</span>'
             : '<span class="ai-badge">🔒 Locked</span>';
     } else {
         detailLockStatusBadge.innerHTML = '<span class="tag-chip">Standard</span>';
     }
 
-    // Populate direct subtasks
     detailSubtasksList.innerHTML = '';
     const directChildren = tasks.filter(t => t.parent_id === taskId && t.status !== 'trash');
     if (directChildren.length === 0) {
@@ -1005,7 +550,6 @@ document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
     const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
     const willBeAiLocked = editAiLockCheckbox.checked;
 
-    // Post-creation AI lock confirmation
     if (!task.ai_locked && willBeAiLocked) {
         const confirmed = confirm(
             "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
@@ -1016,11 +560,9 @@ document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
         if (!confirmed) return;
     }
 
-    // Description and Tags are always mutable
     task.description = editTaskDesc.value.trim();
     task.tags = editTaskTags.value.split(',').map(s => s.trim()).filter(Boolean);
 
-    // Guard locked attributes unless unlocked or in emergency bypass
     if (!task.ai_locked || isBypassActive) {
         task.title = editTaskTitle.value.trim() || task.title;
         task.due_date = editTaskDueDate.value || '';
@@ -1039,7 +581,6 @@ deleteFromDetailBtn.addEventListener('click', () => {
     taskDetailModal.classList.remove('open');
 });
 
-// Full Pop-Up Subtask Creation from Detail View
 document.getElementById('openChildAddModalBtn').addEventListener('click', () => {
     if (!activeDetailTaskId) return;
     const parentTask = tasks.find(t => t.id === activeDetailTaskId);
@@ -1225,9 +766,9 @@ function addBreakRow(sVal = '', eVal = '') {
     const row = document.createElement('div');
     row.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 6px;';
     row.innerHTML = `
-        <input type="time" class="b-start" value="${sVal}" style="padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-color); color: var(--text-color);">
-        <span>to</span>
-        <input type="time" class="b-end" value="${eVal}" style="padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-color); color: var(--text-color);">
+        <input type="time" class="b-start" value="${sVal}" style="padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
+        <span style="color: var(--text-muted); font-size: 0.85rem;">to</span>
+        <input type="time" class="b-end" value="${eVal}" style="padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
         <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
     `;
     breakInputsList.appendChild(row);
@@ -1332,7 +873,6 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
     };
     tasks.push(newTask);
 
-    // Quick-added subtasks default strictly to no due date (empty string)
     const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-input-title');
     quickSubtaskInputs.forEach(input => {
         const subTitle = input.value.trim();
@@ -1344,7 +884,7 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
                 description: '',
                 tags: [],
                 status: 'active',
-                due_date: '', // Default strictly to none
+                due_date: '',
                 ai_locked: false,
                 proof_criteria: '',
                 created_at: new Date().toISOString()
