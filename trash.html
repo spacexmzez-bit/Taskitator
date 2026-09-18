@@ -9,39 +9,42 @@
     <style>
         .trash-item {
             background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border: 1.5px solid var(--border-color);
+            border-radius: 10px;
             padding: 12px 14px;
             margin-bottom: 10px;
             display: flex;
             align-items: center;
             justify-content: space-between;
+            box-shadow: var(--card-shadow);
         }
         .trash-title {
             font-size: 0.95rem;
             color: var(--text-color);
             word-break: break-word;
+            font-weight: 500;
         }
         .trash-meta {
             font-size: 0.75rem;
             color: var(--text-muted);
-            margin-top: 2px;
+            margin-top: 4px;
         }
         .trash-actions {
             display: flex;
             gap: 8px;
         }
-        .btn-danger {
+        .btn-danger-solid {
             background: var(--danger);
             color: #fff;
             border: none;
-            border-radius: 6px;
-            padding: 6px 12px;
-            font-size: 0.8rem;
+            border-radius: 8px;
+            padding: 7px 12px;
+            font-size: 0.85rem;
             font-weight: 600;
             cursor: pointer;
+            transition: background 0.15s ease;
         }
-        .btn-danger:hover {
+        .btn-danger-solid:hover {
             background: var(--danger-hover);
         }
     </style>
@@ -51,7 +54,7 @@
 <!-- Sidebar Drawer -->
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="sidebar-drawer" id="sidebarDrawer">
-    <div style="font-weight: 700; font-size: 1.15rem; margin-bottom: 24px;">Taskitator</div>
+    <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
     <nav class="drawer-links">
         <a href="index.html">📅 Today</a>
         <a href="general.html">🗂️ General Tasks</a>
@@ -69,7 +72,7 @@
             <h2 style="margin: 0; font-size: 1.25rem;">Trash</h2>
         </div>
         <div class="nav-right">
-            <button class="btn-danger" id="emptyTrashBtn">Empty Trash</button>
+            <button class="btn-danger-solid" id="emptyTrashBtn">Empty Trash</button>
         </div>
     </header>
 
@@ -128,7 +131,7 @@ function renderTrash() {
         const permDelBtn = document.createElement('button');
         permDelBtn.className = 'icon-btn';
         permDelBtn.style.color = 'var(--danger)';
-        permDelBtn.style.borderColor = '#fca5a5';
+        permDelBtn.style.borderColor = '#7f1d1d';
         permDelBtn.textContent = 'Delete Forever';
         permDelBtn.addEventListener('click', () => permanentlyDeleteTask(task.id));
 
