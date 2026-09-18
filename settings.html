@@ -137,7 +137,7 @@
     <div class="settings-card">
         <h3 style="margin-top: 0; color: var(--primary);">⏸️ Daily Break Selection Window</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Configure the daily timeframe when you are permitted to schedule breaks. Once the window passes, settings lock permanently for the day.
+            Configure the daily timeframe when you are permitted to schedule breaks. Leave unset (empty) to keep break scheduling open all day.
         </p>
         <div class="form-group" style="display: flex; gap: 12px;">
             <div style="flex: 1;">
@@ -148,6 +148,9 @@
                 <label for="breakWindowEnd">Window End</label>
                 <input type="time" id="breakWindowEnd">
             </div>
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 6px;">
+            <button type="button" class="icon-btn" id="clearBreakWindowBtn" style="font-size: 0.8rem; padding: 4px 10px;">Clear (Unset / All Day)</button>
         </div>
         <div id="breakWindowStatusBadge" style="margin-top: 8px;"></div>
     </div>
@@ -160,7 +163,7 @@
 <script src="audit-engine.js"></script>
 <script src="sync-engine.js"></script>
 <script>
-const HARDCODED_WORKER_URL = 'https://gemini-todoist-verifier.spacexmzez.workers.dev';
+const HARDCODED_WORKER_URL = 'https://taskitator-sync.spacexmzez.workers.dev';
 const SETTINGS_KEY = 'taskitator_settings';
 
 const geminiApiKeyInput = document.getElementById('geminiApiKey');
@@ -197,8 +200,8 @@ function loadSettings() {
     weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
     weekendEndSelect.value = settings.weekend_end !== undefined ? settings.weekend_end : '6';
 
-    breakWindowStart.value = settings.break_selection_start || '08:00';
-    breakWindowEnd.value = settings.break_selection_end || '09:00';
+    breakWindowStart.value = settings.break_selection_start || '';
+    breakWindowEnd.value = settings.break_selection_end || '';
 
     refreshSyncWordStatus();
     updateEmergencyDisplay();
@@ -213,8 +216,8 @@ function saveSettings() {
         worker_passkey: workerPasskeyInput.value.trim(),
         weekend_start: parseInt(weekendStartSelect.value, 10),
         weekend_end: parseInt(weekendEndSelect.value, 10),
-        break_selection_start: breakWindowStart.value,
-        break_selection_end: breakWindowEnd.value
+        break_selection_start: breakWindowStart.value.trim(),
+        break_selection_end: breakWindowEnd.value.trim()
     };
 
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -239,9 +242,15 @@ function updateEmergencyDisplay() {
 function updateBreakWindowStatus() {
     if (!window.TaskitatorEngine) return;
     const badge = document.getElementById('breakWindowStatusBadge');
+    const startStr = breakWindowStart.value.trim();
+    const endStr = breakWindowEnd.value.trim();
     const isOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
 
-    if (isOpen) {
+    if (!startStr || !endStr) {
+        badge.innerHTML = '<span class="tag-chip" style="background: #052e16; color: #86efac; font-weight: 700;">● Unset (Open All Day)</span>';
+        breakWindowStart.disabled = false;
+        breakWindowEnd.disabled = false;
+    } else if (isOpen) {
         badge.innerHTML = '<span class="tag-chip" style="background: #052e16; color: #86efac; font-weight: 700;">● Window Currently Open (Editable)</span>';
         breakWindowStart.disabled = false;
         breakWindowEnd.disabled = false;
@@ -260,6 +269,12 @@ function updateWorkweekNotice() {
     document.getElementById('workweekCalcNotice').textContent =
         `Weekend: ${days[s]} to ${days[e]}. Emergency tokens reset every ${days[resetDay]} at 00:00.`;
 }
+
+document.getElementById('clearBreakWindowBtn').addEventListener('click', () => {
+    breakWindowStart.value = '';
+    breakWindowEnd.value = '';
+    updateBreakWindowStatus();
+});
 
 document.getElementById('toggleKeyVisibilityBtn').addEventListener('click', () => {
     const isPassword = geminiApiKeyInput.type === 'password';
