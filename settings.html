@@ -17,16 +17,11 @@
         .notice-info {
             background: var(--accent-light);
             border: 1px solid var(--border-color);
-            color: var(--primary);
+            color: var(--text-color);
         }
         .notice-warning {
-            background: #fff1f2;
-            border: 1px solid #fecdd3;
-            color: #be123c;
-        }
-        body.dark-mode .notice-warning {
             background: #380d15;
-            border-color: #881337;
+            border: 1px solid #881337;
             color: #fda4af;
         }
         .quota-indicator {
@@ -154,17 +149,6 @@
         <div id="breakWindowStatusBadge" style="margin-top: 8px;"></div>
     </div>
 
-    <!-- Appearance -->
-    <div class="settings-card">
-        <h3 style="margin-top: 0; color: var(--primary);">🎨 Appearance</h3>
-        <div class="form-group">
-            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                <input type="checkbox" id="darkModeToggle">
-                <span style="font-weight: 600;">Enable Dark Theme</span>
-            </label>
-        </div>
-    </div>
-
     <div style="text-align: right; margin-top: 20px;">
         <button class="icon-btn" id="saveAllSettingsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 10px 20px; font-size: 1rem;">Save All Settings</button>
     </div>
@@ -181,7 +165,6 @@ const weekendStartSelect = document.getElementById('weekendStartSelect');
 const weekendEndSelect = document.getElementById('weekendEndSelect');
 const breakWindowStart = document.getElementById('breakWindowStart');
 const breakWindowEnd = document.getElementById('breakWindowEnd');
-const darkModeToggle = document.getElementById('darkModeToggle');
 
 function loadSettings() {
     let settings = {};
@@ -200,9 +183,6 @@ function loadSettings() {
     breakWindowStart.value = settings.break_selection_start || '08:00';
     breakWindowEnd.value = settings.break_selection_end || '09:00';
 
-    darkModeToggle.checked = Boolean(settings.dark_mode);
-    applyTheme(Boolean(settings.dark_mode));
-
     updateEmergencyDisplay();
     updateBreakWindowStatus();
     updateWorkweekNotice();
@@ -216,23 +196,13 @@ function saveSettings() {
         weekend_start: parseInt(weekendStartSelect.value, 10),
         weekend_end: parseInt(weekendEndSelect.value, 10),
         break_selection_start: breakWindowStart.value,
-        break_selection_end: breakWindowEnd.value,
-        dark_mode: darkModeToggle.checked
+        break_selection_end: breakWindowEnd.value
     };
 
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    applyTheme(settings.dark_mode);
     updateBreakWindowStatus();
     updateWorkweekNotice();
     alert('Settings saved successfully.');
-}
-
-function applyTheme(isDark) {
-    if (isDark) {
-        document.body.classList.add('dark-mode');
-    } else {
-        document.body.classList.remove('dark-mode');
-    }
 }
 
 function updateEmergencyDisplay() {
@@ -247,11 +217,11 @@ function updateBreakWindowStatus() {
     const isOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
 
     if (isOpen) {
-        badge.innerHTML = '<span class="tag-chip" style="background: #dcfce7; color: #15803d; font-weight: 700;">● Window Currently Open (Editable)</span>';
+        badge.innerHTML = '<span class="tag-chip" style="background: #052e16; color: #86efac; font-weight: 700;">● Window Currently Open (Editable)</span>';
         breakWindowStart.disabled = false;
         breakWindowEnd.disabled = false;
     } else {
-        badge.innerHTML = '<span class="tag-chip" style="background: #fee2e2; color: #b91c1c; font-weight: 700;">● Window Closed for Today (Locked)</span>';
+        badge.innerHTML = '<span class="tag-chip" style="background: #380d15; color: #fda4af; font-weight: 700;">● Window Closed for Today (Locked)</span>';
         breakWindowStart.disabled = true;
         breakWindowEnd.disabled = true;
     }
@@ -329,20 +299,24 @@ document.getElementById('testWorkerBtn').addEventListener('click', async () => {
     try {
         const pingUrl = `${HARDCODED_WORKER_URL}/?action=status&format=text`;
         const res = await fetch(pingUrl, {
-            headers: { 'Authorization': `Bearer ${passkey}` }
+            method: 'GET',
+            headers: { 
+                'Authorization': `Bearer ${passkey}`
+            }
         });
 
+        const resText = await res.text();
+
         if (res.ok) {
-            const text = await res.text();
             feedback.className = 'notice-banner notice-info';
-            feedback.innerHTML = `<strong>Connected!</strong> Worker response:<br><code>${text}</code>`;
+            feedback.innerHTML = `<strong>Connected!</strong> Worker response:<br><code>${resText}</code>`;
         } else {
             feedback.className = 'notice-banner notice-warning';
-            feedback.textContent = `Worker responded with HTTP ${res.status}`;
+            feedback.textContent = `Worker responded with HTTP ${res.status}: ${resText || res.statusText}`;
         }
     } catch (err) {
         feedback.className = 'notice-banner notice-warning';
-        feedback.textContent = `Sync Ping Failed: ${err.message}`;
+        feedback.innerHTML = `<strong>Sync Ping Failed:</strong> ${err.message}<br><small>Check CORS or worker preflight handling</small>`;
     }
 });
 
