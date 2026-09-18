@@ -7,7 +7,6 @@
     <title>Taskitator - Today</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        /* Scoped elevation for Today view: slightly lighter energetic dark blue */
         :root {
             --bg-color: #0c1b38;
             --card-bg: #142952;
@@ -16,7 +15,6 @@
             --border-hover: #3b6ec2;
         }
 
-        /* Sync Dot Indicator */
         .sync-dot {
             width: 10px;
             height: 10px;
@@ -29,23 +27,22 @@
             transform: scale(1.3);
         }
         .sync-dot.local-only {
-            background-color: #64748b; /* Gray: Local Only */
+            background-color: #64748b;
             box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.25);
         }
         .sync-dot.pending {
-            background-color: #eab308; /* Yellow: Not Synced / Pending */
+            background-color: #eab308;
             box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.3);
         }
         .sync-dot.synced {
-            background-color: #22c55e; /* Green: Synced up to date */
+            background-color: #22c55e;
             box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
         }
         .sync-dot.error {
-            background-color: #ef4444; /* Red: Sync Error / Offline */
+            background-color: #ef4444;
             box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
         }
 
-        /* Sync Legend Items */
         .sync-legend-item {
             display: flex;
             align-items: center;
@@ -57,7 +54,6 @@
             margin-bottom: 8px;
         }
 
-        /* Grace Period Undo Banner */
         .undo-grace-row {
             display: flex;
             align-items: center;
@@ -380,8 +376,8 @@
         <div id="auditCriteriaDisplay" style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 14px; background: var(--card-subtle); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);"></div>
 
         <div class="form-group">
-            <label>Upload Photographic Evidence:</label>
-            <input type="file" id="auditImageInput" accept="image/*" capture="environment">
+            <label>Upload Proof (Photo or PDF &le; 4MB):</label>
+            <input type="file" id="auditImageInput" accept="image/*,application/pdf">
         </div>
 
         <div class="form-group">
@@ -511,7 +507,7 @@ function saveStorageAndPush() {
     }
 }
 
-// Background sync confirmation listener: reload and re-render safely
+// Background sync confirmation listener
 window.addEventListener('taskitator-synced', () => {
     updateSyncDot('synced');
     if (!activeDetailTaskId) {
@@ -526,7 +522,7 @@ window.addEventListener('taskitator-sync-error', () => {
     updateSyncDot('error');
 });
 
-// Click dot to open explanatory information modal
+// Click dot to open explanatory modal
 if (syncStatusDot) {
     syncStatusDot.addEventListener('click', () => {
         syncInfoModal.classList.add('open');
@@ -761,7 +757,6 @@ function renderTaskTree() {
     rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
 }
 
-// Recursive timestamp-synchronized state cascade
 function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
     const target = tasks.find(t => t.id === targetTaskId);
     if (!target) return;
@@ -779,7 +774,6 @@ function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
     cascadeChildren(targetTaskId);
 }
 
-// Start 10-Second Grace Period Timer for Undo
 function startGraceCompletionTimer(taskId) {
     if (pendingGraceCompletions.has(taskId)) {
         const existing = pendingGraceCompletions.get(taskId);
@@ -807,7 +801,6 @@ function startGraceCompletionTimer(taskId) {
     pendingGraceCompletions.set(taskId, { timerId, intervalId, remainingSec: remaining });
 }
 
-// Undo Task Completion within 10-Second Window
 function undoTaskCompletion(taskId) {
     if (pendingGraceCompletions.has(taskId)) {
         const grace = pendingGraceCompletions.get(taskId);
@@ -827,7 +820,6 @@ function handleTaskCompletion(taskId) {
     if (!task) return;
 
     if (task.status === 'completed') {
-        // AI-Locked tasks cannot be unchecked/uncompleted
         if (task.ai_locked && !TaskitatorEngine.EmergencyManager.isBypassActive()) {
             alert('Blocked: AI-checked tasks are permanent and cannot be uncompleted.');
             return;
@@ -850,7 +842,6 @@ function handleTaskCompletion(taskId) {
     renderTaskTree();
 }
 
-// Dedicated Completed List Modal Logic with AI Lock Guard
 const completedModal = document.getElementById('completedModal');
 const openCompletedModalBtn = document.getElementById('openCompletedModalBtn');
 const closeCompletedModalBtn = document.getElementById('closeCompletedModalBtn');
@@ -896,7 +887,6 @@ function renderCompletedModalList() {
 
         const actionContainer = document.createElement('div');
 
-        // Phase 5: AI-locked tasks cannot be uncompleted unless emergency bypass is active
         if (task.ai_locked && !isBypassActive) {
             const lockedBtn = document.createElement('span');
             lockedBtn.className = 'ai-locked-btn';
@@ -1130,7 +1120,7 @@ const submitProofBtn = document.getElementById('submitProofBtn');
 function openAuditModal(task) {
     pendingAuditTaskId = task.id;
     auditTaskTitle.textContent = task.title;
-    auditCriteria.innerHTML = `<strong>Required Criteria &lt;PC&gt;:</strong> ${task.proof_criteria || 'General photographic confirmation of task completion.'}`;
+    auditCriteria.innerHTML = `<strong>Required Criteria &lt;PC&gt;:</strong> ${task.proof_criteria || 'General confirmation of task completion.'}`;
     auditImage.value = '';
     auditContext.value = '';
     auditFeedback.style.display = 'none';
@@ -1151,7 +1141,14 @@ submitProofBtn.addEventListener('click', async () => {
 
     const file = auditImage.files[0];
     if (!file) {
-        alert('Please attach an evidence photo.');
+        alert('Please attach an evidence photo or PDF document.');
+        return;
+    }
+
+    // Pre-flight file validation (format + size limit)
+    const check = TaskitatorEngine.AuditEngine.validateFile(file);
+    if (!check.valid) {
+        alert(check.error);
         return;
     }
 
@@ -1160,7 +1157,7 @@ submitProofBtn.addEventListener('click', async () => {
     auditFeedback.style.display = 'none';
 
     const result = await TaskitatorEngine.AuditEngine.verifyProof({
-        imageFile: file,
+        file: file,
         taskTitle: task.title,
         criteria: task.proof_criteria,
         userContext: auditContext.value.trim()
@@ -1177,7 +1174,6 @@ submitProofBtn.addEventListener('click', async () => {
 
     if (result.approved) {
         task.verified_model = result.model_used;
-        // Phase 5: Completes parent and its entire descendant bloodline permanently (no 10s undo window)
         cascadeTaskStatus(pendingAuditTaskId, 'completed', new Date().toISOString());
         saveStorageAndPush();
         auditModal.classList.remove('open');
