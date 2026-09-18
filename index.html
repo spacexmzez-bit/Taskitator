@@ -89,6 +89,35 @@
             border-radius: 6px;
             white-space: nowrap;
         }
+        .nav-link-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 8px;
+            padding: 5px 10px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.15s ease;
+        }
+        .nav-link-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: var(--card-subtle);
+        }
+        .completed-item-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+        }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-3px); }
             to { opacity: 1; transform: translateY(0); }
@@ -118,6 +147,9 @@
             <h2 style="margin: 0; font-size: 1.25rem;">Today's Focus</h2>
         </div>
         <div class="nav-right">
+            <!-- Completed List Trigger Button -->
+            <button class="nav-link-btn" id="openCompletedModalBtn" title="View Completed Tasks">✓ Completed</button>
+
             <!-- Sync Dot Indicator -->
             <span class="sync-dot local-only" id="syncStatusDot" title="Click to view Sync Status details"></span>
 
@@ -155,6 +187,19 @@
 
 <!-- Floating Action Button for Root Task -->
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
+
+<!-- Modal: Dedicated Completed List View -->
+<div class="modal-overlay" id="completedModal">
+    <div class="modal-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="margin: 0; color: var(--primary);">✓ Today's Completed Tasks</h3>
+            <button class="icon-btn" id="closeCompletedModalBtn" style="padding: 2px 8px;">✕</button>
+        </div>
+        <div id="completedTasksListContainer" style="max-height: 60vh; overflow-y: auto;">
+            <!-- Rendered Completed Items -->
+        </div>
+    </div>
+</div>
 
 <!-- Modal: Sync Information -->
 <div class="modal-overlay" id="syncInfoModal">
@@ -386,7 +431,6 @@ let pendingAuditTaskId = null;
 let activeDetailTaskId = null;
 let emergencyTimerInterval = null;
 
-// In-Memory 10-Second Grace Period Tracker
 const pendingGraceCompletions = new Map();
 
 const syncStatusDot = document.getElementById('syncStatusDot');
@@ -460,6 +504,7 @@ window.addEventListener('taskitator-synced', () => {
     if (!activeDetailTaskId) {
         loadStorage();
         renderTaskTree();
+        renderCompletedModalList();
     }
 });
 
@@ -503,6 +548,7 @@ document.getElementById('forceSyncFromModalBtn').addEventListener('click', async
             updateSyncDot('synced');
             loadStorage();
             renderTaskTree();
+            renderCompletedModalList();
         } else {
             updateSyncDot('error');
         }
@@ -512,13 +558,11 @@ document.getElementById('forceSyncFromModalBtn').addEventListener('click', async
 });
 
 // =========================================================================
-// Tree Hierarchy Rendering & Scoped Collapsing (Phase 3: Active Tree Filtering)
+// Tree Hierarchy Rendering & Scoped Collapsing
 // =========================================================================
 function isTaskVisuallyActive(task) {
     if (task.status === 'trash') return false;
-    // If active, it is always visible
     if (task.status === 'active') return true;
-    // If completed, only visible if actively in 10-second grace countdown
     if (task.status === 'completed' && pendingGraceCompletions.has(task.id)) return true;
     return false;
 }
@@ -530,7 +574,6 @@ function renderTaskTree() {
     const todayStr = new Date().toISOString().split('T')[0];
     const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
 
-    // Map all tasks (including completed ones for counting badges)
     const allChildrenMap = new Map();
     const visibleChildrenMap = new Map();
 
@@ -538,11 +581,9 @@ function renderTaskTree() {
         if (t.status === 'trash') return;
         const pId = t.parent_id || 'root';
 
-        // Full children map for badge counting
         if (!allChildrenMap.has(pId)) allChildrenMap.set(pId, []);
         allChildrenMap.get(pId).push(t);
 
-        // Filtered visible children map (active or currently within 10s undo grace)
         if (isTaskVisuallyActive(t)) {
             if (!visibleChildrenMap.has(pId)) visibleChildrenMap.set(pId, []);
             visibleChildrenMap.get(pId).push(t);
@@ -556,7 +597,6 @@ function renderTaskTree() {
         return kids.some(k => belongsToToday(k));
     }
 
-    // Root tasks must belong to today AND be visually active (or have visually active descendants)
     function hasVisibleDescendant(taskId) {
         const kids = visibleChildrenMap.get(taskId) || [];
         if (kids.length > 0) return true;
@@ -579,7 +619,6 @@ function renderTaskTree() {
         const isDone = task.status === 'completed';
         li.className = `task-node ${isDone ? 'completed' : ''}`;
 
-        // If task is within 10-second grace period, show inline Undo row
         if (pendingGraceCompletions.has(task.id)) {
             const graceInfo = pendingGraceCompletions.get(task.id);
             const graceRow = document.createElement('div');
@@ -655,7 +694,6 @@ function renderTaskTree() {
             main.appendChild(badge);
         }
 
-        // Subtask Counter Pill (Completed / Total)
         if (allChildren.length > 0) {
             const doneKidsCount = allChildren.filter(k => k.status === 'completed').length;
             const countBadge = document.createElement('span');
@@ -695,7 +733,6 @@ function renderTaskTree() {
 
         li.appendChild(row);
 
-        // Only render active/grace visible children into subtree
         if (hasVisibleChildren) {
             const subUl = document.createElement('ul');
             subUl.className = `task-subtree ${isCollapsed ? 'collapsed' : ''}`;
@@ -750,8 +787,8 @@ function startGraceCompletionTimer(taskId) {
     const timerId = setTimeout(() => {
         clearInterval(intervalId);
         pendingGraceCompletions.delete(taskId);
-        // Expiration transitions the task out of the active tree
         renderTaskTree();
+        renderCompletedModalList();
     }, 10000);
 
     pendingGraceCompletions.set(taskId, { timerId, intervalId, remainingSec: remaining });
@@ -769,6 +806,7 @@ function undoTaskCompletion(taskId) {
     cascadeTaskStatus(taskId, 'active', null);
     saveStorageAndPush();
     renderTaskTree();
+    renderCompletedModalList();
 }
 
 function handleTaskCompletion(taskId) {
@@ -779,6 +817,7 @@ function handleTaskCompletion(taskId) {
         cascadeTaskStatus(taskId, 'active', null);
         saveStorageAndPush();
         renderTaskTree();
+        renderCompletedModalList();
         return;
     }
 
@@ -792,6 +831,95 @@ function handleTaskCompletion(taskId) {
     saveStorageAndPush();
     renderTaskTree();
 }
+
+// Phase 4: Dedicated Completed List Modal Logic
+const completedModal = document.getElementById('completedModal');
+const openCompletedModalBtn = document.getElementById('openCompletedModalBtn');
+const closeCompletedModalBtn = document.getElementById('closeCompletedModalBtn');
+const completedTasksListContainer = document.getElementById('completedTasksListContainer');
+
+function renderCompletedModalList() {
+    if (!completedTasksListContainer) return;
+    completedTasksListContainer.innerHTML = '';
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // Filter to items completed today that have expired from the 10s grace undo view
+    const completedList = tasks.filter(t => {
+        if (t.status !== 'completed') return false;
+        if (pendingGraceCompletions.has(t.id)) return false; // Still in active undo view
+        const due = String(t.due_date || 'today').trim().toLowerCase();
+        const compDate = t.completed_at ? t.completed_at.split('T')[0] : '';
+        return due === 'today' || due === todayStr || compDate === todayStr;
+    });
+
+    if (completedList.length === 0) {
+        completedTasksListContainer.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); padding: 24px 0;">
+                No completed tasks for today yet.
+            </div>
+        `;
+        return;
+    }
+
+    completedList.forEach(task => {
+        const row = document.createElement('div');
+        row.className = 'completed-item-row';
+
+        const info = document.createElement('div');
+        info.style.cssText = 'flex: 1; margin-right: 12px;';
+        info.innerHTML = `
+            <div style="font-weight: 600; text-decoration: line-through; color: var(--text-muted);">
+                ${task.title} ${task.ai_locked ? '<span class="ai-badge">🔒 AI</span>' : ''}
+            </div>
+            ${task.completed_at ? `<small style="color: var(--text-muted); font-size: 0.75rem;">Done at: ${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
+        `;
+
+        const actionBtn = document.createElement('button');
+        actionBtn.className = 'icon-btn';
+        actionBtn.style.padding = '4px 10px';
+        actionBtn.style.fontSize = '0.8rem';
+        actionBtn.innerHTML = '↺ Uncomplete';
+
+        // Wire uncomplete action
+        actionBtn.addEventListener('click', () => {
+            uncompleteFromModal(task.id);
+        });
+
+        row.appendChild(info);
+        row.appendChild(actionBtn);
+        completedTasksListContainer.appendChild(row);
+    });
+}
+
+function uncompleteFromModal(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    // If parent is missing or trashed, detach parent_id to avoid ghosting
+    if (task.parent_id) {
+        const parent = tasks.find(t => t.id === task.parent_id);
+        if (!parent || parent.status === 'trash') {
+            task.parent_id = null;
+        }
+    }
+
+    task.status = 'active';
+    task.completed_at = null;
+
+    saveStorageAndPush();
+    renderTaskTree();
+    renderCompletedModalList();
+}
+
+openCompletedModalBtn.addEventListener('click', () => {
+    renderCompletedModalList();
+    completedModal.classList.add('open');
+});
+
+closeCompletedModalBtn.addEventListener('click', () => {
+    completedModal.classList.remove('open');
+});
 
 function deleteTask(taskId) {
     const task = tasks.find(t => t.id === taskId);
@@ -811,6 +939,7 @@ function deleteTask(taskId) {
         markTrash(taskId);
         saveStorageAndPush();
         renderTaskTree();
+        renderCompletedModalList();
     }
 }
 
@@ -935,6 +1064,7 @@ document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
     taskDetailModal.classList.remove('open');
     activeDetailTaskId = null;
     renderTaskTree();
+    renderCompletedModalList();
 });
 
 deleteFromDetailBtn.addEventListener('click', () => {
@@ -1019,6 +1149,7 @@ submitProofBtn.addEventListener('click', async () => {
         auditModal.classList.remove('open');
         pendingAuditTaskId = null;
         renderTaskTree();
+        renderCompletedModalList();
     } else {
         submitProofBtn.disabled = false;
         submitProofBtn.textContent = 'Retry Submission';
@@ -1295,6 +1426,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!activeDetailTaskId) {
                 loadStorage();
                 renderTaskTree();
+                renderCompletedModalList();
             }
         });
     }
