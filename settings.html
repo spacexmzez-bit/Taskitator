@@ -35,6 +35,26 @@
             border: 1px solid var(--border-color);
             margin-top: 6px;
         }
+        .account-session-box {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            padding: 12px 14px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .security-notice {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+            margin-top: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 8px 10px;
+            border-radius: 6px;
+            border-left: 3px solid var(--primary);
+        }
     </style>
 </head>
 <body>
@@ -78,22 +98,44 @@
         <div id="geminiTestFeedback" class="notice-banner"></div>
     </div>
 
-    <!-- Sync Configuration -->
+    <!-- Sync Configuration (Zero-Knowledge Username & Password) -->
     <div class="settings-card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <h3 style="margin: 0; color: var(--primary);">🌐 Sync Configuration</h3>
+            <h3 style="margin: 0; color: var(--primary);">🌐 Cloud Sync & Account</h3>
             <span id="syncWordBadge" class="sync-badge-word local-only">Local Only</span>
         </div>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Connects your app to your online storage to keep tasks backed up and synchronized across your devices. Enter your secret passkey to link your account.
+            Synchronizes tasks across devices via zero-knowledge client-side hashing. Passwords are never sent or stored in plaintext.
         </p>
-        <div class="form-group">
-            <label for="workerPasskey">Secret Passkey</label>
-            <input type="password" id="workerPasskey" placeholder="Enter your secret passkey">
+
+        <!-- Active Session Status (Visible when logged in) -->
+        <div id="activeSessionBox" class="account-session-box" style="display: none;">
+            <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Signed in as:</div>
+                <strong id="activeUsernameDisplay" style="color: var(--primary); font-size: 0.95rem;"></strong>
+            </div>
+            <button type="button" class="icon-btn" id="openLogoutModalBtn" style="color: var(--danger); border-color: #881337;">Log Out</button>
         </div>
-        <div style="display: flex; gap: 10px;">
-            <button class="icon-btn" id="testWorkerBtn">Test Connection</button>
+
+        <!-- Credential Input Fields -->
+        <div id="credentialInputsContainer">
+            <div class="form-group">
+                <label for="workerUsername">Username</label>
+                <input type="text" id="workerUsername" placeholder="Enter username" autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="workerPassword">Password</label>
+                <input type="password" id="workerPassword" placeholder="Enter password" autocomplete="current-password">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 6px;">
+                <button class="icon-btn" id="togglePasswordVisibilityBtn">Show Password</button>
+                <button class="icon-btn" id="testWorkerBtn">Test Connection</button>
+            </div>
+            <div class="security-notice">
+                🔒 <strong>Zero-Knowledge Security:</strong> Your password is converted into an irreversible SHA-256 token inside your browser before transmission. Never reuse primary email or banking passwords.
+            </div>
         </div>
+
         <div id="workerTestFeedback" class="notice-banner"></div>
     </div>
 
@@ -160,6 +202,21 @@
     </div>
 </div>
 
+<!-- Modal: Logout / Local-Only Warning -->
+<div class="modal-overlay" id="logoutConfirmModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0; color: var(--danger);">⚠️ Switch to Local-Only Mode?</h3>
+        <p style="font-size: 0.85rem; line-height: 1.5; color: var(--text-color);">
+            Logging out will disconnect your device from cloud backups.<br><br>
+            <strong>Warning:</strong> In Local-Only mode, tasks exist <em>only</em> inside this browser's temporary storage. If you clear site cookies, clear browser cache, or change devices, <strong>all your tasks will be permanently lost</strong>.
+        </p>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button type="button" class="icon-btn" id="cancelLogoutBtn">Cancel</button>
+            <button type="button" class="icon-btn" id="confirmLogoutBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 600;">Log Out to Local-Only</button>
+        </div>
+    </div>
+</div>
+
 <script src="audit-engine.js"></script>
 <script src="sync-engine.js"></script>
 <script>
@@ -167,22 +224,31 @@ const HARDCODED_WORKER_URL = 'https://taskitator-sync.spacexmzez.workers.dev';
 const SETTINGS_KEY = 'taskitator_settings';
 
 const geminiApiKeyInput = document.getElementById('geminiApiKey');
-const workerPasskeyInput = document.getElementById('workerPasskey');
+const workerUsernameInput = document.getElementById('workerUsername');
+const workerPasswordInput = document.getElementById('workerPassword');
+const activeSessionBox = document.getElementById('activeSessionBox');
+const activeUsernameDisplay = document.getElementById('activeUsernameDisplay');
 const weekendStartSelect = document.getElementById('weekendStartSelect');
 const weekendEndSelect = document.getElementById('weekendEndSelect');
 const breakWindowStart = document.getElementById('breakWindowStart');
 const breakWindowEnd = document.getElementById('breakWindowEnd');
 const syncWordBadge = document.getElementById('syncWordBadge');
+const logoutConfirmModal = document.getElementById('logoutConfirmModal');
 
 function refreshSyncWordStatus() {
     if (!syncWordBadge) return;
-    const passkey = workerPasskeyInput.value.trim();
-    if (!passkey) {
+    const isConfigured = window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured();
+
+    if (!isConfigured) {
         syncWordBadge.className = 'sync-badge-word local-only';
         syncWordBadge.textContent = 'Local Only';
+        activeSessionBox.style.display = 'none';
     } else {
+        const config = SyncEngine.getConfig();
         syncWordBadge.className = 'sync-badge-word synced';
         syncWordBadge.textContent = 'Synced';
+        activeSessionBox.style.display = 'flex';
+        activeUsernameDisplay.textContent = `@${config.username}`;
     }
 }
 
@@ -195,7 +261,8 @@ function loadSettings() {
     }
 
     geminiApiKeyInput.value = settings.gemini_api_key || '';
-    workerPasskeyInput.value = settings.worker_passkey || '';
+    workerUsernameInput.value = settings.worker_username || '';
+    workerPasswordInput.value = ''; // Never preserve plaintext password in UI input
 
     weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
     weekendEndSelect.value = settings.weekend_end !== undefined ? settings.weekend_end : '6';
@@ -209,16 +276,34 @@ function loadSettings() {
     updateWorkweekNotice();
 }
 
-function saveSettings() {
-    const settings = {
-        gemini_api_key: geminiApiKeyInput.value.trim(),
-        worker_url: HARDCODED_WORKER_URL,
-        worker_passkey: workerPasskeyInput.value.trim(),
-        weekend_start: parseInt(weekendStartSelect.value, 10),
-        weekend_end: parseInt(weekendEndSelect.value, 10),
-        break_selection_start: breakWindowStart.value.trim(),
-        break_selection_end: breakWindowEnd.value.trim()
-    };
+async function saveSettings() {
+    let settings = {};
+    try {
+        settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    } catch (e) {
+        settings = {};
+    }
+
+    settings.gemini_api_key = geminiApiKeyInput.value.trim();
+    settings.worker_url = HARDCODED_WORKER_URL;
+    settings.weekend_start = parseInt(weekendStartSelect.value, 10);
+    settings.weekend_end = parseInt(weekendEndSelect.value, 10);
+    settings.break_selection_start = breakWindowStart.value.trim();
+    settings.break_selection_end = breakWindowEnd.value.trim();
+
+    const username = workerUsernameInput.value.trim().toLowerCase();
+    const password = workerPasswordInput.value.trim();
+
+    // If both username and password provided, derive zero-knowledge hash
+    if (username && password) {
+        const tokenHash = await SyncEngine.hashCredentials(username, password);
+        settings.worker_username = username;
+        settings.worker_passkey = tokenHash;
+        workerPasswordInput.value = ''; // Immediately wipe plaintext password from input
+    } else if (username && !password && !settings.worker_passkey) {
+        alert('Please enter a password to connect your account.');
+        return;
+    }
 
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     
@@ -286,6 +371,12 @@ document.getElementById('toggleKeyVisibilityBtn').addEventListener('click', () =
     document.getElementById('toggleKeyVisibilityBtn').textContent = isPassword ? 'Hide Key' : 'Show Key';
 });
 
+document.getElementById('togglePasswordVisibilityBtn').addEventListener('click', () => {
+    const isPassword = workerPasswordInput.type === 'password';
+    workerPasswordInput.type = isPassword ? 'text' : 'password';
+    document.getElementById('togglePasswordVisibilityBtn').textContent = isPassword ? 'Hide Password' : 'Show Password';
+});
+
 // Test Gemini API with gemini-3.5-flash-lite
 document.getElementById('testGeminiBtn').addEventListener('click', async () => {
     const key = geminiApiKeyInput.value.trim();
@@ -325,15 +416,23 @@ document.getElementById('testGeminiBtn').addEventListener('click', async () => {
     }
 });
 
-// Test Worker Sync with the active worker URL
+// Test Worker Sync with Zero-Knowledge Hash Token
 document.getElementById('testWorkerBtn').addEventListener('click', async () => {
-    const passkey = workerPasskeyInput.value.trim();
+    const username = workerUsernameInput.value.trim().toLowerCase();
+    const password = workerPasswordInput.value.trim();
     const feedback = document.getElementById('workerTestFeedback');
     feedback.style.display = 'block';
 
-    if (!passkey) {
+    let token = '';
+    const config = SyncEngine.getConfig();
+
+    if (username && password) {
+        token = await SyncEngine.hashCredentials(username, password);
+    } else if (config.username && config.secret) {
+        token = config.secret;
+    } else {
         feedback.className = 'notice-banner notice-warning';
-        feedback.textContent = 'Enter your passkey first.';
+        feedback.textContent = 'Please provide both username and password to test connection.';
         return;
     }
 
@@ -345,7 +444,8 @@ document.getElementById('testWorkerBtn').addEventListener('click', async () => {
         const res = await fetch(pingUrl, {
             method: 'GET',
             headers: { 
-                'Authorization': `Bearer ${passkey}`
+                'Authorization': `Bearer ${token}`,
+                'X-Taskitator-User': username || config.username
             }
         });
 
@@ -368,6 +468,24 @@ document.getElementById('testWorkerBtn').addEventListener('click', async () => {
         syncWordBadge.className = 'sync-badge-word error';
         syncWordBadge.textContent = 'Error';
     }
+});
+
+// Logout / Local-Only Modal Handlers
+document.getElementById('openLogoutModalBtn').addEventListener('click', () => {
+    logoutConfirmModal.classList.add('open');
+});
+
+document.getElementById('cancelLogoutBtn').addEventListener('click', () => {
+    logoutConfirmModal.classList.remove('open');
+});
+
+document.getElementById('confirmLogoutBtn').addEventListener('click', () => {
+    SyncEngine.logout();
+    workerPasswordInput.value = '';
+    workerUsernameInput.value = '';
+    logoutConfirmModal.classList.remove('open');
+    refreshSyncWordStatus();
+    alert('Logged out. Taskitator is now running in Local-Only mode.');
 });
 
 // Sidebar Drawer
