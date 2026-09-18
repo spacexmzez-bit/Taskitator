@@ -459,7 +459,11 @@ async function saveSettings(silent = false) {
         if (typeof SyncEngine.markLocalModified === 'function') {
             SyncEngine.markLocalModified();
         }
-        await SyncEngine.forceImmediateSync();
+        // Retrieve current breaks snapshot to avoid clearing breaks on worker
+        const todayBreaks = window.TaskitatorEngine && TaskitatorEngine.BreakEngine 
+            ? TaskitatorEngine.BreakEngine.getTodayBreaks() 
+            : [];
+        await SyncEngine.forceImmediateSync({ today_breaks: todayBreaks });
     }
 
     refreshSyncWordStatus();
