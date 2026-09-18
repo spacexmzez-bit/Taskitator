@@ -405,7 +405,7 @@ function renderGeneralTaskTree() {
     rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
 }
 
-// Cascading completion logic: Parent completes all descendants; Child completion does NOT affect parent
+// Phase 1 Model Transition: Recursive timestamp-synchronized state cascade
 function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
     const target = tasks.find(t => t.id === targetTaskId);
     if (!target) return;
@@ -413,7 +413,6 @@ function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
     target.status = newStatus;
     target.completed_at = timestamp;
 
-    // Recursively apply status down the whole subtree
     function cascadeChildren(parentId) {
         tasks.filter(t => t.parent_id === parentId && t.status !== 'trash').forEach(child => {
             child.status = newStatus;
@@ -429,7 +428,6 @@ function handleTaskCompletion(taskId) {
     if (!task) return;
 
     if (task.status === 'completed') {
-        // Uncheck parent: reactivates parent and all its descendants
         cascadeTaskStatus(taskId, 'active', null);
         saveStorageAndPush();
         renderGeneralTaskTree();
@@ -441,7 +439,6 @@ function handleTaskCompletion(taskId) {
         return;
     }
 
-    // Check parent: completes parent and all its descendants
     cascadeTaskStatus(taskId, 'completed', new Date().toISOString());
     saveStorageAndPush();
     renderGeneralTaskTree();
@@ -827,7 +824,8 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
         due_date: dueDate,
         ai_locked: isAi,
         proof_criteria: isAi ? criteria : '',
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        completed_at: null
     };
     tasks.push(newTask);
 
@@ -845,7 +843,8 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
                 due_date: '',
                 ai_locked: false,
                 proof_criteria: '',
-                created_at: new Date().toISOString()
+                created_at: new Date().toISOString(),
+                completed_at: null
             });
         }
     });
