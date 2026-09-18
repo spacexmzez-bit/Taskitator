@@ -35,6 +35,33 @@
             border: 1px solid var(--border-color);
             margin-top: 6px;
         }
+        /* Full Word Sync Badge */
+        .sync-badge-word {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 12px;
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            text-transform: capitalize;
+        }
+        .sync-badge-word.local-only {
+            border-color: #475569;
+            color: #94a3b8;
+        }
+        .sync-badge-word.pending {
+            border-color: #854d0e;
+            color: #facc15;
+            background: #422006;
+        }
+        .sync-badge-word.synced {
+            border-color: #166534;
+            color: #4ade80;
+            background: #052e16;
+        }
     </style>
 </head>
 <body>
@@ -65,7 +92,7 @@
     <div class="settings-card">
         <h3 style="margin-top: 0; color: var(--primary);">🤖 Gemini AI Verification (BYOK)</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Audits task evidence using a 2-tier cascade: <strong>gemini-3.5-flash-lite</strong> as primary, automatically falling back to <strong>gemini-3.1-flash-lite</strong> on RPD limits.
+            Audits task evidence using a 2-tier cascade: <strong>gemini-3.5-flash-lite</strong> as primary[span_0](start_span)[span_0](end_span), automatically falling back to <strong>gemini-3.1-flash-lite</strong> on RPD limits[span_1](start_span)[span_1](end_span).
         </p>
         <div class="form-group">
             <label for="geminiApiKey">Google AI Studio API Key</label>
@@ -80,7 +107,10 @@
 
     <!-- Universal Cloudflare Worker Passkey Bridge -->
     <div class="settings-card">
-        <h3 style="margin-top: 0; color: var(--primary);">🌐 MacroDroid Automation Bridge</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h3 style="margin: 0; color: var(--primary);">🌐 MacroDroid Automation Bridge</h3>
+            <span id="syncWordBadge" class="sync-badge-word local-only">Local Only</span>
+        </div>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
             Enforces hardware lock contracts on your device. Enter your secret passkey to authenticate sync with the universal bridge.
         </p>
@@ -165,6 +195,19 @@ const weekendStartSelect = document.getElementById('weekendStartSelect');
 const weekendEndSelect = document.getElementById('weekendEndSelect');
 const breakWindowStart = document.getElementById('breakWindowStart');
 const breakWindowEnd = document.getElementById('breakWindowEnd');
+const syncWordBadge = document.getElementById('syncWordBadge');
+
+function refreshSyncWordStatus() {
+    if (!syncWordBadge) return;
+    const passkey = workerPasskeyInput.value.trim();
+    if (!passkey) {
+        syncWordBadge.className = 'sync-badge-word local-only';
+        syncWordBadge.textContent = 'Local Only';
+    } else {
+        syncWordBadge.className = 'sync-badge-word synced';
+        syncWordBadge.textContent = 'Synced';
+    }
+}
 
 function loadSettings() {
     let settings = {};
@@ -183,6 +226,7 @@ function loadSettings() {
     breakWindowStart.value = settings.break_selection_start || '08:00';
     breakWindowEnd.value = settings.break_selection_end || '09:00';
 
+    refreshSyncWordStatus();
     updateEmergencyDisplay();
     updateBreakWindowStatus();
     updateWorkweekNotice();
@@ -200,6 +244,7 @@ function saveSettings() {
     };
 
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    refreshSyncWordStatus();
     updateBreakWindowStatus();
     updateWorkweekNotice();
     alert('Settings saved successfully.');
@@ -310,13 +355,19 @@ document.getElementById('testWorkerBtn').addEventListener('click', async () => {
         if (res.ok) {
             feedback.className = 'notice-banner notice-info';
             feedback.innerHTML = `<strong>Connected!</strong> Worker response:<br><code>${resText}</code>`;
+            syncWordBadge.className = 'sync-badge-word synced';
+            syncWordBadge.textContent = 'Synced';
         } else {
             feedback.className = 'notice-banner notice-warning';
             feedback.textContent = `Worker responded with HTTP ${res.status}: ${resText || res.statusText}`;
+            syncWordBadge.className = 'sync-badge-word pending';
+            syncWordBadge.textContent = 'Not Synced';
         }
     } catch (err) {
         feedback.className = 'notice-banner notice-warning';
         feedback.innerHTML = `<strong>Sync Ping Failed:</strong> ${err.message}<br><small>Check CORS or worker preflight handling</small>`;
+        syncWordBadge.className = 'sync-badge-word pending';
+        syncWordBadge.textContent = 'Error';
     }
 });
 
