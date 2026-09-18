@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="style.css">
     <style>
         .guide-container {
-            max-width: 720px;
+            max-width: 740px;
             margin: 0 auto;
             padding: 16px;
         }
@@ -77,28 +77,207 @@
             padding: 16px;
             margin-top: 16px;
         }
-        .code-box {
-            background: rgba(0, 0, 0, 0.4);
-            border: 1px solid var(--border-color, #334155);
-            border-radius: 8px;
-            padding: 12px;
-            font-family: monospace;
-            font-size: 0.85rem;
-            color: #93c5fd;
-            overflow-x: auto;
-            margin: 10px 0;
-        }
         .back-nav {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            color: var(--text-muted);
+            color: var(--text-muted, #94a3b8);
             text-decoration: none;
             font-size: 0.9rem;
             margin-bottom: 16px;
         }
         .back-nav:hover {
-            color: var(--primary);
+            color: var(--primary, #3b82f6);
+        }
+
+        /* --- Phase 2 Sequential Engine Styles --- */
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+            color: var(--text-muted, #94a3b8);
+        }
+        .progress-bar-bg {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color, #334155);
+            border-radius: 999px;
+            height: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        .progress-bar-fill {
+            background: #10b981;
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .reset-link {
+            background: none;
+            border: none;
+            color: var(--text-muted, #94a3b8);
+            font-size: 0.75rem;
+            cursor: pointer;
+            text-decoration: underline;
+            padding: 0;
+        }
+        .reset-link:hover { color: #fda4af; }
+
+        .major-block {
+            border: 1px solid var(--border-color, #334155);
+            border-radius: 10px;
+            margin-bottom: 14px;
+            background: rgba(255, 255, 255, 0.015);
+            overflow: hidden;
+        }
+        .major-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: rgba(0, 0, 0, 0.2);
+            cursor: pointer;
+            user-select: none;
+            border-bottom: 1px solid transparent;
+        }
+        .major-block.open .major-header {
+            border-bottom-color: var(--border-color, #334155);
+            background: rgba(0, 0, 0, 0.35);
+        }
+        .major-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .major-badge {
+            background: var(--border-color, #334155);
+            color: #fff;
+            font-size: 0.75rem;
+            padding: 2px 7px;
+            border-radius: 4px;
+        }
+        .major-status {
+            font-size: 0.8rem;
+            color: var(--text-muted, #94a3b8);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .major-status.done { color: #10b981; font-weight: 600; }
+
+        .major-body {
+            display: none;
+            padding: 14px;
+        }
+        .major-block.open .major-body {
+            display: block;
+        }
+
+        .minor-block {
+            border: 1px solid var(--border-color, #334155);
+            border-radius: 8px;
+            margin-bottom: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+        .minor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .minor-header:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+        .minor-title-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: #cbd5e1;
+        }
+        .minor-arrow {
+            display: inline-block;
+            transition: transform 0.2s ease;
+            font-size: 0.75rem;
+            color: var(--text-muted, #94a3b8);
+        }
+        .minor-block.open .minor-arrow {
+            transform: rotate(90deg);
+            color: var(--primary, #3b82f6);
+        }
+        .minor-status {
+            font-size: 0.75rem;
+            color: var(--text-muted, #94a3b8);
+        }
+        .minor-status.done { color: #10b981; font-weight: bold; }
+
+        .minor-body {
+            display: none;
+            padding: 12px 14px 16px 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .minor-block.open .minor-body {
+            display: block;
+        }
+
+        .minor-desc {
+            font-size: 0.82rem;
+            color: var(--text-muted, #94a3b8);
+            line-height: 1.5;
+            margin: 0 0 10px 0;
+        }
+
+        .sub-checklist {
+            list-style: none;
+            padding: 0;
+            margin: 12px 0 0 0;
+        }
+        .sub-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 0.83rem;
+            line-height: 1.4;
+            background: rgba(255, 255, 255, 0.02);
+            margin-bottom: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .sub-item input[type="checkbox"] {
+            margin-top: 2px;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: #10b981;
+        }
+        .sub-label {
+            cursor: pointer;
+            flex: 1;
+        }
+        .sub-item.checked {
+            background: rgba(16, 185, 129, 0.05);
+            border-color: rgba(16, 185, 129, 0.2);
+        }
+        .sub-item.checked .sub-label {
+            text-decoration: line-through;
+            color: var(--text-muted, #94a3b8);
+        }
+        .hash-tag {
+            background: #e11d48;
+            color: #fff;
+            font-weight: 700;
+            font-size: 0.72rem;
+            padding: 1px 5px;
+            border-radius: 4px;
+            margin-right: 6px;
         }
     </style>
 </head>
@@ -188,52 +367,669 @@
         </p>
     </div>
 
-    <!-- PHASE 2: Cloud Bridge Macro -->
+    <!-- PHASE 2: Cloud Bridge Macro (Interactive Sequential Engine) -->
     <div class="step-card">
         <span class="step-badge">Phase 2: Macro 2</span>
         <h2 style="margin: 4px 0 10px 0; font-size: 1.2rem;">Building the Cloud Bridge</h2>
-        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
-            This macro monitors your Taskitator account status in the background and automatically enables or disables the <strong>App Blocker</strong> macro.
+        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 16px;">
+            This macro monitors your Taskitator status in the background and automatically toggles the <strong>App Blocker</strong> macro on or off. Complete the checkpoints below.
         </p>
-        
-        <ol style="font-size: 0.85rem; color: var(--text-color); line-height: 1.6; padding-left: 20px;">
-            <li>Create a second macro and name it: <code>Taskitator Cloud Bridge</code>.</li>
-            <li>Expand the <strong>Local Variables</strong> drawer at the bottom &rarr; tap <strong>+</strong> &rarr; Name: <code>http_response</code> (Type: <strong>String</strong>).</li>
-            <li>Add 3 <strong>Triggers</strong> (Red card):
-                <ul>
-                    <li><strong>Date/Time &rarr; Regular Interval:</strong> Set to <code>5 Minutes</code>.</li>
-                    <li><strong>Device Events &rarr; Screen On / Screen Unlocked:</strong> Select <code>Screen Unlocked</code>.</li>
-                    <li><strong>Connectivity &rarr; Network Connected:</strong> Select <code>Any Network</code>.</li>
-                </ul>
-            </li>
-            <li>Add the <strong>HTTP Request</strong> Action (Blue card):
-                <ul>
-                    <li>Tap <strong>+</strong> &rarr; <strong>Web / HTTP</strong> &rarr; <strong>HTTP Request</strong>.</li>
-                    <li>Request Type: <code>GET</code>.</li>
-                    <li>URL: Copy directly from the <a href="settings.html" style="color: var(--primary);">Settings</a> page.</li>
-                    <li>Add Header: <code>Authorization</code> &rarr; Value: <code>Bearer &lt;your_copied_token&gt;</code>.</li>
-                    <li>Check <strong>Block next actions until complete</strong>.</li>
-                    <li>Check <strong>Save HTTP response to string variable</strong> &rarr; pick <code>http_response</code>.</li>
-                </ul>
-            </li>
-            <li>Add Conditional Branching:
-                <div class="visual-tree">
-                    ▼ If (http_response contains "device_unlocked = true")<br>
-                    &nbsp;&nbsp;&nbsp;&nbsp;► MacroDroid Specific &rarr; Macro Enable/Disable &rarr; Disable [App Blocker]<br>
-                    ▼ Else<br>
-                    &nbsp;&nbsp;&nbsp;&nbsp;► MacroDroid Specific &rarr; Macro Enable/Disable &rarr; Enable [App Blocker]<br>
-                    ▲ End If
+
+        <!-- Progress Tracker -->
+        <div class="progress-header">
+            <span>Progress: <strong id="p2-step-count" style="color: var(--text-color);">0 / 26</strong> sub-steps completed</span>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <span id="p2-percent-text" style="font-weight: 600;">0%</span>
+                <button class="reset-link" onclick="resetPhase2Progress()">Reset</button>
+            </div>
+        </div>
+        <div class="progress-bar-bg">
+            <div id="p2-progress-fill" class="progress-bar-fill"></div>
+        </div>
+
+        <!-- ==================== MAJOR STEP 1 ==================== -->
+        <div class="major-block" id="major-1">
+            <div class="major-header" onclick="toggleMajor(1)">
+                <span class="major-title"><span class="major-badge">Step 1</span> Global Variable Setup</span>
+                <span class="major-status" id="status-major-1">0/3</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S1 -->
+                <div class="minor-block" id="minor-1">
+                    <div class="minor-header" onclick="toggleMinor(1)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.1 Open Global Variables</span>
+                        <span class="minor-status" id="status-minor-1">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Access MacroDroid's global variable storage from the main menu.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S1.png" alt="Global Variables Tile" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S1: Main menu global variables tile</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-1">
+                                <input type="checkbox" id="sub-1" onchange="toggleSub('sub-1')">
+                                <label class="sub-label" for="sub-1"><span class="hash-tag">#1</span> Tap the <strong>Global Variables</strong> tile on the MacroDroid main dashboard.</label>
+                            </li>
+                        </ul>
+                    </div>
                 </div>
-            </li>
-        </ol>
+
+                <!-- Minor S2 -->
+                <div class="minor-block" id="minor-2">
+                    <div class="minor-header" onclick="toggleMinor(2)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.2 Define http_response Variable</span>
+                        <span class="minor-status" id="status-minor-2">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Create a dedicated string variable to hold Taskitator's lock status response text.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S2.png" alt="Create New Variable" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S2: Enter variable name and set type to String</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-2">
+                                <input type="checkbox" id="sub-2" onchange="toggleSub('sub-2')">
+                                <label class="sub-label" for="sub-2"><span class="hash-tag">#2</span> In the variable name field, type exactly <code>http_response</code>.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-3">
+                                <input type="checkbox" id="sub-3" onchange="toggleSub('sub-3')">
+                                <label class="sub-label" for="sub-3"><span class="hash-tag">#3</span> Tap Variable Type, select <strong>String</strong>, and tap <strong>OK</strong>.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== MAJOR STEP 2 ==================== -->
+        <div class="major-block" id="major-2">
+            <div class="major-header" onclick="toggleMajor(2)">
+                <span class="major-title"><span class="major-badge">Step 2</span> Cloud Bridge Triggers</span>
+                <span class="major-status" id="status-major-2">0/3</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S3 -->
+                <div class="minor-block" id="minor-3">
+                    <div class="minor-header" onclick="toggleMinor(3)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.1 Set 5-Minute Regular Interval</span>
+                        <span class="minor-status" id="status-minor-3">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Configure the polling interval so MacroDroid repeatedly checks the task server in the background.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S3.png" alt="Regular Interval Trigger Dialog" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S3: Configure 5 minutes regular interval</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-4">
+                                <input type="checkbox" id="sub-4" onchange="toggleSub('sub-4')">
+                                <label class="sub-label" for="sub-4"><span class="hash-tag">#4</span> Under Date/Time &rarr; Regular Interval, set <strong>Minutes</strong> to <code>5</code> (Hours 0, Seconds 0) and tap OK.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S4 -->
+                <div class="minor-block" id="minor-4">
+                    <div class="minor-header" onclick="toggleMinor(4)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.2 Verify Triggers & Add Actions</span>
+                        <span class="minor-status" id="status-minor-4">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Confirm trigger configuration and proceed to the macro action sequence.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S4.png" alt="Triggers List" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S4: Confirm triggers and tap Actions plus</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-5">
+                                <input type="checkbox" id="sub-5" onchange="toggleSub('sub-5')">
+                                <label class="sub-label" for="sub-5"><span class="hash-tag">#5</span> Verify both <code>Regular Interval (00:05:00)</code> and <code>Screen On</code> appear on the red card.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-6">
+                                <input type="checkbox" id="sub-6" onchange="toggleSub('sub-6')">
+                                <label class="sub-label" for="sub-6"><span class="hash-tag">#6</span> Tap the <strong>+</strong> button on the blue <strong>Actions</strong> card.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== MAJOR STEP 3 ==================== -->
+        <div class="major-block" id="major-3">
+            <div class="major-header" onclick="toggleMajor(3)">
+                <span class="major-title"><span class="major-badge">Step 3</span> Configure HTTP Request</span>
+                <span class="major-status" id="status-major-3">0/4</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S5 -->
+                <div class="minor-block" id="minor-5">
+                    <div class="minor-header" onclick="toggleMinor(5)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 3.1 Select HTTP Request Action</span>
+                        <span class="minor-status" id="status-minor-5">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Locate the web interaction action inside the MacroDroid library.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S5.png" alt="Search HTTP Request" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S5: Search http and pick HTTP Request</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-7">
+                                <input type="checkbox" id="sub-7" onchange="toggleSub('sub-7')">
+                                <label class="sub-label" for="sub-7"><span class="hash-tag">#7</span> Search <code>http</code> and select <strong>HTTP Request</strong> (avoid HTTP Server Response).</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S6 -->
+                <div class="minor-block" id="minor-6">
+                    <div class="minor-header" onclick="toggleMinor(6)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 3.2 Request Method, URL, & Blocking</span>
+                        <span class="minor-status" id="status-minor-6">0/3</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Set up the endpoint details and enforce synchronous execution.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S6.png" alt="HTTP Request Settings" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S6: Set GET, paste URL, and check block until complete</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-8">
+                                <input type="checkbox" id="sub-8" onchange="toggleSub('sub-8')">
+                                <label class="sub-label" for="sub-8"><span class="hash-tag">#8</span> Set Request method to <strong>GET</strong>.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-9">
+                                <input type="checkbox" id="sub-9" onchange="toggleSub('sub-9')">
+                                <label class="sub-label" for="sub-9"><span class="hash-tag">#9</span> In Enter url, paste your Status URL from the Settings page.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-10">
+                                <input type="checkbox" id="sub-10" onchange="toggleSub('sub-10')">
+                                <label class="sub-label" for="sub-10"><span class="hash-tag">#10</span> Check the box <strong>Block next actions until complete</strong>.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== MAJOR STEP 4 ==================== -->
+        <div class="major-block" id="major-4">
+            <div class="major-header" onclick="toggleMajor(4)">
+                <span class="major-title"><span class="major-badge">Step 4</span> Auth Headers & Variable Binding</span>
+                <span class="major-status" id="status-major-4">0/5</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S7 -->
+                <div class="minor-block" id="minor-7">
+                    <div class="minor-header" onclick="toggleMinor(7)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 4.1 Switch to Header Params</span>
+                        <span class="minor-status" id="status-minor-7">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Open the headers configuration tab inside the HTTP Request screen.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S7.png" alt="Header Params Tab" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S7: Tap Header Params tab and click +</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-11">
+                                <input type="checkbox" id="sub-11" onchange="toggleSub('sub-11')">
+                                <label class="sub-label" for="sub-11"><span class="hash-tag">#11</span> Tap the <strong>Header Params</strong> tab at the top right, then tap the floating <strong>+</strong> button.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S8 -->
+                <div class="minor-block" id="minor-8">
+                    <div class="minor-header" onclick="toggleMinor(8)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 4.2 Enter Authorization Header</span>
+                        <span class="minor-status" id="status-minor-8">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Add the Bearer token to authorize requests with your Taskitator sync engine.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S8.png" alt="Add Parameter Dialog" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S8: Enter Parameter Name and Token Value</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-12">
+                                <input type="checkbox" id="sub-12" onchange="toggleSub('sub-12')">
+                                <label class="sub-label" for="sub-12"><span class="hash-tag">#12</span> Parameter Name: type exactly <code>Authorization</code>.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-13">
+                                <input type="checkbox" id="sub-13" onchange="toggleSub('sub-13')">
+                                <label class="sub-label" for="sub-13"><span class="hash-tag">#13</span> Value: enter <code>Bearer &lt;your_token&gt;</code> (copied from Settings), then tap OK.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S9 -->
+                <div class="minor-block" id="minor-9">
+                    <div class="minor-header" onclick="toggleMinor(9)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 4.3 Save Response to Variable</span>
+                        <span class="minor-status" id="status-minor-9">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Capture the HTTP response text into your global variable.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S9.png" alt="Save Response Settings" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S9: Check save to string variable and pick http_response</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-14">
+                                <input type="checkbox" id="sub-14" onchange="toggleSub('sub-14')">
+                                <label class="sub-label" for="sub-14"><span class="hash-tag">#14</span> Return to the <em>Settings</em> tab, scroll down to Response, and select <strong>Save HTTP response in string variable</strong>.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-15">
+                                <input type="checkbox" id="sub-15" onchange="toggleSub('sub-15')">
+                                <label class="sub-label" for="sub-15"><span class="hash-tag">#15</span> Select <code>http_response</code> from the dropdown, then tap the top-right checkmark to save.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== MAJOR STEP 5 ==================== -->
+        <div class="major-block" id="major-5">
+            <div class="major-header" onclick="toggleMajor(5)">
+                <span class="major-title"><span class="major-badge">Step 5</span> If Condition Branching</span>
+                <span class="major-status" id="status-major-5">0/5</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S10 -->
+                <div class="minor-block" id="minor-10">
+                    <div class="minor-header" onclick="toggleMinor(10)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 5.1 Add If Clause Action</span>
+                        <span class="minor-status" id="status-minor-10">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Begin the decision logic structure in the actions list.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S10.png" alt="Select If Clause" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S10: Conditions/Loops &rarr; If clause</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-16">
+                                <input type="checkbox" id="sub-16" onchange="toggleSub('sub-16')">
+                                <label class="sub-label" for="sub-16"><span class="hash-tag">#16</span> Tap <strong>+</strong> on Actions &rarr; Conditions/Loops &rarr; select <strong>If clause</strong>.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S11 -->
+                <div class="minor-block" id="minor-11">
+                    <div class="minor-header" onclick="toggleMinor(11)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 5.2 Add Condition Requirement</span>
+                        <span class="minor-status" id="status-minor-11">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Attach a variable comparison test to the condition statement.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S11.png" alt="If Clause Modal" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S11: Tap plus inside Conditions box</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-17">
+                                <input type="checkbox" id="sub-17" onchange="toggleSub('sub-17')">
+                                <label class="sub-label" for="sub-17"><span class="hash-tag">#17</span> In the If clause dialog, tap the <strong>+</strong> button inside the purple Conditions box.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S12 -->
+                <div class="minor-block" id="minor-12">
+                    <div class="minor-header" onclick="toggleMinor(12)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 5.3 Select MacroDroid Variable</span>
+                        <span class="minor-status" id="status-minor-12">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Choose to test against a saved variable.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S12.png" alt="MacroDroid Variable Condition" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S12: Select MacroDroid Variable</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-18">
+                                <input type="checkbox" id="sub-18" onchange="toggleSub('sub-18')">
+                                <label class="sub-label" for="sub-18"><span class="hash-tag">#18</span> Choose <strong>MacroDroid Specific</strong> &rarr; <strong>MacroDroid Variable</strong>.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S13 -->
+                <div class="minor-block" id="minor-13">
+                    <div class="minor-header" onclick="toggleMinor(13)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 5.4 Evaluate Unlock Condition</span>
+                        <span class="minor-status" id="status-minor-13">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Check if the server explicitly confirmed the device is unlocked.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S13.png" alt="Match Rule Configuration" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S13: Set Contains device_unlocked = true</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-19">
+                                <input type="checkbox" id="sub-19" onchange="toggleSub('sub-19')">
+                                <label class="sub-label" for="sub-19"><span class="hash-tag">#19</span> Select <code>http_response</code> and set condition rule to <strong>Contains</strong>.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-20">
+                                <input type="checkbox" id="sub-20" onchange="toggleSub('sub-20')">
+                                <label class="sub-label" for="sub-20"><span class="hash-tag">#20</span> Enter exact text: <code>device_unlocked = true</code> and tap OK.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== MAJOR STEP 6 ==================== -->
+        <div class="major-block" id="major-6">
+            <div class="major-header" onclick="toggleMajor(6)">
+                <span class="major-title"><span class="major-badge">Step 6</span> Macro Toggling & Action Tree</span>
+                <span class="major-status" id="status-major-6">0/6</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S14 -->
+                <div class="minor-block" id="minor-14">
+                    <div class="minor-header" onclick="toggleMinor(14)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 6.1 Add Else Clause</span>
+                        <span class="minor-status" id="status-minor-14">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Provide the fallback branch for when tasks are unfinished.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S14.png" alt="If Clause Context Menu" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S14: Context menu &rarr; Add else clause</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-21">
+                                <input type="checkbox" id="sub-21" onchange="toggleSub('sub-21')">
+                                <label class="sub-label" for="sub-21"><span class="hash-tag">#21</span> Tap your <code>If</code> condition on the main screen and select <strong>Add else clause</strong>.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S15 -->
+                <div class="minor-block" id="minor-15">
+                    <div class="minor-header" onclick="toggleMinor(15)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 6.2 Create Enable & Disable Actions</span>
+                        <span class="minor-status" id="status-minor-15">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Generate the commands that toggle your App Blocker macro state.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S15.png" alt="Enable Disable Macro Action" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S15: Select Enable/Disable Macro</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-22">
+                                <input type="checkbox" id="sub-22" onchange="toggleSub('sub-22')">
+                                <label class="sub-label" for="sub-22"><span class="hash-tag">#22</span> Tap Actions <strong>+</strong> &rarr; Macros &rarr; <strong>Enable/Disable Macro</strong>. Create two actions: <code>Disable [App Blocker]</code> and <code>Enable [App Blocker]</code>.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S16 -->
+                <div class="minor-block" id="minor-16">
+                    <div class="minor-header" onclick="toggleMinor(16)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 6.3 Enter Reorder Mode</span>
+                        <span class="minor-status" id="status-minor-16">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Reposition newly created actions into their respective If / Else branches.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S16.png" alt="Actions Reorder Button" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S16: Tap the reorder arrows button (&#8645;)</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-23">
+                                <input type="checkbox" id="sub-23" onchange="toggleSub('sub-23')">
+                                <label class="sub-label" for="sub-23"><span class="hash-tag">#23</span> Observe the two new actions initially placed at the bottom of the list.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-24">
+                                <input type="checkbox" id="sub-24" onchange="toggleSub('sub-24')">
+                                <label class="sub-label" for="sub-24"><span class="hash-tag">#24</span> Tap the <strong>Reorder Arrows (⇅)</strong> button in the blue Actions header.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S17 -->
+                <div class="minor-block" id="minor-17">
+                    <div class="minor-header" onclick="toggleMinor(17)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 6.4 Position Actions & Save</span>
+                        <span class="minor-status" id="status-minor-17">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Nest the actions correctly inside the conditions and commit the macro.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S17.png" alt="Final Nested Action Tree" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S17: Final tree hierarchy and commit button</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-25">
+                                <input type="checkbox" id="sub-25" onchange="toggleSub('sub-25')">
+                                <label class="sub-label" for="sub-25"><span class="hash-tag">#25</span> Drag <code>Disable macro [App Blocker]</code> under <code>If</code>, and drag <code>Enable macro [App Blocker]</code> under <code>Else</code>.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-26">
+                                <input type="checkbox" id="sub-26" onchange="toggleSub('sub-26')">
+                                <label class="sub-label" for="sub-26"><span class="hash-tag">#26</span> Tap the bottom-right checkmark button to save your completed Cloud Bridge macro.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
     </div>
 
     <div style="text-align: center; margin: 30px 0;">
-        <a href="settings.html" class="icon-btn" style="text-decoration: none; background: var(--primary); color: #fff; padding: 10px 24px; font-weight: 600;">
+        <a href="settings.html" class="icon-btn" style="text-decoration: none; background: var(--primary); color: #fff; padding: 12px 28px; font-weight: 600; border-radius: 8px;">
             Return to Settings
         </a>
     </div>
 </div>
+
+<script>
+    const TOTAL_SUBS = 26;
+    const STORAGE_KEY = 'taskitator_guide_phase2_progress';
+
+    const STRUCTURE = {
+        major: {
+            1: [1, 2, 3],
+            2: [4, 5, 6],
+            3: [7, 8, 9, 10],
+            4: [11, 12, 13, 14, 15],
+            5: [16, 17, 18, 19, 20],
+            6: [21, 22, 23, 24, 25, 26]
+        },
+        minor: {
+            1: [1],
+            2: [2, 3],
+            3: [4],
+            4: [5, 6],
+            5: [7],
+            6: [8, 9, 10],
+            7: [11],
+            8: [12, 13],
+            9: [14, 15],
+            10: [16],
+            11: [17],
+            12: [18],
+            13: [19, 20],
+            14: [21],
+            15: [22],
+            16: [23, 24],
+            17: [25, 26]
+        }
+    };
+
+    function getSavedState() {
+        try {
+            return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function setSavedState(state) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function toggleMajor(majorId) {
+        const el = document.getElementById(`major-${majorId}`);
+        if (el) el.classList.toggle('open');
+    }
+
+    function toggleMinor(minorId) {
+        const el = document.getElementById(`minor-${minorId}`);
+        if (el) el.classList.toggle('open');
+    }
+
+    function openMinorAndMajor(minorId) {
+        const minorEl = document.getElementById(`minor-${minorId}`);
+        if (minorEl) minorEl.classList.add('open');
+        for (const [majorId, subs] of Object.entries(STRUCTURE.major)) {
+            const minorSubs = STRUCTURE.minor[minorId];
+            if (minorSubs && subs.includes(minorSubs[0])) {
+                const majorEl = document.getElementById(`major-${majorId}`);
+                if (majorEl) majorEl.classList.add('open');
+            }
+        }
+    }
+
+    function toggleSub(subId) {
+        const cb = document.getElementById(subId);
+        const item = document.getElementById(`item-${subId}`);
+        const state = getSavedState();
+
+        if (cb.checked) {
+            state[subId] = true;
+            item.classList.add('checked');
+        } else {
+            delete state[subId];
+            item.classList.remove('checked');
+        }
+
+        setSavedState(state);
+        evaluateRollups(state, true);
+    }
+
+    function evaluateRollups(state, shouldAutoAdvance = false) {
+        let completedSubs = 0;
+        for (let i = 1; i <= TOTAL_SUBS; i++) {
+            if (state[`sub-${i}`]) completedSubs++;
+        }
+
+        const pct = Math.round((completedSubs / TOTAL_SUBS) * 100);
+        document.getElementById('p2-progress-fill').style.width = `${pct}%`;
+        document.getElementById('p2-step-count').innerText = `${completedSubs} / ${TOTAL_SUBS}`;
+        document.getElementById('p2-percent-text').innerText = `${pct}%`;
+
+        let firstIncompleteMinor = null;
+
+        // Roll up Minor Steps
+        for (const [minorId, subs] of Object.entries(STRUCTURE.minor)) {
+            const done = subs.filter(s => state[`sub-${s}`]).length;
+            const statusEl = document.getElementById(`status-minor-${minorId}`);
+            if (statusEl) {
+                if (done === subs.length) {
+                    statusEl.innerText = `✓ Done`;
+                    statusEl.classList.add('done');
+                } else {
+                    statusEl.innerText = `${done}/${subs.length}`;
+                    statusEl.classList.remove('done');
+                    if (!firstIncompleteMinor) firstIncompleteMinor = minorId;
+                }
+            }
+        }
+
+        // Roll up Major Steps
+        for (const [majorId, subs] of Object.entries(STRUCTURE.major)) {
+            const done = subs.filter(s => state[`sub-${s}`]).length;
+            const statusEl = document.getElementById(`status-major-${majorId}`);
+            if (statusEl) {
+                if (done === subs.length) {
+                    statusEl.innerText = `✓ Completed`;
+                    statusEl.classList.add('done');
+                } else {
+                    statusEl.innerText = `${done}/${subs.length}`;
+                    statusEl.classList.remove('done');
+                }
+            }
+        }
+
+        // Auto advance to next open minor step upon completion
+        if (shouldAutoAdvance && firstIncompleteMinor) {
+            openMinorAndMajor(firstIncompleteMinor);
+        }
+    }
+
+    function resetPhase2Progress() {
+        if (!confirm("Reset all checked sub-steps in Phase 2?")) return;
+        localStorage.removeItem(STORAGE_KEY);
+        for (let i = 1; i <= TOTAL_SUBS; i++) {
+            const cb = document.getElementById(`sub-${i}`);
+            const item = document.getElementById(`item-${subId(i)}`);
+            if (cb) cb.checked = false;
+            if (item) item.classList.remove('checked');
+        }
+        evaluateRollups({});
+        openMinorAndMajor(1);
+    }
+
+    function subId(i) { return `sub-${i}`; }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const state = getSavedState();
+        for (let i = 1; i <= TOTAL_SUBS; i++) {
+            const cb = document.getElementById(`sub-${i}`);
+            const item = document.getElementById(`item-sub-${i}`);
+            if (cb && state[`sub-${i}`]) {
+                cb.checked = true;
+                if (item) item.classList.add('checked');
+            }
+        }
+        evaluateRollups(state, false);
+
+        // Open first active incomplete step or step 1
+        let opened = false;
+        for (const [minorId, subs] of Object.entries(STRUCTURE.minor)) {
+            const done = subs.filter(s => state[`sub-${s}`]).length;
+            if (done < subs.length) {
+                openMinorAndMajor(minorId);
+                opened = true;
+                break;
+            }
+        }
+        if (!opened) openMinorAndMajor(1);
+    });
+</script>
 
 </body>
 </html>
