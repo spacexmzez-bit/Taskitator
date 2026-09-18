@@ -20,9 +20,11 @@ const SyncEngine = {
 
     notify(status, detail = null) {
         this.listeners.forEach(fn => fn(status, detail));
-        // Dispatch window event so index.html sync dot turns green
+        
         if (status === 'synced') {
             window.dispatchEvent(new CustomEvent('taskitator-synced', { detail }));
+        } else if (status === 'error') {
+            window.dispatchEvent(new CustomEvent('taskitator-sync-error', { detail }));
         }
     },
 
