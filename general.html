@@ -265,8 +265,8 @@
         <div id="auditCriteriaDisplay" style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 14px; background: var(--card-subtle); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);"></div>
 
         <div class="form-group">
-            <label>Upload Photographic Evidence:</label>
-            <input type="file" id="auditImageInput" accept="image/*" capture="environment">
+            <label>Upload Proof (Photo or PDF &le; 4MB):</label>
+            <input type="file" id="auditImageInput" accept="image/*,application/pdf">
         </div>
 
         <div class="form-group">
@@ -554,7 +554,6 @@ function renderGeneralTaskTree() {
     rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
 }
 
-// Recursive timestamp-synchronized state cascade
 function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
     const target = tasks.find(t => t.id === targetTaskId);
     if (!target) return;
@@ -572,7 +571,6 @@ function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
     cascadeChildren(targetTaskId);
 }
 
-// Start 10-Second Grace Period Timer for Undo
 function startGraceCompletionTimer(taskId) {
     if (pendingGraceCompletions.has(taskId)) {
         const existing = pendingGraceCompletions.get(taskId);
@@ -600,7 +598,6 @@ function startGraceCompletionTimer(taskId) {
     pendingGraceCompletions.set(taskId, { timerId, intervalId, remainingSec: remaining });
 }
 
-// Undo Task Completion within 10-Second Window
 function undoTaskCompletion(taskId) {
     if (pendingGraceCompletions.has(taskId)) {
         const grace = pendingGraceCompletions.get(taskId);
@@ -620,7 +617,6 @@ function handleTaskCompletion(taskId) {
     if (!task) return;
 
     if (task.status === 'completed') {
-        // AI-Locked tasks cannot be unchecked/uncompleted
         if (task.ai_locked && !TaskitatorEngine.EmergencyManager.isBypassActive()) {
             alert('Blocked: AI-checked tasks are permanent and cannot be uncompleted.');
             return;
@@ -643,7 +639,6 @@ function handleTaskCompletion(taskId) {
     renderGeneralTaskTree();
 }
 
-// Dedicated General Completed List Modal Logic with AI Lock Guard
 const generalCompletedModal = document.getElementById('generalCompletedModal');
 const openGeneralCompletedModalBtn = document.getElementById('openGeneralCompletedModalBtn');
 const closeGeneralCompletedModalBtn = document.getElementById('closeGeneralCompletedModalBtn');
@@ -685,7 +680,6 @@ function renderGeneralCompletedModalList() {
 
         const actionContainer = document.createElement('div');
 
-        // Phase 5: AI-locked tasks cannot be uncompleted unless emergency bypass is active
         if (task.ai_locked && !isBypassActive) {
             const lockedBtn = document.createElement('span');
             lockedBtn.className = 'ai-locked-btn';
@@ -919,7 +913,7 @@ const submitProofBtn = document.getElementById('submitProofBtn');
 function openAuditModal(task) {
     pendingAuditTaskId = task.id;
     auditTaskTitle.textContent = task.title;
-    auditCriteria.innerHTML = `<strong>Required Criteria &lt;PC&gt;:</strong> ${task.proof_criteria || 'General photographic confirmation of task completion.'}`;
+    auditCriteria.innerHTML = `<strong>Required Criteria &lt;PC&gt;:</strong> ${task.proof_criteria || 'General confirmation of task completion.'}`;
     auditImage.value = '';
     auditContext.value = '';
     auditFeedback.style.display = 'none';
@@ -940,7 +934,14 @@ submitProofBtn.addEventListener('click', async () => {
 
     const file = auditImage.files[0];
     if (!file) {
-        alert('Please attach an evidence photo.');
+        alert('Please attach an evidence photo or PDF document.');
+        return;
+    }
+
+    // Pre-flight file validation (format + size limit)
+    const check = TaskitatorEngine.AuditEngine.validateFile(file);
+    if (!check.valid) {
+        alert(check.error);
         return;
     }
 
@@ -949,7 +950,7 @@ submitProofBtn.addEventListener('click', async () => {
     auditFeedback.style.display = 'none';
 
     const result = await TaskitatorEngine.AuditEngine.verifyProof({
-        imageFile: file,
+        file: file,
         taskTitle: task.title,
         criteria: task.proof_criteria,
         userContext: auditContext.value.trim()
@@ -966,7 +967,6 @@ submitProofBtn.addEventListener('click', async () => {
 
     if (result.approved) {
         task.verified_model = result.model_used;
-        // Phase 5: Completes parent and its entire descendant bloodline permanently (no 10s undo window)
         cascadeTaskStatus(pendingAuditTaskId, 'completed', new Date().toISOString());
         saveStorageAndPush();
         auditModal.classList.remove('open');
