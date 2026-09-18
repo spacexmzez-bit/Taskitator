@@ -1083,6 +1083,13 @@ document.addEventListener('DOMContentLoaded', () => {
     renderBreakScheduler();
     renderTaskTree();
 });
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .catch(err => console.error('SW Registration failed:', err));
+    });
+}
+
 </script>
 </body>
 </html>
