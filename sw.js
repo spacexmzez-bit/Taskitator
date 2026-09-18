@@ -1,15 +1,15 @@
 // sw.js
 /**
- * File: sw.js
- * Service Worker for Taskitator PWA
- * Version: taskitator-v19
+ * Taskitator Service Worker
+ * Version: taskitator-v20
  * 
- * - Full offline caching strategy for shell, styles, scripts, and local views.
- * - Removed nonexistent physical PNG icon paths to avoid cache.addAll() install failure.
- * - Auto-purges legacy caches on activation.
+ * Features:
+ * - Network-First for core shell assets with offline cache fallback.
+ * - Strict bypass for Cloudflare sync APIs and non-GET requests to prevent sync interference.
+ * - Automatic stale cache eviction on activation.
  */
 
-const CACHE_NAME = 'taskitator-v19';
+const CACHE_NAME = 'taskitator-v20';
 
 const ASSETS_TO_CACHE = [
     './',
@@ -24,18 +24,23 @@ const ASSETS_TO_CACHE = [
     './manifest.json'
 ];
 
-// 1. Install Event: Pre-cache application shell and engines
+// =========================================================================
+// 1. Install Event: Cache Core App Shell
+// =========================================================================
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
             return cache.addAll(ASSETS_TO_CACHE);
         }).then(() => {
+            // Force newly installed service worker to activate immediately
             return self.skipWaiting();
         })
     );
 });
 
-// 2. Activate Event: Clear out obsolete caches
+// =========================================================================
+// 2. Activate Event: Evict Outdated Caches
+// =========================================================================
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((cacheNames) => {
@@ -47,48 +52,53 @@ self.addEventListener('activate', (event) => {
                 })
             );
         }).then(() => {
+            // Claim clients immediately so updated SW controls existing tabs
             return self.clients.claim();
         })
     );
 });
 
-// 3. Fetch Event: Cache-first with network fallback
+// =========================================================================
+// 3. Fetch Event: Network-First with Live Sync Bypass
+// =========================================================================
 self.addEventListener('fetch', (event) => {
-    // Only intercept standard GET requests (bypass worker sync API calls and external AI endpoints)
+    const url = new URL(event.request.url);
+
+    // 1. NEVER intercept non-GET requests (POST sync push, etc.)
     if (event.request.method !== 'GET') {
         return;
     }
 
-    const url = new URL(event.request.url);
-
-    // Allow Google AI Studio API calls and Worker endpoints to bypass cache directly
-    if (url.hostname.includes('googleapis.com') || url.hostname.includes('workers.dev')) {
-        return;
+    // 2. NEVER intercept Cloudflare Worker sync or external APIs
+    if (url.hostname.includes('workers.dev') || url.hostname.includes('googleapis.com')) {
+        return; // Hand over directly to live network
     }
 
+    // 3. Network-First strategy for local app assets
+    // Ensures code updates deploy immediately when online, falling back to cache when offline
     event.respondWith(
-        caches.match(event.request).then((cachedResponse) => {
-            if (cachedResponse) {
-                return cachedResponse;
-            }
-
-            return fetch(event.request).then((networkResponse) => {
-                if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-                    return networkResponse;
+        fetch(event.request)
+            .then((networkResponse) => {
+                // If response is valid, update the cache with fresh version
+                if (networkResponse && networkResponse.status === 200) {
+                    const responseToCache = networkResponse.clone();
+                    caches.open(CACHE_NAME).then((cache) => {
+                        cache.put(event.request, responseToCache);
+                    });
                 }
-
-                const responseToCache = networkResponse.clone();
-                caches.open(CACHE_NAME).then((cache) => {
-                    cache.put(event.request, responseToCache);
-                });
-
                 return networkResponse;
-            }).catch(() => {
-                // Fallback for HTML documents if offline
-                if (event.request.headers.get('accept')?.includes('text/html')) {
-                    return caches.match('./index.html');
-                }
-            });
-        })
+            })
+            .catch(() => {
+                // Offline fallback: serve from local cache
+                return caches.match(event.request).then((cachedResponse) => {
+                    if (cachedResponse) {
+                        return cachedResponse;
+                    }
+                    // If navigating to an uncached page offline, fallback to index
+                    if (event.request.mode === 'navigate') {
+                        return caches.match('./index.html');
+                    }
+                });
+            })
     );
 });
