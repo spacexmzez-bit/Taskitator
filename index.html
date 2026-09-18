@@ -118,6 +118,19 @@
             padding: 10px 12px;
             margin-bottom: 8px;
         }
+        .ai-locked-btn {
+            background: #1e293b;
+            border: 1px solid #475569;
+            color: #94a3b8;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 6px;
+            cursor: not-allowed;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-3px); }
             to { opacity: 1; transform: translateY(0); }
@@ -814,6 +827,11 @@ function handleTaskCompletion(taskId) {
     if (!task) return;
 
     if (task.status === 'completed') {
+        // AI-Locked tasks cannot be unchecked/uncompleted
+        if (task.ai_locked && !TaskitatorEngine.EmergencyManager.isBypassActive()) {
+            alert('Blocked: AI-checked tasks are permanent and cannot be uncompleted.');
+            return;
+        }
         cascadeTaskStatus(taskId, 'active', null);
         saveStorageAndPush();
         renderTaskTree();
@@ -832,7 +850,7 @@ function handleTaskCompletion(taskId) {
     renderTaskTree();
 }
 
-// Phase 4: Dedicated Completed List Modal Logic
+// Dedicated Completed List Modal Logic with AI Lock Guard
 const completedModal = document.getElementById('completedModal');
 const openCompletedModalBtn = document.getElementById('openCompletedModalBtn');
 const closeCompletedModalBtn = document.getElementById('closeCompletedModalBtn');
@@ -844,10 +862,9 @@ function renderCompletedModalList() {
 
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // Filter to items completed today that have expired from the 10s grace undo view
     const completedList = tasks.filter(t => {
         if (t.status !== 'completed') return false;
-        if (pendingGraceCompletions.has(t.id)) return false; // Still in active undo view
+        if (pendingGraceCompletions.has(t.id)) return false;
         const due = String(t.due_date || 'today').trim().toLowerCase();
         const compDate = t.completed_at ? t.completed_at.split('T')[0] : '';
         return due === 'today' || due === todayStr || compDate === todayStr;
@@ -862,6 +879,8 @@ function renderCompletedModalList() {
         return;
     }
 
+    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
+
     completedList.forEach(task => {
         const row = document.createElement('div');
         row.className = 'completed-item-row';
@@ -875,19 +894,30 @@ function renderCompletedModalList() {
             ${task.completed_at ? `<small style="color: var(--text-muted); font-size: 0.75rem;">Done at: ${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
         `;
 
-        const actionBtn = document.createElement('button');
-        actionBtn.className = 'icon-btn';
-        actionBtn.style.padding = '4px 10px';
-        actionBtn.style.fontSize = '0.8rem';
-        actionBtn.innerHTML = '↺ Uncomplete';
+        const actionContainer = document.createElement('div');
 
-        // Wire uncomplete action
-        actionBtn.addEventListener('click', () => {
-            uncompleteFromModal(task.id);
-        });
+        // Phase 5: AI-locked tasks cannot be uncompleted unless emergency bypass is active
+        if (task.ai_locked && !isBypassActive) {
+            const lockedBtn = document.createElement('span');
+            lockedBtn.className = 'ai-locked-btn';
+            lockedBtn.title = 'AI tasks are permanently locked and cannot be uncompleted';
+            lockedBtn.innerHTML = '🔒 Locked';
+            actionContainer.appendChild(lockedBtn);
+        } else {
+            const actionBtn = document.createElement('button');
+            actionBtn.className = 'icon-btn';
+            actionBtn.style.padding = '4px 10px';
+            actionBtn.style.fontSize = '0.8rem';
+            actionBtn.innerHTML = '↺ Uncomplete';
+
+            actionBtn.addEventListener('click', () => {
+                uncompleteFromModal(task.id);
+            });
+            actionContainer.appendChild(actionBtn);
+        }
 
         row.appendChild(info);
-        row.appendChild(actionBtn);
+        row.appendChild(actionContainer);
         completedTasksListContainer.appendChild(row);
     });
 }
@@ -896,7 +926,11 @@ function uncompleteFromModal(taskId) {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
-    // If parent is missing or trashed, detach parent_id to avoid ghosting
+    if (task.ai_locked && !TaskitatorEngine.EmergencyManager.isBypassActive()) {
+        alert('Blocked: AI-checked tasks are permanent and cannot be uncompleted.');
+        return;
+    }
+
     if (task.parent_id) {
         const parent = tasks.find(t => t.id === task.parent_id);
         if (!parent || parent.status === 'trash') {
@@ -1143,8 +1177,8 @@ submitProofBtn.addEventListener('click', async () => {
 
     if (result.approved) {
         task.verified_model = result.model_used;
+        // Phase 5: Completes parent and its entire descendant bloodline permanently (no 10s undo window)
         cascadeTaskStatus(pendingAuditTaskId, 'completed', new Date().toISOString());
-        startGraceCompletionTimer(pendingAuditTaskId);
         saveStorageAndPush();
         auditModal.classList.remove('open');
         pendingAuditTaskId = null;
