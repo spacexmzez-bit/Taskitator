@@ -55,6 +55,28 @@
             border-radius: 6px;
             border-left: 3px solid var(--primary);
         }
+        .save-prompt-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+        .unsaved-pill {
+            display: inline-block;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #f59e0b;
+            background: rgba(245, 158, 11, 0.15);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            padding: 2px 8px;
+            border-radius: 12px;
+            margin-left: 8px;
+            display: none;
+        }
         button:disabled {
             opacity: 0.5;
             cursor: not-allowed !important;
@@ -82,8 +104,16 @@
         <div class="nav-left">
             <button class="icon-btn" id="openDrawerBtn" title="Menu">☰</button>
             <h2 style="margin: 0; font-size: 1.25rem;">Settings</h2>
+            <span id="unsavedIndicator" class="unsaved-pill">Unsaved Changes</span>
         </div>
     </header>
+
+    <!-- Global Instructions Banner -->
+    <div class="save-prompt-bar">
+        <div style="font-size: 0.85rem; color: var(--text-muted);">
+            ℹ️ Changes to settings or credentials will not take effect until you click <strong>Save</strong>.
+        </div>
+    </div>
 
     <!-- Gemini BYOK & Cascade Configuration -->
     <div class="settings-card">
@@ -131,9 +161,10 @@
                 <label for="workerPassword">Password</label>
                 <input type="password" id="workerPassword" placeholder="Enter password" autocomplete="current-password">
             </div>
-            <div style="display: flex; gap: 10px; margin-top: 6px;">
-                <button class="icon-btn" id="togglePasswordVisibilityBtn" disabled>Show Password</button>
-                <button class="icon-btn" id="testWorkerBtn">Test Connection</button>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;">
+                <button type="button" class="icon-btn" id="saveCredentialsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Credentials & Connect</button>
+                <button type="button" class="icon-btn" id="testWorkerBtn">Test Connection</button>
+                <button type="button" class="icon-btn" id="togglePasswordVisibilityBtn" disabled>Show Password</button>
             </div>
             <div class="security-notice">
                 🔒 <strong>Zero-Knowledge Security:</strong> Your password is converted into an irreversible SHA-256 token inside your browser before transmission. Never reuse primary email or banking passwords.
@@ -239,6 +270,19 @@ const breakWindowStart = document.getElementById('breakWindowStart');
 const breakWindowEnd = document.getElementById('breakWindowEnd');
 const syncWordBadge = document.getElementById('syncWordBadge');
 const logoutConfirmModal = document.getElementById('logoutConfirmModal');
+const unsavedIndicator = document.getElementById('unsavedIndicator');
+
+function markUnsaved() {
+    if (unsavedIndicator) {
+        unsavedIndicator.style.display = 'inline-block';
+    }
+}
+
+function markSaved() {
+    if (unsavedIndicator) {
+        unsavedIndicator.style.display = 'none';
+    }
+}
 
 function refreshSyncWordStatus() {
     if (!syncWordBadge) return;
@@ -277,7 +321,7 @@ function loadSettings() {
 
     geminiApiKeyInput.value = settings.gemini_api_key || '';
     workerUsernameInput.value = settings.worker_username || '';
-    workerPasswordInput.value = ''; // Never preserve plaintext password in UI input
+    workerPasswordInput.value = '';
     updatePasswordVisibilityState();
 
     weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
@@ -290,9 +334,10 @@ function loadSettings() {
     updateEmergencyDisplay();
     updateBreakWindowStatus();
     updateWorkweekNotice();
+    markSaved();
 }
 
-async function saveSettings() {
+async function saveSettings(silent = false) {
     let settings = {};
     try {
         settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
@@ -318,7 +363,7 @@ async function saveSettings() {
         updatePasswordVisibilityState();
     } else if (username && !password && !settings.worker_passkey) {
         alert('Please enter a password to connect your account.');
-        return;
+        return false;
     }
 
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -335,7 +380,12 @@ async function saveSettings() {
     refreshSyncWordStatus();
     updateBreakWindowStatus();
     updateWorkweekNotice();
-    alert('Settings saved successfully.');
+    markSaved();
+
+    if (!silent) {
+        alert('Settings saved successfully.');
+    }
+    return true;
 }
 
 function updateEmergencyDisplay() {
@@ -375,20 +425,26 @@ function updateWorkweekNotice() {
         `Weekend: ${days[s]} to ${days[e]}. Emergency tokens reset every ${days[resetDay]} at 00:00.`;
 }
 
+// Clear break window
 document.getElementById('clearBreakWindowBtn').addEventListener('click', () => {
     breakWindowStart.value = '';
     breakWindowEnd.value = '';
+    markUnsaved();
     updateBreakWindowStatus();
 });
 
+// Toggle Gemini Key visibility
 document.getElementById('toggleKeyVisibilityBtn').addEventListener('click', () => {
     const isPassword = geminiApiKeyInput.type === 'password';
     geminiApiKeyInput.type = isPassword ? 'text' : 'password';
     document.getElementById('toggleKeyVisibilityBtn').textContent = isPassword ? 'Hide Key' : 'Show Key';
 });
 
-// Dynamic enable/disable of the toggle button based on typed input
-workerPasswordInput.addEventListener('input', updatePasswordVisibilityState);
+// Enable/disable the toggle button based on typed input
+workerPasswordInput.addEventListener('input', () => {
+    updatePasswordVisibilityState();
+    markUnsaved();
+});
 
 // Toggle password visibility
 togglePasswordVisibilityBtn.addEventListener('click', () => {
@@ -396,6 +452,12 @@ togglePasswordVisibilityBtn.addEventListener('click', () => {
     const isPassword = workerPasswordInput.type === 'password';
     workerPasswordInput.type = isPassword ? 'text' : 'password';
     togglePasswordVisibilityBtn.textContent = isPassword ? 'Hide Password' : 'Show Password';
+});
+
+// Detect dirty inputs to show unsaved banner
+[geminiApiKeyInput, workerUsernameInput, weekendStartSelect, weekendEndSelect, breakWindowStart, breakWindowEnd].forEach(el => {
+    el.addEventListener('input', markUnsaved);
+    el.addEventListener('change', markUnsaved);
 });
 
 // Test Gemini API with gemini-3.5-flash-lite
@@ -491,6 +553,14 @@ document.getElementById('testWorkerBtn').addEventListener('click', async () => {
     }
 });
 
+// Dedicated Sync Credentials Save Action
+document.getElementById('saveCredentialsBtn').addEventListener('click', async () => {
+    const ok = await saveSettings(true);
+    if (ok) {
+        alert('Sync credentials and all settings saved successfully.');
+    }
+});
+
 // Logout / Local-Only Modal Handlers
 document.getElementById('openLogoutModalBtn').addEventListener('click', () => {
     logoutConfirmModal.classList.add('open');
@@ -507,6 +577,7 @@ document.getElementById('confirmLogoutBtn').addEventListener('click', () => {
     updatePasswordVisibilityState();
     logoutConfirmModal.classList.remove('open');
     refreshSyncWordStatus();
+    markSaved();
     alert('Logged out. Taskitator is now running in Local-Only mode.');
 });
 
@@ -524,7 +595,9 @@ drawerBackdrop.addEventListener('click', () => {
     drawerBackdrop.classList.remove('open');
 });
 
-document.getElementById('saveAllSettingsBtn').addEventListener('click', saveSettings);
+// Main Save All Button
+document.getElementById('saveAllSettingsBtn').addEventListener('click', () => saveSettings(false));
+
 weekendStartSelect.addEventListener('change', updateWorkweekNotice);
 weekendEndSelect.addEventListener('change', updateWorkweekNotice);
 
