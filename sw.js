@@ -2,14 +2,14 @@
 /**
  * File: sw.js
  * Service Worker for Taskitator PWA
- * Version: taskitator-v16
+ * Version: taskitator-v19
  * 
  * - Full offline caching strategy for shell, styles, scripts, and local views.
- * - Added './audit-engine.js' to pre-cached assets for offline verification rules.
+ * - Removed nonexistent physical PNG icon paths to avoid cache.addAll() install failure.
  * - Auto-purges legacy caches on activation.
  */
 
-const CACHE_NAME = 'taskitator-v18';
+const CACHE_NAME = 'taskitator-v19';
 
 const ASSETS_TO_CACHE = [
     './',
@@ -21,9 +21,7 @@ const ASSETS_TO_CACHE = [
     './style.css',
     './sync-engine.js',
     './audit-engine.js',
-    './manifest.json',
-    './icons/icon-192.png',
-    './icons/icon-512.png'
+    './manifest.json'
 ];
 
 // 1. Install Event: Pre-cache application shell and engines
@@ -75,7 +73,6 @@ self.addEventListener('fetch', (event) => {
             }
 
             return fetch(event.request).then((networkResponse) => {
-                // Ensure valid response before caching dynamic resources
                 if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
                     return networkResponse;
                 }
