@@ -3,6 +3,7 @@
  * Taskitator Focus Copilot - Complete Engine
  * 
  * Capabilities:
+ * - Dynamic Name Binding: Adopts custom copilot_name across UI headers, nav buttons, and persona prompt.
  * - Dual-model cascade: gemini-3.5-flash-lite -> gemini-3.1-flash-lite on HTTP 429.
  * - Session fallback latch to prevent wasteful double roundtrips after quota exhaustion.
  * - External SYSTEM_PROMPT.md loader with runtime caching and offline fallback.
@@ -29,27 +30,39 @@ window.TaskitatorAgent = (() => {
     // Kept in memory across drawer toggles; reset on page unload/refresh
     const conversationHistory = [];
 
+    function getCopilotName() {
+        try {
+            const settings = JSON.parse(localStorage.getItem(STORAGE_KEY_SETTINGS) || '{}');
+            return (settings.copilot_name || 'Focus Copilot').trim().slice(0, 20);
+        } catch (e) {
+            return 'Focus Copilot';
+        }
+    }
+
     // =========================================================================
-    // 1. External Prompt Loader with In-Memory Caching & Safe Fallback
+    // 1. External Prompt Loader with Dynamic Name Injection
     // =========================================================================
     async function getSystemPrompt() {
-        if (cachedSystemPrompt) {
-            return cachedSystemPrompt;
+        let baseText = cachedSystemPrompt;
+
+        if (!baseText) {
+            try {
+                const res = await fetch('./SYSTEM_PROMPT.md');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                baseText = (await res.text()).trim();
+                cachedSystemPrompt = baseText;
+            } catch (err) {
+                console.warn('[Copilot] Could not load SYSTEM_PROMPT.md, falling back to embedded baseline:', err);
+                baseText = (
+                    "You are the Taskitator Focus Copilot, a strict, direct task manager and technical guide embedded in Taskitator.\n" +
+                    "Keep answers brief (1-3 sentences). Only assist with task operations and focus rules. " +
+                    "Refuse general chat. Never create or edit ai_locked tasks."
+                );
+            }
         }
 
-        try {
-            const res = await fetch('./SYSTEM_PROMPT.md');
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            cachedSystemPrompt = (await res.text()).trim();
-            return cachedSystemPrompt;
-        } catch (err) {
-            console.warn('[Copilot] Could not load SYSTEM_PROMPT.md, falling back to embedded baseline:', err);
-            return (
-                "You are the Taskitator Focus Copilot, a strict, direct task manager and technical guide embedded in Taskitator.\n" +
-                "Keep answers brief (1-3 sentences). Only assist with task operations and focus rules. " +
-                "Refuse general chat. Never create or edit ai_locked tasks."
-            );
-        }
+        const name = getCopilotName();
+        return `Your assigned name is "${name}". Address yourself by this name if asked.\n\n` + baseText;
     }
 
     // =========================================================================
@@ -438,9 +451,38 @@ window.TaskitatorAgent = (() => {
     }
 
     // =========================================================================
-    // 8. Drawer UI Controller & Event Binding
+    // 8. Drawer UI Controller & Universal Name Binding
     // =========================================================================
+    function refreshSystemNames() {
+        const name = getCopilotName();
+
+        // 1. Update Drawer Title Header
+        const titleSpan = document.querySelector('.copilot-title-group span:first-child');
+        if (titleSpan) {
+            titleSpan.textContent = `🤖 ${name}`;
+        }
+
+        // 2. Update Standby Card Greeting
+        const standbyTitle = document.querySelector('.copilot-standby-title');
+        if (standbyTitle) {
+            standbyTitle.textContent = name;
+        }
+
+        // 3. Update Floating / Top Nav Buttons across pages
+        const navBtn = document.getElementById('openCopilotNavBtn');
+        if (navBtn) {
+            navBtn.textContent = `💬 ${name}`;
+        }
+
+        const fabBtn = document.getElementById('openCopilotFabBtn');
+        if (fabBtn) {
+            fabBtn.title = `Open ${name}`;
+        }
+    }
+
     function initUI() {
+        refreshSystemNames();
+
         const form = document.getElementById('copilotForm');
         const input = document.getElementById('copilotInput');
         const messagesContainer = document.getElementById('copilotMessages');
@@ -483,6 +525,9 @@ window.TaskitatorAgent = (() => {
         });
     }
 
+    // Refresh UI elements if settings update via background sync
+    window.addEventListener('taskitator-synced', refreshSystemNames);
+
     // Initialize UI when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initUI);
@@ -492,6 +537,7 @@ window.TaskitatorAgent = (() => {
 
     return {
         sendMessage,
+        refreshSystemNames,
         getHistory: () => conversationHistory
     };
 })();
