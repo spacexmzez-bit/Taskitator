@@ -38,6 +38,35 @@
             border-radius: 6px;
             white-space: nowrap;
         }
+        .nav-link-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 8px;
+            padding: 5px 10px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.15s ease;
+        }
+        .nav-link-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: var(--card-subtle);
+        }
+        .completed-item-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+        }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-3px); }
             to { opacity: 1; transform: translateY(0); }
@@ -67,6 +96,9 @@
             <h2 style="margin: 0; font-size: 1.25rem;">General Tasks</h2>
         </div>
         <div class="nav-right">
+            <!-- Completed List Trigger Button -->
+            <button class="nav-link-btn" id="openGeneralCompletedModalBtn" title="View Completed Tasks">✓ Completed</button>
+
             <button class="emergency-pill-btn" id="emergencyTriggerBtn" title="Emergency Bypass">
                 🚨 <span id="emergencyCountDisplay">4/4</span>
             </button>
@@ -86,6 +118,19 @@
 
 <!-- Floating Action Button for Root Task -->
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
+
+<!-- Modal: Dedicated Completed List View -->
+<div class="modal-overlay" id="generalCompletedModal">
+    <div class="modal-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="margin: 0; color: var(--primary);">✓ All Completed Tasks</h3>
+            <button class="icon-btn" id="closeGeneralCompletedModalBtn" style="padding: 2px 8px;">✕</button>
+        </div>
+        <div id="generalCompletedTasksListContainer" style="max-height: 60vh; overflow-y: auto;">
+            <!-- Rendered Completed Items -->
+        </div>
+    </div>
+</div>
 
 <!-- Modal: Comprehensive Task Creation -->
 <div class="modal-overlay" id="addTaskModal">
@@ -271,7 +316,6 @@ let pendingAuditTaskId = null;
 let activeDetailTaskId = null;
 let emergencyTimerInterval = null;
 
-// In-Memory 10-Second Grace Period Tracker
 const pendingGraceCompletions = new Map();
 
 function loadStorage() {
@@ -304,11 +348,12 @@ window.addEventListener('taskitator-synced', () => {
     if (!activeDetailTaskId) {
         loadStorage();
         renderGeneralTaskTree();
+        renderGeneralCompletedModalList();
     }
 });
 
 // =========================================================================
-// Tree Hierarchy Rendering & Scoped Collapsing (Phase 3: Active Tree Filtering)
+// Tree Hierarchy Rendering & Scoped Collapsing
 // =========================================================================
 function isTaskVisuallyActive(task) {
     if (task.status === 'trash') return false;
@@ -360,7 +405,6 @@ function renderGeneralTaskTree() {
         const isDone = task.status === 'completed';
         li.className = `task-node ${isDone ? 'completed' : ''}`;
 
-        // If task is within 10-second grace period, show inline Undo row
         if (pendingGraceCompletions.has(task.id)) {
             const graceInfo = pendingGraceCompletions.get(task.id);
             const graceRow = document.createElement('div');
@@ -436,7 +480,6 @@ function renderGeneralTaskTree() {
             main.appendChild(badge);
         }
 
-        // Subtask Counter Pill (Completed / Total)
         if (allChildren.length > 0) {
             const doneKidsCount = allChildren.filter(k => k.status === 'completed').length;
             const countBadge = document.createElement('span');
@@ -538,6 +581,7 @@ function startGraceCompletionTimer(taskId) {
         clearInterval(intervalId);
         pendingGraceCompletions.delete(taskId);
         renderGeneralTaskTree();
+        renderGeneralCompletedModalList();
     }, 10000);
 
     pendingGraceCompletions.set(taskId, { timerId, intervalId, remainingSec: remaining });
@@ -555,6 +599,7 @@ function undoTaskCompletion(taskId) {
     cascadeTaskStatus(taskId, 'active', null);
     saveStorageAndPush();
     renderGeneralTaskTree();
+    renderGeneralCompletedModalList();
 }
 
 function handleTaskCompletion(taskId) {
@@ -565,6 +610,7 @@ function handleTaskCompletion(taskId) {
         cascadeTaskStatus(taskId, 'active', null);
         saveStorageAndPush();
         renderGeneralTaskTree();
+        renderGeneralCompletedModalList();
         return;
     }
 
@@ -578,6 +624,88 @@ function handleTaskCompletion(taskId) {
     saveStorageAndPush();
     renderGeneralTaskTree();
 }
+
+// Phase 4: Dedicated General Completed List Modal Logic
+const generalCompletedModal = document.getElementById('generalCompletedModal');
+const openGeneralCompletedModalBtn = document.getElementById('openGeneralCompletedModalBtn');
+const closeGeneralCompletedModalBtn = document.getElementById('closeGeneralCompletedModalBtn');
+const generalCompletedTasksListContainer = document.getElementById('generalCompletedTasksListContainer');
+
+function renderGeneralCompletedModalList() {
+    if (!generalCompletedTasksListContainer) return;
+    generalCompletedTasksListContainer.innerHTML = '';
+
+    const completedList = tasks.filter(t => {
+        if (t.status !== 'completed') return false;
+        if (pendingGraceCompletions.has(t.id)) return false;
+        return true;
+    });
+
+    if (completedList.length === 0) {
+        generalCompletedTasksListContainer.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); padding: 24px 0;">
+                No completed tasks found in workspace.
+            </div>
+        `;
+        return;
+    }
+
+    completedList.forEach(task => {
+        const row = document.createElement('div');
+        row.className = 'completed-item-row';
+
+        const info = document.createElement('div');
+        info.style.cssText = 'flex: 1; margin-right: 12px;';
+        info.innerHTML = `
+            <div style="font-weight: 600; text-decoration: line-through; color: var(--text-muted);">
+                ${task.title} ${task.ai_locked ? '<span class="ai-badge">🔒 AI</span>' : ''}
+            </div>
+            ${task.completed_at ? `<small style="color: var(--text-muted); font-size: 0.75rem;">Done at: ${new Date(task.completed_at).toLocaleDateString()}${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
+        `;
+
+        const actionBtn = document.createElement('button');
+        actionBtn.className = 'icon-btn';
+        actionBtn.style.padding = '4px 10px';
+        actionBtn.style.fontSize = '0.8rem';
+        actionBtn.innerHTML = '↺ Uncomplete';
+
+        actionBtn.addEventListener('click', () => {
+            uncompleteFromGeneralModal(task.id);
+        });
+
+        row.appendChild(info);
+        row.appendChild(actionBtn);
+        generalCompletedTasksListContainer.appendChild(row);
+    });
+}
+
+function uncompleteFromGeneralModal(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    if (task.parent_id) {
+        const parent = tasks.find(t => t.id === task.parent_id);
+        if (!parent || parent.status === 'trash') {
+            task.parent_id = null;
+        }
+    }
+
+    task.status = 'active';
+    task.completed_at = null;
+
+    saveStorageAndPush();
+    renderGeneralTaskTree();
+    renderGeneralCompletedModalList();
+}
+
+openGeneralCompletedModalBtn.addEventListener('click', () => {
+    renderGeneralCompletedModalList();
+    generalCompletedModal.classList.add('open');
+});
+
+closeGeneralCompletedModalBtn.addEventListener('click', () => {
+    generalCompletedModal.classList.remove('open');
+});
 
 function deleteTask(taskId) {
     const task = tasks.find(t => t.id === taskId);
@@ -597,6 +725,7 @@ function deleteTask(taskId) {
         markTrash(taskId);
         saveStorageAndPush();
         renderGeneralTaskTree();
+        renderGeneralCompletedModalList();
     }
 }
 
@@ -721,6 +850,7 @@ document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
     taskDetailModal.classList.remove('open');
     activeDetailTaskId = null;
     renderGeneralTaskTree();
+    renderGeneralCompletedModalList();
 });
 
 deleteFromDetailBtn.addEventListener('click', () => {
@@ -805,6 +935,7 @@ submitProofBtn.addEventListener('click', async () => {
         auditModal.classList.remove('open');
         pendingAuditTaskId = null;
         renderGeneralTaskTree();
+        renderGeneralCompletedModalList();
     } else {
         submitProofBtn.disabled = false;
         submitProofBtn.textContent = 'Retry Submission';
@@ -1019,6 +1150,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!activeDetailTaskId) {
                 loadStorage();
                 renderGeneralTaskTree();
+                renderGeneralCompletedModalList();
             }
         });
     }
