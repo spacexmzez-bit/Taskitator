@@ -12,6 +12,9 @@ const TaskitatorEngine = {
     PRIMARY_MODEL: 'gemini-3.5-flash-lite',
     FALLBACK_MODEL: 'gemini-3.1-flash-lite',
 
+    // Enforced upload limit across files (Photos, Gallery, PDFs)
+    MAX_FILE_SIZE_MB: 4,
+
     // =========================================================================
     // 1. Break Engine (3 Breaks, <= 3 Hours Total, Window Enforcement)
     // =========================================================================
@@ -208,15 +211,50 @@ const TaskitatorEngine = {
     // 3. AI Verification Cascade (Forensic Auditor & Failover)
     // =========================================================================
     AuditEngine: {
+        validateFile(file, maxMb = TaskitatorEngine.MAX_FILE_SIZE_MB) {
+            if (!file) {
+                return { valid: false, error: 'No file attached.' };
+            }
+
+            const maxBytes = maxMb * 1024 * 1024;
+            if (file.size > maxBytes) {
+                return { 
+                    valid: false, 
+                    error: `File size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the ${maxMb} MB upload limit.` 
+                };
+            }
+
+            const allowedTypes = [
+                'image/jpeg', 
+                'image/png', 
+                'image/webp', 
+                'image/heic', 
+                'application/pdf'
+            ];
+
+            const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+            const isAllowed = allowedTypes.includes(file.type) || isPdf;
+
+            if (!isAllowed) {
+                return { valid: false, error: 'Unsupported file type. Please upload a photo (JPG, PNG, WebP) or PDF document.' };
+            }
+
+            return { valid: true };
+        },
+
         async fileToBase64(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = () => {
                     const base64Data = reader.result.split(',')[1];
+                    let mimeType = file.type || 'image/jpeg';
+                    if (file.name.toLowerCase().endsWith('.pdf')) {
+                        mimeType = 'application/pdf';
+                    }
                     resolve({
                         inlineData: {
                             data: base64Data,
-                            mimeType: file.type || 'image/jpeg'
+                            mimeType: mimeType
                         }
                     });
                 };
@@ -225,11 +263,11 @@ const TaskitatorEngine = {
             });
         },
 
-        async callGemini(modelName, apiKey, imagePart, promptText) {
+        async callGemini(modelName, apiKey, inlineDataPart, promptText) {
             const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
             const payload = {
                 contents: [{
-                    parts: [imagePart, { text: promptText }]
+                    parts: [inlineDataPart, { text: promptText }]
                 }],
                 generationConfig: {
                     temperature: 0.1,
@@ -237,16 +275,14 @@ const TaskitatorEngine = {
                 }
             };
 
-            const response = await fetch(endpoint, {
+            return await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-
-            return response;
         },
 
-        async verifyProof({ imageFile, taskTitle, criteria, userContext }) {
+        async verifyProof({ file, taskTitle, criteria, userContext }) {
             let settings = {};
             try {
                 settings = JSON.parse(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_SETTINGS) || '{}');
@@ -259,18 +295,24 @@ const TaskitatorEngine = {
                 return { success: false, error: 'No Gemini API Key configured in Settings.' };
             }
 
-            const imagePart = await this.fileToBase64(imageFile);
+            // Client-side validation: enforce size cap & supported formats
+            const check = this.validateFile(file);
+            if (!check.valid) {
+                return { success: false, error: check.error };
+            }
+
+            const inlinePart = await this.fileToBase64(file);
 
             const systemPrompt = `
-You are the Taskitator Forensic Audit AI. Your job is to strictly evaluate whether photographic evidence legitimately proves completion of a task based on provided criteria.
+You are the Taskitator Forensic Audit AI. Your job is to strictly evaluate whether evidence (image or PDF document) legitimately proves completion of a task based on provided criteria.
 
 Task: "${taskTitle}"
-Proof Criteria <PC>: "${criteria || 'Clear photographic confirmation of completed work.'}"
+Proof Criteria <PC>: "${criteria || 'Clear confirmation of completed work.'}"
 User Note: "${userContext || 'None'}"
 
 Evaluation Rules:
-1. Be skeptical and rigorous. Do not accept ambiguous, staged, or generic images.
-2. Verify specific criteria details if specified (e.g., specific handwriting, screen state, dates).
+1. Be skeptical and rigorous. Do not accept ambiguous, staged, or generic proof.
+2. Verify specific criteria details if specified (e.g., dates, handwriting, calculated numbers, finished document structure).
 3. If criteria are met, approve. If doubtful or incomplete, reject.
 
 Return valid JSON matching this schema:
@@ -282,13 +324,13 @@ Return valid JSON matching this schema:
 `;
 
             let usedModel = TaskitatorEngine.PRIMARY_MODEL;
-            let res = await this.callGemini(usedModel, apiKey, imagePart, systemPrompt);
+            let res = await this.callGemini(usedModel, apiKey, inlinePart, systemPrompt);
 
             // Cascade to secondary model on 429 RPD/RPS limit
             if (res.status === 429) {
                 console.warn(`[AuditEngine] Model ${usedModel} hit 429. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
                 usedModel = TaskitatorEngine.FALLBACK_MODEL;
-                res = await this.callGemini(usedModel, apiKey, imagePart, systemPrompt);
+                res = await this.callGemini(usedModel, apiKey, inlinePart, systemPrompt);
             }
 
             if (!res.ok) {
