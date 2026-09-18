@@ -8,14 +8,14 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192' fill='%23081226'><rect width='192' height='192' rx='36' fill='%230f1d3a'/><path d='M50 96l30 30 62-62' stroke='%233b82f6' stroke-width='18' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>",
+      "src": "icon/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml"
+      "type": "image/png"
     },
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' fill='%23081226'><rect width='512' height='512' rx='96' fill='%230f1d3a'/><path d='M134 256l80 80 164-164' stroke='%233b82f6' stroke-width='48' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>",
+      "src": "icon/icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml"
+      "type": "image/png"
     }
   ]
 }
