@@ -40,6 +40,10 @@
             background-color: #22c55e; /* Green: Synced up to date */
             box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
         }
+        .sync-dot.error {
+            background-color: #ef4444; /* Red: Sync Error / Offline */
+            box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
+        }
 
         /* Sync Legend Items */
         .sync-legend-item {
@@ -77,7 +81,7 @@
             <h2 style="margin: 0; font-size: 1.25rem;">Today's Focus</h2>
         </div>
         <div class="nav-right">
-            <!-- Sync Dot: Gray = Local, Yellow = Pending, Green = Synced -->
+            <!-- Sync Dot Indicator -->
             <span class="sync-dot local-only" id="syncStatusDot" title="Click to view Sync Status details"></span>
 
             <button class="emergency-pill-btn" id="emergencyTriggerBtn" title="Emergency Bypass">
@@ -144,6 +148,14 @@
             <div style="font-size: 0.85rem;">
                 <strong style="color: #4ade80;">Green: Synced Up to Date</strong>
                 <div style="color: var(--text-muted); font-size: 0.8rem;">All local changes are fully saved and matched with the automation bridge.</div>
+            </div>
+        </div>
+
+        <div class="sync-legend-item">
+            <span class="sync-dot error" style="cursor: default;"></span>
+            <div style="font-size: 0.85rem;">
+                <strong style="color: #f87171;">Red: Sync Failed / Offline</strong>
+                <div style="color: var(--text-muted); font-size: 0.8rem;">Network error or worker rejection. Check passkey or internet connection.</div>
             </div>
         </div>
 
@@ -345,6 +357,7 @@ function updateSyncDot(state) {
     syncStatusDot.className = `sync-dot ${state}`;
     if (state === 'synced') syncStatusDot.title = 'Sync Status: Synced up to date (Click for info)';
     else if (state === 'pending') syncStatusDot.title = 'Sync Status: Not synced / Pending (Click for info)';
+    else if (state === 'error') syncStatusDot.title = 'Sync Status: Sync Failed / Offline (Click for info)';
     else syncStatusDot.title = 'Sync Status: Local only (Click for info)';
 }
 
@@ -402,6 +415,11 @@ window.addEventListener('taskitator-synced', () => {
     updateSyncDot('synced');
 });
 
+// Background sync failure listener
+window.addEventListener('taskitator-sync-error', () => {
+    updateSyncDot('error');
+});
+
 // Click dot to open explanatory information modal
 if (syncStatusDot) {
     syncStatusDot.addEventListener('click', () => {
@@ -432,7 +450,11 @@ document.getElementById('forceSyncFromModalBtn').addEventListener('click', async
 
     if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
         const ok = await SyncEngine.forceImmediateSync();
-        if (ok) updateSyncDot('synced');
+        if (ok) {
+            updateSyncDot('synced');
+        } else {
+            updateSyncDot('error');
+        }
     } else {
         setTimeout(() => updateSyncDot('synced'), 500);
     }
