@@ -6,6 +6,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Taskitator - General Tasks</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .undo-grace-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #14264b;
+            border: 1.5px dashed var(--primary);
+            border-radius: 10px;
+            padding: 8px 14px;
+            margin-bottom: 8px;
+            animation: fadeIn 0.2s ease;
+        }
+        .undo-grace-btn {
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-3px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
 </head>
 <body>
 
@@ -234,6 +261,9 @@ let pendingAuditTaskId = null;
 let activeDetailTaskId = null;
 let emergencyTimerInterval = null;
 
+// Phase 2: In-Memory 10-Second Grace Period Tracker
+const pendingGraceCompletions = new Map();
+
 function loadStorage() {
     try {
         tasks = JSON.parse(localStorage.getItem(TASKS_KEY) || '[]');
@@ -297,6 +327,27 @@ function renderGeneralTaskTree() {
     function buildNodeElement(task, depth = 0) {
         const li = document.createElement('li');
         li.className = `task-node ${task.status === 'completed' ? 'completed' : ''}`;
+
+        // Phase 2: If task is within 10-second grace period, show inline Undo row
+        if (pendingGraceCompletions.has(task.id)) {
+            const graceInfo = pendingGraceCompletions.get(task.id);
+            const graceRow = document.createElement('div');
+            graceRow.className = 'undo-grace-row';
+            graceRow.style.marginLeft = `${depth * 20}px`;
+            graceRow.innerHTML = `
+                <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
+                    <span style="color: var(--success); font-weight: 700;">✓ Completed:</span>
+                    <span style="text-decoration: line-through; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${task.title}</span>
+                </div>
+                <button class="undo-grace-btn" id="undoGeneralBtn_${task.id}">Undo (<span id="undoGeneralTimerSec_${task.id}">${graceInfo.remainingSec}</span>s)</button>
+            `;
+            graceRow.querySelector(`#undoGeneralBtn_${task.id}`).addEventListener('click', (e) => {
+                e.stopPropagation();
+                undoTaskCompletion(task.id);
+            });
+            li.appendChild(graceRow);
+            return li;
+        }
 
         const row = document.createElement('div');
         row.className = 'task-row';
@@ -423,6 +474,47 @@ function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
     cascadeChildren(targetTaskId);
 }
 
+// Phase 2: Start 10-Second Grace Period Timer for Undo
+function startGraceCompletionTimer(taskId) {
+    if (pendingGraceCompletions.has(taskId)) {
+        const existing = pendingGraceCompletions.get(taskId);
+        clearTimeout(existing.timerId);
+        clearInterval(existing.intervalId);
+    }
+
+    let remaining = 10;
+    const intervalId = setInterval(() => {
+        remaining -= 1;
+        const el = document.getElementById(`undoGeneralTimerSec_${taskId}`);
+        if (el) el.textContent = remaining;
+        if (remaining <= 0) {
+            clearInterval(intervalId);
+        }
+    }, 1000);
+
+    const timerId = setTimeout(() => {
+        clearInterval(intervalId);
+        pendingGraceCompletions.delete(taskId);
+        renderGeneralTaskTree();
+    }, 10000);
+
+    pendingGraceCompletions.set(taskId, { timerId, intervalId, remainingSec: remaining });
+}
+
+// Phase 2: Undo Task Completion within 10-Second Window
+function undoTaskCompletion(taskId) {
+    if (pendingGraceCompletions.has(taskId)) {
+        const grace = pendingGraceCompletions.get(taskId);
+        clearTimeout(grace.timerId);
+        clearInterval(grace.intervalId);
+        pendingGraceCompletions.delete(taskId);
+    }
+
+    cascadeTaskStatus(taskId, 'active', null);
+    saveStorageAndPush();
+    renderGeneralTaskTree();
+}
+
 function handleTaskCompletion(taskId) {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -440,6 +532,7 @@ function handleTaskCompletion(taskId) {
     }
 
     cascadeTaskStatus(taskId, 'completed', new Date().toISOString());
+    startGraceCompletionTimer(taskId);
     saveStorageAndPush();
     renderGeneralTaskTree();
 }
@@ -665,6 +758,7 @@ submitProofBtn.addEventListener('click', async () => {
     if (result.approved) {
         task.verified_model = result.model_used;
         cascadeTaskStatus(pendingAuditTaskId, 'completed', new Date().toISOString());
+        startGraceCompletionTimer(pendingAuditTaskId);
         saveStorageAndPush();
         auditModal.classList.remove('open');
         pendingAuditTaskId = null;
