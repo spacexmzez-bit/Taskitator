@@ -105,21 +105,21 @@
         <div id="geminiTestFeedback" class="notice-banner"></div>
     </div>
 
-    <!-- Universal Cloudflare Worker Passkey Bridge -->
+    <!-- Sync Configuration -->
     <div class="settings-card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <h3 style="margin: 0; color: var(--primary);">🌐 MacroDroid Automation Bridge</h3>
+            <h3 style="margin: 0; color: var(--primary);">🌐 Sync Configuration</h3>
             <span id="syncWordBadge" class="sync-badge-word local-only">Local Only</span>
         </div>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-            Enforces hardware lock contracts on your device. Enter your secret passkey to authenticate sync with the universal bridge.
+            Connects your app to your online storage to keep tasks backed up and synchronized across your devices. Enter your secret passkey to link your account.
         </p>
         <div class="form-group">
-            <label for="workerPasskey">Secret Passkey (Bearer Token)</label>
+            <label for="workerPasskey">Secret Passkey</label>
             <input type="password" id="workerPasskey" placeholder="Enter your secret passkey">
         </div>
         <div style="display: flex; gap: 10px;">
-            <button class="icon-btn" id="testWorkerBtn">Test Worker Sync</button>
+            <button class="icon-btn" id="testWorkerBtn">Test Connection</button>
         </div>
         <div id="workerTestFeedback" class="notice-banner"></div>
     </div>
@@ -339,7 +339,7 @@ document.getElementById('testWorkerBtn').addEventListener('click', async () => {
     }
 
     feedback.className = 'notice-banner notice-info';
-    feedback.textContent = 'Pinging hardcoded Cloudflare Worker bridge...';
+    feedback.textContent = 'Testing cloud sync connection...';
 
     try {
         const pingUrl = `${HARDCODED_WORKER_URL}/?action=status&format=text`;
@@ -354,18 +354,18 @@ document.getElementById('testWorkerBtn').addEventListener('click', async () => {
 
         if (res.ok) {
             feedback.className = 'notice-banner notice-info';
-            feedback.innerHTML = `<strong>Connected!</strong> Worker response:<br><code>${resText}</code>`;
+            feedback.innerHTML = `<strong>Connected!</strong> Sync active.<br><code>${resText}</code>`;
             syncWordBadge.className = 'sync-badge-word synced';
             syncWordBadge.textContent = 'Synced';
         } else {
             feedback.className = 'notice-banner notice-warning';
-            feedback.textContent = `Worker responded with HTTP ${res.status}: ${resText || res.statusText}`;
+            feedback.textContent = `Connection error (HTTP ${res.status}): ${resText || res.statusText}`;
             syncWordBadge.className = 'sync-badge-word pending';
             syncWordBadge.textContent = 'Not Synced';
         }
     } catch (err) {
         feedback.className = 'notice-banner notice-warning';
-        feedback.innerHTML = `<strong>Sync Ping Failed:</strong> ${err.message}<br><small>Check CORS or worker preflight handling</small>`;
+        feedback.innerHTML = `<strong>Sync Failed:</strong> ${err.message}<br><small>Check internet connection or worker settings</small>`;
         syncWordBadge.className = 'sync-badge-word pending';
         syncWordBadge.textContent = 'Error';
     }
