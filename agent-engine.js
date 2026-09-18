@@ -1,13 +1,16 @@
 // agent-engine.js
 /**
- * Taskitator Focus Copilot - Core Engine
+ * Taskitator Focus Copilot - Complete Engine
  * 
  * Capabilities:
  * - Dual-model cascade: gemini-3.5-flash-lite -> gemini-3.1-flash-lite on HTTP 429.
  * - Session fallback latch to prevent wasteful double roundtrips after quota exhaustion.
  * - External SYSTEM_PROMPT.md loader with runtime caching and offline fallback.
- * - Flat tool definitions (get_tasks, create_task, update_task, trash_task).
- * - Read dispatcher for querying live tasks directly from localStorage.
+ * - Flat tool schemas (get_tasks, create_task, update_task, trash_task).
+ * - Read & Mutation dispatchers reading fresh localStorage directly.
+ * - Absolute Lock-in Guardrails: Rejects any attempt to trash or alter ai_locked tasks.
+ * - Event-Driven: Dispatches 'taskitator-tasks-updated' for reactive UI rerendering.
+ * - Ephemeral UI Controller: In-memory session, sliding-window payload trimmer (last 6-8 messages).
  */
 
 window.TaskitatorAgent = (() => {
@@ -19,6 +22,11 @@ window.TaskitatorAgent = (() => {
     const FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 
     let cachedSystemPrompt = null;
+    let isProcessing = false;
+
+    // Ephemeral in-memory conversation history
+    // Kept in memory across drawer toggles; reset on page unload/refresh
+    const conversationHistory = [];
 
     // =========================================================================
     // 1. External Prompt Loader with In-Memory Caching & Safe Fallback
@@ -44,21 +52,21 @@ window.TaskitatorAgent = (() => {
     }
 
     // =========================================================================
-    // 2. Flat Tool Schemas (No Deep Nesting for Reliable Flash-Lite Execution)
+    // 2. Flat Tool Schemas
     // =========================================================================
     const AGENT_TOOLS = [
         {
             function_declarations: [
                 {
                     name: 'get_tasks',
-                    description: 'Retrieve current tasks from Taskitator. Use this to check existing tasks, find IDs, or review schedules.',
+                    description: 'Retrieve current tasks from Taskitator to check existing tasks, find IDs, or review schedules.',
                     parameters: {
                         type: 'OBJECT',
                         properties: {
                             filter: {
                                 type: 'STRING',
                                 enum: ['today', 'all', 'completed'],
-                                description: 'Filter tasks: "today" for today\'s queue, "all" for full tree, or "completed" for finished items.'
+                                description: 'Filter tasks: "today" for today queue, "all" for active tree, or "completed" for finished items.'
                             }
                         }
                     }
@@ -148,7 +156,6 @@ window.TaskitatorAgent = (() => {
         const buildUrl = (model) =>
             `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-        // Check if the fallback latch has already been tripped for this browser session
         const isFallbackLatched = sessionStorage.getItem(SESSION_LATCH_KEY) === 'true';
         let targetModel = isFallbackLatched ? FALLBACK_MODEL : PRIMARY_MODEL;
 
@@ -158,7 +165,7 @@ window.TaskitatorAgent = (() => {
             body: JSON.stringify(payload)
         });
 
-        // If the primary model encounters a 429 quota exhaustion, latch to fallback
+        // Failover on 429 Quota Exceeded and set session latch
         if (response.status === 429 && targetModel === PRIMARY_MODEL) {
             console.warn(`[Copilot] ${PRIMARY_MODEL} quota exhausted (HTTP 429). Latching to ${FALLBACK_MODEL} for remainder of session.`);
             sessionStorage.setItem(SESSION_LATCH_KEY, 'true');
@@ -181,13 +188,9 @@ window.TaskitatorAgent = (() => {
     }
 
     // =========================================================================
-    // 5. Read Dispatcher (Direct localStorage Query)
+    // 5. Tool Dispatcher & Hard Lock Guardrails
     // =========================================================================
-    function executeReadTool(name, args) {
-        if (name !== 'get_tasks') {
-            return null; // Let Phase 5 mutation dispatcher handle write tools
-        }
-
+    function executeToolCall(name, args) {
         let tasks = [];
         try {
             tasks = JSON.parse(localStorage.getItem(STORAGE_KEY_TASKS) || '[]');
@@ -195,42 +198,299 @@ window.TaskitatorAgent = (() => {
             tasks = [];
         }
 
-        const todayStr = new Date().toISOString().split('T')[0];
-        const filter = args.filter || 'today';
+        const isBypassActive = window.TaskitatorEngine?.EmergencyManager?.isBypassActive?.() || false;
 
-        const filtered = tasks.filter(t => {
-            if (t.status === 'trash') return false;
-            if (filter === 'completed') return t.status === 'completed';
+        // READ: get_tasks
+        if (name === 'get_tasks') {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const filter = args.filter || 'today';
 
-            if (filter === 'today') {
-                if (t.status === 'completed') return false;
-                const due = String(t.due_date || 'today').trim().toLowerCase();
-                return due === 'today' || due === todayStr;
+            const filtered = tasks.filter(t => {
+                if (t.status === 'trash') return false;
+                if (filter === 'completed') return t.status === 'completed';
+
+                if (filter === 'today') {
+                    if (t.status === 'completed') return false;
+                    const due = String(t.due_date || 'today').trim().toLowerCase();
+                    return due === 'today' || due === todayStr;
+                }
+
+                return t.status === 'active';
+            });
+
+            return {
+                status: 'success',
+                count: filtered.length,
+                tasks: filtered.map(t => ({
+                    id: t.id,
+                    title: t.title,
+                    parent_id: t.parent_id || null,
+                    due_date: t.due_date || '',
+                    ai_locked: Boolean(t.ai_locked),
+                    status: t.status
+                }))
+            };
+        }
+
+        // MUTATION: create_task
+        if (name === 'create_task') {
+            const title = (args.title || '').trim();
+            if (!title) {
+                return { status: 'error', error: 'Task title is required.' };
             }
 
-            // "all" filter
-            return t.status === 'active';
-        });
+            const newId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+            const newTask = {
+                id: newId,
+                parent_id: args.parent_id || null,
+                title: title,
+                description: '',
+                tags: [],
+                status: 'active',
+                due_date: args.due_date || 'today',
+                ai_locked: false, // Model is strictly forbidden from setting ai_locked
+                proof_criteria: '',
+                created_at: new Date().toISOString(),
+                completed_at: null
+            };
 
-        return {
-            status: 'success',
-            count: filtered.length,
-            tasks: filtered.map(t => ({
-                id: t.id,
-                title: t.title,
-                parent_id: t.parent_id || null,
-                due_date: t.due_date || '',
-                ai_locked: Boolean(t.ai_locked),
-                status: t.status
-            }))
-        };
+            tasks.push(newTask);
+            commitTasks(tasks);
+
+            return {
+                status: 'success',
+                task_id: newId,
+                title: title,
+                due_date: newTask.due_date,
+                parent_id: newTask.parent_id
+            };
+        }
+
+        // MUTATION: update_task
+        if (name === 'update_task') {
+            const task = tasks.find(t => t.id === args.task_id);
+            if (!task) {
+                return { status: 'error', error: `Task ID "${args.task_id}" not found.` };
+            }
+
+            // Lock Guardrail
+            if (task.ai_locked && !isBypassActive) {
+                return {
+                    status: 'error',
+                    error: `Task "${task.title}" is AI-Locked. It cannot be altered without an active Emergency Bypass.`
+                };
+            }
+
+            if (args.title !== undefined) task.title = args.title.trim();
+            if (args.due_date !== undefined) task.due_date = args.due_date.trim();
+            if (args.description !== undefined) task.description = args.description.trim();
+
+            commitTasks(tasks);
+            return { status: 'success', task_id: task.id, title: task.title };
+        }
+
+        // MUTATION: trash_task
+        if (name === 'trash_task') {
+            const task = tasks.find(t => t.id === args.task_id);
+            if (!task) {
+                return { status: 'error', error: `Task ID "${args.task_id}" not found.` };
+            }
+
+            // Lock Guardrail
+            if (task.ai_locked && !isBypassActive) {
+                return {
+                    status: 'error',
+                    error: `Task "${task.title}" is AI-Locked. It cannot be deleted without an active Emergency Bypass.`
+                };
+            }
+
+            function markTrash(id) {
+                const target = tasks.find(t => t.id === id);
+                if (target) target.status = 'trash';
+                tasks.filter(t => t.parent_id === id).forEach(k => markTrash(k.id));
+            }
+            markTrash(task.id);
+
+            commitTasks(tasks);
+            return { status: 'success', trashed_task_id: task.id, title: task.title };
+        }
+
+        return { status: 'error', error: `Unknown tool "${name}".` };
+    }
+
+    function commitTasks(updatedTasks) {
+        localStorage.setItem(STORAGE_KEY_TASKS, JSON.stringify(updatedTasks));
+
+        // Schedule background cloud sync debounced push
+        if (window.SyncEngine) {
+            if (typeof SyncEngine.markLocalModified === 'function') {
+                SyncEngine.markLocalModified();
+            }
+            if (typeof SyncEngine.scheduleAutoPush === 'function') {
+                const breaks = window.TaskitatorEngine?.BreakEngine?.getTodayBreaks?.() || [];
+                SyncEngine.scheduleAutoPush(45000, { today_breaks: breaks });
+            }
+        }
+
+        // Dispatch custom event for background UI rerendering without closing chat
+        window.dispatchEvent(new CustomEvent('taskitator-tasks-updated'));
+    }
+
+    // =========================================================================
+    // 6. Sliding-Window Payload Trimmer
+    // =========================================================================
+    function getTrimmedContents() {
+        // Retain the last 8 message turns maximum for network payload
+        const recent = conversationHistory.slice(-8);
+        return recent.map(msg => ({
+            role: msg.role,
+            parts: msg.parts
+        }));
+    }
+
+    // =========================================================================
+    // 7. Conversational Turn Execution
+    // =========================================================================
+    async function sendMessage(userText) {
+        const apiKey = getApiKey();
+        if (!apiKey) {
+            return {
+                text: "No Gemini API key configured. Please add your key in Settings first."
+            };
+        }
+
+        if (isProcessing) return;
+        isProcessing = true;
+
+        try {
+            // Append user message to in-memory history
+            conversationHistory.push({
+                role: 'user',
+                parts: [{ text: userText }]
+            });
+
+            const systemText = await getSystemPrompt();
+
+            // Run up to 4 consecutive tool execution loops (for chained operations)
+            for (let loop = 0; loop < 4; loop++) {
+                const payload = {
+                    contents: getTrimmedContents(),
+                    tools: AGENT_TOOLS,
+                    systemInstruction: {
+                        parts: [{ text: systemText }]
+                    },
+                    generationConfig: {
+                        temperature: 0.2
+                    }
+                };
+
+                const { data, modelUsed } = await executeModelCall(payload, apiKey);
+                const candidate = data.candidates?.[0]?.content;
+
+                if (!candidate) {
+                    throw new Error("Model returned an empty response.");
+                }
+
+                const parts = candidate.parts || [];
+                const toolCallPart = parts.find(p => p.functionCall);
+
+                if (toolCallPart) {
+                    // Save model call with the tool request into history
+                    conversationHistory.push({
+                        role: 'model',
+                        parts: parts
+                    });
+
+                    const fnName = toolCallPart.functionCall.name;
+                    const fnArgs = toolCallPart.functionCall.args || {};
+                    const toolResult = executeToolCall(fnName, fnArgs);
+
+                    // Append tool execution response
+                    conversationHistory.push({
+                        role: 'function',
+                        parts: [{
+                            functionResponse: {
+                                name: fnName,
+                                response: toolResult
+                            }
+                        }]
+                    });
+
+                    // Loop continues so Gemini can see the tool output and respond
+                    continue;
+                }
+
+                // Final text reply from model
+                const replyText = parts.map(p => p.text || '').join('').trim();
+                conversationHistory.push({
+                    role: 'model',
+                    parts: [{ text: replyText }]
+                });
+
+                return { text: replyText, modelUsed };
+            }
+
+            return { text: "Completed task updates." };
+        } finally {
+            isProcessing = false;
+        }
+    }
+
+    // =========================================================================
+    // 8. Drawer UI Controller & Event Binding
+    // =========================================================================
+    function initUI() {
+        const form = document.getElementById('copilotForm');
+        const input = document.getElementById('copilotInput');
+        const messagesContainer = document.getElementById('copilotMessages');
+        const chip = document.querySelector('.copilot-model-chip');
+
+        if (!form || !input || !messagesContainer) return;
+
+        function appendBubble(text, sender, isLoading = false) {
+            const bubble = document.createElement('div');
+            bubble.className = `chat-bubble ${sender} ${isLoading ? 'loading' : ''}`;
+            bubble.textContent = text;
+            messagesContainer.appendChild(bubble);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            return bubble;
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = input.value.trim();
+            if (!text || isProcessing) return;
+
+            input.value = '';
+            appendBubble(text, 'user');
+
+            const loadingBubble = appendBubble('Thinking...', 'bot', true);
+
+            try {
+                const res = await sendMessage(text);
+                loadingBubble.remove();
+                appendBubble(res.text, 'bot');
+
+                // Update model chip if fallback latched
+                if (chip && sessionStorage.getItem(SESSION_LATCH_KEY) === 'true') {
+                    chip.textContent = '3.1 Flash Lite';
+                }
+            } catch (err) {
+                loadingBubble.remove();
+                appendBubble(`Error: ${err.message}`, 'bot');
+            }
+        });
+    }
+
+    // Initialize UI when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initUI);
+    } else {
+        initUI();
     }
 
     return {
-        getSystemPrompt,
-        getApiKey,
-        executeModelCall,
-        executeReadTool,
-        AGENT_TOOLS
+        sendMessage,
+        getHistory: () => conversationHistory
     };
 })();
