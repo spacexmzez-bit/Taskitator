@@ -70,6 +70,24 @@
             line-height: 1.5;
             margin: 14px 0;
         }
+        .recommendation-box {
+            background: rgba(59, 130, 246, 0.08);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 10px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+        .code-box {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border-color, #334155);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #93c5fd;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
         .back-nav {
             display: inline-flex;
             align-items: center;
@@ -147,13 +165,25 @@
             <span class="screenshot-caption">Fig 4: Tap the blue Actions plus button at (#3) to attach exit actions.</span>
         </div>
 
-        <div class="visual-tree">
-            <strong>Recommended Action Chain:</strong><br>
-            &bull; Device Settings &rarr; Home Screen (Forcefully kicks you out of the app)<br>
-            &bull; Notification &rarr; Display Pop-Up Message &rarr; <em>"Tasks incomplete! Complete them first."</em>
+        <!-- Recommendation Block with Search Screenshot -->
+        <div class="recommendation-box">
+            <h4 style="margin: 0 0 6px 0; color: var(--primary);">💡 Recommended Exit Action: "Launch Home Screen"</h4>
+            <p style="font-size: 0.83rem; color: var(--text-muted); line-height: 1.5; margin: 0 0 10px 0;">
+                The cleanest, most reliable way to kick yourself out of a blocked app without lag is the <strong>Launch Home Screen</strong> action. Search for <code>launch home screen</code> in the action search bar to locate it instantly:
+            </p>
+            <div class="guide-screenshot-container">
+                <img src="image/phase1/Ph1_S5.png" alt="Search for Launch Home Screen Action" class="guide-screenshot" loading="lazy">
+                <span class="screenshot-caption">Fig 5: Under Device Actions, select Launch Home Screen.</span>
+            </div>
+            
+            <div class="visual-tree" style="margin-top: 12px;">
+                <strong>Recommended Complete Action Chain:</strong><br>
+                &bull; Device Actions &rarr; Launch Home Screen<br>
+                &bull; Notification &rarr; Display Pop-Up Message &rarr; <em>"Tasks incomplete! Complete them first."</em>
+            </div>
         </div>
 
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 10px;">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 14px;">
             Tap the checkmark in the bottom-right corner to save your <strong>App Blocker</strong> macro.
         </p>
     </div>
