@@ -77,6 +77,30 @@
             margin-left: 8px;
             display: none;
         }
+        .copy-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-top: 6px;
+        }
+        .copy-input {
+            flex: 1;
+            font-family: monospace;
+            font-size: 0.8rem;
+            background: rgba(0, 0, 0, 0.25) !important;
+            color: var(--text-color);
+        }
+        .guide-banner-card {
+            border: 1px dashed var(--primary);
+            background: rgba(var(--primary-rgb, 59, 130, 246), 0.08);
+            padding: 14px;
+            border-radius: 8px;
+            margin-top: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
         button:disabled, input:disabled, select:disabled {
             opacity: 0.5;
             cursor: not-allowed !important;
@@ -167,11 +191,50 @@
                 <button type="button" class="icon-btn" id="togglePasswordVisibilityBtn" disabled>Show Password</button>
             </div>
             <div class="security-notice">
-                🔒 <strong>Zero-Knowledge Security:</strong> Your password is converted into an irreversible SHA-256 token inside your browser before transmission. Never reuse primary email or banking passwords.
+                🔒 <strong>Zero-Knowledge Security:</strong> Your password is converted into an irreversible SHA-256 token inside your browser before transmission.
             </div>
         </div>
 
         <div id="workerTestFeedback" class="notice-banner"></div>
+    </div>
+
+    <!-- MacroDroid Device Lockdown Integration Bridge -->
+    <div class="settings-card" id="macrodroidCard" style="display: none;">
+        <h3 style="margin-top: 0; color: var(--primary);">📲 MacroDroid Lock Integration</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+            Copy these exact credentials directly into MacroDroid's HTTP Request action to automate your device lock.
+        </p>
+        
+        <div class="form-group">
+            <label for="macroEndpointUrl">1. Status URL (HTTP GET)</label>
+            <div class="copy-group">
+                <input type="text" id="macroEndpointUrl" class="copy-input" readonly value="https://taskitator-sync.spacexmzez.workers.dev/?action=status&format=text">
+                <button type="button" class="icon-btn" id="copyUrlBtn">Copy</button>
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 12px;">
+            <label for="macroBearerToken">2. Authorization Header Token</label>
+            <div class="copy-group">
+                <input type="password" id="macroBearerToken" class="copy-input" readonly placeholder="Save credentials to generate token">
+                <button type="button" class="icon-btn" id="toggleTokenVisibilityBtn">Show</button>
+                <button type="button" class="icon-btn" id="copyTokenBtn">Copy</button>
+            </div>
+            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px;">
+                MacroDroid Header format: <code>Authorization</code> &rarr; <code>Bearer &lt;token&gt;</code>
+            </small>
+        </div>
+
+        <!-- Setup Guide Call To Action -->
+        <div class="guide-banner-card">
+            <div>
+                <strong style="display: block; font-size: 0.9rem; color: var(--text-color);">Want to block your phone?</strong>
+                <span style="font-size: 0.78rem; color: var(--text-muted);">Step-by-step setup guide for the MacroDroid lock and bridge.</span>
+            </div>
+            <a href="blocker-guide.html" class="icon-btn" style="text-decoration: none; background: var(--primary); color: #fff; border: none; font-weight: 600; white-space: nowrap; padding: 8px 14px;">
+                Open Setup Guide &rarr;
+            </a>
+        </div>
     </div>
 
     <!-- Weekend & Emergency Cycle Engine -->
@@ -269,6 +332,13 @@ const syncWordBadge = document.getElementById('syncWordBadge');
 const logoutConfirmModal = document.getElementById('logoutConfirmModal');
 const unsavedIndicator = document.getElementById('unsavedIndicator');
 
+// MacroDroid integration elements
+const macrodroidCard = document.getElementById('macrodroidCard');
+const macroBearerToken = document.getElementById('macroBearerToken');
+const copyUrlBtn = document.getElementById('copyUrlBtn');
+const copyTokenBtn = document.getElementById('copyTokenBtn');
+const toggleTokenVisibilityBtn = document.getElementById('toggleTokenVisibilityBtn');
+
 function markUnsaved() {
     if (unsavedIndicator) {
         unsavedIndicator.style.display = 'inline-block';
@@ -289,12 +359,16 @@ function refreshSyncWordStatus() {
         syncWordBadge.className = 'sync-badge-word local-only';
         syncWordBadge.textContent = 'Local Only';
         activeSessionBox.style.display = 'none';
+        macrodroidCard.style.display = 'none';
+        macroBearerToken.value = '';
     } else {
         const config = SyncEngine.getConfig();
         syncWordBadge.className = 'sync-badge-word synced';
         syncWordBadge.textContent = 'Synced';
         activeSessionBox.style.display = 'flex';
         activeUsernameDisplay.textContent = `@${config.username}`;
+        macrodroidCard.style.display = 'block';
+        macroBearerToken.value = config.secret || '';
     }
 }
 
@@ -342,7 +416,6 @@ async function saveSettings(silent = false) {
         settings = {};
     }
 
-    // Anti-tampering check: verify that the user cannot edit the break window outside the window
     const startStr = breakWindowStart.value.trim();
     const endStr = breakWindowEnd.value.trim();
     const savedStart = settings.break_selection_start || '';
@@ -386,7 +459,6 @@ async function saveSettings(silent = false) {
         if (typeof SyncEngine.markLocalModified === 'function') {
             SyncEngine.markLocalModified();
         }
-        // Force immediate push to sync the updated settings across all devices immediately
         await SyncEngine.forceImmediateSync();
     }
 
@@ -457,6 +529,31 @@ togglePasswordVisibilityBtn.addEventListener('click', () => {
     const isPassword = workerPasswordInput.type === 'password';
     workerPasswordInput.type = isPassword ? 'text' : 'password';
     togglePasswordVisibilityBtn.textContent = isPassword ? 'Hide Password' : 'Show Password';
+});
+
+// Copy helpers for MacroDroid setup
+copyUrlBtn.addEventListener('click', () => {
+    const urlInput = document.getElementById('macroEndpointUrl');
+    navigator.clipboard.writeText(urlInput.value).then(() => {
+        const prev = copyUrlBtn.textContent;
+        copyUrlBtn.textContent = 'Copied!';
+        setTimeout(() => copyUrlBtn.textContent = prev, 1500);
+    });
+});
+
+copyTokenBtn.addEventListener('click', () => {
+    if (!macroBearerToken.value) return;
+    navigator.clipboard.writeText(macroBearerToken.value).then(() => {
+        const prev = copyTokenBtn.textContent;
+        copyTokenBtn.textContent = 'Copied!';
+        setTimeout(() => copyTokenBtn.textContent = prev, 1500);
+    });
+});
+
+toggleTokenVisibilityBtn.addEventListener('click', () => {
+    const isPass = macroBearerToken.type === 'password';
+    macroBearerToken.type = isPass ? 'text' : 'password';
+    toggleTokenVisibilityBtn.textContent = isPass ? 'Hide' : 'Show';
 });
 
 // Detect dirty inputs to show unsaved banner
