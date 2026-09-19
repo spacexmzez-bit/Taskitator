@@ -284,7 +284,10 @@
 <body>
 
 <div class="guide-container">
-    <a href="settings.html" class="back-nav">&larr; Back to Settings</a>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <a href="settings.html" class="back-nav" style="margin-bottom: 0;">&larr; Back to Settings</a>
+        <button type="button" class="icon-btn" id="openCopilotNavBtn" title="Focus Copilot" style="font-size: 0.85rem; font-weight: 600; padding: 6px 12px;">💬 Copilot</button>
+    </div>
     
     <header style="margin-bottom: 24px;">
         <h1 style="font-size: 1.5rem; margin: 0 0 6px 0; color: var(--primary);">📲 Phone Lockdown Setup Guide</h1>
@@ -848,6 +851,33 @@
 
     </div>
 
+    <!-- Copilot Slide-Over Drawer -->
+    <div class="copilot-drawer-backdrop" id="copilotBackdrop"></div>
+    <aside class="copilot-drawer" id="copilotDrawer">
+        <div class="copilot-header">
+            <div class="copilot-title-group">
+                <span style="font-weight: 800; font-size: 1.05rem;">🤖 Focus Copilot</span>
+                <span class="copilot-model-chip">3.5 Flash Lite</span>
+            </div>
+            <button type="button" class="icon-btn" id="closeCopilotBtn" style="border: none; font-size: 1.2rem; line-height: 1; padding: 4px 8px;">✕</button>
+        </div>
+
+        <div class="copilot-messages" id="copilotMessages">
+            <div class="copilot-standby-card">
+                <div style="font-size: 2rem; margin-bottom: 6px;">🤖</div>
+                <strong class="copilot-standby-title" style="font-size: 1rem; color: var(--primary);">Focus Copilot</strong>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 6px 0 0 0; line-height: 1.4;">
+                    Ready. Ask me anything relevant to this page.
+                </p>
+            </div>
+        </div>
+
+        <form class="copilot-footer" id="copilotForm">
+            <input type="text" id="copilotInput" placeholder="Ask Copilot..." autocomplete="off" required>
+            <button type="submit" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 8px 16px;">Send</button>
+        </form>
+    </aside>
+
     <div style="text-align: center; margin: 30px 0;">
         <a href="settings.html" class="icon-btn" style="text-decoration: none; background: var(--primary); color: #fff; padding: 12px 28px; font-weight: 600; border-radius: 8px;">
             Return to Settings
@@ -855,6 +885,7 @@
     </div>
 </div>
 
+<script src="agent-engine.js"></script>
 <script>
     const TOTAL_SUBS = 26;
     const STORAGE_KEY = 'taskitator_guide_phase2_progress';
@@ -1005,6 +1036,32 @@
 
     function subId(i) { return `sub-${i}`; }
 
+    // Copilot Drawer Toggle logic
+    const copilotDrawer = document.getElementById('copilotDrawer');
+    const copilotBackdrop = document.getElementById('copilotBackdrop');
+    const openCopilotNavBtn = document.getElementById('openCopilotNavBtn');
+    const closeCopilotBtn = document.getElementById('closeCopilotBtn');
+
+    if (openCopilotNavBtn && copilotDrawer && copilotBackdrop) {
+        openCopilotNavBtn.addEventListener('click', () => {
+            copilotDrawer.classList.add('open');
+            copilotBackdrop.classList.add('open');
+            const input = document.getElementById('copilotInput');
+            if (input) setTimeout(() => input.focus(), 150);
+        });
+    }
+
+    if (closeCopilotBtn && copilotDrawer && copilotBackdrop) {
+        closeCopilotBtn.addEventListener('click', () => {
+            copilotDrawer.classList.remove('open');
+            copilotBackdrop.classList.remove('open');
+        });
+        copilotBackdrop.addEventListener('click', () => {
+            copilotDrawer.classList.remove('open');
+            copilotBackdrop.classList.remove('open');
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         const state = getSavedState();
         for (let i = 1; i <= TOTAL_SUBS; i++) {
@@ -1017,7 +1074,6 @@
         }
         evaluateRollups(state, false);
 
-        // Open first active incomplete step or step 1
         let opened = false;
         for (const [minorId, subs] of Object.entries(STRUCTURE.minor)) {
             const done = subs.filter(s => state[`sub-${s}`]).length;
