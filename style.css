@@ -195,6 +195,7 @@ body {
     transform: translateX(0);
 }
 
+.copilot-drawer-backdrop,
 .copilot-backdrop {
     position: fixed;
     top: 0;
@@ -207,6 +208,7 @@ body {
     z-index: 2099;
 }
 
+.copilot-drawer-backdrop.open,
 .copilot-backdrop.open {
     display: block;
 }
@@ -259,6 +261,15 @@ body {
 .copilot-standby-icon {
     font-size: 3rem;
     margin-bottom: 12px;
+}
+
+.copilot-standby-card {
+    text-align: center;
+    padding: 32px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 
 .copilot-standby-title {
@@ -327,27 +338,48 @@ body {
     font-style: italic;
 }
 
+/* Copilot Footer & Responsive Input Bar */
+.copilot-footer,
 .copilot-input-bar {
     display: flex;
+    align-items: center;
     gap: 8px;
     padding: 12px 14px;
     border-top: 1.5px solid var(--border-color);
-    background: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.25);
+    width: 100%;
+    box-sizing: border-box;
 }
 
+.copilot-footer input,
 .copilot-input-bar input {
     flex: 1;
-    padding: 9px 12px;
+    min-width: 0;
+    height: 42px;
+    padding: 0 14px;
     border: 1.5px solid var(--border-color);
     border-radius: 8px;
-    font-size: 0.85rem;
+    font-size: 0.88rem;
     background: var(--card-subtle);
     color: var(--text-color);
+    box-sizing: border-box;
     outline: none;
+    transition: border-color 0.15s ease;
 }
 
+.copilot-footer input:focus,
 .copilot-input-bar input:focus {
     border-color: var(--primary);
+}
+
+.copilot-footer button,
+.copilot-input-bar button {
+    height: 42px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .copilot-fab-btn {
@@ -688,22 +720,22 @@ body {
 }
 
 .sync-dot.local-only {
-    background-color: #64748b; /* Gray */
+    background-color: #64748b;
     box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.2);
 }
 
 .sync-dot.pending {
-    background-color: #eab308; /* Yellow */
+    background-color: #eab308;
     box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.25);
 }
 
 .sync-dot.synced {
-    background-color: #22c55e; /* Green */
+    background-color: #22c55e;
     box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
 }
 
 .sync-dot.error {
-    background-color: #ef4444; /* Red */
+    background-color: #ef4444;
     box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
 }
 
