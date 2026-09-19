@@ -1,9 +1,13 @@
 // agent-engine.js
 /**
- * Taskitator Focus Copilot - Complete Engine
+ * Taskitator Focus Copilot - Complete Context-Aware Engine
  * 
  * Capabilities:
  * - Dynamic Name Binding: Adopts custom copilot_name across UI headers, nav buttons, input placeholders, and persona prompt.
+ * - Multi-Page Context Engine: Detects active page via window.location.pathname and dynamically adapts persona.
+ * - Tool Gating: Exposes task mutation tools ONLY on task-centric pages (index.html, general.html).
+ * - Out-of-Context Routing: Strictly instructs the model to redirect users to task pages if mutations are requested on non-task pages.
+ * - In-Memory Stats Ingestion: Reads task and break statistics directly from localStorage to assist in stats analysis.
  * - Dual-model cascade: gemini-3.5-flash-lite -> gemini-3.1-flash-lite on HTTP 429.
  * - Session fallback latch to prevent wasteful double roundtrips after quota exhaustion.
  * - External SYSTEM_PROMPT.md loader with runtime caching and offline fallback.
@@ -18,6 +22,7 @@
 window.TaskitatorAgent = (() => {
     const STORAGE_KEY_SETTINGS = 'taskitator_settings';
     const STORAGE_KEY_TASKS = 'taskitator_tasks';
+    const STORAGE_KEY_BREAKS = 'taskitator_daily_breaks';
     const SESSION_LATCH_KEY = 'gemini_fallback_active';
 
     const PRIMARY_MODEL = 'gemini-3.5-flash-lite';
@@ -30,6 +35,19 @@ window.TaskitatorAgent = (() => {
     // Kept in memory across drawer toggles; reset on page unload/refresh
     const conversationHistory = [];
 
+    // =========================================================================
+    // 1. Page Context Detection
+    // =========================================================================
+    function getPageContext() {
+        const path = window.location.pathname.toLowerCase();
+        if (path.endsWith('general.html')) return 'general';
+        if (path.endsWith('stats.html')) return 'stats';
+        if (path.endsWith('settings.html')) return 'settings';
+        if (path.endsWith('blocker-guide.html') || path.endsWith('blocker_guide.html')) return 'blocker_guide';
+        if (path.endsWith('trash.html')) return 'trash';
+        return 'today'; // Defaults to index.html / root
+    }
+
     function getCopilotName() {
         try {
             const settings = JSON.parse(localStorage.getItem(STORAGE_KEY_SETTINGS) || '{}');
@@ -40,7 +58,7 @@ window.TaskitatorAgent = (() => {
     }
 
     // =========================================================================
-    // 1. External Prompt Loader with Dynamic Name Injection
+    // 2. External Prompt Loader with Dynamic Page Context Injection
     // =========================================================================
     async function getSystemPrompt() {
         let baseText = cachedSystemPrompt;
@@ -62,11 +80,66 @@ window.TaskitatorAgent = (() => {
         }
 
         const name = getCopilotName();
-        return `Your assigned name is "${name}". Address yourself by this name if asked.\n\n` + baseText;
+        const page = getPageContext();
+
+        let contextDirectives = `Your assigned name is "${name}". Address yourself by this name if asked.\n`;
+
+        if (page === 'today' || page === 'general') {
+            contextDirectives += (
+                `CURRENT PAGE: ${page === 'today' ? 'Today Queue (index.html)' : 'General Tasks (general.html)'}.\n` +
+                "ROLE: Primary Task Manager.\n" +
+                "You have full access to task inspection and mutation tools (get_tasks, create_task, update_task, trash_task). " +
+                "Assist directly with creating, breaking down, and managing tasks."
+            );
+        } else if (page === 'stats') {
+            let tasks = [];
+            let breaks = [];
+            try {
+                tasks = JSON.parse(localStorage.getItem(STORAGE_KEY_TASKS) || '[]');
+                breaks = JSON.parse(localStorage.getItem(STORAGE_KEY_BREAKS) || '[]');
+            } catch (e) {}
+
+            const activeCount = tasks.filter(t => t.status === 'active').length;
+            const completedCount = tasks.filter(t => t.status === 'completed').length;
+            const trashCount = tasks.filter(t => t.status === 'trash').length;
+            const lockedCount = tasks.filter(t => t.ai_locked && t.status === 'active').length;
+            const todayBreaksCount = breaks.length;
+
+            contextDirectives += (
+                "CURRENT PAGE: Statistics & Analytics (stats.html).\n" +
+                "ROLE: Performance Analyst.\n" +
+                `LIVE DATA SNAPSHOT: Active Tasks: ${activeCount} (Locked: ${lockedCount}), Completed Tasks: ${completedCount}, Trashed: ${trashCount}, Scheduled Breaks Today: ${todayBreaksCount}.\n` +
+                "Help the user interpret their productivity trends, velocity, and completion rates.\n" +
+                "CRITICAL RESTRICTION: You DO NOT have task manipulation tools on this page. If the user asks you to create, update, complete, or trash a task, you MUST explicitly refuse and instruct them to switch to the Today or General Tasks page first."
+            );
+        } else if (page === 'settings') {
+            contextDirectives += (
+                "CURRENT PAGE: Settings (settings.html).\n" +
+                "ROLE: Technical Configuration Assistant.\n" +
+                "Explain settings clearly: Gemini API key acquisition (Google AI Studio at aistudio.google.com), Cloudflare KV sync setup, MacroDroid webhook authorization headers, weekend start/end cycle calculation, emergency token mechanics (4 tokens/cycle reset at midnight post-weekend), and the immutable daily break window.\n" +
+                "CRITICAL RESTRICTION: You DO NOT have task manipulation tools on this page. If the user asks you to create, update, complete, or trash a task, you MUST explicitly refuse and instruct them to switch to the Today or General Tasks page first."
+            );
+        } else if (page === 'blocker_guide') {
+            contextDirectives += (
+                "CURRENT PAGE: MacroDroid Blocker Setup Guide (blocker-guide.html).\n" +
+                "ROLE: Lockdown Implementation Coach.\n" +
+                "Provide detailed technical assistance across every phase of the phone lockdown setup: MacroDroid HTTP GET configuration, bearer token authorization headers, response parsing (LOCKED vs UNLOCKED), volume/device locking triggers, and strict permission requirements.\n" +
+                "CRITICAL RESTRICTION: You DO NOT have task manipulation tools on this page. If the user asks to create, update, or trash tasks, instruct them to switch to Today or General Tasks first."
+            );
+        } else if (page === 'trash') {
+            contextDirectives += (
+                "CURRENT PAGE: Trash & Data Retention (trash.html).\n" +
+                "ROLE: Trash & Safety Guide.\n" +
+                "Explain the soft-deletion model: trashing a parent task cascades soft-deletion down to all subtasks. Explain that AI-locked tasks cannot be trashed without an active Emergency Bypass.\n" +
+                "CRITICAL RESTRICTION: You DO NOT have task manipulation tools on this page. If the user asks to create, edit, or trash tasks, instruct them to switch to Today or General Tasks first."
+            );
+        }
+
+        return `${contextDirectives}\n\n${baseText}`;
     }
 
     // =========================================================================
-    // 2. Flat Tool Schemas
+    // 3. Flat Tool Schemas
     // =========================================================================
     const AGENT_TOOLS = [
         {
@@ -152,7 +225,7 @@ window.TaskitatorAgent = (() => {
     ];
 
     // =========================================================================
-    // 3. API Key & Auth Retrieval
+    // 4. API Key & Auth Retrieval
     // =========================================================================
     function getApiKey() {
         try {
@@ -164,7 +237,7 @@ window.TaskitatorAgent = (() => {
     }
 
     // =========================================================================
-    // 4. Dual-Model Cascade with Session 429 Fallback Latch
+    // 5. Dual-Model Cascade with Session 429 Fallback Latch
     // =========================================================================
     async function executeModelCall(payload, apiKey) {
         const buildUrl = (model) =>
@@ -202,7 +275,7 @@ window.TaskitatorAgent = (() => {
     }
 
     // =========================================================================
-    // 5. Tool Dispatcher & Hard Lock Guardrails
+    // 6. Tool Dispatcher & Hard Lock Guardrails
     // =========================================================================
     function executeToolCall(name, args) {
         let tasks = [];
@@ -351,7 +424,7 @@ window.TaskitatorAgent = (() => {
     }
 
     // =========================================================================
-    // 6. Sliding-Window Payload Trimmer
+    // 7. Sliding-Window Payload Trimmer
     // =========================================================================
     function getTrimmedContents() {
         // Retain the last 8 message turns maximum for network payload
@@ -363,7 +436,7 @@ window.TaskitatorAgent = (() => {
     }
 
     // =========================================================================
-    // 7. Conversational Turn Execution
+    // 8. Conversational Turn Execution
     // =========================================================================
     async function sendMessage(userText) {
         const apiKey = getApiKey();
@@ -384,12 +457,17 @@ window.TaskitatorAgent = (() => {
             });
 
             const systemText = await getSystemPrompt();
+            const pageContext = getPageContext();
+
+            // Only expose task manipulation tools on Today and General pages
+            const activeTools = (pageContext === 'today' || pageContext === 'general') 
+                ? AGENT_TOOLS 
+                : [];
 
             // Run up to 4 consecutive tool execution loops (for chained operations)
             for (let loop = 0; loop < 4; loop++) {
                 const payload = {
                     contents: getTrimmedContents(),
-                    tools: AGENT_TOOLS,
                     systemInstruction: {
                         parts: [{ text: systemText }]
                     },
@@ -397,6 +475,10 @@ window.TaskitatorAgent = (() => {
                         temperature: 0.2
                     }
                 };
+
+                if (activeTools.length > 0) {
+                    payload.tools = activeTools;
+                }
 
                 const { data, modelUsed } = await executeModelCall(payload, apiKey);
                 const candidate = data.candidates?.[0]?.content;
@@ -444,17 +526,18 @@ window.TaskitatorAgent = (() => {
                 return { text: replyText, modelUsed };
             }
 
-            return { text: "Completed task updates." };
+            return { text: "Completed updates." };
         } finally {
             isProcessing = false;
         }
     }
 
     // =========================================================================
-    // 8. Drawer UI Controller & Universal Name Binding
+    // 9. Drawer UI Controller & Universal Name Binding
     // =========================================================================
     function refreshSystemNames() {
         const name = getCopilotName();
+        const page = getPageContext();
 
         // 1. Update Drawer Title Header
         const titleSpan = document.querySelector('.copilot-title-group span:first-child');
@@ -462,10 +545,25 @@ window.TaskitatorAgent = (() => {
             titleSpan.textContent = `🤖 ${name}`;
         }
 
-        // 2. Update Standby Card Greeting
+        // 2. Update Standby Card Greeting & Subtitle
         const standbyTitle = document.querySelector('.copilot-standby-title');
         if (standbyTitle) {
             standbyTitle.textContent = name;
+        }
+
+        const standbyDesc = document.querySelector('.copilot-standby-card p');
+        if (standbyDesc) {
+            if (page === 'stats') {
+                standbyDesc.textContent = 'Ask me to analyze your study patterns, velocity, or completion history.';
+            } else if (page === 'settings') {
+                standbyDesc.textContent = 'Ask me about configuring keys, emergency tokens, or break windows.';
+            } else if (page === 'blocker_guide') {
+                standbyDesc.textContent = 'Ask me for step-by-step guidance configuring MacroDroid phone lock.';
+            } else if (page === 'trash') {
+                standbyDesc.textContent = 'Ask me how soft-deletion, restoration, and data retention work.';
+            } else {
+                standbyDesc.textContent = 'Ready. Tell me what tasks you need to organize, breakdown, or check.';
+            }
         }
 
         // 3. Update Floating / Top Nav Buttons across pages
@@ -479,10 +577,20 @@ window.TaskitatorAgent = (() => {
             fabBtn.title = `Open ${name}`;
         }
 
-        // 4. Update Input Bar Placeholder
+        // 4. Update Input Bar Placeholder per page
         const inputField = document.getElementById('copilotInput');
         if (inputField) {
-            inputField.placeholder = `Ask ${name}...`;
+            if (page === 'stats') {
+                inputField.placeholder = `Ask ${name} to analyze stats...`;
+            } else if (page === 'settings') {
+                inputField.placeholder = `Ask ${name} about settings...`;
+            } else if (page === 'blocker_guide') {
+                inputField.placeholder = `Ask ${name} about lockdown steps...`;
+            } else if (page === 'trash') {
+                inputField.placeholder = `Ask ${name} about trash...`;
+            } else {
+                inputField.placeholder = `Ask ${name}...`;
+            }
         }
     }
 
@@ -544,6 +652,7 @@ window.TaskitatorAgent = (() => {
     return {
         sendMessage,
         refreshSystemNames,
+        getPageContext,
         getHistory: () => conversationHistory
     };
 })();
