@@ -1,7 +1,7 @@
 // sw.js
 /**
  * Taskitator Service Worker
- * Version: taskitator-v26
+ * Version: taskitator-v27
  * 
  * Features:
  * - Network-First for core shell assets with offline cache fallback.
