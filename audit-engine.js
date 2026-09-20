@@ -1,7 +1,8 @@
 // audit-engine.js
 /**
  * Taskitator Core Engine
- * Manages BYOK Gemini Verification Cascade, Emergency Bypass Tokens, and Break Limits
+ * Manages BYOK Gemini Verification Cascade, Pre-Flight Criteria Validation,
+ * Emergency Bypass Tokens, and Break Limits
  */
 
 const TaskitatorEngine = {
@@ -14,6 +15,9 @@ const TaskitatorEngine = {
 
     // Enforced upload limit across files (Photos, Gallery, PDFs)
     MAX_FILE_SIZE_MB: 4,
+
+    // In-memory cache for pre-flight criteria validations to prevent duplicate API hits
+    _criteriaValidationCache: new Map(),
 
     // =========================================================================
     // 1. Break Engine (3 Breaks, <= 3 Hours Total, Window Enforcement)
@@ -264,7 +268,7 @@ const TaskitatorEngine = {
         },
 
         async callGemini(modelName, apiKey, inlineDataPart, promptText) {
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+            const endpoint = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){modelName}:generateContent?key=${apiKey}`;
             const payload = {
                 contents: [{
                     parts: [inlineDataPart, { text: promptText }]
@@ -280,6 +284,133 @@ const TaskitatorEngine = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+        },
+
+        async callGeminiTextOnly(modelName, apiKey, promptText) {
+            const endpoint = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){modelName}:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{
+                    parts: [{ text: promptText }]
+                }],
+                generationConfig: {
+                    temperature: 0.1,
+                    responseMimeType: 'application/json'
+                }
+            };
+
+            return await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        },
+
+        /**
+         * Pre-flight Criteria Evaluation
+         * Analyzes whether criteria demand an objective, verifiable artifact.
+         * Returns: { success: boolean, score: number, passed: boolean, critique: string, suggested_rewrite: string, error?: string }
+         */
+        async validateCriteria(criteriaText, taskTitle = '') {
+            const trimmedCriteria = (criteriaText || '').trim();
+            const trimmedTitle = (taskTitle || '').trim();
+
+            if (!trimmedCriteria) {
+                return {
+                    success: false,
+                    score: 0,
+                    passed: false,
+                    critique: 'Proof criteria cannot be empty.',
+                    suggested_rewrite: ''
+                };
+            }
+
+            // Check cache to avoid duplicate API calls
+            const cacheKey = `${trimmedTitle}:::${trimmedCriteria}`;
+            if (TaskitatorEngine._criteriaValidationCache.has(cacheKey)) {
+                return TaskitatorEngine._criteriaValidationCache.get(cacheKey);
+            }
+
+            let settings = {};
+            try {
+                settings = JSON.parse(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_SETTINGS) || '{}');
+            } catch (e) {
+                settings = {};
+            }
+
+            const apiKey = (settings.gemini_api_key || '').trim();
+            if (!apiKey) {
+                return {
+                    success: false,
+                    error: 'Gemini API key is not configured. Please set your key in Settings.'
+                };
+            }
+
+            const prompt = `You are a forensic proof auditor. Evaluate whether this task acceptance criterion can be objectively verified using a single submitted photo or screenshot evidence file.
+
+TASK TITLE: "${trimmedTitle || 'Untitled Task'}"
+PROPOSED CRITERIA: "${trimmedCriteria}"
+
+Evaluation Rules:
+1. Objectivity: Does it require a tangible, visual artifact (handwritten page with date, screen terminal diff, completed checklist, cleared room surface)?
+2. Disqualify Subjective Action: Strongly penalize unprovable internal states ("read", "understand", "study", "learn", "plan") unless tied to an explicit physical proof artifact (e.g. "photo of written notes").
+3. Ambiguity: Reject criteria with unclear boundaries.
+4. Pass Threshold: Score on a strict 1 to 10 scale. A score >= 7 means acceptable for automated AI audit.
+
+Return strictly valid JSON with this exact schema:
+{
+  "score": <integer 1 to 10>,
+  "passed": <boolean, true if score >= 7, false otherwise>,
+  "critique": "<maximum 15 words explaining the flaw or confirming validity>",
+  "suggested_rewrite": "<a concrete, artifact-based rewrite if score < 7, else empty string>"
+}`;
+
+            try {
+                let usedModel = TaskitatorEngine.PRIMARY_MODEL;
+                let res = await this.callGeminiTextOnly(usedModel, apiKey, prompt);
+
+                // Cascade on rate limit
+                if (res.status === 429) {
+                    console.warn(`[AuditEngine] Model ${usedModel} hit 429 during criteria validation. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
+                    usedModel = TaskitatorEngine.FALLBACK_MODEL;
+                    res = await this.callGeminiTextOnly(usedModel, apiKey, prompt);
+                }
+
+                if (!res.ok) {
+                    const errJson = await res.json().catch(() => ({}));
+                    return {
+                        success: false,
+                        error: errJson.error?.message || `Gemini API HTTP ${res.status}`
+                    };
+                }
+
+                const data = await res.json();
+                let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+
+                // Strip potential Markdown wrapping
+                rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+                const parsed = JSON.parse(rawText);
+                const score = typeof parsed.score === 'number' ? Math.max(1, Math.min(10, parsed.score)) : 5;
+                const passed = parsed.passed !== undefined ? Boolean(parsed.passed) : score >= 7;
+
+                const result = {
+                    success: true,
+                    score,
+                    passed,
+                    critique: String(parsed.critique || '').slice(0, 120),
+                    suggested_rewrite: String(parsed.suggested_rewrite || '').slice(0, 300),
+                    model_used: usedModel
+                };
+
+                // Cache successful evaluation
+                TaskitatorEngine._criteriaValidationCache.set(cacheKey, result);
+                return result;
+            } catch (err) {
+                return {
+                    success: false,
+                    error: `Validation parsing error: ${err.message}`
+                };
+            }
         },
 
         async verifyProof({ file, taskTitle, criteria, userContext }) {
@@ -342,7 +473,8 @@ Return valid JSON matching this schema:
             }
 
             const data = await res.json();
-            const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+            rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
 
             try {
                 const parsed = JSON.parse(rawText);
