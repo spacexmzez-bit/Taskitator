@@ -1,0 +1,38 @@
+[
+  {
+    "id": "written_notes",
+    "category": "Academic Study",
+    "label": "Handwritten Notes",
+    "template": "Photo of at least 1 full page of handwritten summary notes covering [Topic/Chapter], with today's date clearly written at the top margin."
+  },
+  {
+    "id": "question_bank",
+    "category": "Academic Study",
+    "label": "Practice Questions / Quiz",
+    "template": "Screenshot or photo showing completed practice test/quiz review screen for [Subject], displaying score summary, question count, and timestamp."
+  },
+  {
+    "id": "reading_takeaways",
+    "category": "Reading & Research",
+    "label": "Reading & Physical Index Card",
+    "template": "Photo of 3 specific key takeaways handwritten on an index card placed directly on top of the open book/article covering [Subject]."
+  },
+  {
+    "id": "code_commit",
+    "category": "Software Development",
+    "label": "Git Commit / Terminal Diff",
+    "template": "Screenshot of terminal running 'git log -n 1 --stat' showing the committed changes for [Feature], with system clock/date visible in status bar."
+  },
+  {
+    "id": "written_draft",
+    "category": "Writing & Documents",
+    "label": "Document / Essay Draft",
+    "template": "Screenshot of text editor showing word count panel of at least [Target Count] words for [Document Title], with system clock visible."
+  },
+  {
+    "id": "physical_space",
+    "category": "Physical & Habit",
+    "label": "Physical Space Cleanup",
+    "template": "Photo of the organized workspace/room taken from the doorway, clearly showing all floor and desk surfaces cleared of clutter."
+  }
+]
