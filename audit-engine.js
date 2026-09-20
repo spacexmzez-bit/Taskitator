@@ -268,7 +268,7 @@ const TaskitatorEngine = {
         },
 
         async callGemini(modelName, apiKey, inlineDataPart, promptText) {
-            const endpoint = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){modelName}:generateContent?key=${apiKey}`;
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
             const payload = {
                 contents: [{
                     parts: [inlineDataPart, { text: promptText }]
@@ -287,7 +287,7 @@ const TaskitatorEngine = {
         },
 
         async callGeminiTextOnly(modelName, apiKey, promptText) {
-            const endpoint = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){modelName}:generateContent?key=${apiKey}`;
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
             const payload = {
                 contents: [{
                     parts: [{ text: promptText }]
