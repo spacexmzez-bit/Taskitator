@@ -1,110 +1,93 @@
-// sw.js
-/**
- * Taskitator Service Worker
- * Version: taskitator-v27
- * 
- * Features:
- * - Network-First for core shell assets with offline cache fallback.
- * - Strict bypass for Cloudflare sync APIs, Gemini endpoints, and non-GET requests to prevent sync interference.
- * - Automatic stale cache eviction on activation.
- */
+// sw.js - Taskitator Service Worker
+const CACHE_NAME = 'taskitator-v27';
 
-const CACHE_NAME = 'taskitator-v23';
-
-const ASSETS_TO_CACHE = [
+const STATIC_ASSETS = [
     './',
-    './login.html',
     './index.html',
     './general.html',
     './stats.html',
     './settings.html',
-    './blocker-guide.html',
     './trash.html',
+    './blocker-guide.html',
+    './login.html',
     './style.css',
-    './sync-engine.js',
-    './audit-engine.js',
-    './agent-engine.js',
-    './SYSTEM_PROMPT.md',
     './manifest.json',
+    './SYSTEM_PROMPT.md',
+    './CRITERIA_TEMPLATES.json',
+    './agent-engine.js',
+    './audit-engine.js',
+    './sync-engine.js',
     './icon/icon-192.png',
     './icon/icon-512.png'
 ];
 
-// =========================================================================
-// 1. Install Event: Cache Core App Shell
-// =========================================================================
+// Install: Cache all core application assets
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(ASSETS_TO_CACHE);
-        }).then(() => {
-            // Force newly installed service worker to activate immediately
-            return self.skipWaiting();
-        })
+            return cache.addAll(STATIC_ASSETS);
+        }).then(() => self.skipWaiting())
     );
 });
 
-// =========================================================================
-// 2. Activate Event: Evict Outdated Caches
-// =========================================================================
+// Activate: Purge older cache versions
 self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.keys().then((cacheNames) => {
+        caches.keys().then((keys) => {
             return Promise.all(
-                cacheNames.map((name) => {
-                    if (name !== CACHE_NAME) {
-                        return caches.delete(name);
+                keys.map((key) => {
+                    if (key !== CACHE_NAME) {
+                        return caches.delete(key);
                     }
                 })
             );
-        }).then(() => {
-            // Claim clients immediately so updated SW controls existing tabs
-            return self.clients.claim();
-        })
+        }).then(() => self.clients.claim())
     );
 });
 
-// =========================================================================
-// 3. Fetch Event: Network-First with Live Sync Bypass
-// =========================================================================
+// Fetch: Stale-while-revalidate for dynamic runtime files, network-first for HTML
 self.addEventListener('fetch', (event) => {
-    const url = new URL(event.request.url);
+    const request = event.request;
+    const url = new URL(request.url);
 
-    // 1. NEVER intercept non-GET requests (POST sync push, etc.)
-    if (event.request.method !== 'GET') {
+    // Bypass caching for cross-origin API calls (Gemini API & Cloudflare Worker)
+    if (url.origin !== self.location.origin) {
         return;
     }
 
-    // 2. NEVER intercept Cloudflare Worker sync or external APIs
-    if (url.hostname.includes('workers.dev') || url.hostname.includes('googleapis.com')) {
-        return; // Hand over directly to live network
+    // Network-first for top-level HTML navigation requests to prevent stale shells
+    if (request.mode === 'navigate') {
+        event.respondWith(
+            fetch(request).then((response) => {
+                const responseClone = response.clone();
+                caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
+                return response;
+            }).catch(() => caches.match(request))
+        );
+        return;
     }
 
-    // 3. Network-First strategy for local app assets
-    // Ensures code updates deploy immediately when online, falling back to cache when offline
+    // Cache-first falling back to network for all local assets
     event.respondWith(
-        fetch(event.request)
-            .then((networkResponse) => {
-                // If response is valid, update the cache with fresh version
-                if (networkResponse && networkResponse.status === 200) {
-                    const responseToCache = networkResponse.clone();
-                    caches.open(CACHE_NAME).then((cache) => {
-                        cache.put(event.request, responseToCache);
-                    });
+        caches.match(request).then((cachedResponse) => {
+            if (cachedResponse) {
+                // Background refresh
+                fetch(request).then((networkResponse) => {
+                    if (networkResponse && networkResponse.status === 200) {
+                        caches.open(CACHE_NAME).then((cache) => cache.put(request, networkResponse));
+                    }
+                }).catch(() => {});
+                return cachedResponse;
+            }
+
+            return fetch(request).then((networkResponse) => {
+                if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+                    return networkResponse;
                 }
+                const responseToCache = networkResponse.clone();
+                caches.open(CACHE_NAME).then((cache) => cache.put(request, responseToCache));
                 return networkResponse;
-            })
-            .catch(() => {
-                // Offline fallback: serve from local cache
-                return caches.match(event.request).then((cachedResponse) => {
-                    if (cachedResponse) {
-                        return cachedResponse;
-                    }
-                    // If navigating to an uncached page offline, fallback to login/index
-                    if (event.request.mode === 'navigate') {
-                        return caches.match('./login.html') || caches.match('./index.html');
-                    }
-                });
-            })
+            });
+        })
     );
 });
