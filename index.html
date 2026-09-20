@@ -136,6 +136,60 @@
             align-items: center;
             gap: 4px;
         }
+
+        /* Criteria Pre-Flight Validation Bar */
+        .criteria-actions-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 6px;
+        }
+        .criteria-feedback-box {
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 0.82rem;
+            line-height: 1.4;
+            display: none;
+        }
+        .criteria-feedback-box.pass {
+            background: #052e16;
+            border: 1px solid #166534;
+            color: #86efac;
+        }
+        .criteria-feedback-box.fail {
+            background: #380d15;
+            border: 1px solid #881337;
+            color: #fda4af;
+        }
+        .criteria-feedback-box.loading {
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-style: italic;
+        }
+        .template-picker-list {
+            max-height: 240px;
+            overflow-y: auto;
+            margin-top: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .template-picker-card {
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .template-picker-card:hover {
+            border-color: var(--primary);
+            background: var(--accent-light);
+        }
+
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-3px); }
             to { opacity: 1; transform: translateY(0); }
@@ -345,9 +399,17 @@
                 </label>
             </div>
 
+            <!-- Proof Criteria & Pre-Flight Validation Engine -->
             <div class="form-group" id="criteriaBoxContainer" style="display: none;">
                 <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt; (Visual Verification Requirements)</label>
                 <textarea id="taskCriteriaInput" rows="2" placeholder="e.g. Photo clearly showing completed worksheet #4 with current date handwritten."></textarea>
+                
+                <div class="criteria-actions-bar">
+                    <button type="button" class="icon-btn" id="openTemplatesBtn" style="font-size: 0.78rem; padding: 4px 10px;">💡 Recommended</button>
+                    <button type="button" class="icon-btn" id="validateCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px; background: var(--accent-light); color: var(--accent); border-color: var(--border-color);">🔍 Validate Criteria</button>
+                </div>
+
+                <div id="criteriaFeedbackBox" class="criteria-feedback-box"></div>
             </div>
 
             <div class="form-group">
@@ -358,9 +420,23 @@
 
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
                 <button type="button" class="icon-btn" id="closeAddTaskModalBtn">Cancel</button>
-                <button type="submit" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Task</button>
+                <button type="submit" class="icon-btn" id="submitTaskCreateBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Task</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Modal: Recommended Criteria Templates Picker -->
+<div class="modal-overlay" id="templatesModal">
+    <div class="modal-box" style="max-width: 500px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="margin: 0; color: var(--primary);">💡 Proof Criteria Templates</h3>
+            <button type="button" class="icon-btn" id="closeTemplatesModalBtn" style="padding: 2px 8px;">✕</button>
+        </div>
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0 0 10px 0;">
+            Select a pre-verified template. Templates automatically score 10/10 and prevent lockouts.
+        </p>
+        <div class="template-picker-list" id="templatesListContainer"></div>
     </div>
 </div>
 
@@ -494,6 +570,14 @@ let collapsedNodes = new Set();
 let pendingAuditTaskId = null;
 let activeDetailTaskId = null;
 let emergencyTimerInterval = null;
+
+// Criteria Pre-Flight State
+let criteriaValidationState = {
+    validated: false,
+    score: 0,
+    isTemplate: false
+};
+let cachedTemplates = null;
 
 const pendingGraceCompletions = new Map();
 
@@ -1385,16 +1469,64 @@ document.getElementById('saveBreaksBtn').addEventListener('click', () => {
 });
 
 // =========================================================================
-// Full Task Creation Modal Flow
+// Full Task Creation Modal & Criteria Engine State Machine
 // =========================================================================
 const addTaskModal = document.getElementById('addTaskModal');
 const openRootAddModalBtn = document.getElementById('openRootAddModalBtn');
 const closeAddTaskModalBtn = document.getElementById('closeAddTaskModalBtn');
 const aiLockCheckbox = document.getElementById('aiLockCheckbox');
 const criteriaBoxContainer = document.getElementById('criteriaBoxContainer');
+const taskCriteriaInput = document.getElementById('taskCriteriaInput');
+const validateCriteriaBtn = document.getElementById('validateCriteriaBtn');
+const criteriaFeedbackBox = document.getElementById('criteriaFeedbackBox');
+const openTemplatesBtn = document.getElementById('openTemplatesBtn');
+const submitTaskCreateBtn = document.getElementById('submitTaskCreateBtn');
+const templatesModal = document.getElementById('templatesModal');
+const closeTemplatesModalBtn = document.getElementById('closeTemplatesModalBtn');
+const templatesListContainer = document.getElementById('templatesListContainer');
 const subtaskBuilderList = document.getElementById('subtaskBuilderList');
 const creationParentId = document.getElementById('creationParentId');
 const addTaskModalTitle = document.getElementById('addTaskModalTitle');
+
+function isStrictCriteriaModeEnabled() {
+    let settings = {};
+    try {
+        settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+    } catch (e) {
+        settings = {};
+    }
+    return settings.strict_criteria_validation !== false;
+}
+
+function updateSubmitLockState() {
+    if (!aiLockCheckbox.checked) {
+        submitTaskCreateBtn.disabled = false;
+        submitTaskCreateBtn.style.opacity = '1';
+        submitTaskCreateBtn.style.cursor = 'pointer';
+        return;
+    }
+
+    if (!isStrictCriteriaModeEnabled()) {
+        submitTaskCreateBtn.disabled = false;
+        submitTaskCreateBtn.style.opacity = '1';
+        submitTaskCreateBtn.style.cursor = 'pointer';
+        return;
+    }
+
+    // In Strict Mode with AI Lock enabled: require passed validation
+    const canSubmit = criteriaValidationState.validated && criteriaValidationState.score >= 7;
+    submitTaskCreateBtn.disabled = !canSubmit;
+    submitTaskCreateBtn.style.opacity = canSubmit ? '1' : '0.5';
+    submitTaskCreateBtn.style.cursor = canSubmit ? 'pointer' : 'not-allowed';
+}
+
+function resetCriteriaValidation() {
+    criteriaValidationState = { validated: false, score: 0, isTemplate: false };
+    criteriaFeedbackBox.style.display = 'none';
+    criteriaFeedbackBox.className = 'criteria-feedback-box';
+    criteriaFeedbackBox.innerHTML = '';
+    updateSubmitLockState();
+}
 
 function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task') {
     document.getElementById('taskCreateForm').reset();
@@ -1403,6 +1535,7 @@ function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task') 
     criteriaBoxContainer.style.display = 'none';
     subtaskBuilderList.innerHTML = '';
     document.getElementById('taskDueDateInput').value = new Date().toISOString().split('T')[0];
+    resetCriteriaValidation();
     addTaskModal.classList.add('open');
 }
 
@@ -1414,6 +1547,145 @@ closeAddTaskModalBtn.addEventListener('click', () => {
 
 aiLockCheckbox.addEventListener('change', () => {
     criteriaBoxContainer.style.display = aiLockCheckbox.checked ? 'block' : 'none';
+    if (!aiLockCheckbox.checked) {
+        resetCriteriaValidation();
+    } else {
+        updateSubmitLockState();
+    }
+});
+
+// Typing in criteria field resets validation state
+taskCriteriaInput.addEventListener('input', () => {
+    criteriaValidationState.validated = false;
+    criteriaValidationState.score = 0;
+    criteriaValidationState.isTemplate = false;
+    criteriaFeedbackBox.style.display = 'none';
+    updateSubmitLockState();
+});
+
+// Run Pre-Flight Criteria Validation
+validateCriteriaBtn.addEventListener('click', async () => {
+    const criteriaText = taskCriteriaInput.value.trim();
+    const taskTitle = document.getElementById('taskTitleInput').value.trim();
+
+    if (!criteriaText) {
+        criteriaFeedbackBox.style.display = 'block';
+        criteriaFeedbackBox.className = 'criteria-feedback-box fail';
+        criteriaFeedbackBox.textContent = 'Please enter proof criteria before validating.';
+        return;
+    }
+
+    validateCriteriaBtn.disabled = true;
+    validateCriteriaBtn.textContent = 'Validating...';
+    criteriaFeedbackBox.style.display = 'block';
+    criteriaFeedbackBox.className = 'criteria-feedback-box loading';
+    criteriaFeedbackBox.textContent = 'Auditing criteria with forensic model...';
+
+    const res = await TaskitatorEngine.AuditEngine.validateCriteria(criteriaText, taskTitle);
+    validateCriteriaBtn.disabled = false;
+    validateCriteriaBtn.textContent = '🔍 Validate Criteria';
+
+    if (!res.success) {
+        criteriaFeedbackBox.className = 'criteria-feedback-box fail';
+        criteriaFeedbackBox.innerHTML = `<strong>Audit Halted:</strong> ${res.error || 'Failed to communicate with AI model.'}`;
+        criteriaValidationState = { validated: false, score: 0, isTemplate: false };
+        updateSubmitLockState();
+        return;
+    }
+
+    criteriaValidationState = {
+        validated: true,
+        score: res.score,
+        isTemplate: false
+    };
+
+    if (res.passed) {
+        criteriaFeedbackBox.className = 'criteria-feedback-box pass';
+        criteriaFeedbackBox.innerHTML = `
+            <strong>✓ Verified (${res.score}/10)</strong>: ${res.critique}
+        `;
+    } else {
+        criteriaFeedbackBox.className = 'criteria-feedback-box fail';
+        let feedbackHtml = `
+            <strong>⚠️ Low Quality Rating (${res.score}/10)</strong>: ${res.critique}
+        `;
+        if (res.suggested_rewrite) {
+            feedbackHtml += `
+                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2);">
+                    <strong>Suggested Artifact:</strong> "${res.suggested_rewrite}"
+                    <div style="margin-top: 6px;">
+                        <button type="button" class="icon-btn" id="applySuggestionBtn" style="padding: 3px 8px; font-size: 0.75rem; background: var(--card-subtle);">Use Suggestion</button>
+                    </div>
+                </div>
+            `;
+        }
+        criteriaFeedbackBox.innerHTML = feedbackHtml;
+
+        const applyBtn = criteriaFeedbackBox.querySelector('#applySuggestionBtn');
+        if (applyBtn) {
+            applyBtn.addEventListener('click', () => {
+                taskCriteriaInput.value = res.suggested_rewrite;
+                criteriaValidationState = { validated: true, score: 9, isTemplate: true };
+                criteriaFeedbackBox.className = 'criteria-feedback-box pass';
+                criteriaFeedbackBox.innerHTML = `<strong>✓ Verified (9/10)</strong>: Applied forensic suggestion.`;
+                updateSubmitLockState();
+            });
+        }
+    }
+
+    updateSubmitLockState();
+});
+
+// Load and Render Templates Modal
+async function loadCriteriaTemplates() {
+    if (cachedTemplates) return cachedTemplates;
+    try {
+        const resp = await fetch('./CRITERIA_TEMPLATES.json');
+        if (resp.ok) {
+            cachedTemplates = await resp.json();
+            return cachedTemplates;
+        }
+    } catch (e) {
+        console.warn('Failed to load CRITERIA_TEMPLATES.json:', e);
+    }
+    return [];
+}
+
+openTemplatesBtn.addEventListener('click', async () => {
+    const templates = await loadCriteriaTemplates();
+    templatesListContainer.innerHTML = '';
+
+    if (templates.length === 0) {
+        templatesListContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 12px 0;">No templates available offline.</div>';
+    } else {
+        templates.forEach(t => {
+            const card = document.createElement('div');
+            card.className = 'template-picker-card';
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <strong style="color: var(--text-color); font-size: 0.88rem;">${t.label}</strong>
+                    <span class="tag-chip" style="font-size: 0.7rem;">${t.category}</span>
+                </div>
+                <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.35;">${t.template}</p>
+            `;
+            card.addEventListener('click', () => {
+                taskCriteriaInput.value = t.template;
+                criteriaValidationState = { validated: true, score: 10, isTemplate: true };
+                criteriaFeedbackBox.style.display = 'block';
+                criteriaFeedbackBox.className = 'criteria-feedback-box pass';
+                criteriaFeedbackBox.innerHTML = `<strong>✓ Verified (10/10)</strong>: Standard verified artifact template selected.`;
+                templatesModal.classList.remove('open');
+                updateSubmitLockState();
+            });
+            templatesListContainer.appendChild(card);
+        });
+    }
+
+    templatesModal.classList.add('open');
+});
+
+closeTemplatesModalBtn.addEventListener('click', () => {
+    templatesModal.classList.remove('open');
 });
 
 document.getElementById('addSubtaskFieldBtn').addEventListener('click', () => {
@@ -1433,10 +1705,17 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
     const tags = document.getElementById('taskTagsInput').value.split(',').map(s => s.trim()).filter(Boolean);
     const dueDate = document.getElementById('taskDueDateInput').value || 'today';
     const isAi = aiLockCheckbox.checked;
-    const criteria = document.getElementById('taskCriteriaInput').value.trim();
+    const criteria = taskCriteriaInput.value.trim();
     const parentId = creationParentId.value || null;
 
     if (!title) return;
+
+    if (isAi && isStrictCriteriaModeEnabled()) {
+        if (!criteriaValidationState.validated || criteriaValidationState.score < 7) {
+            alert('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before creating an AI-locked task.');
+            return;
+        }
+    }
 
     if (isAi) {
         const confirmed = confirm(
