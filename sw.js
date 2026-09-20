@@ -1,5 +1,5 @@
 // sw.js - Taskitator Service Worker
-const CACHE_NAME = 'taskitator-v28';
+const CACHE_NAME = 'taskitator-v29';
 
 const STATIC_ASSETS = [
     './',
