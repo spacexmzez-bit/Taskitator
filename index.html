@@ -190,6 +190,88 @@
             background: var(--accent-light);
         }
 
+        /* Header Restructuring Styles */
+        .icon-only-btn {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .icon-only-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: var(--card-subtle);
+        }
+
+        .emergency-icon-btn {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            cursor: pointer;
+            font-size: 1.05rem;
+            transition: all 0.15s ease;
+        }
+        .emergency-icon-btn:hover {
+            background: rgba(239, 68, 68, 0.25);
+            border-color: #ef4444;
+            transform: scale(1.03);
+        }
+
+        .break-status-pill {
+            height: 36px;
+            padding: 0 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border-radius: 18px;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+        .break-status-pill:hover {
+            border-color: var(--primary);
+            background: var(--card-subtle);
+        }
+        .break-status-pill.active-break {
+            background: rgba(34, 197, 94, 0.15);
+            border-color: #22c55e;
+            color: #4ade80;
+        }
+        .break-status-pill.window-open {
+            border-color: #3b82f6;
+            color: #93c5fd;
+        }
+
+        .page-title-section {
+            padding: 16px 20px 4px 20px;
+        }
+        .page-title-section h1 {
+            font-size: 1.55rem;
+            font-weight: 800;
+            color: #f8fafc;
+            margin: 0;
+            letter-spacing: -0.02em;
+        }
+
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-3px); }
             to { opacity: 1; transform: translateY(0); }
@@ -251,49 +333,55 @@
 </aside>
 
 <div class="app-container">
-    <!-- Top Navbar -->
-    <header class="top-navbar">
-        <div class="nav-left">
-            <button class="icon-btn" id="openDrawerBtn" title="Menu">☰</button>
-            <h2 style="margin: 0; font-size: 1.25rem;">Today's Focus</h2>
+    <!-- Restructured Top Navbar -->
+    <header class="top-navbar" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <!-- Left: Navigation Drawer Button -->
+        <div class="nav-left" style="display: flex; align-items: center; gap: 8px;">
+            <button class="icon-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer">☰</button>
         </div>
-        <div class="nav-right">
-            <!-- Open Copilot Navbar Trigger Button -->
-            <button class="nav-link-btn" id="openCopilotNavBtn" title="Open AI Copilot">💬 Copilot</button>
 
-            <!-- Completed List Trigger Button -->
-            <button class="nav-link-btn" id="openCompletedModalBtn" title="View Completed Tasks">✓ Completed</button>
+        <!-- Middle Action Controls -->
+        <div class="nav-center" style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
+            <!-- Completed List Trigger (Icon-Only Checkmark) -->
+            <button class="icon-only-btn" id="openCompletedModalBtn" title="Completed Tasks" aria-label="View Completed Tasks">
+                <span style="font-size: 1.05rem; font-weight: bold; color: var(--success);">✓</span>
+            </button>
+
+            <!-- Dynamic Break Status Pill -->
+            <button id="breakStatusPill" class="break-status-pill" title="Daily Breaks" aria-label="Manage Daily Breaks">
+                <span id="breakPillIcon">⏸️</span>
+                <span id="breakPillText">Breaks</span>
+            </button>
 
             <!-- Sync Dot Indicator -->
             <span class="sync-dot local-only" id="syncStatusDot" title="Click to view Sync Status details"></span>
 
-            <button class="emergency-pill-btn" id="emergencyTriggerBtn" title="Emergency Bypass">
-                🚨 <span id="emergencyCountDisplay">4/4</span>
+            <!-- Emergency Siren Trigger (Icon-Only) -->
+            <button class="emergency-icon-btn" id="emergencyTriggerBtn" title="Emergency Bypass" aria-label="Emergency Bypass">
+                <span>🚨</span>
             </button>
-            <button class="info-tiny-btn" id="emergencyInfoBtn" title="Rules">!</button>
+            <button class="info-tiny-btn" id="emergencyInfoBtn" title="Emergency Rules">!</button>
+        </div>
+
+        <!-- Far Right: Ari Copilot Trigger -->
+        <div class="nav-right" style="display: flex; align-items: center;">
+            <button class="nav-link-btn" id="openCopilotNavBtn" title="Open Ari Assistant" aria-label="Open Ari Assistant" style="gap: 6px;">
+                <span>💬</span>
+                <span>Ari</span>
+            </button>
         </div>
     </header>
+
+    <!-- Page Title Section -->
+    <div class="page-title-section">
+        <h1>Today's Focus</h1>
+    </div>
 
     <!-- Active Emergency Alert Banner -->
     <div id="activeEmergencyBanner" class="banner-emergency" style="display: none;">
         <span>🚨 Emergency Mode Active: Task deletion & editing unlocked!</span>
         <span id="emergencyCountdownTimer">15:00</span>
     </div>
-
-    <!-- Daily Break Scheduler -->
-    <section id="breakSchedulerContainer" class="banner-break-window" style="display: none;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <strong style="font-size: 0.9rem;">⏸️ Daily Break Scheduling Window Open</strong>
-        </div>
-        <p style="font-size: 0.8rem; margin: 0 0 10px 0; color: #86efac;">
-            Schedule up to 3 non-overlapping breaks (&le; 3 hrs total). Window locks permanently after closing.
-        </p>
-        <div id="breakInputsList"></div>
-        <div style="display: flex; gap: 8px; margin-top: 10px;">
-            <button class="icon-btn" id="addBreakRowBtn" style="padding: 4px 10px; font-size: 0.8rem;">+ Add Break</button>
-            <button class="icon-btn" id="saveBreaksBtn" style="padding: 4px 12px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">Save Breaks</button>
-        </div>
-    </section>
 
     <!-- Tree-Based Task Hierarchy -->
     <ul class="task-list-tree" id="todayTaskList"></ul>
@@ -304,6 +392,35 @@
 
 <!-- Floating Action Button for Copilot Launcher -->
 <button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot">🤖</button>
+
+<!-- Modal: Daily Break Configuration -->
+<div class="modal-overlay" id="breakModal">
+    <div class="modal-box" style="max-width: 440px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="margin: 0; color: var(--primary); display: flex; align-items: center; gap: 8px;">
+                <span>⏸️</span> Daily Breaks
+            </h3>
+            <button class="icon-btn" id="closeBreakModalBtn" style="padding: 2px 8px;">✕</button>
+        </div>
+
+        <p id="breakModalStatusDesc" style="font-size: 0.82rem; color: var(--text-muted); margin: 0 0 14px 0; line-height: 1.4;">
+            Schedule up to 3 non-overlapping breaks (≤ 3 hours total). The window locks permanently once closed.
+        </p>
+
+        <div id="breakRowsContainer" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px;"></div>
+
+        <div id="breakModalError" style="display: none; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; color: #fca5a5; font-size: 0.8rem; margin-bottom: 14px;"></div>
+
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+            <button id="addBreakRowModalBtn" type="button" class="icon-btn" style="padding: 6px 12px; font-size: 0.82rem;">
+                + Add Break
+            </button>
+            <button id="saveBreaksModalBtn" type="button" class="icon-btn" style="padding: 6px 14px; font-size: 0.82rem; background: var(--primary); color: #fff; border: none; font-weight: 600;">
+                Save Breaks
+            </button>
+        </div>
+    </div>
+</div>
 
 <!-- Modal: Dedicated Completed List View -->
 <div class="modal-overlay" id="completedModal">
@@ -653,6 +770,7 @@ window.addEventListener('taskitator-synced', () => {
         loadStorage();
         renderTaskTree();
         renderCompletedModalList();
+        BreakUI.updateStatusPill();
     }
 });
 
@@ -662,6 +780,7 @@ window.addEventListener('taskitator-tasks-updated', () => {
         loadStorage();
         renderTaskTree();
         renderCompletedModalList();
+        BreakUI.updateStatusPill();
     }
 });
 
@@ -706,6 +825,7 @@ document.getElementById('forceSyncFromModalBtn').addEventListener('click', async
             loadStorage();
             renderTaskTree();
             renderCompletedModalList();
+            BreakUI.updateStatusPill();
         } else {
             updateSyncDot('error');
         }
@@ -748,19 +868,18 @@ function renderTaskTree() {
     });
 
     function belongsToToday(task) {
-    const rawDue = (task.due_date || '').trim().toLowerCase();
-    
-    // 1. Matches literal 'today'
-    if (rawDue === 'today') return true;
-    
-    // 2. Matches valid ISO dates on or before today (YYYY-MM-DD)
-    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDue) && rawDue <= todayStr) return true;
-    
-    // 3. Recursively check child subtasks
-    const kids = allChildrenMap.get(task.id) || [];
-    return kids.some(k => belongsToToday(k));
-}
-
+        const rawDue = (task.due_date || '').trim().toLowerCase();
+        
+        // 1. Matches literal 'today'
+        if (rawDue === 'today') return true;
+        
+        // 2. Matches valid ISO dates on or before today (YYYY-MM-DD)
+        if (/^\d{4}-\d{2}-\d{2}$/.test(rawDue) && rawDue <= todayStr) return true;
+        
+        // 3. Recursively check child subtasks
+        const kids = allChildrenMap.get(task.id) || [];
+        return kids.some(k => belongsToToday(k));
+    }
 
     function hasVisibleDescendant(taskId) {
         const kids = visibleChildrenMap.get(taskId) || [];
@@ -1354,9 +1473,6 @@ const activeEmergencyBanner = document.getElementById('activeEmergencyBanner');
 const emergencyCountdownTimer = document.getElementById('emergencyCountdownTimer');
 
 function updateEmergencyUI() {
-    const state = TaskitatorEngine.EmergencyManager.getState();
-    document.getElementById('emergencyCountDisplay').textContent = `${state.uses_left}/4`;
-
     if (TaskitatorEngine.EmergencyManager.isBypassActive()) {
         activeEmergencyBanner.style.display = 'flex';
         startEmergencyCountdown();
@@ -1418,63 +1534,174 @@ document.getElementById('closeEmergencyInfoModalBtn').addEventListener('click', 
 });
 
 // =========================================================================
-// Break Window Scheduler
+// Break System: Dynamic Header Pill & Dedicated Modal
 // =========================================================================
-const breakSchedulerContainer = document.getElementById('breakSchedulerContainer');
-const breakInputsList = document.getElementById('breakInputsList');
+const BreakUI = {
+    pill: document.getElementById('breakStatusPill'),
+    pillText: document.getElementById('breakPillText'),
+    pillIcon: document.getElementById('breakPillIcon'),
+    modal: document.getElementById('breakModal'),
+    rowsContainer: document.getElementById('breakRowsContainer'),
+    errorBox: document.getElementById('breakModalError'),
+    saveBtn: document.getElementById('saveBreaksModalBtn'),
+    addBtn: document.getElementById('addBreakRowModalBtn'),
+    closeBtn: document.getElementById('closeBreakModalBtn'),
 
-function renderBreakScheduler() {
-    if (!TaskitatorEngine.BreakEngine.isSelectionWindowOpen()) {
-        breakSchedulerContainer.style.display = 'none';
-        return;
-    }
+    init() {
+        if (!this.pill || !this.modal) return;
 
-    breakSchedulerContainer.style.display = 'block';
-    const existing = TaskitatorEngine.BreakEngine.getTodayBreaks();
-    breakInputsList.innerHTML = '';
+        this.pill.addEventListener('click', () => this.openModal());
+        this.closeBtn.addEventListener('click', () => this.closeModal());
+        this.addBtn.addEventListener('click', () => this.addBreakRow());
+        this.saveBtn.addEventListener('click', () => this.saveBreaks());
 
-    if (existing.length === 0) {
-        addBreakRow();
-    } else {
-        existing.forEach(b => addBreakRow(b.start, b.end));
-    }
-}
+        this.modal.addEventListener('click', (e) => {
+            if (e.target === this.modal) this.closeModal();
+        });
 
-function addBreakRow(sVal = '', eVal = '') {
-    if (breakInputsList.children.length >= 3) {
-        alert('Maximum 3 breaks allowed per day.');
-        return;
-    }
-    const row = document.createElement('div');
-    row.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 6px;';
-    row.innerHTML = `
-        <input type="time" class="b-start" value="${sVal}" style="padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
-        <span style="color: var(--text-muted); font-size: 0.85rem;">to</span>
-        <input type="time" class="b-end" value="${eVal}" style="padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
-        <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
-    `;
-    breakInputsList.appendChild(row);
-}
+        this.updateStatusPill();
+        setInterval(() => this.updateStatusPill(), 30000);
+    },
 
-document.getElementById('addBreakRowBtn').addEventListener('click', () => addBreakRow());
+    updateStatusPill() {
+        if (!window.TaskitatorEngine?.BreakEngine || !this.pill) return;
 
-document.getElementById('saveBreaksBtn').addEventListener('click', () => {
-    const rows = breakInputsList.querySelectorAll('div');
-    const breaks = [];
-    rows.forEach(r => {
-        const s = r.querySelector('.b-start').value;
-        const e = r.querySelector('.b-end').value;
-        if (s && e) breaks.push({ start: s, end: e });
-    });
+        const isWindowOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
+        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
+        const now = new Date();
+        const curMins = now.getHours() * 60 + now.getMinutes();
 
-    const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(breaks);
-    if (!res.valid) {
-        alert(`Break Error: ${res.error}`);
-    } else {
-        alert('Breaks successfully saved.');
+        this.pill.className = 'break-status-pill';
+
+        // 1. Check if currently on an active break
+        const activeBreak = breaks.find(b => {
+            const [sH, sM] = b.start.split(':').map(Number);
+            const [eH, eM] = b.end.split(':').map(Number);
+            return curMins >= (sH * 60 + sM) && curMins <= (eH * 60 + eM);
+        });
+
+        if (activeBreak) {
+            const [eH, eM] = activeBreak.end.split(':').map(Number);
+            const minsLeft = (eH * 60 + eM) - curMins;
+            this.pill.classList.add('active-break');
+            this.pillIcon.textContent = '🟢';
+            this.pillText.textContent = `${minsLeft}m left`;
+            return;
+        }
+
+        // 2. Check for upcoming break today
+        const upcomingBreak = breaks
+            .map(b => {
+                const [sH, sM] = b.start.split(':').map(Number);
+                return { ...b, startMins: sH * 60 + sM };
+            })
+            .filter(b => b.startMins > curMins)
+            .sort((a, b) => a.startMins - b.startMins)[0];
+
+        if (upcomingBreak) {
+            this.pillIcon.textContent = '☕';
+            this.pillText.textContent = `Next: ${upcomingBreak.start}`;
+            return;
+        }
+
+        // 3. Fallback to Window State
+        if (isWindowOpen) {
+            this.pill.classList.add('window-open');
+            this.pillIcon.textContent = '⏸️';
+            this.pillText.textContent = breaks.length > 0 ? 'Edit Breaks' : 'Breaks';
+        } else {
+            this.pillIcon.textContent = '🔒';
+            this.pillText.textContent = 'Breaks Locked';
+        }
+    },
+
+    openModal() {
+        const isWindowOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
+        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
+
+        this.rowsContainer.innerHTML = '';
+        this.hideError();
+
+        if (breaks.length > 0) {
+            breaks.forEach(b => this.addBreakRow(b.start, b.end, !isWindowOpen));
+        } else if (isWindowOpen) {
+            this.addBreakRow();
+        }
+
+        this.addBtn.style.display = isWindowOpen ? 'inline-block' : 'none';
+        this.saveBtn.style.display = isWindowOpen ? 'inline-block' : 'none';
+        document.getElementById('breakModalStatusDesc').textContent = isWindowOpen
+            ? 'Schedule up to 3 non-overlapping breaks (≤ 3 hours total). The window locks permanently once closed.'
+            : 'The break scheduling window is now closed for today. Configured breaks are read-only.';
+
+        this.modal.classList.add('open');
+    },
+
+    closeModal() {
+        this.modal.classList.remove('open');
+    },
+
+    addBreakRow(startVal = '', endVal = '', disabled = false) {
+        const rows = this.rowsContainer.querySelectorAll('.break-row-item');
+        if (rows.length >= 3) {
+            this.showError('Maximum 3 breaks allowed per day.');
+            return;
+        }
+
+        const row = document.createElement('div');
+        row.className = 'break-row-item';
+        row.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+        row.innerHTML = `
+            <input type="time" class="b-start" value="${startVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
+            <span style="color: var(--text-muted); font-size: 0.85rem;">to</span>
+            <input type="time" class="b-end" value="${endVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
+            ${!disabled ? '<button type="button" class="del-break-row-btn" style="background: none; border: none; color: var(--danger); font-size: 1.2rem; cursor: pointer; padding: 0 4px; line-height: 1;">&times;</button>' : ''}
+        `;
+
+        if (!disabled) {
+            row.querySelector('.del-break-row-btn').addEventListener('click', () => {
+                row.remove();
+                this.hideError();
+            });
+        }
+
+        this.rowsContainer.appendChild(row);
+    },
+
+    saveBreaks() {
+        const rows = this.rowsContainer.querySelectorAll('.break-row-item');
+        const breaksArray = [];
+
+        for (const r of rows) {
+            const start = r.querySelector('.b-start').value;
+            const end = r.querySelector('.b-end').value;
+            if (start && end) {
+                breaksArray.push({ start, end });
+            }
+        }
+
+        const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(breaksArray);
+        if (!res.valid) {
+            this.showError(res.error);
+            return;
+        }
+
         saveStorageAndPush();
+        this.closeModal();
+        this.updateStatusPill();
+    },
+
+    showError(msg) {
+        this.errorBox.textContent = msg;
+        this.errorBox.style.display = 'block';
+    },
+
+    hideError() {
+        this.errorBox.style.display = 'none';
+        this.errorBox.textContent = '';
     }
-});
+};
 
 // =========================================================================
 // Full Task Creation Modal & Criteria Engine State Machine
@@ -1521,7 +1748,6 @@ function updateSubmitLockState() {
         return;
     }
 
-    // In Strict Mode with AI Lock enabled: require passed validation
     const canSubmit = criteriaValidationState.validated && criteriaValidationState.score >= 7;
     submitTaskCreateBtn.disabled = !canSubmit;
     submitTaskCreateBtn.style.opacity = canSubmit ? '1' : '0.5';
@@ -1562,7 +1788,6 @@ aiLockCheckbox.addEventListener('change', () => {
     }
 });
 
-// Typing in criteria field resets validation state
 taskCriteriaInput.addEventListener('input', () => {
     criteriaValidationState.validated = false;
     criteriaValidationState.score = 0;
@@ -1571,7 +1796,6 @@ taskCriteriaInput.addEventListener('input', () => {
     updateSubmitLockState();
 });
 
-// Run Pre-Flight Criteria Validation
 validateCriteriaBtn.addEventListener('click', async () => {
     const criteriaText = taskCriteriaInput.value.trim();
     const taskTitle = document.getElementById('taskTitleInput').value.trim();
@@ -1644,7 +1868,6 @@ validateCriteriaBtn.addEventListener('click', async () => {
     updateSubmitLockState();
 });
 
-// Load and Render Templates Modal
 async function loadCriteriaTemplates() {
     if (cachedTemplates) return cachedTemplates;
     try {
@@ -1834,7 +2057,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSyncIndicator();
     loadStorage();
     updateEmergencyUI();
-    renderBreakScheduler();
+    BreakUI.init();
     renderTaskTree();
 
     if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
@@ -1843,6 +2066,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadStorage();
                 renderTaskTree();
                 renderCompletedModalList();
+                BreakUI.updateStatusPill();
             }
         });
     }
