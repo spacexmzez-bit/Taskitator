@@ -175,7 +175,19 @@
                 <label for="geminiApiKey">Google AI Studio API Key</label>
                 <input type="password" id="geminiApiKey" placeholder="AIzaSy...">
             </div>
-            <div style="display: flex; gap: 10px;">
+
+            <!-- Strict Proof Criteria Pre-Flight Validation Toggle -->
+            <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
+                <div style="flex: 1;">
+                    <label for="strictCriteriaToggle" style="margin-bottom: 2px; font-weight: 700;">Strict Criteria Validation</label>
+                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; line-height: 1.4;">
+                        Enforces an objective pre-flight rating (&ge; 7/10) to lock tasks. Disable only if you prefer entering manual criteria without automated gating.
+                    </small>
+                </div>
+                <input type="checkbox" id="strictCriteriaToggle" style="width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer;" checked>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 14px;">
                 <button type="button" class="icon-btn" id="testGeminiBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Test Connection</button>
                 <button type="button" class="icon-btn" id="toggleKeyVisibilityBtn">Show Key</button>
             </div>
@@ -335,6 +347,7 @@ let hasUnsavedChanges = false;
 const authenticatedSettingsContainer = document.getElementById('authenticatedSettingsContainer');
 const copilotNameInput = document.getElementById('copilotNameInput');
 const geminiApiKeyInput = document.getElementById('geminiApiKey');
+const strictCriteriaToggle = document.getElementById('strictCriteriaToggle');
 const activeUsernameDisplay = document.getElementById('activeUsernameDisplay');
 const weekendStartSelect = document.getElementById('weekendStartSelect');
 const weekendEndSelect = document.getElementById('weekendEndSelect');
@@ -405,6 +418,10 @@ function loadSettings() {
 
     copilotNameInput.value = settings.copilot_name || 'Focus Copilot';
     geminiApiKeyInput.value = settings.gemini_api_key || '';
+    
+    // Strict criteria defaults to true if not explicitly set to false
+    strictCriteriaToggle.checked = settings.strict_criteria_validation !== false;
+
     weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
     weekendEndSelect.value = settings.weekend_end !== undefined ? settings.weekend_end : '6';
 
@@ -443,6 +460,7 @@ async function saveSettings(silent = false) {
 
     settings.copilot_name = (copilotNameInput.value.trim() || 'Focus Copilot').slice(0, 20);
     settings.gemini_api_key = geminiApiKeyInput.value.trim();
+    settings.strict_criteria_validation = Boolean(strictCriteriaToggle.checked);
     settings.worker_url = HARDCODED_WORKER_URL;
     settings.weekend_start = parseInt(weekendStartSelect.value, 10);
     settings.weekend_end = parseInt(weekendEndSelect.value, 10);
@@ -539,7 +557,7 @@ toggleTokenVisibilityBtn.addEventListener('click', () => {
 });
 
 // Detect dirty inputs
-[copilotNameInput, geminiApiKeyInput, weekendStartSelect, weekendEndSelect, breakWindowStart, breakWindowEnd].forEach(el => {
+[copilotNameInput, geminiApiKeyInput, strictCriteriaToggle, weekendStartSelect, weekendEndSelect, breakWindowStart, breakWindowEnd].forEach(el => {
     el.addEventListener('input', markUnsaved);
     el.addEventListener('change', markUnsaved);
 });
