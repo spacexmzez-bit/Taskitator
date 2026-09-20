@@ -748,11 +748,19 @@ function renderTaskTree() {
     });
 
     function belongsToToday(task) {
-        const due = String(task.due_date || 'today').trim().toLowerCase();
-        if (due === 'today' || due === todayStr) return true;
-        const kids = allChildrenMap.get(task.id) || [];
-        return kids.some(k => belongsToToday(k));
-    }
+    const rawDue = (task.due_date || '').trim().toLowerCase();
+    
+    // 1. Matches literal 'today'
+    if (rawDue === 'today') return true;
+    
+    // 2. Matches valid ISO dates on or before today (YYYY-MM-DD)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDue) && rawDue <= todayStr) return true;
+    
+    // 3. Recursively check child subtasks
+    const kids = allChildrenMap.get(task.id) || [];
+    return kids.some(k => belongsToToday(k));
+}
+
 
     function hasVisibleDescendant(taskId) {
         const kids = visibleChildrenMap.get(taskId) || [];
