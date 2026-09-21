@@ -54,14 +54,20 @@
             border-radius: 8px;
             margin-bottom: 12px;
         }
-        .save-prompt-bar {
+        
+        /* Persistent Sticky Save Header */
+        .sticky-save-bar {
+            position: sticky;
+            top: 60px;
+            z-index: 40;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: var(--card-subtle);
+            background: #142952;
             border: 1px solid var(--border-color);
-            padding: 12px 16px;
-            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+            padding: 10px 16px;
+            border-radius: 10px;
             margin-bottom: 16px;
         }
         .unsaved-pill {
@@ -103,6 +109,156 @@
             opacity: 0.5;
             cursor: not-allowed !important;
         }
+
+        /* Settings Tabs Navigation */
+        .settings-tab-nav {
+            display: flex;
+            gap: 6px;
+            border-bottom: 2px solid var(--border-color);
+            margin-bottom: 18px;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .settings-tab-nav::-webkit-scrollbar {
+            display: none;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-weight: 700;
+            padding: 10px 16px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            white-space: nowrap;
+            transition: all 0.15s ease;
+        }
+        .tab-btn:hover {
+            color: var(--text-color);
+        }
+        .tab-btn.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .tab-pane {
+            display: none;
+        }
+        .tab-pane.active {
+            display: block;
+            animation: fadeIn 0.2s ease;
+        }
+
+        /* Tag Cloud Management */
+        .tag-cloud-editor {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+            min-height: 40px;
+            padding: 10px;
+            border-radius: 8px;
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+        }
+        .tag-editor-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #1e3a8a;
+            color: #93c5fd;
+            border: 1px solid #3b82f6;
+            padding: 4px 10px;
+            border-radius: 16px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .tag-editor-del {
+            cursor: pointer;
+            color: #fca5a5;
+            font-weight: 700;
+            font-size: 0.85rem;
+            line-height: 1;
+        }
+        .tag-editor-del:hover {
+            color: #ef4444;
+        }
+
+        /* Priority List Management */
+        .priority-item-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            transition: border-color 0.15s ease;
+        }
+        .priority-item-card:hover {
+            border-color: var(--border-hover, #3b6ec2);
+        }
+        .priority-rank-badge {
+            font-size: 0.75rem;
+            font-weight: 800;
+            color: var(--text-muted);
+            min-width: 20px;
+        }
+        .priority-name-input {
+            flex: 1;
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: var(--card-bg);
+            color: var(--text-color);
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .priority-color-picker {
+            width: 38px;
+            height: 34px;
+            padding: 2px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            cursor: pointer;
+        }
+        .priority-reorder-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .reorder-btn {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 4px;
+            width: 26px;
+            height: 16px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.65rem;
+            cursor: pointer;
+        }
+        .reorder-btn:hover:not(:disabled) {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        .reorder-btn:disabled {
+            opacity: 0.25;
+            cursor: not-allowed;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
@@ -133,179 +289,229 @@
         </div>
     </header>
 
-    <!-- Master Authenticated Container: Hidden until log-in state is confirmed -->
+    <!-- Master Authenticated Container -->
     <div id="authenticatedSettingsContainer" style="display: none;">
-        <!-- Global Instructions Banner -->
-        <div class="save-prompt-bar">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">
-                ℹ️ Changes to settings or keys will not take effect until you click <strong>Save All Settings</strong>.
+        
+        <!-- Persistent Sticky Save Header (Visible Across All Tabs) -->
+        <div class="sticky-save-bar">
+            <div style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.3;">
+                <span>Click <strong>Save All Settings</strong> to sync modifications across devices.</span>
             </div>
+            <button type="button" class="icon-btn" id="saveAllSettingsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 8px 16px; font-size: 0.85rem; white-space: nowrap;">
+                💾 Save All Settings
+            </button>
         </div>
 
-        <!-- Account Session & Status -->
-        <div class="settings-card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <h3 style="margin: 0; color: var(--primary);">👤 Cloud Account</h3>
-                <span id="syncWordBadge" class="sync-badge-word synced">Synced</span>
-            </div>
+        <!-- 3-Tab Navigation Header -->
+        <nav class="settings-tab-nav">
+            <button type="button" class="tab-btn active" data-tab="tab-account">👤 Account & Setup</button>
+            <button type="button" class="tab-btn" data-tab="tab-system">🎛️ System Configuration</button>
+            <button type="button" class="tab-btn" data-tab="tab-tasks">🏷️ Task Settings</button>
+        </nav>
 
-            <div class="account-session-box">
-                <div>
-                    <div style="font-size: 0.8rem; color: var(--text-muted);">Signed in as:</div>
-                    <strong id="activeUsernameDisplay" style="color: var(--primary); font-size: 0.95rem;"></strong>
+        <!-- ========================================================================= -->
+        <!-- TAB 1: Account & Setup                                                   -->
+        <!-- ========================================================================= -->
+        <div class="tab-pane active" id="tab-account">
+            <!-- Account Session & Status -->
+            <div class="settings-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h3 style="margin: 0; color: var(--primary);">👤 Cloud Account</h3>
+                    <span id="syncWordBadge" class="sync-badge-word synced">Synced</span>
                 </div>
-                <button type="button" class="icon-btn" id="openLogoutModalBtn" style="color: var(--danger); border-color: #881337;">Log Out</button>
-            </div>
-        </div>
 
-        <!-- General Preferences (Mute Toggle added here) -->
-        <div class="settings-card">
-            <h3 style="margin-top: 0; color: var(--primary);">🎛️ General Preferences</h3>
-            
-            <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 10px;">
-                <div style="flex: 1;">
-                    <label for="soundEffectsToggle" style="margin-bottom: 2px; font-weight: 700;">Sound Effects</label>
-                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; line-height: 1.4;">
-                        Play auditory feedback on task completion and AI verification. Uses zero external files.
+                <div class="account-session-box">
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">Signed in as:</div>
+                        <strong id="activeUsernameDisplay" style="color: var(--primary); font-size: 0.95rem;"></strong>
+                    </div>
+                    <button type="button" class="icon-btn" id="openLogoutModalBtn" style="color: var(--danger); border-color: #881337;">Log Out</button>
+                </div>
+            </div>
+
+            <!-- Gemini BYOK -->
+            <div class="settings-card">
+                <h3 style="margin-top: 0; color: var(--primary);">🤖 Gemini AI Engine</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                    Audits task evidence and drives your personal AI assistant. Dual-model cascade: <strong>gemini-3.5-flash-lite</strong> primary, falling back to <strong>gemini-3.1-flash-lite</strong> on quota exhaustion.
+                </p>
+
+                <div class="form-group">
+                    <label for="geminiApiKey">Google AI Studio API Key</label>
+                    <input type="password" id="geminiApiKey" placeholder="AIzaSy...">
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 14px;">
+                    <button type="button" class="icon-btn" id="testGeminiBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Test Connection</button>
+                    <button type="button" class="icon-btn" id="toggleKeyVisibilityBtn">Show Key</button>
+                </div>
+                <div id="geminiTestFeedback" class="notice-banner"></div>
+            </div>
+
+            <!-- MacroDroid Device Lockdown Integration Bridge -->
+            <div class="settings-card" id="macrodroidCard">
+                <h3 style="margin-top: 0; color: var(--primary);">📲 MacroDroid Lock Integration</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                    Copy these exact credentials directly into MacroDroid's HTTP Request action to automate your device lock.
+                </p>
+                
+                <div class="form-group">
+                    <label for="macroEndpointUrl">1. Status URL (HTTP GET)</label>
+                    <div class="copy-group">
+                        <input type="text" id="macroEndpointUrl" class="copy-input" readonly value="https://taskitator-sync.spacexmzez.workers.dev/?action=status&format=text">
+                        <button type="button" class="icon-btn" id="copyUrlBtn">Copy</button>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 12px;">
+                    <label for="macroBearerToken">2. Authorization Header Token</label>
+                    <div class="copy-group">
+                        <input type="password" id="macroBearerToken" class="copy-input" readonly>
+                        <button type="button" class="icon-btn" id="toggleTokenVisibilityBtn">Show</button>
+                        <button type="button" class="icon-btn" id="copyTokenBtn">Copy</button>
+                    </div>
+                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px;">
+                        MacroDroid Header format: <code>Authorization</code> &rarr; <code>Bearer &lt;token&gt;</code>
                     </small>
                 </div>
-                <input type="checkbox" id="soundEffectsToggle" style="width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer;" checked>
-            </div>
-        </div>
 
-        <!-- Gemini BYOK & AI Copilot Identity -->
-        <div class="settings-card">
-            <h3 style="margin-top: 0; color: var(--primary);">🤖 Gemini AI Verification & Copilot</h3>
-            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                Audits task evidence and drives your personal AI assistant. Dual-model cascade: <strong>gemini-3.5-flash-lite</strong> primary, falling back to <strong>gemini-3.1-flash-lite</strong> on quota exhaustion.
-            </p>
-            
-            <div class="form-group">
-                <label for="copilotNameInput">Copilot Name (Max 20 characters)</label>
-                <input type="text" id="copilotNameInput" maxlength="20" placeholder="Focus Copilot" autocomplete="off">
-                <small style="color: var(--text-muted); font-size: 0.75rem;">This custom name updates the copilot header, navigation buttons, and AI persona system-wide.</small>
-            </div>
-
-            <div class="form-group">
-                <label for="geminiApiKey">Google AI Studio API Key</label>
-                <input type="password" id="geminiApiKey" placeholder="AIzaSy...">
-            </div>
-
-            <!-- Strict Proof Criteria Pre-Flight Validation Toggle -->
-            <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
-                <div style="flex: 1;">
-                    <label for="strictCriteriaToggle" style="margin-bottom: 2px; font-weight: 700;">Strict Criteria Validation</label>
-                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; line-height: 1.4;">
-                        Enforces an objective pre-flight rating (&ge; 7/10) to lock tasks. Disable only if you prefer entering manual criteria without automated gating.
-                    </small>
+                <!-- Setup Guide Link -->
+                <div class="guide-banner-card">
+                    <div>
+                        <strong style="display: block; font-size: 0.9rem; color: var(--text-color);">Want to block your phone?</strong>
+                        <span style="font-size: 0.78rem; color: var(--text-muted);">Step-by-step setup guide for the MacroDroid lock and bridge.</span>
+                    </div>
+                    <a href="blocker-guide.html" class="icon-btn link-guarded" style="text-decoration: none; background: var(--primary); color: #fff; border: none; font-weight: 600; white-space: nowrap; padding: 8px 14px;">
+                        Open Setup Guide &rarr;
+                    </a>
                 </div>
-                <input type="checkbox" id="strictCriteriaToggle" style="width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer;" checked>
             </div>
-
-            <div style="display: flex; gap: 10px; margin-top: 14px;">
-                <button type="button" class="icon-btn" id="testGeminiBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Test Connection</button>
-                <button type="button" class="icon-btn" id="toggleKeyVisibilityBtn">Show Key</button>
-            </div>
-            <div id="geminiTestFeedback" class="notice-banner"></div>
         </div>
 
-        <!-- MacroDroid Device Lockdown Integration Bridge -->
-        <div class="settings-card" id="macrodroidCard">
-            <h3 style="margin-top: 0; color: var(--primary);">📲 MacroDroid Lock Integration</h3>
-            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                Copy these exact credentials directly into MacroDroid's HTTP Request action to automate your device lock.
-            </p>
-            
-            <div class="form-group">
-                <label for="macroEndpointUrl">1. Status URL (HTTP GET)</label>
+        <!-- ========================================================================= -->
+        <!-- TAB 2: System Configuration                                              -->
+        <!-- ========================================================================= -->
+        <div class="tab-pane" id="tab-system">
+            <!-- General Preferences & Persona -->
+            <div class="settings-card">
+                <h3 style="margin-top: 0; color: var(--primary);">🎛️ General & Persona</h3>
+                
+                <div class="form-group">
+                    <label for="copilotNameInput">Copilot Name (Max 20 characters)</label>
+                    <input type="text" id="copilotNameInput" maxlength="20" placeholder="Focus Copilot" autocomplete="off">
+                    <small style="color: var(--text-muted); font-size: 0.75rem;">This custom name updates the copilot header, navigation buttons, and AI persona system-wide.</small>
+                </div>
+
+                <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
+                    <div style="flex: 1;">
+                        <label for="soundEffectsToggle" style="margin-bottom: 2px; font-weight: 700;">Sound Effects</label>
+                        <small style="color: var(--text-muted); font-size: 0.75rem; display: block; line-height: 1.4;">
+                            Play auditory feedback on task completion and AI verification. Uses zero external files.
+                        </small>
+                    </div>
+                    <input type="checkbox" id="soundEffectsToggle" style="width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer;" checked>
+                </div>
+
+                <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
+                    <div style="flex: 1;">
+                        <label for="strictCriteriaToggle" style="margin-bottom: 2px; font-weight: 700;">Strict Criteria Validation</label>
+                        <small style="color: var(--text-muted); font-size: 0.75rem; display: block; line-height: 1.4;">
+                            Enforces an objective pre-flight rating (&ge; 7/10) to lock tasks. Disable only if you prefer entering manual criteria without automated gating.
+                        </small>
+                    </div>
+                    <input type="checkbox" id="strictCriteriaToggle" style="width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer;" checked>
+                </div>
+            </div>
+
+            <!-- Weekend & Emergency Cycle Engine -->
+            <div class="settings-card">
+                <h3 style="margin-top: 0; color: var(--primary);">🚨 Emergency Bypass Quota</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                    Grants 4 tokens per cycle to unlock tasks for 15 minutes. Automatically resets at 00:00 midnight immediately following your configured weekend.
+                </p>
+                <div class="form-group">
+                    <label>Remaining Tokens for This Cycle:</label>
+                    <div class="quota-indicator">
+                        <span>🚨</span>
+                        <span id="emergencyTokensDisplay">4 / 4 Uses Remaining</span>
+                    </div>
+                </div>
+                <div class="form-group" style="display: flex; gap: 12px; margin-top: 14px;">
+                    <div style="flex: 1;">
+                        <label for="weekendStartSelect">Weekend Start</label>
+                        <select id="weekendStartSelect">
+                            <option value="5">Friday</option>
+                            <option value="6">Saturday</option>
+                            <option value="0">Sunday</option>
+                            <option value="1">Monday</option>
+                        </select>
+                    </div>
+                    <div style="flex: 1;">
+                        <label for="weekendEndSelect">Weekend End</label>
+                        <select id="weekendEndSelect">
+                            <option value="6">Saturday</option>
+                            <option value="0">Sunday</option>
+                            <option value="1">Monday</option>
+                            <option value="5">Friday</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="workweekCalcNotice" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;"></div>
+            </div>
+
+            <!-- Daily Break Scheduling Window -->
+            <div class="settings-card">
+                <h3 style="margin-top: 0; color: var(--primary);">⏸️ Daily Break Selection Window</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                    Defines the only time of day when you are permitted to configure or adjust your breaks. This window is synchronized across all your devices and cannot be bypassed or modified outside the active timeframe.
+                </p>
+                <div class="form-group" style="display: flex; gap: 12px;">
+                    <div style="flex: 1;">
+                        <label for="breakWindowStart">Window Start</label>
+                        <input type="time" id="breakWindowStart">
+                    </div>
+                    <div style="flex: 1;">
+                        <label for="breakWindowEnd">Window End</label>
+                        <input type="time" id="breakWindowEnd">
+                    </div>
+                </div>
+                <div id="breakWindowStatusBadge" style="margin-top: 8px;"></div>
+            </div>
+        </div>
+
+        <!-- ========================================================================= -->
+        <!-- TAB 3: Task Settings (Tags & Priorities)                                  -->
+        <!-- ========================================================================= -->
+        <div class="tab-pane" id="tab-tasks">
+            <!-- Custom Tags Registry Card -->
+            <div class="settings-card">
+                <h3 style="margin-top: 0; color: var(--primary);">🏷️ Custom Tags Registry</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                    Manage global tags available in task creation modals and filter headers.
+                </p>
+                
                 <div class="copy-group">
-                    <input type="text" id="macroEndpointUrl" class="copy-input" readonly value="https://taskitator-sync.spacexmzez.workers.dev/?action=status&format=text">
-                    <button type="button" class="icon-btn" id="copyUrlBtn">Copy</button>
+                    <input type="text" id="newTagInput" placeholder="Add new tag (e.g. revision)..." style="flex: 1; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);">
+                    <button type="button" class="icon-btn" id="addNewTagBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 8px 14px;">+ Add Tag</button>
                 </div>
+
+                <div class="tag-cloud-editor" id="tagsContainer"></div>
             </div>
 
-            <div class="form-group" style="margin-top: 12px;">
-                <label for="macroBearerToken">2. Authorization Header Token</label>
-                <div class="copy-group">
-                    <input type="password" id="macroBearerToken" class="copy-input" readonly>
-                    <button type="button" class="icon-btn" id="toggleTokenVisibilityBtn">Show</button>
-                    <button type="button" class="icon-btn" id="copyTokenBtn">Copy</button>
+            <!-- Custom Priorities Registry Card -->
+            <div class="settings-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <h3 style="margin: 0; color: var(--primary);">🎯 Priority Hierarchy</h3>
+                    <button type="button" class="icon-btn" id="addNewPriorityBtn" style="padding: 4px 10px; font-size: 0.8rem; background: var(--card-subtle);">+ Add Level</button>
                 </div>
-                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px;">
-                    MacroDroid Header format: <code>Authorization</code> &rarr; <code>Bearer &lt;token&gt;</code>
-                </small>
-            </div>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
+                    Rank priorities from top (Rank 1 / Highest) to bottom. Use the arrow buttons to shift precedence.
+                </p>
 
-            <!-- Setup Guide Link -->
-            <div class="guide-banner-card">
-                <div>
-                    <strong style="display: block; font-size: 0.9rem; color: var(--text-color);">Want to block your phone?</strong>
-                    <span style="font-size: 0.78rem; color: var(--text-muted);">Step-by-step setup guide for the MacroDroid lock and bridge.</span>
-                </div>
-                <a href="blocker-guide.html" class="icon-btn link-guarded" style="text-decoration: none; background: var(--primary); color: #fff; border: none; font-weight: 600; white-space: nowrap; padding: 8px 14px;">
-                    Open Setup Guide &rarr;
-                </a>
+                <div id="prioritiesListContainer"></div>
             </div>
         </div>
 
-        <!-- Weekend & Emergency Cycle Engine -->
-        <div class="settings-card">
-            <h3 style="margin-top: 0; color: var(--primary);">🚨 Emergency Bypass Quota</h3>
-            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                Grants 4 tokens per cycle to unlock tasks for 15 minutes. Automatically resets at 00:00 midnight immediately following your configured weekend.
-            </p>
-            <div class="form-group">
-                <label>Remaining Tokens for This Cycle:</label>
-                <div class="quota-indicator">
-                    <span>🚨</span>
-                    <span id="emergencyTokensDisplay">4 / 4 Uses Remaining</span>
-                </div>
-            </div>
-            <div class="form-group" style="display: flex; gap: 12px; margin-top: 14px;">
-                <div style="flex: 1;">
-                    <label for="weekendStartSelect">Weekend Start</label>
-                    <select id="weekendStartSelect">
-                        <option value="5">Friday</option>
-                        <option value="6">Saturday</option>
-                        <option value="0">Sunday</option>
-                        <option value="1">Monday</option>
-                    </select>
-                </div>
-                <div style="flex: 1;">
-                    <label for="weekendEndSelect">Weekend End</label>
-                    <select id="weekendEndSelect">
-                        <option value="6">Saturday</option>
-                        <option value="0">Sunday</option>
-                        <option value="1">Monday</option>
-                        <option value="5">Friday</option>
-                    </select>
-                </div>
-            </div>
-            <div id="workweekCalcNotice" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;"></div>
-        </div>
-
-        <!-- Daily Break Scheduling Window -->
-        <div class="settings-card">
-            <h3 style="margin-top: 0; color: var(--primary);">⏸️ Daily Break Selection Window</h3>
-            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                Defines the only time of day when you are permitted to configure or adjust your breaks. This window is synchronized across all your devices and cannot be bypassed or modified outside the active timeframe.
-            </p>
-            <div class="form-group" style="display: flex; gap: 12px;">
-                <div style="flex: 1;">
-                    <label for="breakWindowStart">Window Start</label>
-                    <input type="time" id="breakWindowStart">
-                </div>
-                <div style="flex: 1;">
-                    <label for="breakWindowEnd">Window End</label>
-                    <input type="time" id="breakWindowEnd">
-                </div>
-            </div>
-            <div id="breakWindowStatusBadge" style="margin-top: 8px;"></div>
-        </div>
-
-        <div style="text-align: right; margin-top: 20px;">
-            <button type="button" class="icon-btn" id="saveAllSettingsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 10px 20px; font-size: 1rem;">Save All Settings</button>
-        </div>
     </div>
 </div>
 
@@ -359,6 +565,17 @@ const SETTINGS_KEY = 'taskitator_settings';
 
 let hasUnsavedChanges = false;
 
+// In-memory working copies of tags and priorities
+let activeTags = [];
+let activePriorities = [];
+
+const DEFAULT_TAGS = ['study', 'work', 'personal'];
+const DEFAULT_PRIORITIES = [
+    { id: 'prio_high', name: 'High', color: '#ef4444', rank: 1 },
+    { id: 'prio_med', name: 'Medium', color: '#eab308', rank: 2 },
+    { id: 'prio_low', name: 'Low', color: '#22c55e', rank: 3 }
+];
+
 const authenticatedSettingsContainer = document.getElementById('authenticatedSettingsContainer');
 const soundEffectsToggle = document.getElementById('soundEffectsToggle');
 const copilotNameInput = document.getElementById('copilotNameInput');
@@ -379,6 +596,13 @@ const copyUrlBtn = document.getElementById('copyUrlBtn');
 const copyTokenBtn = document.getElementById('copyTokenBtn');
 const toggleTokenVisibilityBtn = document.getElementById('toggleTokenVisibilityBtn');
 
+// Tags & Priorities DOM
+const tagsContainer = document.getElementById('tagsContainer');
+const newTagInput = document.getElementById('newTagInput');
+const addNewTagBtn = document.getElementById('addNewTagBtn');
+const prioritiesListContainer = document.getElementById('prioritiesListContainer');
+const addNewPriorityBtn = document.getElementById('addNewPriorityBtn');
+
 function markUnsaved() {
     hasUnsavedChanges = true;
     if (unsavedIndicator) {
@@ -393,15 +617,14 @@ function markSaved() {
     }
 }
 
-// 1. Intercept browser reloads, tab closing, and back/forward buttons
+// Intercept browser reloads and navigation
 window.addEventListener('beforeunload', (e) => {
     if (hasUnsavedChanges) {
         e.preventDefault();
-        e.returnValue = ''; // Standard trigger for browser exit warning
+        e.returnValue = '';
     }
 });
 
-// 2. Intercept internal app navigation (drawer links & external guide links)
 document.querySelectorAll('.drawer-links a, .link-guarded').forEach(link => {
     link.addEventListener('click', (e) => {
         if (hasUnsavedChanges) {
@@ -413,6 +636,150 @@ document.querySelectorAll('.drawer-links a, .link-guarded').forEach(link => {
     });
 });
 
+// =========================================================================
+// Tab Navigation Routing
+// =========================================================================
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const targetId = btn.getAttribute('data-tab');
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+
+        btn.classList.add('active');
+        const targetPane = document.getElementById(targetId);
+        if (targetPane) targetPane.classList.add('active');
+    });
+});
+
+// =========================================================================
+// Tag & Priority Registry Handlers
+// =========================================================================
+function renderTags() {
+    tagsContainer.innerHTML = '';
+    if (activeTags.length === 0) {
+        tagsContainer.innerHTML = '<span style="font-size: 0.8rem; color: var(--text-muted);">No custom tags created yet.</span>';
+        return;
+    }
+
+    activeTags.forEach((tag, idx) => {
+        const pill = document.createElement('span');
+        pill.className = 'tag-editor-pill';
+        pill.innerHTML = `
+            <span>${tag}</span>
+            <span class="tag-editor-del" data-idx="${idx}" title="Delete tag">✕</span>
+        `;
+        pill.querySelector('.tag-editor-del').addEventListener('click', () => {
+            activeTags.splice(idx, 1);
+            markUnsaved();
+            renderTags();
+        });
+        tagsContainer.appendChild(pill);
+    });
+}
+
+function handleAddTag() {
+    const val = newTagInput.value.trim().toLowerCase().replace(/,/g, '');
+    if (!val) return;
+    if (activeTags.includes(val)) {
+        alert('This tag already exists in your registry.');
+        return;
+    }
+    activeTags.push(val);
+    newTagInput.value = '';
+    markUnsaved();
+    renderTags();
+}
+
+addNewTagBtn.addEventListener('click', handleAddTag);
+newTagInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        handleAddTag();
+    }
+});
+
+function renderPriorities() {
+    prioritiesListContainer.innerHTML = '';
+    if (activePriorities.length === 0) {
+        prioritiesListContainer.innerHTML = '<span style="font-size: 0.8rem; color: var(--text-muted);">No priorities configured. Click "+ Add Level" to create one.</span>';
+        return;
+    }
+
+    activePriorities.forEach((p, idx) => {
+        p.rank = idx + 1; // Normalize ranks to sequential integers
+        const row = document.createElement('div');
+        row.className = 'priority-item-card';
+        row.innerHTML = `
+            <div class="priority-reorder-actions">
+                <button type="button" class="reorder-btn move-up" ${idx === 0 ? 'disabled' : ''} title="Move Up">▲</button>
+                <button type="button" class="reorder-btn move-down" ${idx === activePriorities.length - 1 ? 'disabled' : ''} title="Move Down">▼</button>
+            </div>
+            <span class="priority-rank-badge">#${p.rank}</span>
+            <input type="text" class="priority-name-input" value="${p.name}" placeholder="Priority Name">
+            <input type="color" class="priority-color-picker" value="${p.color}" title="Choose color">
+            <button type="button" class="icon-btn del-priority-btn" style="color: var(--danger); border-color: #881337; padding: 4px 8px; font-size: 0.8rem;">✕</button>
+        `;
+
+        // Arrow navigation
+        row.querySelector('.move-up').addEventListener('click', () => {
+            if (idx > 0) {
+                const temp = activePriorities[idx];
+                activePriorities[idx] = activePriorities[idx - 1];
+                activePriorities[idx - 1] = temp;
+                markUnsaved();
+                renderPriorities();
+            }
+        });
+
+        row.querySelector('.move-down').addEventListener('click', () => {
+            if (idx < activePriorities.length - 1) {
+                const temp = activePriorities[idx];
+                activePriorities[idx] = activePriorities[idx + 1];
+                activePriorities[idx + 1] = temp;
+                markUnsaved();
+                renderPriorities();
+            }
+        });
+
+        // Name and Color change
+        const nameInput = row.querySelector('.priority-name-input');
+        nameInput.addEventListener('input', () => {
+            p.name = nameInput.value.trim() || 'Untitled';
+            markUnsaved();
+        });
+
+        const colorInput = row.querySelector('.priority-color-picker');
+        colorInput.addEventListener('input', () => {
+            p.color = colorInput.value;
+            markUnsaved();
+        });
+
+        // Delete priority
+        row.querySelector('.del-priority-btn').addEventListener('click', () => {
+            activePriorities.splice(idx, 1);
+            markUnsaved();
+            renderPriorities();
+        });
+
+        prioritiesListContainer.appendChild(row);
+    });
+}
+
+addNewPriorityBtn.addEventListener('click', () => {
+    const nextRank = activePriorities.length + 1;
+    activePriorities.push({
+        id: 'prio_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        name: `Priority ${nextRank}`,
+        color: '#64748b',
+        rank: nextRank
+    });
+    markUnsaved();
+    renderPriorities();
+});
+
+// =========================================================================
+// Settings Loading & Saving
+// =========================================================================
 function loadSettings() {
     if (!window.SyncEngine || !SyncEngine.isConfigured()) {
         authenticatedSettingsContainer.style.display = 'none';
@@ -432,13 +799,9 @@ function loadSettings() {
     activeUsernameDisplay.textContent = `@${config.username}`;
     macroBearerToken.value = config.secret || '';
 
-    // Mute toggle (default true)
     soundEffectsToggle.checked = settings.sound_effects_enabled !== false;
-    
     copilotNameInput.value = settings.copilot_name || 'Focus Copilot';
     geminiApiKeyInput.value = settings.gemini_api_key || '';
-    
-    // Strict criteria defaults to true if not explicitly set to false
     strictCriteriaToggle.checked = settings.strict_criteria_validation !== false;
 
     weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
@@ -446,6 +809,23 @@ function loadSettings() {
 
     breakWindowStart.value = settings.break_selection_start || '';
     breakWindowEnd.value = settings.break_selection_end || '';
+
+    // Load or initialize tags
+    if (Array.isArray(settings.custom_tags) && settings.custom_tags.length > 0) {
+        activeTags = [...settings.custom_tags];
+    } else {
+        activeTags = [...DEFAULT_TAGS];
+    }
+    renderTags();
+
+    // Load or initialize priorities
+    if (Array.isArray(settings.custom_priorities) && settings.custom_priorities.length > 0) {
+        activePriorities = JSON.parse(JSON.stringify(settings.custom_priorities));
+    } else {
+        activePriorities = JSON.parse(JSON.stringify(DEFAULT_PRIORITIES));
+    }
+    activePriorities.sort((a, b) => a.rank - b.rank);
+    renderPriorities();
 
     updateEmergencyDisplay();
     updateBreakWindowStatus();
@@ -487,6 +867,15 @@ async function saveSettings(silent = false) {
     settings.break_selection_start = startStr;
     settings.break_selection_end = endStr;
 
+    // Attach updated registries
+    settings.custom_tags = [...activeTags];
+    settings.custom_priorities = activePriorities.map((p, idx) => ({
+        id: p.id,
+        name: p.name.trim() || `Priority ${idx + 1}`,
+        color: p.color,
+        rank: idx + 1
+    }));
+
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     
     if (window.SyncEngine) {
@@ -502,7 +891,7 @@ async function saveSettings(silent = false) {
     markSaved();
 
     if (!silent) {
-        alert('Settings saved and synchronized successfully.');
+        alert('Settings, tags, and priorities saved successfully.');
     }
     return true;
 }
@@ -544,14 +933,12 @@ function updateWorkweekNotice() {
         `Weekend: ${days[s]} to ${days[e]}. Emergency tokens reset every ${days[resetDay]} at 00:00.`;
 }
 
-// Toggle Gemini Key visibility
 document.getElementById('toggleKeyVisibilityBtn').addEventListener('click', () => {
     const isPassword = geminiApiKeyInput.type === 'password';
     geminiApiKeyInput.type = isPassword ? 'text' : 'password';
     document.getElementById('toggleKeyVisibilityBtn').textContent = isPassword ? 'Hide Key' : 'Show Key';
 });
 
-// Copy helpers for MacroDroid setup
 copyUrlBtn.addEventListener('click', () => {
     const urlInput = document.getElementById('macroEndpointUrl');
     navigator.clipboard.writeText(urlInput.value).then(() => {
@@ -576,13 +963,11 @@ toggleTokenVisibilityBtn.addEventListener('click', () => {
     toggleTokenVisibilityBtn.textContent = isPass ? 'Hide' : 'Show';
 });
 
-// Detect dirty inputs
 [soundEffectsToggle, copilotNameInput, geminiApiKeyInput, strictCriteriaToggle, weekendStartSelect, weekendEndSelect, breakWindowStart, breakWindowEnd].forEach(el => {
     el.addEventListener('input', markUnsaved);
     el.addEventListener('change', markUnsaved);
 });
 
-// Test Gemini API connection
 document.getElementById('testGeminiBtn').addEventListener('click', async () => {
     const key = geminiApiKeyInput.value.trim();
     const feedback = document.getElementById('geminiTestFeedback');
@@ -621,7 +1006,6 @@ document.getElementById('testGeminiBtn').addEventListener('click', async () => {
     }
 });
 
-// Logout Modal Handlers
 document.getElementById('openLogoutModalBtn').addEventListener('click', () => {
     logoutConfirmModal.classList.add('open');
 });
@@ -631,7 +1015,7 @@ document.getElementById('cancelLogoutBtn').addEventListener('click', () => {
 });
 
 document.getElementById('confirmLogoutBtn').addEventListener('click', () => {
-    markSaved(); // Prevent unneeded exit warning on intended logout
+    markSaved();
     SyncEngine.logout();
     localStorage.removeItem('taskitator_tasks');
     localStorage.removeItem('taskitator_daily_breaks');
@@ -639,10 +1023,8 @@ document.getElementById('confirmLogoutBtn').addEventListener('click', () => {
     window.location.replace('login.html');
 });
 
-// Sync listeners
 window.addEventListener('taskitator-synced', loadSettings);
 
-// Sidebar Drawer
 const sidebarDrawer = document.getElementById('sidebarDrawer');
 const drawerBackdrop = document.getElementById('drawerBackdrop');
 
@@ -656,7 +1038,6 @@ drawerBackdrop.addEventListener('click', () => {
     drawerBackdrop.classList.remove('open');
 });
 
-// Copilot Drawer Toggle
 const copilotDrawer = document.getElementById('copilotDrawer');
 const copilotBackdrop = document.getElementById('copilotBackdrop');
 const openCopilotNavBtn = document.getElementById('openCopilotNavBtn');
@@ -682,7 +1063,6 @@ if (closeCopilotBtn && copilotDrawer && copilotBackdrop) {
     });
 }
 
-// Main Save All Button
 document.getElementById('saveAllSettingsBtn').addEventListener('click', () => saveSettings(false));
 
 weekendStartSelect.addEventListener('change', updateWorkweekNotice);
