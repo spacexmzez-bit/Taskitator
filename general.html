@@ -251,8 +251,17 @@
             </div>
 
             <div class="form-group">
-                <label for="taskTagsInput">Tags (Comma-separated, mutable anytime)</label>
-                <input type="text" id="taskTagsInput" placeholder="e.g. Study, Work, Project">
+                <label>Priority</label>
+                <div id="createPriorityCloud" class="priority-select-group"></div>
+            </div>
+
+            <div class="form-group">
+                <label>Tags</label>
+                <div id="createTagCloud" class="tag-select-cloud"></div>
+                <div class="quick-add-tag-group">
+                    <input type="text" id="createQuickTagInput" class="quick-add-tag-input" placeholder="Quick add tag..." autocomplete="off">
+                    <button type="button" class="icon-btn" id="createQuickTagBtn" style="padding: 4px 10px; font-size: 0.8rem;">+ Add</button>
+                </div>
             </div>
 
             <div class="form-group">
@@ -330,8 +339,17 @@
         </div>
 
         <div class="form-group">
-            <label for="editTaskTags">Tags (Always Editable, Comma-separated)</label>
-            <input type="text" id="editTaskTags">
+            <label>Priority</label>
+            <div id="editPriorityCloud" class="priority-select-group"></div>
+        </div>
+
+        <div class="form-group">
+            <label>Tags</label>
+            <div id="editTagCloud" class="tag-select-cloud"></div>
+            <div class="quick-add-tag-group">
+                <input type="text" id="editQuickTagInput" class="quick-add-tag-input" placeholder="Quick add tag..." autocomplete="off">
+                <button type="button" class="icon-btn" id="editQuickTagBtn" style="padding: 4px 10px; font-size: 0.8rem;">+ Add</button>
+            </div>
         </div>
 
         <div class="form-group">
@@ -435,6 +453,52 @@
 <script src="agent-engine.js"></script>
 <script>
 // =========================================================================
+// Global Defaults & Settings Access
+// =========================================================================
+const DEFAULT_TAGS = ['study', 'work', 'personal'];
+const DEFAULT_PRIORITIES = [
+    { id: 'prio_high', name: 'High', color: '#ef4444', rank: 1 },
+    { id: 'prio_med', name: 'Medium', color: '#eab308', rank: 2 },
+    { id: 'prio_low', name: 'Low', color: '#22c55e', rank: 3 }
+];
+
+function getGlobalTags() {
+    try {
+        const s = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+        return s.custom_tags || [...DEFAULT_TAGS];
+    } catch(e) { return [...DEFAULT_TAGS]; }
+}
+
+function getGlobalPriorities() {
+    try {
+        const s = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+        return s.custom_priorities || [...DEFAULT_PRIORITIES];
+    } catch(e) { return [...DEFAULT_PRIORITIES]; }
+}
+
+function saveGlobalTag(newTag) {
+    if (!newTag) return;
+    try {
+        const s = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+        const tags = s.custom_tags || [...DEFAULT_TAGS];
+        if (!tags.includes(newTag)) {
+            tags.push(newTag);
+            s.custom_tags = tags;
+            localStorage.setItem('taskitator_settings', JSON.stringify(s));
+            if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
+                SyncEngine.markLocalModified();
+            }
+        }
+    } catch(e) {}
+}
+
+function getLowestPriorityId() {
+    const p = getGlobalPriorities();
+    if (!p || p.length === 0) return null;
+    return p.reduce((prev, curr) => (curr.rank > prev.rank ? curr : prev)).id;
+}
+
+// =========================================================================
 // State & Storage
 // =========================================================================
 const TASKS_KEY = 'taskitator_tasks';
@@ -445,14 +509,15 @@ let pendingAuditTaskId = null;
 let activeDetailTaskId = null;
 let emergencyTimerInterval = null;
 
-let criteriaValidationState = {
-    validated: false,
-    score: 0,
-    isTemplate: false
-};
+let criteriaValidationState = { validated: false, score: 0, isTemplate: false };
 let cachedTemplates = null;
-
 const pendingGraceCompletions = new Map();
+
+// Modal State
+let createModalSelectedTags = new Set();
+let createModalSelectedPriority = null;
+let editModalSelectedTags = new Set();
+let editModalSelectedPriority = null;
 
 // =========================================================================
 // Web Audio API Synthesizer
@@ -473,9 +538,7 @@ const SoundFX = {
         try {
             const settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
             return settings.sound_effects_enabled === false;
-        } catch (e) {
-            return false;
-        }
+        } catch (e) { return false; }
     },
     playComplete() {
         if (this.isMuted()) return;
@@ -534,7 +597,7 @@ function saveStorageAndPush() {
             SyncEngine.markLocalModified();
         }
         if (typeof SyncEngine.scheduleAutoPush === 'function') {
-            const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
+            const breaks = TaskitatorEngine.BreakEngine ? TaskitatorEngine.BreakEngine.getTodayBreaks() : [];
             SyncEngine.scheduleAutoPush(45000, { today_breaks: breaks });
         }
     }
@@ -557,6 +620,31 @@ window.addEventListener('taskitator-tasks-updated', () => {
 });
 
 // =========================================================================
+// Deterministic Tree Sorting (Priority -> Due Date -> Creation)
+// =========================================================================
+function sortTasks(tasksArray) {
+    const priorities = getGlobalPriorities();
+    const getRank = (pId) => {
+        const p = priorities.find(x => x.id === pId);
+        return p ? p.rank : 9999;
+    };
+    
+    return tasksArray.sort((a, b) => {
+        const rA = getRank(a.priority_id);
+        const rB = getRank(b.priority_id);
+        if (rA !== rB) return rA - rB;
+        
+        const dA = a.due_date || '9999-99-99';
+        const dB = b.due_date || '9999-99-99';
+        if (dA !== dB) return dA.localeCompare(dB);
+        
+        const cA = a.created_at || '';
+        const cB = b.created_at || '';
+        return cA.localeCompare(cB);
+    });
+}
+
+// =========================================================================
 // Tree Hierarchy Rendering & Scoped Collapsing
 // =========================================================================
 function isTaskVisuallyActive(task) {
@@ -571,6 +659,7 @@ function renderGeneralTaskTree() {
     list.innerHTML = '';
 
     const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
+    const globalPriorities = getGlobalPriorities();
 
     const allChildrenMap = new Map();
     const visibleChildrenMap = new Map();
@@ -595,9 +684,11 @@ function renderGeneralTaskTree() {
         return allKids.some(k => hasVisibleDescendant(k.id));
     }
 
-    const rootTasks = (allChildrenMap.get('root') || []).filter(t => {
+    let rootTasks = (allChildrenMap.get('root') || []).filter(t => {
         return isTaskVisuallyActive(t) || hasVisibleDescendant(t.id);
     });
+
+    rootTasks = sortTasks(rootTasks);
 
     if (rootTasks.length === 0) {
         list.innerHTML = '<li style="text-align: center; color: var(--text-muted); padding: 32px;">No active tasks created yet. Tap + to add one.</li>';
@@ -633,11 +724,19 @@ function renderGeneralTaskTree() {
         row.className = 'task-row';
         row.style.marginLeft = `${depth * 20}px`;
 
+        // Priority Left Stripe Styling
+        const pObj = globalPriorities.find(x => x.id === task.priority_id);
+        if (pObj) {
+            row.style.borderLeftColor = pObj.color;
+        }
+
         const main = document.createElement('div');
         main.className = 'task-main';
 
         const allChildren = allChildrenMap.get(task.id) || [];
-        const visibleChildren = visibleChildrenMap.get(task.id) || [];
+        let visibleChildren = visibleChildrenMap.get(task.id) || [];
+        visibleChildren = sortTasks(visibleChildren);
+        
         const hasVisibleChildren = visibleChildren.length > 0;
         const isCollapsed = collapsedNodes.has(task.id);
 
@@ -926,7 +1025,7 @@ function renderGeneralCompletedModalList() {
             <div style="font-weight: 600; text-decoration: line-through; color: var(--text-muted);">
                 ${task.title} ${badgesHtml}
             </div>
-            ${task.completed_at ? `<small style="color: var(--text-muted); font-size: 0.75rem;">Done at: ${new Date(task.completed_at).toLocaleDateString()} ${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
+            ${task.completed_at ? `<small style="color: var(--text-muted); font-size: 0.75rem;">Done at: ${new Date(task.completed_at).toLocaleDateString()}${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
         `;
 
         const actionContainer = document.createElement('div');
@@ -1012,12 +1111,94 @@ function deleteTask(taskId) {
 }
 
 // =========================================================================
+// Tag Cloud & Priority Selectors
+// =========================================================================
+function renderModalTagCloud(containerId, activeSet) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    const globalTags = getGlobalTags();
+    
+    globalTags.forEach(tag => {
+        const pill = document.createElement('span');
+        pill.className = 'tag-select-pill';
+        if (activeSet.has(tag)) pill.classList.add('selected');
+        pill.textContent = tag;
+        pill.addEventListener('click', () => {
+            if (activeSet.has(tag)) activeSet.delete(tag);
+            else activeSet.add(tag);
+            renderModalTagCloud(containerId, activeSet);
+        });
+        container.appendChild(pill);
+    });
+}
+
+function handleQuickAddTag(inputId, activeSet, containerId) {
+    const input = document.getElementById(inputId);
+    const val = input.value.trim().toLowerCase().replace(/,/g, '');
+    if (val) {
+        saveGlobalTag(val);
+        activeSet.add(val);
+        input.value = '';
+        renderModalTagCloud(containerId, activeSet);
+    }
+}
+
+function renderModalPriorityCloud(containerId, isEditModal) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    const globalPriorities = getGlobalPriorities();
+    
+    globalPriorities.forEach(p => {
+        const pill = document.createElement('span');
+        pill.className = 'priority-select-pill';
+        const isSelected = isEditModal ? (editModalSelectedPriority === p.id) : (createModalSelectedPriority === p.id);
+        
+        if (isSelected) {
+            pill.classList.add('selected');
+            pill.style.color = p.color;
+        }
+        
+        pill.innerHTML = `<span class="priority-color-dot" style="background-color: ${p.color};"></span> ${p.name}`;
+        
+        pill.addEventListener('click', () => {
+            if (isEditModal) {
+                editModalSelectedPriority = (editModalSelectedPriority === p.id) ? null : p.id;
+            } else {
+                createModalSelectedPriority = (createModalSelectedPriority === p.id) ? null : p.id;
+            }
+            renderModalPriorityCloud(containerId, isEditModal);
+        });
+        container.appendChild(pill);
+    });
+}
+
+// Bind quick add buttons
+document.getElementById('createQuickTagBtn').addEventListener('click', () => {
+    handleQuickAddTag('createQuickTagInput', createModalSelectedTags, 'createTagCloud');
+});
+document.getElementById('createQuickTagInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        handleQuickAddTag('createQuickTagInput', createModalSelectedTags, 'createTagCloud');
+    }
+});
+
+document.getElementById('editQuickTagBtn').addEventListener('click', () => {
+    handleQuickAddTag('editQuickTagInput', editModalSelectedTags, 'editTagCloud');
+});
+document.getElementById('editQuickTagInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        handleQuickAddTag('editQuickTagInput', editModalSelectedTags, 'editTagCloud');
+    }
+});
+
+// =========================================================================
 // Task Detail & Edit Modal
 // =========================================================================
 const taskDetailModal = document.getElementById('taskDetailModal');
 const editTaskTitle = document.getElementById('editTaskTitle');
 const editTaskDesc = document.getElementById('editTaskDesc');
-const editTaskTags = document.getElementById('editTaskTags');
 const editTaskDueDate = document.getElementById('editTaskDueDate');
 const editAiLockCheckbox = document.getElementById('editAiLockCheckbox');
 const editStrictPrereqCheckbox = document.getElementById('editStrictPrereqCheckbox');
@@ -1039,8 +1220,13 @@ function openTaskDetailModal(taskId) {
     document.getElementById('detailTaskTitleHeader').textContent = task.title;
     editTaskTitle.value = task.title || '';
     editTaskDesc.value = task.description || '';
-    editTaskTags.value = (task.tags || []).join(', ');
     editTaskDueDate.value = task.due_date === 'today' ? new Date().toISOString().split('T')[0] : (task.due_date || '');
+
+    editModalSelectedTags = new Set(task.tags || []);
+    editModalSelectedPriority = task.priority_id || null;
+    
+    renderModalTagCloud('editTagCloud', editModalSelectedTags);
+    renderModalPriorityCloud('editPriorityCloud', true);
 
     editAiLockCheckbox.checked = isLocked;
     editStrictPrereqCheckbox.checked = Boolean(task.strict_prerequisites);
@@ -1068,10 +1254,12 @@ function openTaskDetailModal(taskId) {
 
     detailSubtasksList.innerHTML = '';
     const directChildren = tasks.filter(t => t.parent_id === taskId && t.status !== 'trash');
-    if (directChildren.length === 0) {
+    let sortedChildren = sortTasks([...directChildren]);
+
+    if (sortedChildren.length === 0) {
         detailSubtasksList.innerHTML = '<li style="font-size: 0.825rem; color: var(--text-muted); padding: 4px 0;">No subtasks yet.</li>';
     } else {
-        directChildren.forEach(child => {
+        sortedChildren.forEach(child => {
             const sLi = document.createElement('li');
             sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
             
@@ -1132,7 +1320,8 @@ document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
     }
 
     task.description = editTaskDesc.value.trim();
-    task.tags = editTaskTags.value.split(',').map(s => s.trim()).filter(Boolean);
+    task.tags = Array.from(editModalSelectedTags);
+    task.priority_id = editModalSelectedPriority;
 
     if (!task.ai_locked || isBypassActive) {
         task.title = editTaskTitle.value.trim() || task.title;
@@ -1387,6 +1576,13 @@ function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task') 
     criteriaBoxContainer.style.display = 'none';
     prerequisiteBoxContainer.style.display = 'none';
     subtaskBuilderList.innerHTML = '';
+    
+    createModalSelectedTags.clear();
+    createModalSelectedPriority = getLowestPriorityId();
+    
+    renderModalTagCloud('createTagCloud', createModalSelectedTags);
+    renderModalPriorityCloud('createPriorityCloud', false);
+    
     resetCriteriaValidation();
     addTaskModal.classList.add('open');
 }
@@ -1546,7 +1742,6 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const title = document.getElementById('taskTitleInput').value.trim();
     const desc = document.getElementById('taskDescInput').value.trim();
-    const tags = document.getElementById('taskTagsInput').value.split(',').map(s => s.trim()).filter(Boolean);
     const dueDate = document.getElementById('taskDueDateInput').value || '';
     const isAi = aiLockCheckbox.checked;
     const isStrictPrereq = isAi ? strictPrereqCheckbox.checked : false;
@@ -1578,7 +1773,8 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
         parent_id: parentId,
         title: title,
         description: desc,
-        tags: tags,
+        tags: Array.from(createModalSelectedTags),
+        priority_id: createModalSelectedPriority,
         status: 'active',
         due_date: dueDate,
         ai_locked: isAi,
@@ -1599,6 +1795,7 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
                 title: subTitle,
                 description: '',
                 tags: [],
+                priority_id: getLowestPriorityId(),
                 status: 'active',
                 due_date: '',
                 ai_locked: false,
