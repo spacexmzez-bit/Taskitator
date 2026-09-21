@@ -81,7 +81,6 @@
             gap: 4px;
         }
 
-        /* Criteria Pre-Flight Validation Bar */
         .criteria-actions-bar {
             display: flex;
             align-items: center;
@@ -133,7 +132,6 @@
             border-color: var(--primary);
             background: var(--accent-light);
         }
-
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-3px); }
             to { opacity: 1; transform: translateY(0); }
@@ -142,7 +140,6 @@
 </head>
 <body>
 
-<!-- Sidebar Drawer -->
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="sidebar-drawer" id="sidebarDrawer">
     <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
@@ -155,7 +152,6 @@
     </nav>
 </aside>
 
-<!-- Right-Hand Copilot Slide-Over Drawer -->
 <div class="copilot-backdrop" id="copilotBackdrop"></div>
 <aside class="copilot-drawer" id="copilotDrawer">
     <div class="copilot-header">
@@ -167,7 +163,6 @@
     </div>
 
     <div class="copilot-body">
-        <!-- Standby View (Before User Clicks Connect) -->
         <div class="copilot-standby-view" id="copilotStandbyView">
             <div class="copilot-standby-icon">🎯</div>
             <div class="copilot-standby-title">Focus Copilot</div>
@@ -178,8 +173,6 @@
                 Start Conversation
             </button>
         </div>
-
-        <!-- Live Chat Container -->
         <div class="copilot-chat-view" id="copilotChatView">
             <div class="copilot-messages" id="copilotMessages">
                 <div class="chat-bubble bot">
@@ -195,19 +188,14 @@
 </aside>
 
 <div class="app-container">
-    <!-- Top Navbar -->
     <header class="top-navbar">
         <div class="nav-left">
             <button class="icon-btn" id="openDrawerBtn" title="Menu">☰</button>
             <h2 style="margin: 0; font-size: 1.25rem;">General Tasks</h2>
         </div>
         <div class="nav-right">
-            <!-- Open Copilot Navbar Trigger Button -->
             <button class="nav-link-btn" id="openCopilotNavBtn" title="Open AI Copilot">💬 Copilot</button>
-
-            <!-- Completed List Trigger Button -->
             <button class="nav-link-btn" id="openGeneralCompletedModalBtn" title="View Completed Tasks">✓ Completed</button>
-
             <button class="emergency-pill-btn" id="emergencyTriggerBtn" title="Emergency Bypass">
                 🚨 <span id="emergencyCountDisplay">4/4</span>
             </button>
@@ -215,36 +203,27 @@
         </div>
     </header>
 
-    <!-- Active Emergency Alert Banner -->
     <div id="activeEmergencyBanner" class="banner-emergency" style="display: none;">
         <span>🚨 Emergency Mode Active: Task deletion & editing unlocked!</span>
         <span id="emergencyCountdownTimer">15:00</span>
     </div>
 
-    <!-- Tree-Based Task Hierarchy -->
     <ul class="task-list-tree" id="generalTaskList"></ul>
 </div>
 
-<!-- Floating Action Button for Root Task -->
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
-
-<!-- Floating Action Button for Copilot Launcher -->
 <button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot">🤖</button>
 
-<!-- Modal: Dedicated Completed List View -->
 <div class="modal-overlay" id="generalCompletedModal">
     <div class="modal-box">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
             <h3 style="margin: 0; color: var(--primary);">✓ All Completed Tasks</h3>
             <button class="icon-btn" id="closeGeneralCompletedModalBtn" style="padding: 2px 8px;">✕</button>
         </div>
-        <div id="generalCompletedTasksListContainer" style="max-height: 60vh; overflow-y: auto;">
-            <!-- Rendered Completed Items -->
-        </div>
+        <div id="generalCompletedTasksListContainer" style="max-height: 60vh; overflow-y: auto;"></div>
     </div>
 </div>
 
-<!-- Modal: Comprehensive Task Creation -->
 <div class="modal-overlay" id="addTaskModal">
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--primary);" id="addTaskModalTitle">Create New Task</h3>
@@ -276,9 +255,15 @@
                     <input type="checkbox" id="aiLockCheckbox">
                     <span>Require AI Proof Verification (Irrevocable)</span>
                 </label>
+                <div id="prerequisiteBoxContainer" style="display: none; margin-top: 8px; margin-left: 28px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="strictPrereqCheckbox">
+                        <span style="font-size: 0.85rem;">Require all subtasks first (Irreversible Shield)</span>
+                    </label>
+                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 24px;">Prevents bypassing this task's completion until all subtasks beneath it are completely finished.</small>
+                </div>
             </div>
 
-            <!-- Proof Criteria & Pre-Flight Validation Engine -->
             <div class="form-group" id="criteriaBoxContainer" style="display: none;">
                 <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt; (Visual Requirements)</label>
                 <textarea id="taskCriteriaInput" rows="2" placeholder="e.g. Photo clearly showing finished report with date and signature."></textarea>
@@ -287,12 +272,11 @@
                     <button type="button" class="icon-btn" id="openTemplatesBtn" style="font-size: 0.78rem; padding: 4px 10px;">💡 Recommended</button>
                     <button type="button" class="icon-btn" id="validateCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px; background: var(--accent-light); color: var(--accent); border-color: var(--border-color);">🔍 Validate Criteria</button>
                 </div>
-
                 <div id="criteriaFeedbackBox" class="criteria-feedback-box"></div>
             </div>
 
             <div class="form-group">
-                <label>Quick Subtasks (Title only; due date unset)</label>
+                <label>Quick Subtasks</label>
                 <div id="subtaskBuilderList"></div>
                 <button type="button" class="icon-btn" id="addSubtaskFieldBtn" style="padding: 4px 10px; font-size: 0.8rem; margin-top: 6px;">+ Quick Subtask</button>
             </div>
@@ -305,7 +289,6 @@
     </div>
 </div>
 
-<!-- Modal: Recommended Criteria Templates Picker -->
 <div class="modal-overlay" id="templatesModal">
     <div class="modal-box" style="max-width: 500px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -319,7 +302,6 @@
     </div>
 </div>
 
-<!-- Modal: Task Detail & Edit Panel -->
 <div class="modal-overlay" id="taskDetailModal">
     <div class="modal-box">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
@@ -352,6 +334,12 @@
                 <input type="checkbox" id="editAiLockCheckbox">
                 <span>AI Proof Required</span>
             </label>
+            <div id="editPrerequisiteBoxContainer" style="display: none; margin-top: 8px; margin-left: 28px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="editStrictPrereqCheckbox">
+                    <span style="font-size: 0.85rem;">Require all subtasks first (Shield)</span>
+                </label>
+            </div>
         </div>
 
         <div class="form-group" id="editCriteriaBoxContainer" style="display: none;">
@@ -359,7 +347,6 @@
             <textarea id="editTaskCriteria" rows="2"></textarea>
         </div>
 
-        <!-- Subtasks Section with + Button for Full Creation Pop-up -->
         <div class="form-group" style="margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                 <label style="margin: 0;">Subtasks Under This Task</label>
@@ -378,7 +365,6 @@
     </div>
 </div>
 
-<!-- Modal: Proof Verification Audit -->
 <div class="modal-overlay" id="auditModal">
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--primary);">Submit AI Verification Proof</h3>
@@ -404,7 +390,6 @@
     </div>
 </div>
 
-<!-- Modal: Emergency Confirmation -->
 <div class="modal-overlay" id="emergencyConfirmModal">
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--danger);">🚨 Activate Emergency Bypass?</h3>
@@ -420,7 +405,6 @@
     </div>
 </div>
 
-<!-- Modal: Emergency Info -->
 <div class="modal-overlay" id="emergencyInfoModal">
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--primary);">ℹ️ Emergency Rules</h3>
@@ -451,7 +435,6 @@ let pendingAuditTaskId = null;
 let activeDetailTaskId = null;
 let emergencyTimerInterval = null;
 
-// Criteria Pre-Flight State
 let criteriaValidationState = {
     validated: false,
     score: 0,
@@ -547,7 +530,6 @@ function saveStorageAndPush() {
     }
 }
 
-// Automatically update General Task Tree on background cloud sync safely
 window.addEventListener('taskitator-synced', () => {
     if (!activeDetailTaskId) {
         loadStorage();
@@ -556,7 +538,6 @@ window.addEventListener('taskitator-synced', () => {
     }
 });
 
-// Live UI Reactive listener for agent mutations
 window.addEventListener('taskitator-tasks-updated', () => {
     if (!activeDetailTaskId) {
         loadStorage();
@@ -693,6 +674,16 @@ function renderGeneralTaskTree() {
             main.appendChild(badge);
         }
 
+        if (task.strict_prerequisites) {
+            const shieldBadge = document.createElement('span');
+            shieldBadge.className = 'ai-badge';
+            shieldBadge.innerHTML = '🛡️ Shielded';
+            shieldBadge.style.background = '#451a03';
+            shieldBadge.style.color = '#fde68a';
+            shieldBadge.style.borderColor = '#78350f';
+            main.appendChild(shieldBadge);
+        }
+
         if (allChildren.length > 0) {
             const doneKidsCount = allChildren.filter(k => k.status === 'completed').length;
             const countBadge = document.createElement('span');
@@ -752,6 +743,45 @@ function renderGeneralTaskTree() {
     }
 
     rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
+}
+
+// =========================================================================
+// Recursive Completion Guard Logic
+// =========================================================================
+function getAllDescendants(nodeId) {
+    let descs = [];
+    const kids = tasks.filter(t => t.parent_id === nodeId && t.status !== 'trash');
+    for (const kid of kids) {
+        descs.push(kid);
+        descs = descs.concat(getAllDescendants(kid.id));
+    }
+    return descs;
+}
+
+function hasUncompletedDescendant(nodeId) {
+    const kids = tasks.filter(t => t.parent_id === nodeId && t.status !== 'trash');
+    for (const kid of kids) {
+        if (kid.status !== 'completed') return true;
+        if (hasUncompletedDescendant(kid.id)) return true;
+    }
+    return false;
+}
+
+function isCompletionBlocked(taskId) {
+    if (TaskitatorEngine.EmergencyManager && TaskitatorEngine.EmergencyManager.isBypassActive()) return false;
+    const targetTask = tasks.find(t => t.id === taskId);
+    if (!targetTask) return false;
+
+    const nodesToCheck = [targetTask, ...getAllDescendants(taskId)];
+
+    for (const node of nodesToCheck) {
+        if (node.strict_prerequisites) {
+            if (hasUncompletedDescendant(node.id)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
@@ -828,6 +858,12 @@ function handleTaskCompletion(taskId) {
         return;
     }
 
+    // New Guard Evaluation
+    if (isCompletionBlocked(taskId)) {
+        alert("Blocked: A shielded task in this hierarchy requires all its subtasks to be completely finished first.");
+        return;
+    }
+
     if (task.ai_locked) {
         openAuditModal(task);
         return;
@@ -872,9 +908,14 @@ function renderGeneralCompletedModalList() {
 
         const info = document.createElement('div');
         info.style.cssText = 'flex: 1; margin-right: 12px;';
+        
+        let badgesHtml = '';
+        if (task.ai_locked) badgesHtml += '<span class="ai-badge">🔒 AI</span> ';
+        if (task.strict_prerequisites) badgesHtml += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️ Shielded</span>';
+
         info.innerHTML = `
             <div style="font-weight: 600; text-decoration: line-through; color: var(--text-muted);">
-                ${task.title} ${task.ai_locked ? '<span class="ai-badge">🔒 AI</span>' : ''}
+                ${task.title} ${badgesHtml}
             </div>
             ${task.completed_at ? `<small style="color: var(--text-muted); font-size: 0.75rem;">Done at: ${new Date(task.completed_at).toLocaleDateString()} ${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
         `;
@@ -970,6 +1011,8 @@ const editTaskDesc = document.getElementById('editTaskDesc');
 const editTaskTags = document.getElementById('editTaskTags');
 const editTaskDueDate = document.getElementById('editTaskDueDate');
 const editAiLockCheckbox = document.getElementById('editAiLockCheckbox');
+const editStrictPrereqCheckbox = document.getElementById('editStrictPrereqCheckbox');
+const editPrerequisiteBoxContainer = document.getElementById('editPrerequisiteBoxContainer');
 const editCriteriaBoxContainer = document.getElementById('editCriteriaBoxContainer');
 const editTaskCriteria = document.getElementById('editTaskCriteria');
 const detailSubtasksList = document.getElementById('detailSubtasksList');
@@ -991,16 +1034,20 @@ function openTaskDetailModal(taskId) {
     editTaskDueDate.value = task.due_date === 'today' ? new Date().toISOString().split('T')[0] : (task.due_date || '');
 
     editAiLockCheckbox.checked = isLocked;
-    editTaskCriteria.value = task.proof_criteria || '';
+    editStrictPrereqCheckbox.checked = Boolean(task.strict_prerequisites);
+
     editCriteriaBoxContainer.style.display = isLocked ? 'block' : 'none';
+    editPrerequisiteBoxContainer.style.display = isLocked ? 'block' : 'none';
 
     const cannotModifyLocked = isLocked && !isBypassActive;
 
     editTaskTitle.disabled = cannotModifyLocked;
     editTaskDueDate.disabled = cannotModifyLocked;
     editAiLockCheckbox.disabled = cannotModifyLocked;
+    editStrictPrereqCheckbox.disabled = cannotModifyLocked;
     editTaskCriteria.disabled = cannotModifyLocked;
     deleteFromDetailBtn.disabled = cannotModifyLocked;
+    editTaskCriteria.value = task.proof_criteria || '';
 
     if (isLocked) {
         detailLockStatusBadge.innerHTML = isBypassActive
@@ -1018,8 +1065,13 @@ function openTaskDetailModal(taskId) {
         directChildren.forEach(child => {
             const sLi = document.createElement('li');
             sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
+            
+            let cBadges = '';
+            if (child.ai_locked) cBadges += '<span class="ai-badge">🔒 AI</span> ';
+            if (child.strict_prerequisites) cBadges += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️</span>';
+
             sLi.innerHTML = `
-                <span>${child.status === 'completed' ? '✓ ' : ''}${child.title} ${child.ai_locked ? '<span class="ai-badge">🔒 AI</span>' : ''}</span>
+                <span>${child.status === 'completed' ? '✓ ' : ''}${child.title} ${cBadges}</span>
                 <button type="button" class="icon-btn" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
             `;
             sLi.querySelector('button').addEventListener('click', () => {
@@ -1035,6 +1087,7 @@ function openTaskDetailModal(taskId) {
 
 editAiLockCheckbox.addEventListener('change', () => {
     editCriteriaBoxContainer.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
+    editPrerequisiteBoxContainer.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
 });
 
 document.getElementById('closeDetailModalBtn').addEventListener('click', () => {
@@ -1057,6 +1110,7 @@ document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
 
     const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
     const willBeAiLocked = editAiLockCheckbox.checked;
+    const willBeStrict = willBeAiLocked ? editStrictPrereqCheckbox.checked : false;
 
     if (!task.ai_locked && willBeAiLocked) {
         const confirmed = confirm(
@@ -1075,6 +1129,7 @@ document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
         task.title = editTaskTitle.value.trim() || task.title;
         task.due_date = editTaskDueDate.value || '';
         task.ai_locked = willBeAiLocked;
+        task.strict_prerequisites = willBeStrict;
         task.proof_criteria = willBeAiLocked ? editTaskCriteria.value.trim() : '';
     }
 
@@ -1139,7 +1194,6 @@ submitProofBtn.addEventListener('click', async () => {
         return;
     }
 
-    // Pre-flight file validation (format + size limit)
     const check = TaskitatorEngine.AuditEngine.validateFile(file);
     if (!check.valid) {
         alert(check.error);
@@ -1263,6 +1317,8 @@ const addTaskModal = document.getElementById('addTaskModal');
 const openRootAddModalBtn = document.getElementById('openRootAddModalBtn');
 const closeAddTaskModalBtn = document.getElementById('closeAddTaskModalBtn');
 const aiLockCheckbox = document.getElementById('aiLockCheckbox');
+const strictPrereqCheckbox = document.getElementById('strictPrereqCheckbox');
+const prerequisiteBoxContainer = document.getElementById('prerequisiteBoxContainer');
 const criteriaBoxContainer = document.getElementById('criteriaBoxContainer');
 const taskCriteriaInput = document.getElementById('taskCriteriaInput');
 const validateCriteriaBtn = document.getElementById('validateCriteriaBtn');
@@ -1301,7 +1357,6 @@ function updateSubmitLockState() {
         return;
     }
 
-    // In Strict Mode with AI Lock enabled: require passed validation
     const canSubmit = criteriaValidationState.validated && criteriaValidationState.score >= 7;
     submitTaskCreateBtn.disabled = !canSubmit;
     submitTaskCreateBtn.style.opacity = canSubmit ? '1' : '0.5';
@@ -1321,6 +1376,7 @@ function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task') 
     creationParentId.value = parentId || '';
     addTaskModalTitle.textContent = titleLabel;
     criteriaBoxContainer.style.display = 'none';
+    prerequisiteBoxContainer.style.display = 'none';
     subtaskBuilderList.innerHTML = '';
     resetCriteriaValidation();
     addTaskModal.classList.add('open');
@@ -1334,6 +1390,7 @@ closeAddTaskModalBtn.addEventListener('click', () => {
 
 aiLockCheckbox.addEventListener('change', () => {
     criteriaBoxContainer.style.display = aiLockCheckbox.checked ? 'block' : 'none';
+    prerequisiteBoxContainer.style.display = aiLockCheckbox.checked ? 'block' : 'none';
     if (!aiLockCheckbox.checked) {
         resetCriteriaValidation();
     } else {
@@ -1341,7 +1398,6 @@ aiLockCheckbox.addEventListener('change', () => {
     }
 });
 
-// Typing in criteria field resets validation state
 taskCriteriaInput.addEventListener('input', () => {
     criteriaValidationState.validated = false;
     criteriaValidationState.score = 0;
@@ -1350,7 +1406,6 @@ taskCriteriaInput.addEventListener('input', () => {
     updateSubmitLockState();
 });
 
-// Run Pre-Flight Criteria Validation
 validateCriteriaBtn.addEventListener('click', async () => {
     const criteriaText = taskCriteriaInput.value.trim();
     const taskTitle = document.getElementById('taskTitleInput').value.trim();
@@ -1388,14 +1443,10 @@ validateCriteriaBtn.addEventListener('click', async () => {
 
     if (res.passed) {
         criteriaFeedbackBox.className = 'criteria-feedback-box pass';
-        criteriaFeedbackBox.innerHTML = `
-            <strong>✓ Verified (${res.score}/10)</strong>: ${res.critique}
-        `;
+        criteriaFeedbackBox.innerHTML = `<strong>✓ Verified (${res.score}/10)</strong>: ${res.critique}`;
     } else {
         criteriaFeedbackBox.className = 'criteria-feedback-box fail';
-        let feedbackHtml = `
-            <strong>⚠️ Low Quality Rating (${res.score}/10)</strong>: ${res.critique}
-        `;
+        let feedbackHtml = `<strong>⚠️ Low Quality Rating (${res.score}/10)</strong>: ${res.critique}`;
         if (res.suggested_rewrite) {
             feedbackHtml += `
                 <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2);">
@@ -1419,11 +1470,9 @@ validateCriteriaBtn.addEventListener('click', async () => {
             });
         }
     }
-
     updateSubmitLockState();
 });
 
-// Load and Render Templates Modal
 async function loadCriteriaTemplates() {
     if (cachedTemplates) return cachedTemplates;
     try {
@@ -1467,19 +1516,23 @@ openTemplatesBtn.addEventListener('click', async () => {
             templatesListContainer.appendChild(card);
         });
     }
-
     templatesModal.classList.add('open');
 });
-
 closeTemplatesModalBtn.addEventListener('click', () => {
     templatesModal.classList.remove('open');
 });
 
+// Quick Subtask Inline AI Toggle
 document.getElementById('addSubtaskFieldBtn').addEventListener('click', () => {
     const div = document.createElement('div');
     div.className = 'subtask-builder-item';
+    div.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 6px;';
     div.innerHTML = `
-        <input type="text" class="subtask-input-title" placeholder="Quick subtask title..." style="flex: 1;" required>
+        <input type="text" class="subtask-input-title" placeholder="Quick subtask title..." style="flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" required>
+        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 0.75rem; color: var(--text-muted); background: var(--card-subtle); padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <input type="checkbox" class="subtask-input-ai">
+            🔒 AI
+        </label>
         <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
     `;
     subtaskBuilderList.appendChild(div);
@@ -1492,6 +1545,7 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
     const tags = document.getElementById('taskTagsInput').value.split(',').map(s => s.trim()).filter(Boolean);
     const dueDate = document.getElementById('taskDueDateInput').value || '';
     const isAi = aiLockCheckbox.checked;
+    const isStrictPrereq = isAi ? strictPrereqCheckbox.checked : false;
     const criteria = taskCriteriaInput.value.trim();
     const parentId = creationParentId.value || null;
 
@@ -1525,14 +1579,16 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
         due_date: dueDate,
         ai_locked: isAi,
         proof_criteria: isAi ? criteria : '',
+        strict_prerequisites: isStrictPrereq,
         created_at: new Date().toISOString(),
         completed_at: null
     };
     tasks.push(newTask);
 
-    const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-input-title');
-    quickSubtaskInputs.forEach(input => {
-        const subTitle = input.value.trim();
+    const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-builder-item');
+    quickSubtaskInputs.forEach(item => {
+        const subTitle = item.querySelector('.subtask-input-title').value.trim();
+        const isSubAi = item.querySelector('.subtask-input-ai').checked;
         if (subTitle) {
             tasks.push({
                 id: 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -1542,8 +1598,9 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
                 tags: [],
                 status: 'active',
                 due_date: '',
-                ai_locked: false,
-                proof_criteria: '',
+                ai_locked: isSubAi,
+                proof_criteria: isSubAi ? criteria : '',
+                strict_prerequisites: false,
                 created_at: new Date().toISOString(),
                 completed_at: null
             });
@@ -1565,13 +1622,11 @@ document.getElementById('openDrawerBtn').addEventListener('click', () => {
     sidebarDrawer.classList.add('open');
     drawerBackdrop.classList.add('open');
 });
-
 drawerBackdrop.addEventListener('click', () => {
     sidebarDrawer.classList.remove('open');
     drawerBackdrop.classList.remove('open');
 });
 
-// Right Copilot Drawer Wiring
 const copilotDrawer = document.getElementById('copilotDrawer');
 const copilotBackdrop = document.getElementById('copilotBackdrop');
 const openCopilotNavBtn = document.getElementById('openCopilotNavBtn');
@@ -1582,7 +1637,6 @@ function openCopilot() {
     copilotDrawer.classList.add('open');
     copilotBackdrop.classList.add('open');
 }
-
 function closeCopilot() {
     copilotDrawer.classList.remove('open');
     copilotBackdrop.classList.remove('open');
@@ -1593,7 +1647,6 @@ if (openCopilotFabBtn) openCopilotFabBtn.addEventListener('click', openCopilot);
 if (closeCopilotBtn) closeCopilotBtn.addEventListener('click', closeCopilot);
 if (copilotBackdrop) copilotBackdrop.addEventListener('click', closeCopilot);
 
-// Standby "Start Conversation" Gate
 const startCopilotBtn = document.getElementById('startCopilotBtn');
 const copilotStandbyView = document.getElementById('copilotStandbyView');
 const copilotChatView = document.getElementById('copilotChatView');
@@ -1625,9 +1678,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// =========================================================================
-// Service Worker Registration
-// =========================================================================
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
