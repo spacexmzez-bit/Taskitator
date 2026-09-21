@@ -16,249 +16,7 @@
 
     <link rel="stylesheet" href="style.css">
     <style>
-        :root {
-            --bg-color: #0c1b38;
-            --card-bg: #142952;
-            --card-subtle: #1a3466;
-            --border-color: #244680;
-            --border-hover: #3b6ec2;
-        }
-
-        .sync-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            display: inline-block;
-            cursor: pointer;
-            transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
-        }
-        .sync-dot:hover {
-            transform: scale(1.3);
-        }
-        .sync-dot.local-only {
-            background-color: #64748b;
-            box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.25);
-        }
-        .sync-dot.pending {
-            background-color: #eab308;
-            box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.3);
-        }
-        .sync-dot.synced {
-            background-color: #22c55e;
-            box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
-        }
-        .sync-dot.error {
-            background-color: #ef4444;
-            box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
-        }
-
-        .sync-legend-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px;
-            border-radius: 8px;
-            background: var(--card-subtle);
-            border: 1px solid var(--border-color);
-            margin-bottom: 8px;
-        }
-
-        .undo-grace-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: #14264b;
-            border: 1.5px dashed var(--primary);
-            border-radius: 10px;
-            padding: 8px 14px;
-            margin-bottom: 8px;
-            animation: fadeIn 0.2s ease;
-        }
-        .undo-grace-btn {
-            background: var(--primary);
-            color: #fff;
-            border: none;
-            border-radius: 6px;
-            padding: 4px 10px;
-            font-size: 0.8rem;
-            font-weight: 700;
-            cursor: pointer;
-        }
-        .subtasks-count-badge {
-            background: var(--card-subtle);
-            border: 1px solid var(--border-color);
-            color: var(--text-muted);
-            font-size: 0.72rem;
-            font-weight: 600;
-            padding: 2px 7px;
-            border-radius: 6px;
-            white-space: nowrap;
-        }
-        .nav-link-btn {
-            background: transparent;
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            border-radius: 8px;
-            padding: 5px 10px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            transition: all 0.15s ease;
-        }
-        .nav-link-btn:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-            background: var(--card-subtle);
-        }
-        .completed-item-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: var(--card-subtle);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 10px 12px;
-            margin-bottom: 8px;
-        }
-        .ai-locked-btn {
-            background: #1e293b;
-            border: 1px solid #475569;
-            color: #94a3b8;
-            font-size: 0.75rem;
-            font-weight: 700;
-            padding: 4px 8px;
-            border-radius: 6px;
-            cursor: not-allowed;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .criteria-actions-bar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            margin-top: 6px;
-        }
-        .criteria-feedback-box {
-            margin-top: 10px;
-            padding: 10px 12px;
-            border-radius: 8px;
-            font-size: 0.82rem;
-            line-height: 1.4;
-            display: none;
-        }
-        .criteria-feedback-box.pass {
-            background: #052e16;
-            border: 1px solid #166534;
-            color: #86efac;
-        }
-        .criteria-feedback-box.fail {
-            background: #380d15;
-            border: 1px solid #881337;
-            color: #fda4af;
-        }
-        .criteria-feedback-box.loading {
-            background: var(--card-subtle);
-            border: 1px solid var(--border-color);
-            color: var(--text-muted);
-            font-style: italic;
-        }
-        .template-picker-list {
-            max-height: 240px;
-            overflow-y: auto;
-            margin-top: 8px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        .template-picker-card {
-            background: var(--card-subtle);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 10px 12px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-        .template-picker-card:hover {
-            border-color: var(--primary);
-            background: var(--accent-light);
-        }
-
-        .icon-only-btn {
-            width: 36px;
-            height: 36px;
-            padding: 0;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 8px;
-            background: rgba(30, 41, 59, 0.7);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-        .icon-only-btn:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-            background: var(--card-subtle);
-        }
-
-        .emergency-icon-btn {
-            width: 36px;
-            height: 36px;
-            padding: 0;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 8px;
-            background: rgba(239, 68, 68, 0.15);
-            border: 1px solid rgba(239, 68, 68, 0.4);
-            cursor: pointer;
-            font-size: 1.05rem;
-            transition: all 0.15s ease;
-        }
-        .emergency-icon-btn:hover {
-            background: rgba(239, 68, 68, 0.25);
-            border-color: #ef4444;
-            transform: scale(1.03);
-        }
-
-        .break-status-pill {
-            height: 36px;
-            padding: 0 12px;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            border-radius: 18px;
-            background: rgba(30, 41, 59, 0.8);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            font-size: 0.8rem;
-            font-weight: 600;
-            cursor: pointer;
-            white-space: nowrap;
-            transition: all 0.2s ease;
-        }
-        .break-status-pill:hover {
-            border-color: var(--primary);
-            background: var(--card-subtle);
-        }
-        .break-status-pill.active-break {
-            background: rgba(34, 197, 94, 0.15);
-            border-color: #22c55e;
-            color: #4ade80;
-        }
-        .break-status-pill.window-open {
-            border-color: #3b82f6;
-            color: #93c5fd;
-        }
-
+        /* Base page-specific overrides if needed */
         .page-title-section {
             padding: 16px 20px 4px 20px;
         }
@@ -269,7 +27,6 @@
             margin: 0;
             letter-spacing: -0.02em;
         }
-
         .subtask-builder-item {
             display: flex;
             align-items: center;
@@ -279,7 +36,6 @@
         .subtask-input-title {
             flex: 1;
         }
-
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-3px); }
             to { opacity: 1; transform: translateY(0); }
@@ -467,8 +223,17 @@
             </div>
 
             <div class="form-group">
-                <label for="taskTagsInput">Tags (Comma-separated, mutable anytime)</label>
-                <input type="text" id="taskTagsInput" placeholder="e.g. Study, Urgent, Routine">
+                <label>Priority</label>
+                <div id="createPriorityCloud" class="priority-select-group"></div>
+            </div>
+
+            <div class="form-group">
+                <label>Tags</label>
+                <div id="createTagCloud" class="tag-select-cloud"></div>
+                <div class="quick-add-tag-group">
+                    <input type="text" id="createQuickTagInput" class="quick-add-tag-input" placeholder="Quick add tag..." autocomplete="off">
+                    <button type="button" class="icon-btn" id="createQuickTagBtn" style="padding: 4px 10px; font-size: 0.8rem;">+ Add</button>
+                </div>
             </div>
 
             <div class="form-group">
@@ -547,8 +312,17 @@
         </div>
 
         <div class="form-group">
-            <label for="editTaskTags">Tags (Always Editable, Comma-separated)</label>
-            <input type="text" id="editTaskTags">
+            <label>Priority</label>
+            <div id="editPriorityCloud" class="priority-select-group"></div>
+        </div>
+
+        <div class="form-group">
+            <label>Tags</label>
+            <div id="editTagCloud" class="tag-select-cloud"></div>
+            <div class="quick-add-tag-group">
+                <input type="text" id="editQuickTagInput" class="quick-add-tag-input" placeholder="Quick add tag..." autocomplete="off">
+                <button type="button" class="icon-btn" id="editQuickTagBtn" style="padding: 4px 10px; font-size: 0.8rem;">+ Add</button>
+            </div>
         </div>
 
         <div class="form-group">
@@ -652,6 +426,52 @@
 <script src="agent-engine.js"></script>
 <script>
 // =========================================================================
+// Global Defaults & Settings Access
+// =========================================================================
+const DEFAULT_TAGS = ['study', 'work', 'personal'];
+const DEFAULT_PRIORITIES = [
+    { id: 'prio_high', name: 'High', color: '#ef4444', rank: 1 },
+    { id: 'prio_med', name: 'Medium', color: '#eab308', rank: 2 },
+    { id: 'prio_low', name: 'Low', color: '#22c55e', rank: 3 }
+];
+
+function getGlobalTags() {
+    try {
+        const s = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+        return s.custom_tags || [...DEFAULT_TAGS];
+    } catch(e) { return [...DEFAULT_TAGS]; }
+}
+
+function getGlobalPriorities() {
+    try {
+        const s = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+        return s.custom_priorities || [...DEFAULT_PRIORITIES];
+    } catch(e) { return [...DEFAULT_PRIORITIES]; }
+}
+
+function saveGlobalTag(newTag) {
+    if (!newTag) return;
+    try {
+        const s = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+        const tags = s.custom_tags || [...DEFAULT_TAGS];
+        if (!tags.includes(newTag)) {
+            tags.push(newTag);
+            s.custom_tags = tags;
+            localStorage.setItem('taskitator_settings', JSON.stringify(s));
+            if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
+                SyncEngine.markLocalModified();
+            }
+        }
+    } catch(e) {}
+}
+
+function getLowestPriorityId() {
+    const p = getGlobalPriorities();
+    if (!p || p.length === 0) return null;
+    return p.reduce((prev, curr) => (curr.rank > prev.rank ? curr : prev)).id;
+}
+
+// =========================================================================
 // State & Storage
 // =========================================================================
 const TASKS_KEY = 'taskitator_tasks';
@@ -662,14 +482,15 @@ let pendingAuditTaskId = null;
 let activeDetailTaskId = null;
 let emergencyTimerInterval = null;
 
-let criteriaValidationState = {
-    validated: false,
-    score: 0,
-    isTemplate: false
-};
+let criteriaValidationState = { validated: false, score: 0, isTemplate: false };
 let cachedTemplates = null;
-
 const pendingGraceCompletions = new Map();
+
+// Modal State
+let createModalSelectedTags = new Set();
+let createModalSelectedPriority = null;
+let editModalSelectedTags = new Set();
+let editModalSelectedPriority = null;
 
 // =========================================================================
 // Web Audio API Synthesizer
@@ -690,9 +511,7 @@ const SoundFX = {
         try {
             const settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
             return settings.sound_effects_enabled === false;
-        } catch (e) {
-            return false;
-        }
+        } catch (e) { return false; }
     },
     playComplete() {
         if (this.isMuted()) return;
@@ -738,25 +557,17 @@ const syncInfoModal = document.getElementById('syncInfoModal');
 function updateSyncDot(state) {
     if (!syncStatusDot) return;
     syncStatusDot.className = `sync-dot ${state}`;
-    if (state === 'synced') syncStatusDot.title = 'Sync Status: Synced up to date (Click for info)';
-    else if (state === 'pending') syncStatusDot.title = 'Sync Status: Not synced / Pending (Click for info)';
-    else if (state === 'error') syncStatusDot.title = 'Sync Status: Sync Failed / Offline (Click for info)';
-    else syncStatusDot.title = 'Sync Status: Local only (Click for info)';
+    if (state === 'synced') syncStatusDot.title = 'Sync Status: Synced up to date';
+    else if (state === 'pending') syncStatusDot.title = 'Sync Status: Not synced / Pending';
+    else if (state === 'error') syncStatusDot.title = 'Sync Status: Sync Failed / Offline';
+    else syncStatusDot.title = 'Sync Status: Local only';
 }
 
 function initSyncIndicator() {
     let settings = {};
-    try {
-        settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
-    } catch (e) {
-        settings = {};
-    }
-
-    if (!settings.worker_passkey) {
-        updateSyncDot('local-only');
-    } else {
-        updateSyncDot('synced');
-    }
+    try { settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}'); } catch (e) {}
+    if (!settings.worker_passkey) updateSyncDot('local-only');
+    else updateSyncDot('synced');
 }
 
 function loadStorage() {
@@ -779,11 +590,7 @@ function saveStorageAndPush() {
     }
 
     let settings = {};
-    try {
-        settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
-    } catch (e) {
-        settings = {};
-    }
+    try { settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}'); } catch (e) {}
 
     if (!settings.worker_passkey) {
         updateSyncDot('local-only');
@@ -792,7 +599,7 @@ function saveStorageAndPush() {
     }
 
     if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
-        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
+        const breaks = TaskitatorEngine.BreakEngine ? TaskitatorEngine.BreakEngine.getTodayBreaks() : [];
         SyncEngine.scheduleAutoPush(45000, { today_breaks: breaks });
     }
 }
@@ -803,7 +610,7 @@ window.addEventListener('taskitator-synced', () => {
         loadStorage();
         renderTaskTree();
         renderCompletedModalList();
-        BreakUI.updateStatusPill();
+        if(window.BreakUI) BreakUI.updateStatusPill();
     }
 });
 
@@ -812,7 +619,7 @@ window.addEventListener('taskitator-tasks-updated', () => {
         loadStorage();
         renderTaskTree();
         renderCompletedModalList();
-        BreakUI.updateStatusPill();
+        if(window.BreakUI) BreakUI.updateStatusPill();
     }
 });
 
@@ -821,20 +628,12 @@ window.addEventListener('taskitator-sync-error', () => {
 });
 
 if (syncStatusDot) {
-    syncStatusDot.addEventListener('click', () => {
-        syncInfoModal.classList.add('open');
-    });
+    syncStatusDot.addEventListener('click', () => { syncInfoModal.classList.add('open'); });
 }
-document.getElementById('closeSyncInfoModalBtn').addEventListener('click', () => {
-    syncInfoModal.classList.remove('open');
-});
+document.getElementById('closeSyncInfoModalBtn').addEventListener('click', () => { syncInfoModal.classList.remove('open'); });
 document.getElementById('forceSyncFromModalBtn').addEventListener('click', async () => {
     let settings = {};
-    try {
-        settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
-    } catch (e) {
-        settings = {};
-    }
+    try { settings = JSON.parse(localStorage.getItem('taskitator_settings') || '{}'); } catch (e) {}
 
     if (!settings.worker_passkey) {
         alert('Cannot sync: No secret passkey configured in Settings.');
@@ -846,14 +645,14 @@ document.getElementById('forceSyncFromModalBtn').addEventListener('click', async
     syncInfoModal.classList.remove('open');
 
     if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
-        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
+        const breaks = TaskitatorEngine.BreakEngine ? TaskitatorEngine.BreakEngine.getTodayBreaks() : [];
         const ok = await SyncEngine.forceImmediateSync({ today_breaks: breaks });
         if (ok) {
             updateSyncDot('synced');
             loadStorage();
             renderTaskTree();
             renderCompletedModalList();
-            BreakUI.updateStatusPill();
+            if(window.BreakUI) BreakUI.updateStatusPill();
         } else {
             updateSyncDot('error');
         }
@@ -861,6 +660,31 @@ document.getElementById('forceSyncFromModalBtn').addEventListener('click', async
         setTimeout(() => updateSyncDot('synced'), 500);
     }
 });
+
+// =========================================================================
+// Deterministic Tree Sorting (Priority -> Due Date -> Creation)
+// =========================================================================
+function sortTasks(tasksArray) {
+    const priorities = getGlobalPriorities();
+    const getRank = (pId) => {
+        const p = priorities.find(x => x.id === pId);
+        return p ? p.rank : 9999;
+    };
+    
+    return tasksArray.sort((a, b) => {
+        const rA = getRank(a.priority_id);
+        const rB = getRank(b.priority_id);
+        if (rA !== rB) return rA - rB;
+        
+        const dA = a.due_date || '9999-99-99';
+        const dB = b.due_date || '9999-99-99';
+        if (dA !== dB) return dA.localeCompare(dB);
+        
+        const cA = a.created_at || '';
+        const cB = b.created_at || '';
+        return cA.localeCompare(cB);
+    });
+}
 
 // =========================================================================
 // Tree Hierarchy Rendering & Scoped Collapsing
@@ -878,6 +702,7 @@ function renderTaskTree() {
 
     const todayStr = new Date().toISOString().split('T')[0];
     const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
+    const globalPriorities = getGlobalPriorities();
 
     const allChildrenMap = new Map();
     const visibleChildrenMap = new Map();
@@ -910,10 +735,12 @@ function renderTaskTree() {
         return allKids.some(k => hasVisibleDescendant(k.id));
     }
 
-    const rootTasks = (allChildrenMap.get('root') || []).filter(t => {
+    let rootTasks = (allChildrenMap.get('root') || []).filter(t => {
         if (!belongsToToday(t)) return false;
         return isTaskVisuallyActive(t) || hasVisibleDescendant(t.id);
     });
+
+    rootTasks = sortTasks(rootTasks);
 
     if (rootTasks.length === 0) {
         list.innerHTML = '<li style="text-align: center; color: var(--text-muted); padding: 32px;">No active tasks scheduled for today.</li>';
@@ -949,11 +776,19 @@ function renderTaskTree() {
         row.className = 'task-row';
         row.style.marginLeft = `${depth * 20}px`;
 
+        // Priority Left Stripe Styling
+        const pObj = globalPriorities.find(x => x.id === task.priority_id);
+        if (pObj) {
+            row.style.borderLeftColor = pObj.color;
+        }
+
         const main = document.createElement('div');
         main.className = 'task-main';
 
         const allChildren = allChildrenMap.get(task.id) || [];
-        const visibleChildren = visibleChildrenMap.get(task.id) || [];
+        let visibleChildren = visibleChildrenMap.get(task.id) || [];
+        visibleChildren = sortTasks(visibleChildren);
+        
         const hasVisibleChildren = visibleChildren.length > 0;
         const isCollapsed = collapsedNodes.has(task.id);
 
@@ -1325,471 +1160,88 @@ function deleteTask(taskId) {
 }
 
 // =========================================================================
-// Task Detail & Edit Modal
+// Tag Cloud & Priority Selectors
 // =========================================================================
-const taskDetailModal = document.getElementById('taskDetailModal');
-const editTaskTitle = document.getElementById('editTaskTitle');
-const editTaskDesc = document.getElementById('editTaskDesc');
-const editTaskTags = document.getElementById('editTaskTags');
-const editTaskDueDate = document.getElementById('editTaskDueDate');
-const editAiLockCheckbox = document.getElementById('editAiLockCheckbox');
-const editStrictPrereqCheckbox = document.getElementById('editStrictPrereqCheckbox');
-const editPrerequisiteBoxContainer = document.getElementById('editPrerequisiteBoxContainer');
-const editCriteriaBoxContainer = document.getElementById('editCriteriaBoxContainer');
-const editTaskCriteria = document.getElementById('editTaskCriteria');
-const detailSubtasksList = document.getElementById('detailSubtasksList');
-const detailLockStatusBadge = document.getElementById('detailLockStatusBadge');
-const deleteFromDetailBtn = document.getElementById('deleteFromDetailBtn');
-
-function openTaskDetailModal(taskId) {
-    const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-    activeDetailTaskId = taskId;
-
-    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
-    const isLocked = Boolean(task.ai_locked);
-
-    document.getElementById('detailTaskTitleHeader').textContent = task.title;
-    editTaskTitle.value = task.title || '';
-    editTaskDesc.value = task.description || '';
-    editTaskTags.value = (task.tags || []).join(', ');
-    editTaskDueDate.value = task.due_date === 'today' ? new Date().toISOString().split('T')[0] : (task.due_date || '');
-
-    editAiLockCheckbox.checked = isLocked;
-    editStrictPrereqCheckbox.checked = Boolean(task.strict_prerequisites);
+function renderModalTagCloud(containerId, activeSet) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    const globalTags = getGlobalTags();
     
-    editCriteriaBoxContainer.style.display = isLocked ? 'block' : 'none';
-    editPrerequisiteBoxContainer.style.display = isLocked ? 'block' : 'none';
-
-    const cannotModifyLocked = isLocked && !isBypassActive;
-
-    editTaskTitle.disabled = cannotModifyLocked;
-    editTaskDueDate.disabled = cannotModifyLocked;
-    editAiLockCheckbox.disabled = cannotModifyLocked;
-    editStrictPrereqCheckbox.disabled = cannotModifyLocked;
-    editTaskCriteria.disabled = cannotModifyLocked;
-    deleteFromDetailBtn.disabled = cannotModifyLocked;
-    editTaskCriteria.value = task.proof_criteria || '';
-
-    if (isLocked) {
-        detailLockStatusBadge.innerHTML = isBypassActive
-            ? '<span class="tag-chip" style="background:#451a03;color:#fde68a;">Bypass Active</span>'
-            : '<span class="ai-badge">🔒 Locked</span>';
-    } else {
-        detailLockStatusBadge.innerHTML = '<span class="tag-chip">Standard</span>';
-    }
-
-    detailSubtasksList.innerHTML = '';
-    const directChildren = tasks.filter(t => t.parent_id === taskId && t.status !== 'trash');
-    if (directChildren.length === 0) {
-        detailSubtasksList.innerHTML = '<li style="font-size: 0.825rem; color: var(--text-muted); padding: 4px 0;">No subtasks yet.</li>';
-    } else {
-        directChildren.forEach(child => {
-            const sLi = document.createElement('li');
-            sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
-            
-            let cBadges = '';
-            if (child.ai_locked) cBadges += '<span class="ai-badge">🔒 AI</span> ';
-            if (child.strict_prerequisites) cBadges += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️</span>';
-
-            sLi.innerHTML = `
-                <span>${child.status === 'completed' ? '✓ ' : ''}${child.title} ${cBadges}</span>
-                <button type="button" class="icon-btn" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
-            `;
-            sLi.querySelector('button').addEventListener('click', () => {
-                taskDetailModal.classList.remove('open');
-                openTaskDetailModal(child.id);
-            });
-            detailSubtasksList.appendChild(sLi);
+    globalTags.forEach(tag => {
+        const pill = document.createElement('span');
+        pill.className = 'tag-select-pill';
+        if (activeSet.has(tag)) pill.classList.add('selected');
+        pill.textContent = tag;
+        pill.addEventListener('click', () => {
+            if (activeSet.has(tag)) activeSet.delete(tag);
+            else activeSet.add(tag);
+            renderModalTagCloud(containerId, activeSet);
         });
-    }
-
-    taskDetailModal.classList.add('open');
-}
-
-editAiLockCheckbox.addEventListener('change', () => {
-    editCriteriaBoxContainer.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
-    editPrerequisiteBoxContainer.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
-});
-
-document.getElementById('closeDetailModalBtn').addEventListener('click', () => {
-    taskDetailModal.classList.remove('open');
-    activeDetailTaskId = null;
-});
-
-document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
-    if (!activeDetailTaskId) return;
-
-    loadStorage();
-    const task = tasks.find(t => t.id === activeDetailTaskId);
-    if (!task) {
-        alert('This task was removed in a background synchronization.');
-        taskDetailModal.classList.remove('open');
-        activeDetailTaskId = null;
-        renderTaskTree();
-        return;
-    }
-
-    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
-    const willBeAiLocked = editAiLockCheckbox.checked;
-    const willBeStrict = willBeAiLocked ? editStrictPrereqCheckbox.checked : false;
-
-    if (!task.ai_locked && willBeAiLocked) {
-        const confirmed = confirm(
-            "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
-            "Enabling AI Proof on this task is permanent.\n" +
-            "Once saved, this task cannot be un-checked, criteria cannot be changed, and it CANNOT be deleted without an Emergency Bypass.\n\n" +
-            "Do you want to permanently lock this task?"
-        );
-        if (!confirmed) return;
-    }
-
-    task.description = editTaskDesc.value.trim();
-    task.tags = editTaskTags.value.split(',').map(s => s.trim()).filter(Boolean);
-
-    if (!task.ai_locked || isBypassActive) {
-        task.title = editTaskTitle.value.trim() || task.title;
-        task.due_date = editTaskDueDate.value || '';
-        task.ai_locked = willBeAiLocked;
-        task.strict_prerequisites = willBeStrict;
-        task.proof_criteria = willBeAiLocked ? editTaskCriteria.value.trim() : '';
-    }
-
-    saveStorageAndPush();
-    taskDetailModal.classList.remove('open');
-    activeDetailTaskId = null;
-    renderTaskTree();
-    renderCompletedModalList();
-});
-
-deleteFromDetailBtn.addEventListener('click', () => {
-    if (!activeDetailTaskId) return;
-    deleteTask(activeDetailTaskId);
-    taskDetailModal.classList.remove('open');
-    activeDetailTaskId = null;
-});
-
-document.getElementById('openChildAddModalBtn').addEventListener('click', () => {
-    if (!activeDetailTaskId) return;
-    const parentTask = tasks.find(t => t.id === activeDetailTaskId);
-    taskDetailModal.classList.remove('open');
-    activeDetailTaskId = null;
-    openTaskCreationModal(parentTask.id, `Add Subtask to "${parentTask.title}"`);
-});
-
-// =========================================================================
-// Proof Audit Modal
-// =========================================================================
-const auditModal = document.getElementById('auditModal');
-const auditTaskTitle = document.getElementById('auditTaskTitleDisplay');
-const auditCriteria = document.getElementById('auditCriteriaDisplay');
-const auditImage = document.getElementById('auditImageInput');
-const auditContext = document.getElementById('auditContextInput');
-const auditFeedback = document.getElementById('auditFeedbackContainer');
-const submitProofBtn = document.getElementById('submitProofBtn');
-
-function openAuditModal(task) {
-    pendingAuditTaskId = task.id;
-    auditTaskTitle.textContent = task.title;
-    auditCriteria.innerHTML = `<strong>Required Criteria &lt;PC&gt;:</strong> ${task.proof_criteria || 'General confirmation of task completion.'}`;
-    auditImage.value = '';
-    auditContext.value = '';
-    auditFeedback.style.display = 'none';
-    submitProofBtn.disabled = false;
-    submitProofBtn.textContent = 'Submit Proof';
-    auditModal.classList.add('open');
-}
-
-document.getElementById('closeAuditModalBtn').addEventListener('click', () => {
-    auditModal.classList.remove('open');
-    pendingAuditTaskId = null;
-});
-
-submitProofBtn.addEventListener('click', async () => {
-    if (!pendingAuditTaskId) return;
-    const task = tasks.find(t => t.id === pendingAuditTaskId);
-    if (!task) return;
-
-    const file = auditImage.files[0];
-    if (!file) {
-        alert('Please attach an evidence photo or PDF document.');
-        return;
-    }
-
-    const check = TaskitatorEngine.AuditEngine.validateFile(file);
-    if (!check.valid) {
-        alert(check.error);
-        return;
-    }
-
-    submitProofBtn.disabled = true;
-    submitProofBtn.textContent = 'Verifying Evidence...';
-    auditFeedback.style.display = 'none';
-
-    const result = await TaskitatorEngine.AuditEngine.verifyProof({
-        file: file,
-        taskTitle: task.title,
-        criteria: task.proof_criteria,
-        userContext: auditContext.value.trim()
+        container.appendChild(pill);
     });
-
-    if (!result.success) {
-        submitProofBtn.disabled = false;
-        submitProofBtn.textContent = 'Submit Proof';
-        auditFeedback.className = 'audit-critique-box';
-        auditFeedback.style.display = 'block';
-        auditFeedback.innerHTML = `<strong>Verification Halted:</strong> ${result.error}`;
-        return;
-    }
-
-    if (result.approved) {
-        task.verified_model = result.model_used;
-        cascadeTaskStatus(pendingAuditTaskId, 'completed', new Date().toISOString());
-        SoundFX.playSuccessAudit();
-        saveStorageAndPush();
-        auditModal.classList.remove('open');
-        pendingAuditTaskId = null;
-        renderTaskTree();
-        renderCompletedModalList();
-    } else {
-        submitProofBtn.disabled = false;
-        submitProofBtn.textContent = 'Retry Submission';
-        auditFeedback.className = 'audit-critique-box';
-        auditFeedback.style.display = 'block';
-        auditFeedback.innerHTML = `<strong>Verdict: ${result.verdict.toUpperCase()}</strong><br>${result.critique}`;
-    }
-});
-
-// =========================================================================
-// Emergency Bypass Operations
-// =========================================================================
-const emergencyTriggerBtn = document.getElementById('emergencyTriggerBtn');
-const emergencyConfirmModal = document.getElementById('emergencyConfirmModal');
-const activeEmergencyBanner = document.getElementById('activeEmergencyBanner');
-const emergencyCountdownTimer = document.getElementById('emergencyCountdownTimer');
-
-function updateEmergencyUI() {
-    if (TaskitatorEngine.EmergencyManager.isBypassActive()) {
-        activeEmergencyBanner.style.display = 'flex';
-        startEmergencyCountdown();
-    } else {
-        activeEmergencyBanner.style.display = 'none';
-        clearInterval(emergencyTimerInterval);
-    }
-    renderTaskTree();
 }
 
-function startEmergencyCountdown() {
-    clearInterval(emergencyTimerInterval);
-    emergencyTimerInterval = setInterval(() => {
-        const remaining = TaskitatorEngine.EmergencyManager.getRemainingWindowSeconds();
-        if (remaining <= 0) {
-            clearInterval(emergencyTimerInterval);
-            updateEmergencyUI();
-            return;
-        }
-        const m = Math.floor(remaining / 60);
-        const s = remaining % 60;
-        emergencyCountdownTimer.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    }, 1000);
+function handleQuickAddTag(inputId, activeSet, containerId) {
+    const input = document.getElementById(inputId);
+    const val = input.value.trim().toLowerCase().replace(/,/g, '');
+    if (val) {
+        saveGlobalTag(val);
+        activeSet.add(val);
+        input.value = '';
+        renderModalTagCloud(containerId, activeSet);
+    }
 }
 
-emergencyTriggerBtn.addEventListener('click', () => {
-    if (TaskitatorEngine.EmergencyManager.isBypassActive()) {
-        alert('Emergency bypass is already active.');
-        return;
-    }
-    const state = TaskitatorEngine.EmergencyManager.getState();
-    if (state.uses_left <= 0) {
-        alert('All 4 emergency bypass uses for this week have been exhausted.');
-        return;
-    }
-    document.getElementById('emergencyModalRemainingUses').textContent = `Remaining tokens this week: ${state.uses_left}/4`;
-    emergencyConfirmModal.classList.add('open');
-});
-
-document.getElementById('cancelEmergencyBtn').addEventListener('click', () => {
-    emergencyConfirmModal.classList.remove('open');
-});
-
-document.getElementById('confirmEmergencyBtn').addEventListener('click', () => {
-    const res = TaskitatorEngine.EmergencyManager.activateBypass();
-    emergencyConfirmModal.classList.remove('open');
-    if (res.success) {
-        updateEmergencyUI();
-    } else {
-        alert(res.error);
-    }
-});
-
-document.getElementById('emergencyInfoBtn').addEventListener('click', () => {
-    document.getElementById('emergencyInfoModal').classList.add('open');
-});
-document.getElementById('closeEmergencyInfoModalBtn').addEventListener('click', () => {
-    document.getElementById('emergencyInfoModal').classList.remove('open');
-});
-
-// =========================================================================
-// Break System
-// =========================================================================
-const BreakUI = {
-    pill: document.getElementById('breakStatusPill'),
-    pillText: document.getElementById('breakPillText'),
-    pillIcon: document.getElementById('breakPillIcon'),
-    modal: document.getElementById('breakModal'),
-    rowsContainer: document.getElementById('breakRowsContainer'),
-    errorBox: document.getElementById('breakModalError'),
-    saveBtn: document.getElementById('saveBreaksModalBtn'),
-    addBtn: document.getElementById('addBreakRowModalBtn'),
-    closeBtn: document.getElementById('closeBreakModalBtn'),
-
-    init() {
-        if (!this.pill || !this.modal) return;
-        this.pill.addEventListener('click', () => this.openModal());
-        this.closeBtn.addEventListener('click', () => this.closeModal());
-        this.addBtn.addEventListener('click', () => this.addBreakRow());
-        this.saveBtn.addEventListener('click', () => this.saveBreaks());
-        this.modal.addEventListener('click', (e) => {
-            if (e.target === this.modal) this.closeModal();
-        });
-        this.updateStatusPill();
-        setInterval(() => this.updateStatusPill(), 30000);
-    },
-
-    updateStatusPill() {
-        if (!window.TaskitatorEngine?.BreakEngine || !this.pill) return;
-        const isWindowOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
-        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
-        const now = new Date();
-        const curMins = now.getHours() * 60 + now.getMinutes();
-
-        this.pill.className = 'break-status-pill';
-
-        const activeBreak = breaks.find(b => {
-            const [sH, sM] = b.start.split(':').map(Number);
-            const [eH, eM] = b.end.split(':').map(Number);
-            return curMins >= (sH * 60 + sM) && curMins <= (eH * 60 + eM);
-        });
-
-        if (activeBreak) {
-            const [eH, eM] = activeBreak.end.split(':').map(Number);
-            const minsLeft = (eH * 60 + eM) - curMins;
-            this.pill.classList.add('active-break');
-            this.pillIcon.textContent = '🟢';
-            this.pillText.textContent = `${minsLeft}m left`;
-            return;
+function renderModalPriorityCloud(containerId, isEditModal) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    const globalPriorities = getGlobalPriorities();
+    
+    globalPriorities.forEach(p => {
+        const pill = document.createElement('span');
+        pill.className = 'priority-select-pill';
+        const isSelected = isEditModal ? (editModalSelectedPriority === p.id) : (createModalSelectedPriority === p.id);
+        
+        if (isSelected) {
+            pill.classList.add('selected');
+            pill.style.color = p.color;
         }
-
-        const upcomingBreak = breaks
-            .map(b => {
-                const [sH, sM] = b.start.split(':').map(Number);
-                return { ...b, startMins: sH * 60 + sM };
-            })
-            .filter(b => b.startMins > curMins)
-            .sort((a, b) => a.startMins - b.startMins)[0];
-
-        if (upcomingBreak) {
-            this.pillIcon.textContent = '☕';
-            this.pillText.textContent = `Next: ${upcomingBreak.start}`;
-            return;
-        }
-
-        if (isWindowOpen) {
-            this.pill.classList.add('window-open');
-            this.pillIcon.textContent = '⏸️';
-            this.pillText.textContent = breaks.length > 0 ? 'Edit Breaks' : 'Breaks';
-        } else {
-            this.pillIcon.textContent = '🔒';
-            this.pillText.textContent = 'Breaks Locked';
-        }
-    },
-
-    openModal() {
-        const isWindowOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
-        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
-
-        this.rowsContainer.innerHTML = '';
-        this.hideError();
-
-        if (breaks.length > 0) {
-            breaks.forEach(b => this.addBreakRow(b.start, b.end, !isWindowOpen));
-        } else if (isWindowOpen) {
-            this.addBreakRow();
-        }
-
-        this.addBtn.style.display = isWindowOpen ? 'inline-block' : 'none';
-        this.saveBtn.style.display = isWindowOpen ? 'inline-block' : 'none';
-        document.getElementById('breakModalStatusDesc').textContent = isWindowOpen
-            ? 'Schedule up to 3 non-overlapping breaks (≤ 3 hours total). The window locks permanently once closed.'
-            : 'The break scheduling window is now closed for today. Configured breaks are read-only.';
-
-        this.modal.classList.add('open');
-    },
-
-    closeModal() {
-        this.modal.classList.remove('open');
-    },
-
-    addBreakRow(startVal = '', endVal = '', disabled = false) {
-        const rows = this.rowsContainer.querySelectorAll('.break-row-item');
-        if (rows.length >= 3) {
-            this.showError('Maximum 3 breaks allowed per day.');
-            return;
-        }
-
-        const row = document.createElement('div');
-        row.className = 'break-row-item';
-        row.style.cssText = 'display: flex; align-items: center; gap: 8px;';
-
-        row.innerHTML = `
-            <input type="time" class="b-start" value="${startVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
-            <span style="color: var(--text-muted); font-size: 0.85rem;">to</span>
-            <input type="time" class="b-end" value="${endVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
-            ${!disabled ? '<button type="button" class="del-break-row-btn" style="background: none; border: none; color: var(--danger); font-size: 1.2rem; cursor: pointer; padding: 0 4px; line-height: 1;">&times;</button>' : ''}
-        `;
-
-        if (!disabled) {
-            row.querySelector('.del-break-row-btn').addEventListener('click', () => {
-                row.remove();
-                this.hideError();
-            });
-        }
-        this.rowsContainer.appendChild(row);
-    },
-
-    saveBreaks() {
-        const rows = this.rowsContainer.querySelectorAll('.break-row-item');
-        const breaksArray = [];
-
-        for (const r of rows) {
-            const start = r.querySelector('.b-start').value;
-            const end = r.querySelector('.b-end').value;
-            if (start && end) {
-                breaksArray.push({ start, end });
+        
+        pill.innerHTML = `<span class="priority-color-dot" style="background-color: ${p.color};"></span> ${p.name}`;
+        
+        pill.addEventListener('click', () => {
+            if (isEditModal) {
+                editModalSelectedPriority = (editModalSelectedPriority === p.id) ? null : p.id;
+            } else {
+                createModalSelectedPriority = (createModalSelectedPriority === p.id) ? null : p.id;
             }
-        }
+            renderModalPriorityCloud(containerId, isEditModal);
+        });
+        container.appendChild(pill);
+    });
+}
 
-        const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(breaksArray);
-        if (!res.valid) {
-            this.showError(res.error);
-            return;
-        }
-
-        saveStorageAndPush();
-        this.closeModal();
-        this.updateStatusPill();
-    },
-
-    showError(msg) {
-        this.errorBox.textContent = msg;
-        this.errorBox.style.display = 'block';
-    },
-
-    hideError() {
-        this.errorBox.style.display = 'none';
-        this.errorBox.textContent = '';
+// Bind quick add buttons
+document.getElementById('createQuickTagBtn').addEventListener('click', () => {
+    handleQuickAddTag('createQuickTagInput', createModalSelectedTags, 'createTagCloud');
+});
+document.getElementById('createQuickTagInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        handleQuickAddTag('createQuickTagInput', createModalSelectedTags, 'createTagCloud');
     }
-};
+});
+
+document.getElementById('editQuickTagBtn').addEventListener('click', () => {
+    handleQuickAddTag('editQuickTagInput', editModalSelectedTags, 'editTagCloud');
+});
+document.getElementById('editQuickTagInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        handleQuickAddTag('editQuickTagInput', editModalSelectedTags, 'editTagCloud');
+    }
+});
+
 
 // =========================================================================
 // Full Task Creation Modal & Criteria Engine State Machine
@@ -1860,6 +1312,13 @@ function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task') 
     prerequisiteBoxContainer.style.display = 'none';
     subtaskBuilderList.innerHTML = '';
     document.getElementById('taskDueDateInput').value = new Date().toISOString().split('T')[0];
+    
+    createModalSelectedTags.clear();
+    createModalSelectedPriority = getLowestPriorityId();
+    
+    renderModalTagCloud('createTagCloud', createModalSelectedTags);
+    renderModalPriorityCloud('createPriorityCloud', false);
+    
     resetCriteriaValidation();
     addTaskModal.classList.add('open');
 }
@@ -2004,7 +1463,7 @@ closeTemplatesModalBtn.addEventListener('click', () => {
     templatesModal.classList.remove('open');
 });
 
-// Reverted Quick Subtask logic - Standard clean inputs only
+// Quick Subtask Builder
 document.getElementById('addSubtaskFieldBtn').addEventListener('click', () => {
     const div = document.createElement('div');
     div.className = 'subtask-builder-item';
@@ -2019,7 +1478,6 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const title = document.getElementById('taskTitleInput').value.trim();
     const desc = document.getElementById('taskDescInput').value.trim();
-    const tags = document.getElementById('taskTagsInput').value.split(',').map(s => s.trim()).filter(Boolean);
     const dueDate = document.getElementById('taskDueDateInput').value || 'today';
     const isAi = aiLockCheckbox.checked;
     const isStrictPrereq = isAi ? strictPrereqCheckbox.checked : false;
@@ -2051,7 +1509,8 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
         parent_id: parentId,
         title: title,
         description: desc,
-        tags: tags,
+        tags: Array.from(createModalSelectedTags),
+        priority_id: createModalSelectedPriority,
         status: 'active',
         due_date: dueDate,
         ai_locked: isAi,
@@ -2072,6 +1531,7 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
                 title: subTitle,
                 description: '',
                 tags: [],
+                priority_id: getLowestPriorityId(), // Default subtasks to lowest priority
                 status: 'active',
                 due_date: '',
                 ai_locked: false,
@@ -2086,6 +1546,166 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
     saveStorageAndPush();
     addTaskModal.classList.remove('open');
     renderTaskTree();
+});
+
+// =========================================================================
+// Task Detail & Edit Modal
+// =========================================================================
+const taskDetailModal = document.getElementById('taskDetailModal');
+const editTaskTitle = document.getElementById('editTaskTitle');
+const editTaskDesc = document.getElementById('editTaskDesc');
+const editTaskDueDate = document.getElementById('editTaskDueDate');
+const editAiLockCheckbox = document.getElementById('editAiLockCheckbox');
+const editStrictPrereqCheckbox = document.getElementById('editStrictPrereqCheckbox');
+const editPrerequisiteBoxContainer = document.getElementById('editPrerequisiteBoxContainer');
+const editCriteriaBoxContainer = document.getElementById('editCriteriaBoxContainer');
+const editTaskCriteria = document.getElementById('editTaskCriteria');
+const detailSubtasksList = document.getElementById('detailSubtasksList');
+const detailLockStatusBadge = document.getElementById('detailLockStatusBadge');
+const deleteFromDetailBtn = document.getElementById('deleteFromDetailBtn');
+
+function openTaskDetailModal(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    activeDetailTaskId = taskId;
+
+    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
+    const isLocked = Boolean(task.ai_locked);
+
+    document.getElementById('detailTaskTitleHeader').textContent = task.title;
+    editTaskTitle.value = task.title || '';
+    editTaskDesc.value = task.description || '';
+    editTaskDueDate.value = task.due_date === 'today' ? new Date().toISOString().split('T')[0] : (task.due_date || '');
+
+    editModalSelectedTags = new Set(task.tags || []);
+    editModalSelectedPriority = task.priority_id || null;
+    
+    renderModalTagCloud('editTagCloud', editModalSelectedTags);
+    renderModalPriorityCloud('editPriorityCloud', true);
+
+    editAiLockCheckbox.checked = isLocked;
+    editStrictPrereqCheckbox.checked = Boolean(task.strict_prerequisites);
+    
+    editCriteriaBoxContainer.style.display = isLocked ? 'block' : 'none';
+    editPrerequisiteBoxContainer.style.display = isLocked ? 'block' : 'none';
+
+    const cannotModifyLocked = isLocked && !isBypassActive;
+
+    editTaskTitle.disabled = cannotModifyLocked;
+    editTaskDueDate.disabled = cannotModifyLocked;
+    editAiLockCheckbox.disabled = cannotModifyLocked;
+    editStrictPrereqCheckbox.disabled = cannotModifyLocked;
+    editTaskCriteria.disabled = cannotModifyLocked;
+    deleteFromDetailBtn.disabled = cannotModifyLocked;
+    editTaskCriteria.value = task.proof_criteria || '';
+
+    if (isLocked) {
+        detailLockStatusBadge.innerHTML = isBypassActive
+            ? '<span class="tag-chip" style="background:#451a03;color:#fde68a;">Bypass Active</span>'
+            : '<span class="ai-badge">🔒 Locked</span>';
+    } else {
+        detailLockStatusBadge.innerHTML = '<span class="tag-chip">Standard</span>';
+    }
+
+    detailSubtasksList.innerHTML = '';
+    const directChildren = tasks.filter(t => t.parent_id === taskId && t.status !== 'trash');
+    let sortedChildren = sortTasks([...directChildren]);
+
+    if (sortedChildren.length === 0) {
+        detailSubtasksList.innerHTML = '<li style="font-size: 0.825rem; color: var(--text-muted); padding: 4px 0;">No subtasks yet.</li>';
+    } else {
+        sortedChildren.forEach(child => {
+            const sLi = document.createElement('li');
+            sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
+            
+            let cBadges = '';
+            if (child.ai_locked) cBadges += '<span class="ai-badge">🔒 AI</span> ';
+            if (child.strict_prerequisites) cBadges += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️</span>';
+
+            sLi.innerHTML = `
+                <span>${child.status === 'completed' ? '✓ ' : ''}${child.title} ${cBadges}</span>
+                <button type="button" class="icon-btn" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
+            `;
+            sLi.querySelector('button').addEventListener('click', () => {
+                taskDetailModal.classList.remove('open');
+                openTaskDetailModal(child.id);
+            });
+            detailSubtasksList.appendChild(sLi);
+        });
+    }
+
+    taskDetailModal.classList.add('open');
+}
+
+editAiLockCheckbox.addEventListener('change', () => {
+    editCriteriaBoxContainer.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
+    editPrerequisiteBoxContainer.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
+});
+
+document.getElementById('closeDetailModalBtn').addEventListener('click', () => {
+    taskDetailModal.classList.remove('open');
+    activeDetailTaskId = null;
+});
+
+document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
+    if (!activeDetailTaskId) return;
+
+    loadStorage();
+    const task = tasks.find(t => t.id === activeDetailTaskId);
+    if (!task) {
+        alert('This task was removed in a background synchronization.');
+        taskDetailModal.classList.remove('open');
+        activeDetailTaskId = null;
+        renderTaskTree();
+        return;
+    }
+
+    const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
+    const willBeAiLocked = editAiLockCheckbox.checked;
+    const willBeStrict = willBeAiLocked ? editStrictPrereqCheckbox.checked : false;
+
+    if (!task.ai_locked && willBeAiLocked) {
+        const confirmed = confirm(
+            "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
+            "Enabling AI Proof on this task is permanent.\n" +
+            "Once saved, this task cannot be un-checked, criteria cannot be changed, and it CANNOT be deleted without an Emergency Bypass.\n\n" +
+            "Do you want to permanently lock this task?"
+        );
+        if (!confirmed) return;
+    }
+
+    task.description = editTaskDesc.value.trim();
+    task.tags = Array.from(editModalSelectedTags);
+    task.priority_id = editModalSelectedPriority;
+
+    if (!task.ai_locked || isBypassActive) {
+        task.title = editTaskTitle.value.trim() || task.title;
+        task.due_date = editTaskDueDate.value || '';
+        task.ai_locked = willBeAiLocked;
+        task.strict_prerequisites = willBeStrict;
+        task.proof_criteria = willBeAiLocked ? editTaskCriteria.value.trim() : '';
+    }
+
+    saveStorageAndPush();
+    taskDetailModal.classList.remove('open');
+    activeDetailTaskId = null;
+    renderTaskTree();
+    renderCompletedModalList();
+});
+
+deleteFromDetailBtn.addEventListener('click', () => {
+    if (!activeDetailTaskId) return;
+    deleteTask(activeDetailTaskId);
+    taskDetailModal.classList.remove('open');
+    activeDetailTaskId = null;
+});
+
+document.getElementById('openChildAddModalBtn').addEventListener('click', () => {
+    if (!activeDetailTaskId) return;
+    const parentTask = tasks.find(t => t.id === activeDetailTaskId);
+    taskDetailModal.classList.remove('open');
+    activeDetailTaskId = null;
+    openTaskCreationModal(parentTask.id, `Add Subtask to "${parentTask.title}"`);
 });
 
 // =========================================================================
@@ -2142,7 +1762,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSyncIndicator();
     loadStorage();
     updateEmergencyUI();
-    BreakUI.init();
+    if (window.BreakUI) BreakUI.init();
     renderTaskTree();
 
     if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
@@ -2151,7 +1771,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadStorage();
                 renderTaskTree();
                 renderCompletedModalList();
-                BreakUI.updateStatusPill();
+                if (window.BreakUI) BreakUI.updateStatusPill();
             }
         });
     }
