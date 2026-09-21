@@ -539,6 +539,62 @@ body {
     border-radius: 50%;
 }
 
+/* Header Filter Popover Engine */
+.filter-section-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-color);
+    margin: 14px 0 8px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.filter-pill {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--card-subtle);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.filter-pill:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.filter-pill.selected {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+}
+
+.filter-pill.selected-prio {
+    border-color: currentColor;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.filter-active-dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 10px;
+    height: 10px;
+    background: var(--danger);
+    border-radius: 50%;
+    border: 2px solid var(--card-bg);
+    display: none;
+}
+
+.icon-only-btn {
+    position: relative; /* Required for the filter dot absolute positioning */
+}
+
 /* Banners */
 .banner-emergency {
     background: #380d15;
@@ -628,6 +684,13 @@ body {
     border-top-color: var(--border-hover);
     border-bottom-color: var(--border-hover);
     transform: translateY(-1px);
+}
+
+/* Ghost Breadcrumb Modifier for Path-Preserving Filters */
+.muted-breadcrumb {
+    opacity: 0.4 !important;
+    pointer-events: none !important;
+    filter: grayscale(100%);
 }
 
 .task-main {
