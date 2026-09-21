@@ -98,7 +98,6 @@
         </div>
 
         <div class="nav-center" style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
-            <!-- Filter Funnel Trigger button (Reference: 1000181667.png[span_1](start_span)[span_1](end_span)) -->
             <button class="icon-only-btn" id="openFilterModalBtn" title="Filter Tasks" aria-label="Filter Tasks">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M3 4c0-.55.45-1 1-1h16c.55 0 1 .45 1 1s-.45 1-1 1h-1.5l-6.5 8.67V20c0 .38-.21.73-.55.91l-3 1.5c-.52.26-1.12-.1-1.12-.68v-7.06L3.5 5H3c-.55 0-1-.45-1-1z"/>
@@ -839,7 +838,6 @@ function renderTaskTree() {
     const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0;
     const matchMap = new Map();
     const descMatchMap = new Map();
-    const ancMatchMap = new Map();
 
     if (hasFilters) {
         tasks.forEach(t => {
@@ -859,15 +857,6 @@ function renderTaskTree() {
             return has;
         }
         tasks.forEach(t => checkDesc(t.id));
-
-        function checkAnc(nodeId, inherited = false) {
-            const current = inherited || matchMap.get(nodeId);
-            ancMatchMap.set(nodeId, inherited);
-            const kids = allChildrenMap.get(nodeId) || [];
-            kids.forEach(k => checkAnc(k.id, current));
-        }
-        const rNodes = allChildrenMap.get('root') || [];
-        rNodes.forEach(r => checkAnc(r.id, false));
     }
     // --- End Filter Engine ---
 
@@ -898,9 +887,8 @@ function renderTaskTree() {
         let isBreadcrumb = false;
         if (hasFilters) {
             const m = matchMap.get(task.id);
-            const a = ancMatchMap.get(task.id);
             const d = descMatchMap.get(task.id);
-            if (!m && !a && d) {
+            if (!m && d) {
                 isBreadcrumb = true;
             }
         }
@@ -945,9 +933,8 @@ function renderTaskTree() {
         if (hasFilters) {
             visibleChildren = (allChildrenMap.get(task.id) || []).filter(c => {
                 const m = matchMap.get(c.id);
-                const a = ancMatchMap.get(c.id);
                 const d = descMatchMap.get(c.id);
-                return m || a || d;
+                return m || d; // Only show children that match or have matching descendants
             });
         }
         visibleChildren = sortTasks(visibleChildren);
