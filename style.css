@@ -461,6 +461,84 @@ body {
     opacity: 0.5;
 }
 
+/* Modal Tag & Priority Clouds */
+.tag-select-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.tag-select-pill {
+    padding: 4px 10px;
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: all 0.15s ease;
+}
+
+.tag-select-pill:hover {
+    border-color: var(--primary-hover);
+    color: var(--text-color);
+}
+
+.tag-select-pill.selected {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+}
+
+.quick-add-tag-group {
+    display: flex;
+    gap: 6px;
+}
+
+.quick-add-tag-input {
+    flex: 1;
+    padding: 6px 10px !important;
+    font-size: 0.8rem !important;
+}
+
+.priority-select-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.priority-select-pill {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--card-subtle);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 700;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.priority-select-pill:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.priority-select-pill.selected {
+    border-color: currentColor;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.priority-color-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
 /* Banners */
 .banner-emergency {
     background: #380d15;
@@ -536,6 +614,8 @@ body {
     justify-content: space-between;
     background: var(--card-bg);
     border: 1.5px solid var(--border-color);
+    border-left-width: 6px;
+    border-left-color: transparent;
     border-radius: 10px;
     padding: 12px 14px;
     transition: all 0.15s ease;
@@ -544,7 +624,9 @@ body {
 }
 
 .task-row:hover {
-    border-color: var(--border-hover);
+    border-right-color: var(--border-hover);
+    border-top-color: var(--border-hover);
+    border-bottom-color: var(--border-hover);
     transform: translateY(-1px);
 }
 
