@@ -98,6 +98,14 @@
         </div>
 
         <div class="nav-center" style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
+            <!-- Filter Funnel Trigger button (Reference: 1000181667.png[span_1](start_span)[span_1](end_span)) -->
+            <button class="icon-only-btn" id="openFilterModalBtn" title="Filter Tasks" aria-label="Filter Tasks">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M3 4c0-.55.45-1 1-1h16c.55 0 1 .45 1 1s-.45 1-1 1h-1.5l-6.5 8.67V20c0 .38-.21.73-.55.91l-3 1.5c-.52.26-1.12-.1-1.12-.68v-7.06L3.5 5H3c-.55 0-1-.45-1-1z"/>
+                </svg>
+                <span class="filter-active-dot" id="filterActiveDot"></span>
+            </button>
+            
             <button class="icon-only-btn" id="openCompletedModalBtn" title="Completed Tasks" aria-label="View Completed Tasks">
                 <span style="font-size: 1.05rem; font-weight: bold; color: var(--success);">✓</span>
             </button>
@@ -134,6 +142,30 @@
 
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
 <button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot">🤖</button>
+
+<!-- Filter Popover Drawer Modal -->
+<div class="modal-overlay" id="filterModal">
+    <div class="modal-box" style="max-width: 400px; border: 1.5px solid var(--primary);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="margin: 0; color: var(--primary);">🔍 Filter Workspace</h3>
+            <button class="icon-btn" id="closeFilterModalBtn" style="padding: 2px 8px;">✕</button>
+        </div>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;">
+            Matched tasks isolate their active branches. Non-matching parents remain as muted structural breadcrumbs.
+        </p>
+        
+        <div class="filter-section-title">Priorities</div>
+        <div id="filterPriorityCloud" class="tag-select-cloud"></div>
+
+        <div class="filter-section-title">Tags</div>
+        <div id="filterTagCloud" class="tag-select-cloud"></div>
+
+        <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+            <button type="button" class="icon-btn" id="clearFiltersBtn" style="color: var(--danger); border-color: #7f1d1d;">Clear All</button>
+            <button type="button" class="icon-btn" id="applyFiltersBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 8px 16px;">Apply Filters</button>
+        </div>
+    </div>
+</div>
 
 <!-- Modals (Breaks, Completed, Sync, Info) -->
 <div class="modal-overlay" id="breakModal">
@@ -472,6 +504,75 @@ function getLowestPriorityId() {
 }
 
 // =========================================================================
+// Filter Engine State Manager
+// =========================================================================
+let activeFilters = { tags: new Set(), priorities: new Set() };
+let draftFilters = { tags: new Set(), priorities: new Set() };
+
+function renderFilterClouds() {
+    const pCloud = document.getElementById('filterPriorityCloud');
+    pCloud.innerHTML = '';
+    getGlobalPriorities().forEach(p => {
+        const pill = document.createElement('span');
+        pill.className = 'filter-pill';
+        if (draftFilters.priorities.has(p.id)) {
+            pill.classList.add('selected-prio');
+            pill.style.color = p.color;
+        }
+        pill.innerHTML = `<span class="priority-color-dot" style="background-color: ${p.color};"></span> ${p.name}`;
+        pill.addEventListener('click', () => {
+            if (draftFilters.priorities.has(p.id)) draftFilters.priorities.delete(p.id);
+            else draftFilters.priorities.add(p.id);
+            renderFilterClouds();
+        });
+        pCloud.appendChild(pill);
+    });
+
+    const tCloud = document.getElementById('filterTagCloud');
+    tCloud.innerHTML = '';
+    getGlobalTags().forEach(tag => {
+        const pill = document.createElement('span');
+        pill.className = 'filter-pill';
+        if (draftFilters.tags.has(tag)) pill.classList.add('selected');
+        pill.textContent = tag;
+        pill.addEventListener('click', () => {
+            if (draftFilters.tags.has(tag)) draftFilters.tags.delete(tag);
+            else draftFilters.tags.add(tag);
+            renderFilterClouds();
+        });
+        tCloud.appendChild(pill);
+    });
+}
+
+document.getElementById('openFilterModalBtn').addEventListener('click', () => {
+    draftFilters.tags = new Set(activeFilters.tags);
+    draftFilters.priorities = new Set(activeFilters.priorities);
+    renderFilterClouds();
+    document.getElementById('filterModal').classList.add('open');
+});
+
+document.getElementById('closeFilterModalBtn').addEventListener('click', () => {
+    document.getElementById('filterModal').classList.remove('open');
+});
+
+document.getElementById('clearFiltersBtn').addEventListener('click', () => {
+    draftFilters.tags.clear();
+    draftFilters.priorities.clear();
+    renderFilterClouds();
+});
+
+document.getElementById('applyFiltersBtn').addEventListener('click', () => {
+    activeFilters.tags = new Set(draftFilters.tags);
+    activeFilters.priorities = new Set(draftFilters.priorities);
+    
+    const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0;
+    document.getElementById('filterActiveDot').style.display = hasFilters ? 'block' : 'none';
+    
+    document.getElementById('filterModal').classList.remove('open');
+    renderTaskTree();
+});
+
+// =========================================================================
 // State & Storage
 // =========================================================================
 const TASKS_KEY = 'taskitator_tasks';
@@ -486,7 +587,6 @@ let criteriaValidationState = { validated: false, score: 0, isTemplate: false };
 let cachedTemplates = null;
 const pendingGraceCompletions = new Map();
 
-// Modal State
 let createModalSelectedTags = new Set();
 let createModalSelectedPriority = null;
 let editModalSelectedTags = new Set();
@@ -687,7 +787,7 @@ function sortTasks(tasksArray) {
 }
 
 // =========================================================================
-// Tree Hierarchy Rendering & Scoped Collapsing
+// Tree Hierarchy Rendering & Path-Preserving Filters
 // =========================================================================
 function isTaskVisuallyActive(task) {
     if (task.status === 'trash') return false;
@@ -735,15 +835,58 @@ function renderTaskTree() {
         return allKids.some(k => hasVisibleDescendant(k.id));
     }
 
+    // --- Path-Preserving Filter Engine ---
+    const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0;
+    const matchMap = new Map();
+    const descMatchMap = new Map();
+    const ancMatchMap = new Map();
+
+    if (hasFilters) {
+        tasks.forEach(t => {
+            let tagMatch = activeFilters.tags.size === 0 || (t.tags && t.tags.some(tag => activeFilters.tags.has(tag)));
+            let prioMatch = activeFilters.priorities.size === 0 || activeFilters.priorities.has(t.priority_id);
+            matchMap.set(t.id, tagMatch && prioMatch);
+        });
+
+        function checkDesc(nodeId) {
+            if (descMatchMap.has(nodeId)) return descMatchMap.get(nodeId);
+            const kids = allChildrenMap.get(nodeId) || [];
+            let has = false;
+            for (let k of kids) {
+                if (matchMap.get(k.id) || checkDesc(k.id)) has = true;
+            }
+            descMatchMap.set(nodeId, has);
+            return has;
+        }
+        tasks.forEach(t => checkDesc(t.id));
+
+        function checkAnc(nodeId, inherited = false) {
+            const current = inherited || matchMap.get(nodeId);
+            ancMatchMap.set(nodeId, inherited);
+            const kids = allChildrenMap.get(nodeId) || [];
+            kids.forEach(k => checkAnc(k.id, current));
+        }
+        const rNodes = allChildrenMap.get('root') || [];
+        rNodes.forEach(r => checkAnc(r.id, false));
+    }
+    // --- End Filter Engine ---
+
     let rootTasks = (allChildrenMap.get('root') || []).filter(t => {
         if (!belongsToToday(t)) return false;
+        
+        if (hasFilters) {
+            const m = matchMap.get(t.id);
+            const d = descMatchMap.get(t.id);
+            if (!m && !d) return false;
+        }
+        
         return isTaskVisuallyActive(t) || hasVisibleDescendant(t.id);
     });
 
     rootTasks = sortTasks(rootTasks);
 
     if (rootTasks.length === 0) {
-        list.innerHTML = '<li style="text-align: center; color: var(--text-muted); padding: 32px;">No active tasks scheduled for today.</li>';
+        list.innerHTML = '<li style="text-align: center; color: var(--text-muted); padding: 32px;">No active tasks matched the criteria.</li>';
         return;
     }
 
@@ -752,7 +895,17 @@ function renderTaskTree() {
         const isDone = task.status === 'completed';
         li.className = `task-node ${isDone ? 'completed' : ''}`;
 
-        if (pendingGraceCompletions.has(task.id)) {
+        let isBreadcrumb = false;
+        if (hasFilters) {
+            const m = matchMap.get(task.id);
+            const a = ancMatchMap.get(task.id);
+            const d = descMatchMap.get(task.id);
+            if (!m && !a && d) {
+                isBreadcrumb = true;
+            }
+        }
+
+        if (pendingGraceCompletions.has(task.id) && !isBreadcrumb) {
             const graceInfo = pendingGraceCompletions.get(task.id);
             const graceRow = document.createElement('div');
             graceRow.className = 'undo-grace-row';
@@ -776,7 +929,10 @@ function renderTaskTree() {
         row.className = 'task-row';
         row.style.marginLeft = `${depth * 20}px`;
 
-        // Priority Left Stripe Styling
+        if (isBreadcrumb) {
+            row.classList.add('muted-breadcrumb');
+        }
+
         const pObj = globalPriorities.find(x => x.id === task.priority_id);
         if (pObj) {
             row.style.borderLeftColor = pObj.color;
@@ -785,12 +941,20 @@ function renderTaskTree() {
         const main = document.createElement('div');
         main.className = 'task-main';
 
-        const allChildren = allChildrenMap.get(task.id) || [];
         let visibleChildren = visibleChildrenMap.get(task.id) || [];
+        if (hasFilters) {
+            visibleChildren = (allChildrenMap.get(task.id) || []).filter(c => {
+                const m = matchMap.get(c.id);
+                const a = ancMatchMap.get(c.id);
+                const d = descMatchMap.get(c.id);
+                return m || a || d;
+            });
+        }
         visibleChildren = sortTasks(visibleChildren);
         
         const hasVisibleChildren = visibleChildren.length > 0;
-        const isCollapsed = collapsedNodes.has(task.id);
+        let isCollapsed = collapsedNodes.has(task.id);
+        if (isBreadcrumb) isCollapsed = false; // Force open structural ghost nodes
 
         if (hasVisibleChildren) {
             const toggleBtn = document.createElement('button');
@@ -845,11 +1009,12 @@ function renderTaskTree() {
             main.appendChild(shieldBadge);
         }
 
-        if (allChildren.length > 0) {
-            const doneKidsCount = allChildren.filter(k => k.status === 'completed').length;
+        if (allChildrenMap.get(task.id)?.length > 0) {
+            const allDesc = allChildrenMap.get(task.id);
+            const doneKidsCount = allDesc.filter(k => k.status === 'completed').length;
             const countBadge = document.createElement('span');
             countBadge.className = 'subtasks-count-badge';
-            countBadge.textContent = `✓ ${doneKidsCount}/${allChildren.length} Subtasks`;
+            countBadge.textContent = `✓ ${doneKidsCount}/${allDesc.length} Subtasks`;
             main.appendChild(countBadge);
         }
 
@@ -880,7 +1045,9 @@ function renderTaskTree() {
         }
         row.appendChild(delBtn);
 
-        row.addEventListener('click', () => openTaskDetailModal(task.id));
+        row.addEventListener('click', () => {
+            if (!isBreadcrumb) openTaskDetailModal(task.id);
+        });
 
         li.appendChild(row);
 
@@ -1707,6 +1874,320 @@ document.getElementById('openChildAddModalBtn').addEventListener('click', () => 
     activeDetailTaskId = null;
     openTaskCreationModal(parentTask.id, `Add Subtask to "${parentTask.title}"`);
 });
+
+// =========================================================================
+// Proof Audit Modal
+// =========================================================================
+const auditModal = document.getElementById('auditModal');
+const auditTaskTitle = document.getElementById('auditTaskTitleDisplay');
+const auditCriteria = document.getElementById('auditCriteriaDisplay');
+const auditImage = document.getElementById('auditImageInput');
+const auditContext = document.getElementById('auditContextInput');
+const auditFeedback = document.getElementById('auditFeedbackContainer');
+const submitProofBtn = document.getElementById('submitProofBtn');
+
+function openAuditModal(task) {
+    pendingAuditTaskId = task.id;
+    auditTaskTitle.textContent = task.title;
+    auditCriteria.innerHTML = `<strong>Required Criteria &lt;PC&gt;:</strong> ${task.proof_criteria || 'General confirmation of task completion.'}`;
+    auditImage.value = '';
+    auditContext.value = '';
+    auditFeedback.style.display = 'none';
+    submitProofBtn.disabled = false;
+    submitProofBtn.textContent = 'Submit Proof';
+    auditModal.classList.add('open');
+}
+
+document.getElementById('closeAuditModalBtn').addEventListener('click', () => {
+    auditModal.classList.remove('open');
+    pendingAuditTaskId = null;
+});
+
+submitProofBtn.addEventListener('click', async () => {
+    if (!pendingAuditTaskId) return;
+    const task = tasks.find(t => t.id === pendingAuditTaskId);
+    if (!task) return;
+
+    const file = auditImage.files[0];
+    if (!file) {
+        alert('Please attach an evidence photo or PDF document.');
+        return;
+    }
+
+    const check = TaskitatorEngine.AuditEngine.validateFile(file);
+    if (!check.valid) {
+        alert(check.error);
+        return;
+    }
+
+    submitProofBtn.disabled = true;
+    submitProofBtn.textContent = 'Verifying Evidence...';
+    auditFeedback.style.display = 'none';
+
+    const result = await TaskitatorEngine.AuditEngine.verifyProof({
+        file: file,
+        taskTitle: task.title,
+        criteria: task.proof_criteria,
+        userContext: auditContext.value.trim()
+    });
+
+    if (!result.success) {
+        submitProofBtn.disabled = false;
+        submitProofBtn.textContent = 'Submit Proof';
+        auditFeedback.className = 'audit-critique-box';
+        auditFeedback.style.display = 'block';
+        auditFeedback.innerHTML = `<strong>Verification Halted:</strong> ${result.error}`;
+        return;
+    }
+
+    if (result.approved) {
+        task.verified_model = result.model_used;
+        cascadeTaskStatus(pendingAuditTaskId, 'completed', new Date().toISOString());
+        SoundFX.playSuccessAudit();
+        saveStorageAndPush();
+        auditModal.classList.remove('open');
+        pendingAuditTaskId = null;
+        renderTaskTree();
+        renderCompletedModalList();
+    } else {
+        submitProofBtn.disabled = false;
+        submitProofBtn.textContent = 'Retry Submission';
+        auditFeedback.className = 'audit-critique-box';
+        auditFeedback.style.display = 'block';
+        auditFeedback.innerHTML = `<strong>Verdict: ${result.verdict.toUpperCase()}</strong><br>${result.critique}`;
+    }
+});
+
+// =========================================================================
+// Emergency Bypass Operations
+// =========================================================================
+const emergencyTriggerBtn = document.getElementById('emergencyTriggerBtn');
+const emergencyConfirmModal = document.getElementById('emergencyConfirmModal');
+const activeEmergencyBanner = document.getElementById('activeEmergencyBanner');
+const emergencyCountdownTimer = document.getElementById('emergencyCountdownTimer');
+
+function updateEmergencyUI() {
+    if (TaskitatorEngine.EmergencyManager.isBypassActive()) {
+        activeEmergencyBanner.style.display = 'flex';
+        startEmergencyCountdown();
+    } else {
+        activeEmergencyBanner.style.display = 'none';
+        clearInterval(emergencyTimerInterval);
+    }
+    renderTaskTree();
+}
+
+function startEmergencyCountdown() {
+    clearInterval(emergencyTimerInterval);
+    emergencyTimerInterval = setInterval(() => {
+        const remaining = TaskitatorEngine.EmergencyManager.getRemainingWindowSeconds();
+        if (remaining <= 0) {
+            clearInterval(emergencyTimerInterval);
+            updateEmergencyUI();
+            return;
+        }
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        emergencyCountdownTimer.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }, 1000);
+}
+
+emergencyTriggerBtn.addEventListener('click', () => {
+    if (TaskitatorEngine.EmergencyManager.isBypassActive()) {
+        alert('Emergency bypass is already active.');
+        return;
+    }
+    const state = TaskitatorEngine.EmergencyManager.getState();
+    if (state.uses_left <= 0) {
+        alert('All 4 emergency bypass uses for this week have been exhausted.');
+        return;
+    }
+    document.getElementById('emergencyModalRemainingUses').textContent = `Remaining tokens this week: ${state.uses_left}/4`;
+    emergencyConfirmModal.classList.add('open');
+});
+
+document.getElementById('cancelEmergencyBtn').addEventListener('click', () => {
+    emergencyConfirmModal.classList.remove('open');
+});
+
+document.getElementById('confirmEmergencyBtn').addEventListener('click', () => {
+    const res = TaskitatorEngine.EmergencyManager.activateBypass();
+    emergencyConfirmModal.classList.remove('open');
+    if (res.success) {
+        updateEmergencyUI();
+    } else {
+        alert(res.error);
+    }
+});
+
+document.getElementById('emergencyInfoBtn').addEventListener('click', () => {
+    document.getElementById('emergencyInfoModal').classList.add('open');
+});
+document.getElementById('closeEmergencyInfoModalBtn').addEventListener('click', () => {
+    document.getElementById('emergencyInfoModal').classList.remove('open');
+});
+
+// =========================================================================
+// Break System
+// =========================================================================
+const BreakUI = {
+    pill: document.getElementById('breakStatusPill'),
+    pillText: document.getElementById('breakPillText'),
+    pillIcon: document.getElementById('breakPillIcon'),
+    modal: document.getElementById('breakModal'),
+    rowsContainer: document.getElementById('breakRowsContainer'),
+    errorBox: document.getElementById('breakModalError'),
+    saveBtn: document.getElementById('saveBreaksModalBtn'),
+    addBtn: document.getElementById('addBreakRowModalBtn'),
+    closeBtn: document.getElementById('closeBreakModalBtn'),
+
+    init() {
+        if (!this.pill || !this.modal) return;
+        this.pill.addEventListener('click', () => this.openModal());
+        this.closeBtn.addEventListener('click', () => this.closeModal());
+        this.addBtn.addEventListener('click', () => this.addBreakRow());
+        this.saveBtn.addEventListener('click', () => this.saveBreaks());
+        this.modal.addEventListener('click', (e) => {
+            if (e.target === this.modal) this.closeModal();
+        });
+        this.updateStatusPill();
+        setInterval(() => this.updateStatusPill(), 30000);
+    },
+
+    updateStatusPill() {
+        if (!window.TaskitatorEngine?.BreakEngine || !this.pill) return;
+        const isWindowOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
+        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
+        const now = new Date();
+        const curMins = now.getHours() * 60 + now.getMinutes();
+
+        this.pill.className = 'break-status-pill';
+
+        const activeBreak = breaks.find(b => {
+            const [sH, sM] = b.start.split(':').map(Number);
+            const [eH, eM] = b.end.split(':').map(Number);
+            return curMins >= (sH * 60 + sM) && curMins <= (eH * 60 + eM);
+        });
+
+        if (activeBreak) {
+            const [eH, eM] = activeBreak.end.split(':').map(Number);
+            const minsLeft = (eH * 60 + eM) - curMins;
+            this.pill.classList.add('active-break');
+            this.pillIcon.textContent = '🟢';
+            this.pillText.textContent = `${minsLeft}m left`;
+            return;
+        }
+
+        const upcomingBreak = breaks
+            .map(b => {
+                const [sH, sM] = b.start.split(':').map(Number);
+                return { ...b, startMins: sH * 60 + sM };
+            })
+            .filter(b => b.startMins > curMins)
+            .sort((a, b) => a.startMins - b.startMins)[0];
+
+        if (upcomingBreak) {
+            this.pillIcon.textContent = '☕';
+            this.pillText.textContent = `Next: ${upcomingBreak.start}`;
+            return;
+        }
+
+        if (isWindowOpen) {
+            this.pill.classList.add('window-open');
+            this.pillIcon.textContent = '⏸️';
+            this.pillText.textContent = breaks.length > 0 ? 'Edit Breaks' : 'Breaks';
+        } else {
+            this.pillIcon.textContent = '🔒';
+            this.pillText.textContent = 'Breaks Locked';
+        }
+    },
+
+    openModal() {
+        const isWindowOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
+        const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
+
+        this.rowsContainer.innerHTML = '';
+        this.hideError();
+
+        if (breaks.length > 0) {
+            breaks.forEach(b => this.addBreakRow(b.start, b.end, !isWindowOpen));
+        } else if (isWindowOpen) {
+            this.addBreakRow();
+        }
+
+        this.addBtn.style.display = isWindowOpen ? 'inline-block' : 'none';
+        this.saveBtn.style.display = isWindowOpen ? 'inline-block' : 'none';
+        document.getElementById('breakModalStatusDesc').textContent = isWindowOpen
+            ? 'Schedule up to 3 non-overlapping breaks (≤ 3 hours total). The window locks permanently once closed.'
+            : 'The break scheduling window is now closed for today. Configured breaks are read-only.';
+
+        this.modal.classList.add('open');
+    },
+
+    closeModal() {
+        this.modal.classList.remove('open');
+    },
+
+    addBreakRow(startVal = '', endVal = '', disabled = false) {
+        const rows = this.rowsContainer.querySelectorAll('.break-row-item');
+        if (rows.length >= 3) {
+            this.showError('Maximum 3 breaks allowed per day.');
+            return;
+        }
+
+        const row = document.createElement('div');
+        row.className = 'break-row-item';
+        row.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+        row.innerHTML = `
+            <input type="time" class="b-start" value="${startVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
+            <span style="color: var(--text-muted); font-size: 0.85rem;">to</span>
+            <input type="time" class="b-end" value="${endVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
+            ${!disabled ? '<button type="button" class="del-break-row-btn" style="background: none; border: none; color: var(--danger); font-size: 1.2rem; cursor: pointer; padding: 0 4px; line-height: 1;">&times;</button>' : ''}
+        `;
+
+        if (!disabled) {
+            row.querySelector('.del-break-row-btn').addEventListener('click', () => {
+                row.remove();
+                this.hideError();
+            });
+        }
+        this.rowsContainer.appendChild(row);
+    },
+
+    saveBreaks() {
+        const rows = this.rowsContainer.querySelectorAll('.break-row-item');
+        const breaksArray = [];
+
+        for (const r of rows) {
+            const start = r.querySelector('.b-start').value;
+            const end = r.querySelector('.b-end').value;
+            if (start && end) {
+                breaksArray.push({ start, end });
+            }
+        }
+
+        const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(breaksArray);
+        if (!res.valid) {
+            this.showError(res.error);
+            return;
+        }
+
+        saveStorageAndPush();
+        this.closeModal();
+        this.updateStatusPill();
+    },
+
+    showError(msg) {
+        this.errorBox.textContent = msg;
+        this.errorBox.style.display = 'block';
+    },
+
+    hideError() {
+        this.errorBox.style.display = 'none';
+        this.errorBox.textContent = '';
+    }
+};
 
 // =========================================================================
 // Left Sidebar & Right Copilot Drawer Toggles
