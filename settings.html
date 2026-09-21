@@ -158,6 +158,21 @@
             </div>
         </div>
 
+        <!-- General Preferences (Mute Toggle added here) -->
+        <div class="settings-card">
+            <h3 style="margin-top: 0; color: var(--primary);">🎛️ General Preferences</h3>
+            
+            <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 10px;">
+                <div style="flex: 1;">
+                    <label for="soundEffectsToggle" style="margin-bottom: 2px; font-weight: 700;">Sound Effects</label>
+                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; line-height: 1.4;">
+                        Play auditory feedback on task completion and AI verification. Uses zero external files.
+                    </small>
+                </div>
+                <input type="checkbox" id="soundEffectsToggle" style="width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer;" checked>
+            </div>
+        </div>
+
         <!-- Gemini BYOK & AI Copilot Identity -->
         <div class="settings-card">
             <h3 style="margin-top: 0; color: var(--primary);">🤖 Gemini AI Verification & Copilot</h3>
@@ -345,6 +360,7 @@ const SETTINGS_KEY = 'taskitator_settings';
 let hasUnsavedChanges = false;
 
 const authenticatedSettingsContainer = document.getElementById('authenticatedSettingsContainer');
+const soundEffectsToggle = document.getElementById('soundEffectsToggle');
 const copilotNameInput = document.getElementById('copilotNameInput');
 const geminiApiKeyInput = document.getElementById('geminiApiKey');
 const strictCriteriaToggle = document.getElementById('strictCriteriaToggle');
@@ -416,6 +432,9 @@ function loadSettings() {
     activeUsernameDisplay.textContent = `@${config.username}`;
     macroBearerToken.value = config.secret || '';
 
+    // Mute toggle (default true)
+    soundEffectsToggle.checked = settings.sound_effects_enabled !== false;
+    
     copilotNameInput.value = settings.copilot_name || 'Focus Copilot';
     geminiApiKeyInput.value = settings.gemini_api_key || '';
     
@@ -458,6 +477,7 @@ async function saveSettings(silent = false) {
         }
     }
 
+    settings.sound_effects_enabled = Boolean(soundEffectsToggle.checked);
     settings.copilot_name = (copilotNameInput.value.trim() || 'Focus Copilot').slice(0, 20);
     settings.gemini_api_key = geminiApiKeyInput.value.trim();
     settings.strict_criteria_validation = Boolean(strictCriteriaToggle.checked);
@@ -557,7 +577,7 @@ toggleTokenVisibilityBtn.addEventListener('click', () => {
 });
 
 // Detect dirty inputs
-[copilotNameInput, geminiApiKeyInput, strictCriteriaToggle, weekendStartSelect, weekendEndSelect, breakWindowStart, breakWindowEnd].forEach(el => {
+[soundEffectsToggle, copilotNameInput, geminiApiKeyInput, strictCriteriaToggle, weekendStartSelect, weekendEndSelect, breakWindowStart, breakWindowEnd].forEach(el => {
     el.addEventListener('input', markUnsaved);
     el.addEventListener('change', markUnsaved);
 });
