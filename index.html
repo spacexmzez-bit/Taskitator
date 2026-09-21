@@ -270,6 +270,16 @@
             letter-spacing: -0.02em;
         }
 
+        .subtask-builder-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 6px;
+            gap: 6px;
+        }
+        .subtask-input-title {
+            flex: 1;
+        }
+
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-3px); }
             to { opacity: 1; transform: translateY(0); }
@@ -582,7 +592,6 @@
     </div>
 </div>
 
-<!-- Modal: Proof Verification Audit -->
 <div class="modal-overlay" id="auditModal">
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--primary);">Submit AI Verification Proof</h3>
@@ -663,7 +672,7 @@ let cachedTemplates = null;
 const pendingGraceCompletions = new Map();
 
 // =========================================================================
-// Web Audio API Synthesizer (Phase 2 & 3 Support)
+// Web Audio API Synthesizer
 // =========================================================================
 const SoundFX = {
     ctx: null,
@@ -1168,7 +1177,6 @@ function handleTaskCompletion(taskId) {
         return;
     }
 
-    // New Guard Evaluation
     if (isCompletionBlocked(taskId)) {
         alert("Blocked: A shielded task in this hierarchy requires all its subtasks to be completely finished first.");
         return;
@@ -1996,17 +2004,12 @@ closeTemplatesModalBtn.addEventListener('click', () => {
     templatesModal.classList.remove('open');
 });
 
-// Quick Subtask Inline AI Toggle
+// Reverted Quick Subtask logic - Standard clean inputs only
 document.getElementById('addSubtaskFieldBtn').addEventListener('click', () => {
     const div = document.createElement('div');
     div.className = 'subtask-builder-item';
-    div.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 6px;';
     div.innerHTML = `
         <input type="text" class="subtask-input-title" placeholder="Quick subtask title..." style="flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" required>
-        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 0.75rem; color: var(--text-muted); background: var(--card-subtle); padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-color);">
-            <input type="checkbox" class="subtask-input-ai">
-            🔒 AI
-        </label>
         <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
     `;
     subtaskBuilderList.appendChild(div);
@@ -2059,10 +2062,9 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
     };
     tasks.push(newTask);
 
-    const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-builder-item');
-    quickSubtaskInputs.forEach(item => {
-        const subTitle = item.querySelector('.subtask-input-title').value.trim();
-        const isSubAi = item.querySelector('.subtask-input-ai').checked;
+    const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-input-title');
+    quickSubtaskInputs.forEach(input => {
+        const subTitle = input.value.trim();
         if (subTitle) {
             tasks.push({
                 id: 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -2072,8 +2074,8 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
                 tags: [],
                 status: 'active',
                 due_date: '',
-                ai_locked: isSubAi,
-                proof_criteria: isSubAi ? criteria : '',
+                ai_locked: false,
+                proof_criteria: '',
                 strict_prerequisites: false,
                 created_at: new Date().toISOString(),
                 completed_at: null
