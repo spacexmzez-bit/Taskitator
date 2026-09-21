@@ -1,38 +1,68 @@
 [
   {
     "id": "written_notes",
-    "category": "Academic Study",
-    "label": "Handwritten Notes",
-    "template": "Photo of at least 1 full page of handwritten summary notes covering [Topic/Chapter], with today's date clearly written at the top margin."
+    "category": "Note-Taking & Synthesis",
+    "label": "Handwritten Summary Notes",
+    "template": "Photo of at least 1 full page of handwritten summary notes covering [Topic/Chapter], with today's date clearly written in ink at the top margin."
+  },
+  {
+    "id": "concept_map",
+    "category": "Note-Taking & Synthesis",
+    "label": "Mind Map / Flowchart Diagram",
+    "template": "Photo of a handwritten mind map or annotated physiological/biological mechanism diagram for [Topic], featuring labeled components, connecting arrows, and today's date."
+  },
+  {
+    "id": "feynman_technique",
+    "category": "Note-Taking & Synthesis",
+    "label": "Feynman Method Explanation Sheet",
+    "template": "Photo of a handwritten 1-page breakdown explaining [Concept/Mechanism] in plain language from memory, with key analogies underlined and today's date at the top."
   },
   {
     "id": "question_bank",
-    "category": "Academic Study",
-    "label": "Practice Questions / Quiz",
-    "template": "Screenshot or photo showing completed practice test/quiz review screen for [Subject], displaying score summary, question count, and timestamp."
+    "category": "Problem Solving & Drills",
+    "label": "Question Bank / Online Quiz",
+    "template": "Screenshot of completed practice quiz/question bank review screen for [Subject], displaying score percentage, completed question count (minimum [Count]), and timestamp."
   },
   {
-    "id": "reading_takeaways",
-    "category": "Reading & Research",
-    "label": "Reading & Physical Index Card",
-    "template": "Photo of 3 specific key takeaways handwritten on an index card placed directly on top of the open book/article covering [Subject]."
+    "id": "worked_problems",
+    "category": "Problem Solving & Drills",
+    "label": "Handwritten Worked Problems",
+    "template": "Photo of handwritten step-by-step solutions for at least [Count] questions from [Textbook/Resource], with problem numbers circled and final answers boxed."
   },
   {
-    "id": "code_commit",
-    "category": "Software Development",
-    "label": "Git Commit / Terminal Diff",
-    "template": "Screenshot of terminal running 'git log -n 1 --stat' showing the committed changes for [Feature], with system clock/date visible in status bar."
+    "id": "error_log",
+    "category": "Problem Solving & Drills",
+    "label": "Post-Quiz Mistake Audit",
+    "template": "Photo of a handwritten error-log table detailing at least [Count] missed questions from [Test Name], showing: Question #, Root cause of error, and Key takeaway."
   },
   {
-    "id": "written_draft",
-    "category": "Writing & Documents",
-    "label": "Document / Essay Draft",
-    "template": "Screenshot of text editor showing word count panel of at least [Target Count] words for [Document Title], with system clock visible."
+    "id": "timed_exam",
+    "category": "Testing & Mock Runs",
+    "label": "Full Mock Exam / Timed Section",
+    "template": "Photo or screenshot of the final score diagnostic report for [Exam/Section], showing total scaled score, section breakdown, and test completion timestamp."
   },
   {
-    "id": "physical_space",
-    "category": "Physical & Habit",
-    "label": "Physical Space Cleanup",
-    "template": "Photo of the organized workspace/room taken from the doorway, clearly showing all floor and desk surfaces cleared of clutter."
+    "id": "anki_review",
+    "category": "Active Recall & Retention",
+    "label": "Spaced Repetition / Anki Deck",
+    "template": "Screenshot of Anki deck overview screen showing [Deck Name] completed with '0 cards due' for today, showing total review count and system clock."
+  },
+  {
+    "id": "blurting_recall",
+    "category": "Active Recall & Retention",
+    "label": "Blurting / Free-Recall Sheet",
+    "template": "Photo of a handwritten free-recall blurt page for [Topic], written in blue/black ink with corrections/missed facts added in a contrasting red/green pen."
+  },
+  {
+    "id": "textbook_active_reading",
+    "category": "Textbook & Literature",
+    "label": "Active Reading & Margin Annotations",
+    "template": "Photo of physical textbook or PDF reader showing pages [X to Y] of [Book Title] with highlighted passages, handwritten margin notes, and physical sticky note summary."
+  },
+  {
+    "id": "formula_derivation",
+    "category": "STEM & Calculations",
+    "label": "Formula Derivation / Pathway Ledger",
+    "template": "Photo of a handwritten full-page derivation of [Formula/Equation] or biochemical cycle pathway, showing all transitional algebraic/reaction steps without skipping."
   }
 ]
