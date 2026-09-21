@@ -137,7 +137,6 @@
             gap: 4px;
         }
 
-        /* Criteria Pre-Flight Validation Bar */
         .criteria-actions-bar {
             display: flex;
             align-items: center;
@@ -190,7 +189,6 @@
             background: var(--accent-light);
         }
 
-        /* Header Restructuring Styles */
         .icon-only-btn {
             width: 36px;
             height: 36px;
@@ -280,7 +278,6 @@
 </head>
 <body>
 
-<!-- Sidebar Drawer -->
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="sidebar-drawer" id="sidebarDrawer">
     <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
@@ -293,7 +290,6 @@
     </nav>
 </aside>
 
-<!-- Right-Hand Copilot Slide-Over Drawer -->
 <div class="copilot-backdrop" id="copilotBackdrop"></div>
 <aside class="copilot-drawer" id="copilotDrawer">
     <div class="copilot-header">
@@ -305,7 +301,6 @@
     </div>
 
     <div class="copilot-body">
-        <!-- Standby View (Before User Clicks Connect) -->
         <div class="copilot-standby-view" id="copilotStandbyView">
             <div class="copilot-standby-icon">🎯</div>
             <div class="copilot-standby-title">Focus Copilot</div>
@@ -316,8 +311,6 @@
                 Start Conversation
             </button>
         </div>
-
-        <!-- Live Chat Container -->
         <div class="copilot-chat-view" id="copilotChatView">
             <div class="copilot-messages" id="copilotMessages">
                 <div class="chat-bubble bot">
@@ -333,37 +326,26 @@
 </aside>
 
 <div class="app-container">
-    <!-- Restructured Top Navbar -->
     <header class="top-navbar" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-        <!-- Left: Navigation Drawer Button -->
         <div class="nav-left" style="display: flex; align-items: center; gap: 8px;">
             <button class="icon-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer">☰</button>
         </div>
 
-        <!-- Middle Action Controls -->
         <div class="nav-center" style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
-            <!-- Completed List Trigger (Icon-Only Checkmark) -->
             <button class="icon-only-btn" id="openCompletedModalBtn" title="Completed Tasks" aria-label="View Completed Tasks">
                 <span style="font-size: 1.05rem; font-weight: bold; color: var(--success);">✓</span>
             </button>
-
-            <!-- Dynamic Break Status Pill -->
             <button id="breakStatusPill" class="break-status-pill" title="Daily Breaks" aria-label="Manage Daily Breaks">
                 <span id="breakPillIcon">⏸️</span>
                 <span id="breakPillText">Breaks</span>
             </button>
-
-            <!-- Sync Dot Indicator -->
             <span class="sync-dot local-only" id="syncStatusDot" title="Click to view Sync Status details"></span>
-
-            <!-- Emergency Siren Trigger (Icon-Only) -->
             <button class="emergency-icon-btn" id="emergencyTriggerBtn" title="Emergency Bypass" aria-label="Emergency Bypass">
                 <span>🚨</span>
             </button>
             <button class="info-tiny-btn" id="emergencyInfoBtn" title="Emergency Rules">!</button>
         </div>
 
-        <!-- Far Right: Ari Copilot Trigger -->
         <div class="nav-right" style="display: flex; align-items: center;">
             <button class="nav-link-btn" id="openCopilotNavBtn" title="Open Ari Assistant" aria-label="Open Ari Assistant" style="gap: 6px;">
                 <span>💬</span>
@@ -372,77 +354,56 @@
         </div>
     </header>
 
-    <!-- Page Title Section -->
     <div class="page-title-section">
         <h1>Today's Focus</h1>
     </div>
 
-    <!-- Active Emergency Alert Banner -->
     <div id="activeEmergencyBanner" class="banner-emergency" style="display: none;">
         <span>🚨 Emergency Mode Active: Task deletion & editing unlocked!</span>
         <span id="emergencyCountdownTimer">15:00</span>
     </div>
 
-    <!-- Tree-Based Task Hierarchy -->
     <ul class="task-list-tree" id="todayTaskList"></ul>
 </div>
 
-<!-- Floating Action Button for Root Task -->
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
-
-<!-- Floating Action Button for Copilot Launcher -->
 <button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot">🤖</button>
 
-<!-- Modal: Daily Break Configuration -->
+<!-- Modals (Breaks, Completed, Sync, Info) -->
 <div class="modal-overlay" id="breakModal">
     <div class="modal-box" style="max-width: 440px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h3 style="margin: 0; color: var(--primary); display: flex; align-items: center; gap: 8px;">
-                <span>⏸️</span> Daily Breaks
-            </h3>
+            <h3 style="margin: 0; color: var(--primary); display: flex; align-items: center; gap: 8px;"><span>⏸️</span> Daily Breaks</h3>
             <button class="icon-btn" id="closeBreakModalBtn" style="padding: 2px 8px;">✕</button>
         </div>
-
         <p id="breakModalStatusDesc" style="font-size: 0.82rem; color: var(--text-muted); margin: 0 0 14px 0; line-height: 1.4;">
             Schedule up to 3 non-overlapping breaks (≤ 3 hours total). The window locks permanently once closed.
         </p>
-
         <div id="breakRowsContainer" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px;"></div>
-
         <div id="breakModalError" style="display: none; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; color: #fca5a5; font-size: 0.8rem; margin-bottom: 14px;"></div>
-
         <div style="display: flex; gap: 8px; justify-content: flex-end;">
-            <button id="addBreakRowModalBtn" type="button" class="icon-btn" style="padding: 6px 12px; font-size: 0.82rem;">
-                + Add Break
-            </button>
-            <button id="saveBreaksModalBtn" type="button" class="icon-btn" style="padding: 6px 14px; font-size: 0.82rem; background: var(--primary); color: #fff; border: none; font-weight: 600;">
-                Save Breaks
-            </button>
+            <button id="addBreakRowModalBtn" type="button" class="icon-btn" style="padding: 6px 12px; font-size: 0.82rem;">+ Add Break</button>
+            <button id="saveBreaksModalBtn" type="button" class="icon-btn" style="padding: 6px 14px; font-size: 0.82rem; background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Breaks</button>
         </div>
     </div>
 </div>
 
-<!-- Modal: Dedicated Completed List View -->
 <div class="modal-overlay" id="completedModal">
     <div class="modal-box">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
             <h3 style="margin: 0; color: var(--primary);">✓ Today's Completed Tasks</h3>
             <button class="icon-btn" id="closeCompletedModalBtn" style="padding: 2px 8px;">✕</button>
         </div>
-        <div id="completedTasksListContainer" style="max-height: 60vh; overflow-y: auto;">
-            <!-- Rendered Completed Items -->
-        </div>
+        <div id="completedTasksListContainer" style="max-height: 60vh; overflow-y: auto;"></div>
     </div>
 </div>
 
-<!-- Modal: Sync Information -->
 <div class="modal-overlay" id="syncInfoModal">
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--primary);">🌐 Sync Status Guide</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
             The indicator dot represents the sync state between your local storage and the universal Cloudflare Worker bridge.
         </p>
-
         <div class="sync-legend-item">
             <span class="sync-dot local-only" style="cursor: default;"></span>
             <div style="font-size: 0.85rem;">
@@ -450,7 +411,6 @@
                 <div style="color: var(--text-muted); font-size: 0.8rem;">No secret passkey configured in Settings. Tasks reside solely on this device.</div>
             </div>
         </div>
-
         <div class="sync-legend-item">
             <span class="sync-dot pending" style="cursor: default;"></span>
             <div style="font-size: 0.85rem;">
@@ -458,7 +418,6 @@
                 <div style="color: var(--text-muted); font-size: 0.8rem;">Unsaved local modifications queued or awaiting the 45-second auto-sync batch.</div>
             </div>
         </div>
-
         <div class="sync-legend-item">
             <span class="sync-dot synced" style="cursor: default;"></span>
             <div style="font-size: 0.85rem;">
@@ -466,7 +425,6 @@
                 <div style="color: var(--text-muted); font-size: 0.8rem;">All local changes are fully saved and matched with the automation bridge.</div>
             </div>
         </div>
-
         <div class="sync-legend-item">
             <span class="sync-dot error" style="cursor: default;"></span>
             <div style="font-size: 0.85rem;">
@@ -474,7 +432,6 @@
                 <div style="color: var(--text-muted); font-size: 0.8rem;">Network error or worker rejection. Check passkey or internet connection.</div>
             </div>
         </div>
-
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
             <button class="icon-btn" id="forceSyncFromModalBtn" style="background: var(--primary); color: #fff; border: none; font-size: 0.85rem;">Force Sync Now</button>
             <button class="icon-btn" id="closeSyncInfoModalBtn">Close</button>
@@ -514,9 +471,15 @@
                     <input type="checkbox" id="aiLockCheckbox">
                     <span>Require AI Proof Verification (Irrevocable)</span>
                 </label>
+                <div id="prerequisiteBoxContainer" style="display: none; margin-top: 8px; margin-left: 28px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="strictPrereqCheckbox">
+                        <span style="font-size: 0.85rem;">Require all subtasks first (Irreversible Shield)</span>
+                    </label>
+                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 24px;">Prevents bypassing this task's completion until all subtasks beneath it are completely finished.</small>
+                </div>
             </div>
 
-            <!-- Proof Criteria & Pre-Flight Validation Engine -->
             <div class="form-group" id="criteriaBoxContainer" style="display: none;">
                 <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt; (Visual Verification Requirements)</label>
                 <textarea id="taskCriteriaInput" rows="2" placeholder="e.g. Photo clearly showing completed worksheet #4 with current date handwritten."></textarea>
@@ -525,12 +488,11 @@
                     <button type="button" class="icon-btn" id="openTemplatesBtn" style="font-size: 0.78rem; padding: 4px 10px;">💡 Recommended</button>
                     <button type="button" class="icon-btn" id="validateCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px; background: var(--accent-light); color: var(--accent); border-color: var(--border-color);">🔍 Validate Criteria</button>
                 </div>
-
                 <div id="criteriaFeedbackBox" class="criteria-feedback-box"></div>
             </div>
 
             <div class="form-group">
-                <label>Quick Subtasks (Title only; due date unset)</label>
+                <label>Quick Subtasks</label>
                 <div id="subtaskBuilderList"></div>
                 <button type="button" class="icon-btn" id="addSubtaskFieldBtn" style="padding: 4px 10px; font-size: 0.8rem; margin-top: 6px;">+ Quick Subtask</button>
             </div>
@@ -543,7 +505,6 @@
     </div>
 </div>
 
-<!-- Modal: Recommended Criteria Templates Picker -->
 <div class="modal-overlay" id="templatesModal">
     <div class="modal-box" style="max-width: 500px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -590,6 +551,12 @@
                 <input type="checkbox" id="editAiLockCheckbox">
                 <span>AI Proof Required</span>
             </label>
+            <div id="editPrerequisiteBoxContainer" style="display: none; margin-top: 8px; margin-left: 28px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="editStrictPrereqCheckbox">
+                    <span style="font-size: 0.85rem;">Require all subtasks first (Shield)</span>
+                </label>
+            </div>
         </div>
 
         <div class="form-group" id="editCriteriaBoxContainer" style="display: none;">
@@ -641,7 +608,6 @@
     </div>
 </div>
 
-<!-- Modal: Emergency Confirmation -->
 <div class="modal-overlay" id="emergencyConfirmModal">
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--danger);">🚨 Activate Emergency Bypass?</h3>
@@ -657,7 +623,6 @@
     </div>
 </div>
 
-<!-- Modal: Emergency Info -->
 <div class="modal-overlay" id="emergencyInfoModal">
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--primary);">ℹ️ Emergency Rules</h3>
@@ -688,7 +653,6 @@ let pendingAuditTaskId = null;
 let activeDetailTaskId = null;
 let emergencyTimerInterval = null;
 
-// Criteria Pre-Flight State
 let criteriaValidationState = {
     validated: false,
     score: 0,
@@ -824,7 +788,6 @@ function saveStorageAndPush() {
     }
 }
 
-// Background sync confirmation listener
 window.addEventListener('taskitator-synced', () => {
     updateSyncDot('synced');
     if (!activeDetailTaskId) {
@@ -835,7 +798,6 @@ window.addEventListener('taskitator-synced', () => {
     }
 });
 
-// Live UI Reactive listener for agent mutations
 window.addEventListener('taskitator-tasks-updated', () => {
     if (!activeDetailTaskId) {
         loadStorage();
@@ -845,22 +807,18 @@ window.addEventListener('taskitator-tasks-updated', () => {
     }
 });
 
-// Background sync failure listener
 window.addEventListener('taskitator-sync-error', () => {
     updateSyncDot('error');
 });
 
-// Click dot to open explanatory modal
 if (syncStatusDot) {
     syncStatusDot.addEventListener('click', () => {
         syncInfoModal.classList.add('open');
     });
 }
-
 document.getElementById('closeSyncInfoModalBtn').addEventListener('click', () => {
     syncInfoModal.classList.remove('open');
 });
-
 document.getElementById('forceSyncFromModalBtn').addEventListener('click', async () => {
     let settings = {};
     try {
@@ -930,14 +888,8 @@ function renderTaskTree() {
 
     function belongsToToday(task) {
         const rawDue = (task.due_date || '').trim().toLowerCase();
-        
-        // 1. Matches literal 'today'
         if (rawDue === 'today') return true;
-        
-        // 2. Matches valid ISO dates on or before today (YYYY-MM-DD)
         if (/^\d{4}-\d{2}-\d{2}$/.test(rawDue) && rawDue <= todayStr) return true;
-        
-        // 3. Recursively check child subtasks
         const kids = allChildrenMap.get(task.id) || [];
         return kids.some(k => belongsToToday(k));
     }
@@ -1039,6 +991,16 @@ function renderTaskTree() {
             main.appendChild(badge);
         }
 
+        if (task.strict_prerequisites) {
+            const shieldBadge = document.createElement('span');
+            shieldBadge.className = 'ai-badge';
+            shieldBadge.innerHTML = '🛡️ Shielded';
+            shieldBadge.style.background = '#451a03';
+            shieldBadge.style.color = '#fde68a';
+            shieldBadge.style.borderColor = '#78350f';
+            main.appendChild(shieldBadge);
+        }
+
         if (allChildren.length > 0) {
             const doneKidsCount = allChildren.filter(k => k.status === 'completed').length;
             const countBadge = document.createElement('span');
@@ -1091,6 +1053,45 @@ function renderTaskTree() {
     }
 
     rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
+}
+
+// =========================================================================
+// Recursive Completion Guard Logic
+// =========================================================================
+function getAllDescendants(nodeId) {
+    let descs = [];
+    const kids = tasks.filter(t => t.parent_id === nodeId && t.status !== 'trash');
+    for (const kid of kids) {
+        descs.push(kid);
+        descs = descs.concat(getAllDescendants(kid.id));
+    }
+    return descs;
+}
+
+function hasUncompletedDescendant(nodeId) {
+    const kids = tasks.filter(t => t.parent_id === nodeId && t.status !== 'trash');
+    for (const kid of kids) {
+        if (kid.status !== 'completed') return true;
+        if (hasUncompletedDescendant(kid.id)) return true;
+    }
+    return false;
+}
+
+function isCompletionBlocked(taskId) {
+    if (TaskitatorEngine.EmergencyManager && TaskitatorEngine.EmergencyManager.isBypassActive()) return false;
+    const targetTask = tasks.find(t => t.id === taskId);
+    if (!targetTask) return false;
+
+    const nodesToCheck = [targetTask, ...getAllDescendants(taskId)];
+
+    for (const node of nodesToCheck) {
+        if (node.strict_prerequisites) {
+            if (hasUncompletedDescendant(node.id)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
@@ -1167,6 +1168,12 @@ function handleTaskCompletion(taskId) {
         return;
     }
 
+    // New Guard Evaluation
+    if (isCompletionBlocked(taskId)) {
+        alert("Blocked: A shielded task in this hierarchy requires all its subtasks to be completely finished first.");
+        return;
+    }
+
     if (task.ai_locked) {
         openAuditModal(task);
         return;
@@ -1215,9 +1222,14 @@ function renderCompletedModalList() {
 
         const info = document.createElement('div');
         info.style.cssText = 'flex: 1; margin-right: 12px;';
+        
+        let badgesHtml = '';
+        if (task.ai_locked) badgesHtml += '<span class="ai-badge">🔒 AI</span> ';
+        if (task.strict_prerequisites) badgesHtml += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️ Shielded</span>';
+
         info.innerHTML = `
             <div style="font-weight: 600; text-decoration: line-through; color: var(--text-muted);">
-                ${task.title} ${task.ai_locked ? '<span class="ai-badge">🔒 AI</span>' : ''}
+                ${task.title} ${badgesHtml}
             </div>
             ${task.completed_at ? `<small style="color: var(--text-muted); font-size: 0.75rem;">Done at: ${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
         `;
@@ -1313,6 +1325,8 @@ const editTaskDesc = document.getElementById('editTaskDesc');
 const editTaskTags = document.getElementById('editTaskTags');
 const editTaskDueDate = document.getElementById('editTaskDueDate');
 const editAiLockCheckbox = document.getElementById('editAiLockCheckbox');
+const editStrictPrereqCheckbox = document.getElementById('editStrictPrereqCheckbox');
+const editPrerequisiteBoxContainer = document.getElementById('editPrerequisiteBoxContainer');
 const editCriteriaBoxContainer = document.getElementById('editCriteriaBoxContainer');
 const editTaskCriteria = document.getElementById('editTaskCriteria');
 const detailSubtasksList = document.getElementById('detailSubtasksList');
@@ -1334,16 +1348,20 @@ function openTaskDetailModal(taskId) {
     editTaskDueDate.value = task.due_date === 'today' ? new Date().toISOString().split('T')[0] : (task.due_date || '');
 
     editAiLockCheckbox.checked = isLocked;
-    editTaskCriteria.value = task.proof_criteria || '';
+    editStrictPrereqCheckbox.checked = Boolean(task.strict_prerequisites);
+    
     editCriteriaBoxContainer.style.display = isLocked ? 'block' : 'none';
+    editPrerequisiteBoxContainer.style.display = isLocked ? 'block' : 'none';
 
     const cannotModifyLocked = isLocked && !isBypassActive;
 
     editTaskTitle.disabled = cannotModifyLocked;
     editTaskDueDate.disabled = cannotModifyLocked;
     editAiLockCheckbox.disabled = cannotModifyLocked;
+    editStrictPrereqCheckbox.disabled = cannotModifyLocked;
     editTaskCriteria.disabled = cannotModifyLocked;
     deleteFromDetailBtn.disabled = cannotModifyLocked;
+    editTaskCriteria.value = task.proof_criteria || '';
 
     if (isLocked) {
         detailLockStatusBadge.innerHTML = isBypassActive
@@ -1361,8 +1379,13 @@ function openTaskDetailModal(taskId) {
         directChildren.forEach(child => {
             const sLi = document.createElement('li');
             sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
+            
+            let cBadges = '';
+            if (child.ai_locked) cBadges += '<span class="ai-badge">🔒 AI</span> ';
+            if (child.strict_prerequisites) cBadges += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️</span>';
+
             sLi.innerHTML = `
-                <span>${child.status === 'completed' ? '✓ ' : ''}${child.title} ${child.ai_locked ? '<span class="ai-badge">🔒 AI</span>' : ''}</span>
+                <span>${child.status === 'completed' ? '✓ ' : ''}${child.title} ${cBadges}</span>
                 <button type="button" class="icon-btn" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
             `;
             sLi.querySelector('button').addEventListener('click', () => {
@@ -1378,6 +1401,7 @@ function openTaskDetailModal(taskId) {
 
 editAiLockCheckbox.addEventListener('change', () => {
     editCriteriaBoxContainer.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
+    editPrerequisiteBoxContainer.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
 });
 
 document.getElementById('closeDetailModalBtn').addEventListener('click', () => {
@@ -1400,6 +1424,7 @@ document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
 
     const isBypassActive = TaskitatorEngine.EmergencyManager.isBypassActive();
     const willBeAiLocked = editAiLockCheckbox.checked;
+    const willBeStrict = willBeAiLocked ? editStrictPrereqCheckbox.checked : false;
 
     if (!task.ai_locked && willBeAiLocked) {
         const confirmed = confirm(
@@ -1418,6 +1443,7 @@ document.getElementById('saveTaskDetailsBtn').addEventListener('click', () => {
         task.title = editTaskTitle.value.trim() || task.title;
         task.due_date = editTaskDueDate.value || '';
         task.ai_locked = willBeAiLocked;
+        task.strict_prerequisites = willBeStrict;
         task.proof_criteria = willBeAiLocked ? editTaskCriteria.value.trim() : '';
     }
 
@@ -1482,7 +1508,6 @@ submitProofBtn.addEventListener('click', async () => {
         return;
     }
 
-    // Pre-flight file validation (format + size limit)
     const check = TaskitatorEngine.AuditEngine.validateFile(file);
     if (!check.valid) {
         alert(check.error);
@@ -1597,7 +1622,7 @@ document.getElementById('closeEmergencyInfoModalBtn').addEventListener('click', 
 });
 
 // =========================================================================
-// Break System: Dynamic Header Pill & Dedicated Modal
+// Break System
 // =========================================================================
 const BreakUI = {
     pill: document.getElementById('breakStatusPill'),
@@ -1612,23 +1637,19 @@ const BreakUI = {
 
     init() {
         if (!this.pill || !this.modal) return;
-
         this.pill.addEventListener('click', () => this.openModal());
         this.closeBtn.addEventListener('click', () => this.closeModal());
         this.addBtn.addEventListener('click', () => this.addBreakRow());
         this.saveBtn.addEventListener('click', () => this.saveBreaks());
-
         this.modal.addEventListener('click', (e) => {
             if (e.target === this.modal) this.closeModal();
         });
-
         this.updateStatusPill();
         setInterval(() => this.updateStatusPill(), 30000);
     },
 
     updateStatusPill() {
         if (!window.TaskitatorEngine?.BreakEngine || !this.pill) return;
-
         const isWindowOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
         const breaks = TaskitatorEngine.BreakEngine.getTodayBreaks();
         const now = new Date();
@@ -1636,7 +1657,6 @@ const BreakUI = {
 
         this.pill.className = 'break-status-pill';
 
-        // 1. Check if currently on an active break
         const activeBreak = breaks.find(b => {
             const [sH, sM] = b.start.split(':').map(Number);
             const [eH, eM] = b.end.split(':').map(Number);
@@ -1652,7 +1672,6 @@ const BreakUI = {
             return;
         }
 
-        // 2. Check for upcoming break today
         const upcomingBreak = breaks
             .map(b => {
                 const [sH, sM] = b.start.split(':').map(Number);
@@ -1667,7 +1686,6 @@ const BreakUI = {
             return;
         }
 
-        // 3. Fallback to Window State
         if (isWindowOpen) {
             this.pill.classList.add('window-open');
             this.pillIcon.textContent = '⏸️';
@@ -1728,7 +1746,6 @@ const BreakUI = {
                 this.hideError();
             });
         }
-
         this.rowsContainer.appendChild(row);
     },
 
@@ -1773,6 +1790,8 @@ const addTaskModal = document.getElementById('addTaskModal');
 const openRootAddModalBtn = document.getElementById('openRootAddModalBtn');
 const closeAddTaskModalBtn = document.getElementById('closeAddTaskModalBtn');
 const aiLockCheckbox = document.getElementById('aiLockCheckbox');
+const strictPrereqCheckbox = document.getElementById('strictPrereqCheckbox');
+const prerequisiteBoxContainer = document.getElementById('prerequisiteBoxContainer');
 const criteriaBoxContainer = document.getElementById('criteriaBoxContainer');
 const taskCriteriaInput = document.getElementById('taskCriteriaInput');
 const validateCriteriaBtn = document.getElementById('validateCriteriaBtn');
@@ -1830,6 +1849,7 @@ function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task') 
     creationParentId.value = parentId || '';
     addTaskModalTitle.textContent = titleLabel;
     criteriaBoxContainer.style.display = 'none';
+    prerequisiteBoxContainer.style.display = 'none';
     subtaskBuilderList.innerHTML = '';
     document.getElementById('taskDueDateInput').value = new Date().toISOString().split('T')[0];
     resetCriteriaValidation();
@@ -1844,6 +1864,7 @@ closeAddTaskModalBtn.addEventListener('click', () => {
 
 aiLockCheckbox.addEventListener('change', () => {
     criteriaBoxContainer.style.display = aiLockCheckbox.checked ? 'block' : 'none';
+    prerequisiteBoxContainer.style.display = aiLockCheckbox.checked ? 'block' : 'none';
     if (!aiLockCheckbox.checked) {
         resetCriteriaValidation();
     } else {
@@ -1896,14 +1917,10 @@ validateCriteriaBtn.addEventListener('click', async () => {
 
     if (res.passed) {
         criteriaFeedbackBox.className = 'criteria-feedback-box pass';
-        criteriaFeedbackBox.innerHTML = `
-            <strong>✓ Verified (${res.score}/10)</strong>: ${res.critique}
-        `;
+        criteriaFeedbackBox.innerHTML = `<strong>✓ Verified (${res.score}/10)</strong>: ${res.critique}`;
     } else {
         criteriaFeedbackBox.className = 'criteria-feedback-box fail';
-        let feedbackHtml = `
-            <strong>⚠️ Low Quality Rating (${res.score}/10)</strong>: ${res.critique}
-        `;
+        let feedbackHtml = `<strong>⚠️ Low Quality Rating (${res.score}/10)</strong>: ${res.critique}`;
         if (res.suggested_rewrite) {
             feedbackHtml += `
                 <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2);">
@@ -1927,7 +1944,6 @@ validateCriteriaBtn.addEventListener('click', async () => {
             });
         }
     }
-
     updateSubmitLockState();
 });
 
@@ -1974,19 +1990,23 @@ openTemplatesBtn.addEventListener('click', async () => {
             templatesListContainer.appendChild(card);
         });
     }
-
     templatesModal.classList.add('open');
 });
-
 closeTemplatesModalBtn.addEventListener('click', () => {
     templatesModal.classList.remove('open');
 });
 
+// Quick Subtask Inline AI Toggle
 document.getElementById('addSubtaskFieldBtn').addEventListener('click', () => {
     const div = document.createElement('div');
     div.className = 'subtask-builder-item';
+    div.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 6px;';
     div.innerHTML = `
-        <input type="text" class="subtask-input-title" placeholder="Quick subtask title..." style="flex: 1;" required>
+        <input type="text" class="subtask-input-title" placeholder="Quick subtask title..." style="flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" required>
+        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 0.75rem; color: var(--text-muted); background: var(--card-subtle); padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <input type="checkbox" class="subtask-input-ai">
+            🔒 AI
+        </label>
         <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
     `;
     subtaskBuilderList.appendChild(div);
@@ -1999,6 +2019,7 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
     const tags = document.getElementById('taskTagsInput').value.split(',').map(s => s.trim()).filter(Boolean);
     const dueDate = document.getElementById('taskDueDateInput').value || 'today';
     const isAi = aiLockCheckbox.checked;
+    const isStrictPrereq = isAi ? strictPrereqCheckbox.checked : false;
     const criteria = taskCriteriaInput.value.trim();
     const parentId = creationParentId.value || null;
 
@@ -2032,14 +2053,16 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
         due_date: dueDate,
         ai_locked: isAi,
         proof_criteria: isAi ? criteria : '',
+        strict_prerequisites: isStrictPrereq,
         created_at: new Date().toISOString(),
         completed_at: null
     };
     tasks.push(newTask);
 
-    const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-input-title');
-    quickSubtaskInputs.forEach(input => {
-        const subTitle = input.value.trim();
+    const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-builder-item');
+    quickSubtaskInputs.forEach(item => {
+        const subTitle = item.querySelector('.subtask-input-title').value.trim();
+        const isSubAi = item.querySelector('.subtask-input-ai').checked;
         if (subTitle) {
             tasks.push({
                 id: 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -2049,8 +2072,9 @@ document.getElementById('taskCreateForm').addEventListener('submit', (e) => {
                 tags: [],
                 status: 'active',
                 due_date: '',
-                ai_locked: false,
-                proof_criteria: '',
+                ai_locked: isSubAi,
+                proof_criteria: isSubAi ? criteria : '',
+                strict_prerequisites: false,
                 created_at: new Date().toISOString(),
                 completed_at: null
             });
@@ -2072,13 +2096,11 @@ document.getElementById('openDrawerBtn').addEventListener('click', () => {
     sidebarDrawer.classList.add('open');
     drawerBackdrop.classList.add('open');
 });
-
 drawerBackdrop.addEventListener('click', () => {
     sidebarDrawer.classList.remove('open');
     drawerBackdrop.classList.remove('open');
 });
 
-// Right Copilot Drawer Wiring
 const copilotDrawer = document.getElementById('copilotDrawer');
 const copilotBackdrop = document.getElementById('copilotBackdrop');
 const openCopilotNavBtn = document.getElementById('openCopilotNavBtn');
@@ -2089,7 +2111,6 @@ function openCopilot() {
     copilotDrawer.classList.add('open');
     copilotBackdrop.classList.add('open');
 }
-
 function closeCopilot() {
     copilotDrawer.classList.remove('open');
     copilotBackdrop.classList.remove('open');
@@ -2100,7 +2121,6 @@ if (openCopilotFabBtn) openCopilotFabBtn.addEventListener('click', openCopilot);
 if (closeCopilotBtn) closeCopilotBtn.addEventListener('click', closeCopilot);
 if (copilotBackdrop) copilotBackdrop.addEventListener('click', closeCopilot);
 
-// Standby "Start Conversation" Gate
 const startCopilotBtn = document.getElementById('startCopilotBtn');
 const copilotStandbyView = document.getElementById('copilotStandbyView');
 const copilotChatView = document.getElementById('copilotChatView');
@@ -2135,9 +2155,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// =========================================================================
-// Service Worker Registration
-// =========================================================================
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
