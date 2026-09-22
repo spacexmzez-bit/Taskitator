@@ -177,14 +177,14 @@
     <nav class="drawer-links" id="drawerNavLinks">
         <a href="index.html#today">📅 Today</a>
         <a href="index.html#general">🗂️ General Tasks</a>
-        <a href="projects.html" class="active">📁 Projects</a>
+        <a href="projects.html" class="active">Projects</a>
         <a href="stats.html">📊 Stats</a>
         <a href="trash.html">🗑️ Trash</a>
         <a href="settings.html">⚙️ Settings</a>
     </nav>
 </aside>
 
-<!-- Copilot Slide-Over Drawer (Fully Integrated with Ari) -->
+<!-- Copilot Slide-Over Drawer -->
 <div class="copilot-backdrop" id="copilotBackdrop"></div>
 <aside class="copilot-drawer" id="copilotDrawer">
     <div class="copilot-header">
@@ -226,14 +226,6 @@
             <button class="icon-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer">☰</button>
         </div>
 
-        <div class="nav-center">
-            <span class="sync-dot local-only" id="syncStatusDot" title="Sync Status"></span>
-            <button class="emergency-icon-btn" id="emergencyTriggerBtn" title="Emergency Bypass" aria-label="Emergency Bypass">
-                <span>🚨</span>
-            </button>
-            <button class="info-tiny-btn" id="emergencyInfoBtn" title="Emergency Rules">!</button>
-        </div>
-
         <div class="nav-right">
             <button class="nav-link-btn" id="openCopilotNavBtn" title="Open Ari Assistant" aria-label="Open Ari Assistant" style="gap: 6px;">
                 <span>💬</span>
@@ -254,11 +246,6 @@
             <span id="activeProjectName">Inbox</span>
         </h1>
         <span id="projectTaskCountBadge" class="due-badge" style="font-size: 0.8rem;">0 Tasks</span>
-    </div>
-
-    <div id="activeEmergencyBanner" class="banner-emergency" style="display: none;">
-        <span>🚨 Emergency Mode Active: Task deletion & editing unlocked!</span>
-        <span id="emergencyCountdownTimer">15:00</span>
     </div>
 
     <ul class="task-list-tree" id="projectTaskListContainer"></ul>
@@ -565,7 +552,7 @@
             checkBtn.textContent = task.status === 'completed' ? '✓' : '';
             checkBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                TaskitatorApp.handleTaskCompletion(task.id);
+                TaskitatorApp.handleTaskCompletion(task.id, renderProjectWorkspace);
             });
             main.appendChild(checkBtn);
 
@@ -588,12 +575,12 @@
             delBtn.textContent = '✕';
             delBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                TaskitatorApp.deleteTask(task.id);
+                TaskitatorApp.deleteTask(task.id, renderProjectWorkspace);
             });
             row.appendChild(delBtn);
 
             row.addEventListener('click', () => {
-                TaskitatorApp.openTaskDetailModal(task.id);
+                TaskitatorApp.openTaskDetailModal(task.id, renderProjectWorkspace);
             });
 
             li.appendChild(row);
@@ -611,6 +598,8 @@
 
         rootTasks.forEach(t => list.appendChild(buildNode(t, 0)));
     }
+
+    window.refreshCurrentProjectView = renderProjectWorkspace;
 
     function openProjectModal(isEdit = false) {
         const modal = document.getElementById('projectModal');
@@ -691,9 +680,6 @@
         });
     }
 
-    // =========================================================================
-    // Copilot (Ari) Integration
-    // =========================================================================
     function initAriCopilot() {
         const copilotDrawer = document.getElementById('copilotDrawer');
         const copilotBackdrop = document.getElementById('copilotBackdrop');
@@ -853,7 +839,6 @@
             });
         }
 
-        // React to background Cloudflare sync events
         window.addEventListener('taskitator-synced', () => {
             TaskitatorApp.loadStorage();
             renderProjectStrip();
