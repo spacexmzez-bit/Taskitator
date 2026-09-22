@@ -1,7 +1,7 @@
 /**
  * Taskitator Unified Application Engine (app.js)
  * Manages view routing (#today / #general), unified task trees,
- * break UI, proofs, emergency quotas, and persistent filters.
+ * projects registry, break UI, proofs, emergency quotas, and persistent filters.
  */
 
 window.TaskitatorApp = (() => {
@@ -11,6 +11,7 @@ window.TaskitatorApp = (() => {
     const TASKS_KEY = 'taskitator_tasks';
     const COLLAPSED_STATE_KEY = 'taskitator_collapsed_nodes';
     const SETTINGS_KEY = 'taskitator_settings';
+    const PROJECTS_KEY = 'taskitator_projects';
 
     let currentView = 'today'; // 'today' | 'general'
     let tasks = [];
@@ -23,20 +24,33 @@ window.TaskitatorApp = (() => {
     let cachedTemplates = null;
     const pendingGraceCompletions = new Map();
 
-    const activeFilters = { tags: new Set(), priorities: new Set() };
-    const draftFilters = { tags: new Set(), priorities: new Set() };
+    // Active Filter State (Tags, Priorities, Projects)
+    const activeFilters = { tags: new Set(), priorities: new Set(), projects: new Set() };
+    const draftFilters = { tags: new Set(), priorities: new Set(), projects: new Set() };
 
+    // Modal Selection State
     const createModalSelectedTags = new Set();
     let createModalSelectedPriority = null;
+    let createModalSelectedProject = 'inbox';
+
     const editModalSelectedTags = new Set();
     let editModalSelectedPriority = null;
+    let editModalSelectedProject = 'inbox';
 
+    // Default Registries
     const DEFAULT_TAGS = ['study', 'work', 'personal'];
     const DEFAULT_PRIORITIES = [
         { id: 'prio_high', name: 'High', color: '#ef4444', rank: 1 },
         { id: 'prio_med', name: 'Medium', color: '#eab308', rank: 2 },
         { id: 'prio_low', name: 'Low', color: '#22c55e', rank: 3 }
     ];
+    const DEFAULT_PROJECTS = [
+        { id: 'inbox', name: 'Inbox', color: '#94a3b8', icon: '📥', is_default: true }
+    ];
+
+    // Curated Project Icon Palettes for Project Customization
+    const PROJECT_ICONS = ['📥', '📚', '💼', '⚡', '🔬', '🏥', '🎯', '💻', '📝', '🎨', '🚀', '🧠', '🏋️', '💰', '🛠️', '🌐'];
+    const PROJECT_COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#f97316'];
 
     // =========================================================================
     // Web Audio API Synthesizer
@@ -100,7 +114,88 @@ window.TaskitatorApp = (() => {
     };
 
     // =========================================================================
-    // Registries & Preferences
+    // Projects Registry CRUD & Cascades
+    // =========================================================================
+    function getGlobalProjects() {
+        try {
+            const raw = localStorage.getItem(PROJECTS_KEY);
+            if (!raw) {
+                localStorage.setItem(PROJECTS_KEY, JSON.stringify(DEFAULT_PROJECTS));
+                return [...DEFAULT_PROJECTS];
+            }
+            const list = JSON.parse(raw);
+            if (!list.some(p => p.id === 'inbox')) {
+                list.unshift(DEFAULT_PROJECTS[0]);
+                localStorage.setItem(PROJECTS_KEY, JSON.stringify(list));
+            }
+            return list;
+        } catch (e) {
+            return [...DEFAULT_PROJECTS];
+        }
+    }
+
+    function saveProject(projectObj) {
+        if (!projectObj || !projectObj.name) return { success: false, error: 'Project name required' };
+        const projects = getGlobalProjects();
+
+        if (projectObj.id) {
+            const idx = projects.findIndex(p => p.id === projectObj.id);
+            if (idx !== -1) {
+                projects[idx] = { ...projects[idx], ...projectObj };
+            } else {
+                projects.push(projectObj);
+            }
+        } else {
+            const newId = 'proj_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+            projects.push({
+                id: newId,
+                name: projectObj.name.trim(),
+                color: projectObj.color || '#3b82f6',
+                icon: projectObj.icon || '📁',
+                is_default: false
+            });
+        }
+
+        localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+        if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
+            SyncEngine.markLocalModified();
+        }
+        return { success: true };
+    }
+
+    /**
+     * Delete Project with User Cascade Choice:
+     * - cascadeMode === 'inbox'   -> Reassign all tasks to 'inbox'
+     * - cascadeMode === 'reassign'-> Reassign all tasks to targetProjectId
+     * - cascadeMode === 'trash'   -> Move all tasks inside project to trash
+     */
+    function deleteProjectWithCascade(projectId, cascadeMode = 'inbox', targetProjectId = 'inbox') {
+        if (projectId === 'inbox') return { success: false, error: 'Cannot delete default Inbox project' };
+
+        let projects = getGlobalProjects();
+        projects = projects.filter(p => p.id !== projectId);
+        localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+
+        loadStorage();
+
+        tasks.forEach(t => {
+            if (t.project_id === projectId) {
+                if (cascadeMode === 'trash') {
+                    t.status = 'trash';
+                } else if (cascadeMode === 'reassign' && targetProjectId) {
+                    t.project_id = targetProjectId;
+                } else {
+                    t.project_id = 'inbox';
+                }
+            }
+        });
+
+        saveStorageAndPush();
+        return { success: true };
+    }
+
+    // =========================================================================
+    // Tags & Priorities Registries
     // =========================================================================
     function getGlobalTags() {
         try {
@@ -192,6 +287,17 @@ window.TaskitatorApp = (() => {
     function loadStorage() {
         try {
             tasks = JSON.parse(localStorage.getItem(TASKS_KEY) || '[]');
+            // Backfill legacy tasks missing project_id
+            let dirty = false;
+            tasks.forEach(t => {
+                if (!t.project_id) {
+                    t.project_id = 'inbox';
+                    dirty = true;
+                }
+            });
+            if (dirty) {
+                localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+            }
             const savedCollapsed = JSON.parse(localStorage.getItem(COLLAPSED_STATE_KEY) || '[]');
             collapsedNodes = new Set(savedCollapsed);
         } catch (e) {
@@ -417,8 +523,41 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Modal Tag Cloud & Priority Selectors
+    // Modal Selectors: Tags, Priorities & Projects
     // =========================================================================
+    function renderModalProjectCloud(containerId, isEditModal) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = '';
+        const globalProjects = getGlobalProjects();
+
+        globalProjects.forEach(proj => {
+            const pill = document.createElement('span');
+            pill.className = 'priority-select-pill';
+            const isSelected = isEditModal 
+                ? (editModalSelectedProject === proj.id) 
+                : (createModalSelectedProject === proj.id);
+
+            if (isSelected) {
+                pill.classList.add('selected');
+                pill.style.borderColor = proj.color;
+                pill.style.color = proj.color;
+            }
+
+            pill.innerHTML = `<span>${proj.icon}</span> <span>${proj.name}</span>`;
+
+            pill.addEventListener('click', () => {
+                if (isEditModal) {
+                    editModalSelectedProject = proj.id;
+                } else {
+                    createModalSelectedProject = proj.id;
+                }
+                renderModalProjectCloud(containerId, isEditModal);
+            });
+            container.appendChild(pill);
+        });
+    }
+
     function renderModalTagCloud(containerId, activeSet) {
         const container = document.getElementById(containerId);
         if (!container) return;
@@ -482,6 +621,28 @@ window.TaskitatorApp = (() => {
     }
 
     function renderFilterClouds() {
+        // 1. Projects Filter Cloud
+        const projCloud = document.getElementById('filterProjectCloud');
+        if (projCloud) {
+            projCloud.innerHTML = '';
+            getGlobalProjects().forEach(p => {
+                const pill = document.createElement('span');
+                pill.className = 'filter-pill';
+                if (draftFilters.projects.has(p.id)) {
+                    pill.classList.add('selected-prio');
+                    pill.style.color = p.color;
+                }
+                pill.innerHTML = `<span>${p.icon}</span> <span>${p.name}</span>`;
+                pill.addEventListener('click', () => {
+                    if (draftFilters.projects.has(p.id)) draftFilters.projects.delete(p.id);
+                    else draftFilters.projects.add(p.id);
+                    renderFilterClouds();
+                });
+                projCloud.appendChild(pill);
+            });
+        }
+
+        // 2. Priorities Filter Cloud
         const pCloud = document.getElementById('filterPriorityCloud');
         if (pCloud) {
             pCloud.innerHTML = '';
@@ -502,6 +663,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // 3. Tags Filter Cloud
         const tCloud = document.getElementById('filterTagCloud');
         if (tCloud) {
             tCloud.innerHTML = '';
@@ -578,9 +740,11 @@ window.TaskitatorApp = (() => {
         editModalSelectedTags.clear();
         (task.tags || []).forEach(t => editModalSelectedTags.add(t));
         editModalSelectedPriority = task.priority_id || null;
+        editModalSelectedProject = task.project_id || 'inbox';
 
         renderModalTagCloud('editTagCloud', editModalSelectedTags);
         renderModalPriorityCloud('editPriorityCloud', true);
+        renderModalProjectCloud('editProjectCloud', true);
 
         if (editAiLockCheckbox) editAiLockCheckbox.checked = isLocked;
         if (editStrictPrereqCheckbox) editStrictPrereqCheckbox.checked = Boolean(task.strict_prerequisites);
@@ -645,7 +809,7 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     // Task Creation Launcher
     // =========================================================================
-    function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task') {
+    function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task', preselectedProjectId = null) {
         const form = document.getElementById('taskCreateForm');
         if (form) form.reset();
 
@@ -672,8 +836,17 @@ window.TaskitatorApp = (() => {
         createModalSelectedTags.clear();
         createModalSelectedPriority = getLowestPriorityId();
 
+        // If child task, inherit parent's project unconditionally
+        if (parentId) {
+            const parentTask = tasks.find(t => t.id === parentId);
+            createModalSelectedProject = parentTask ? parentTask.project_id : 'inbox';
+        } else {
+            createModalSelectedProject = preselectedProjectId || 'inbox';
+        }
+
         renderModalTagCloud('createTagCloud', createModalSelectedTags);
         renderModalPriorityCloud('createPriorityCloud', false);
+        renderModalProjectCloud('createProjectCloud', false);
 
         criteriaValidationState = { validated: false, score: 0, isTemplate: false };
         const feedback = document.getElementById('criteriaFeedbackBox');
@@ -880,7 +1053,7 @@ window.TaskitatorApp = (() => {
     };
 
     // =========================================================================
-    // Core Tree Rendering & Path-Preserving Subtractive Filter
+    // Core Tree Rendering & Subtractive Path-Preserving Filter Engine
     // =========================================================================
     function isTaskVisuallyActive(task) {
         if (task.status === 'trash') return false;
@@ -897,6 +1070,7 @@ window.TaskitatorApp = (() => {
         const todayStr = new Date().toISOString().split('T')[0];
         const isBypassActive = isBypassActiveSafe();
         const globalPriorities = getGlobalPriorities();
+        const globalProjects = getGlobalProjects();
 
         const allChildrenMap = new Map();
         const visibleChildrenMap = new Map();
@@ -930,8 +1104,8 @@ window.TaskitatorApp = (() => {
             return allKids.some(k => hasVisibleDescendant(k.id));
         }
 
-        // Subtractive Filter Engine
-        const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0;
+        // Subtractive Filter Engine (Tags, Priorities, Projects)
+        const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0 || activeFilters.projects.size > 0;
         const matchMap = new Map();
         const descMatchMap = new Map();
 
@@ -939,7 +1113,8 @@ window.TaskitatorApp = (() => {
             tasks.forEach(t => {
                 const tagMatch = activeFilters.tags.size === 0 || (t.tags && t.tags.some(tag => activeFilters.tags.has(tag)));
                 const prioMatch = activeFilters.priorities.size === 0 || activeFilters.priorities.has(t.priority_id);
-                matchMap.set(t.id, tagMatch && prioMatch);
+                const projMatch = activeFilters.projects.size === 0 || activeFilters.projects.has(t.project_id || 'inbox');
+                matchMap.set(t.id, tagMatch && prioMatch && projMatch);
             });
 
             function checkDesc(nodeId) {
@@ -1077,6 +1252,17 @@ window.TaskitatorApp = (() => {
             titleSpan.className = 'task-title';
             titleSpan.textContent = task.title;
             main.appendChild(titleSpan);
+
+            // Project Chip (Icon + Name)
+            const projObj = globalProjects.find(pr => pr.id === (task.project_id || 'inbox'));
+            if (projObj && projObj.id !== 'inbox') {
+                const projBadge = document.createElement('span');
+                projBadge.className = 'project-badge-chip';
+                projBadge.style.borderColor = projObj.color;
+                projBadge.style.color = projObj.color;
+                projBadge.innerHTML = `<span>${projObj.icon}</span> <span>${projObj.name}</span>`;
+                main.appendChild(projBadge);
+            }
 
             if (task.ai_locked) {
                 const badge = document.createElement('span');
@@ -1439,6 +1625,7 @@ window.TaskitatorApp = (() => {
             openFilterModalBtn.addEventListener('click', () => {
                 draftFilters.tags = new Set(activeFilters.tags);
                 draftFilters.priorities = new Set(activeFilters.priorities);
+                draftFilters.projects = new Set(activeFilters.projects);
                 renderFilterClouds();
                 filterModal.classList.add('open');
             });
@@ -1452,6 +1639,7 @@ window.TaskitatorApp = (() => {
             clearFiltersBtn.addEventListener('click', () => {
                 draftFilters.tags.clear();
                 draftFilters.priorities.clear();
+                draftFilters.projects.clear();
                 renderFilterClouds();
             });
         }
@@ -1459,8 +1647,9 @@ window.TaskitatorApp = (() => {
             applyFiltersBtn.addEventListener('click', () => {
                 activeFilters.tags = new Set(draftFilters.tags);
                 activeFilters.priorities = new Set(draftFilters.priorities);
+                activeFilters.projects = new Set(draftFilters.projects);
 
-                const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0;
+                const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0 || activeFilters.projects.size > 0;
                 const dot = document.getElementById('filterActiveDot');
                 if (dot) dot.style.display = hasFilters ? 'block' : 'none';
 
@@ -1566,6 +1755,13 @@ window.TaskitatorApp = (() => {
                     if (!confirmed) return;
                 }
 
+                // Determine Project ID with Root-to-Child Inheritance
+                let assignedProject = createModalSelectedProject || 'inbox';
+                if (parentId) {
+                    const parentTask = tasks.find(t => t.id === parentId);
+                    if (parentTask) assignedProject = parentTask.project_id || 'inbox';
+                }
+
                 const newTaskId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
                 const newTask = {
                     id: newTaskId,
@@ -1574,6 +1770,7 @@ window.TaskitatorApp = (() => {
                     description: desc,
                     tags: Array.from(createModalSelectedTags),
                     priority_id: createModalSelectedPriority,
+                    project_id: assignedProject,
                     status: 'active',
                     due_date: dueDate,
                     ai_locked: isAi,
@@ -1596,6 +1793,7 @@ window.TaskitatorApp = (() => {
                                 description: '',
                                 tags: [],
                                 priority_id: getLowestPriorityId(),
+                                project_id: assignedProject,
                                 status: 'active',
                                 due_date: '',
                                 ai_locked: false,
@@ -1666,6 +1864,19 @@ window.TaskitatorApp = (() => {
                 task.description = document.getElementById('editTaskDesc')?.value.trim() || '';
                 task.tags = Array.from(editModalSelectedTags);
                 task.priority_id = editModalSelectedPriority;
+
+                // Propagate Project to children if changed at root
+                const oldProjectId = task.project_id;
+                task.project_id = editModalSelectedProject || 'inbox';
+                if (oldProjectId !== task.project_id) {
+                    function cascadeProject(pId, newProj) {
+                        tasks.filter(k => k.parent_id === pId && k.status !== 'trash').forEach(child => {
+                            child.project_id = newProj;
+                            cascadeProject(child.id, newProj);
+                        });
+                    }
+                    cascadeProject(task.id, task.project_id);
+                }
 
                 if (!task.ai_locked || isBypassActive) {
                     task.title = document.getElementById('editTaskTitle')?.value.trim() || task.title;
@@ -1780,7 +1991,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 11. Criteria Validation Button
+        // 11. Criteria Validation
         const validateCriteriaBtn = document.getElementById('validateCriteriaBtn');
         if (validateCriteriaBtn) {
             validateCriteriaBtn.addEventListener('click', async () => {
@@ -2044,7 +2255,17 @@ window.TaskitatorApp = (() => {
     return {
         init,
         setView,
-        renderUnifiedView
+        renderUnifiedView,
+        getTasks: () => tasks,
+        loadStorage,
+        saveStorageAndPush,
+        getGlobalProjects,
+        saveProject,
+        deleteProjectWithCascade,
+        openTaskCreationModal,
+        openTaskDetailModal,
+        PROJECT_ICONS,
+        PROJECT_COLORS
     };
 })();
 
