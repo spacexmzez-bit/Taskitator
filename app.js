@@ -124,9 +124,11 @@ window.TaskitatorApp = (() => {
                 return [...DEFAULT_PROJECTS];
             }
             const list = JSON.parse(raw);
-            if (!list.some(p => p.id === 'inbox')) {
-                list.unshift(DEFAULT_PROJECTS[0]);
-                localStorage.setItem(PROJECTS_KEY, JSON.stringify(list));
+            if (!Array.isArray(list) || list.length === 0 || !list.some(p => p.id === 'inbox')) {
+                const clean = Array.isArray(list) ? list.filter(p => p.id !== 'inbox') : [];
+                clean.unshift(DEFAULT_PROJECTS[0]);
+                localStorage.setItem(PROJECTS_KEY, JSON.stringify(clean));
+                return clean;
             }
             return list;
         } catch (e) {
@@ -423,7 +425,7 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     // Grace Timers & Completion Handlers
     // =========================================================================
-    function startGraceCompletionTimer(taskId) {
+    function startGraceCompletionTimer(taskId, triggerRenderFn) {
         if (pendingGraceCompletions.has(taskId)) {
             const existing = pendingGraceCompletions.get(taskId);
             clearTimeout(existing.timerId);
@@ -443,13 +445,14 @@ window.TaskitatorApp = (() => {
         const timerId = setTimeout(() => {
             clearInterval(intervalId);
             pendingGraceCompletions.delete(taskId);
-            renderUnifiedView();
+            if (typeof triggerRenderFn === 'function') triggerRenderFn();
+            else renderUnifiedView();
         }, 10000);
 
         pendingGraceCompletions.set(taskId, { timerId, intervalId, remainingSec: remaining });
     }
 
-    function undoTaskCompletion(taskId) {
+    function undoTaskCompletion(taskId, triggerRenderFn) {
         if (pendingGraceCompletions.has(taskId)) {
             const grace = pendingGraceCompletions.get(taskId);
             clearTimeout(grace.timerId);
@@ -459,10 +462,11 @@ window.TaskitatorApp = (() => {
 
         cascadeTaskStatus(taskId, 'active', null);
         saveStorageAndPush();
-        renderUnifiedView();
+        if (typeof triggerRenderFn === 'function') triggerRenderFn();
+        else renderUnifiedView();
     }
 
-    function handleTaskCompletion(taskId) {
+    function handleTaskCompletion(taskId, triggerRenderFn) {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
 
@@ -473,7 +477,8 @@ window.TaskitatorApp = (() => {
             }
             cascadeTaskStatus(taskId, 'active', null);
             saveStorageAndPush();
-            renderUnifiedView();
+            if (typeof triggerRenderFn === 'function') triggerRenderFn();
+            else renderUnifiedView();
             return;
         }
 
@@ -488,13 +493,14 @@ window.TaskitatorApp = (() => {
         }
 
         cascadeTaskStatus(taskId, 'completed', new Date().toISOString());
-        startGraceCompletionTimer(taskId);
+        startGraceCompletionTimer(taskId, triggerRenderFn);
         SoundFX.playComplete();
         saveStorageAndPush();
-        renderUnifiedView();
+        if (typeof triggerRenderFn === 'function') triggerRenderFn();
+        else renderUnifiedView();
     }
 
-    function deleteTask(taskId) {
+    function deleteTask(taskId, triggerRenderFn) {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
 
@@ -511,7 +517,8 @@ window.TaskitatorApp = (() => {
             }
             markTrash(taskId);
             saveStorageAndPush();
-            renderUnifiedView();
+            if (typeof triggerRenderFn === 'function') triggerRenderFn();
+            else renderUnifiedView();
         }
     }
 
@@ -700,7 +707,7 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     // Task Detail / Edit Modal Engine
     // =========================================================================
-    function openTaskDetailModal(taskId) {
+    function openTaskDetailModal(taskId, triggerRenderFn) {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
         activeDetailTaskId = taskId;
@@ -786,14 +793,17 @@ window.TaskitatorApp = (() => {
                     `;
                     sLi.querySelector('button').addEventListener('click', () => {
                         if (taskDetailModal) taskDetailModal.classList.remove('open');
-                        openTaskDetailModal(child.id);
+                        openTaskDetailModal(child.id, triggerRenderFn);
                     });
                     detailSubtasksList.appendChild(sLi);
                 });
             }
         }
 
-        if (taskDetailModal) taskDetailModal.classList.add('open');
+        if (taskDetailModal) {
+            taskDetailModal._customRenderFn = triggerRenderFn;
+            taskDetailModal.classList.add('open');
+        }
     }
 
     // =========================================================================
@@ -1242,6 +1252,7 @@ window.TaskitatorApp = (() => {
             titleSpan.textContent = task.title;
             main.appendChild(titleSpan);
 
+            // Project Chip (Icon + Name)
             const projObj = globalProjects.find(pr => pr.id === (task.project_id || 'inbox'));
             if (projObj && projObj.id !== 'inbox') {
                 const projBadge = document.createElement('span');
@@ -1506,13 +1517,14 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Boot and Event Wiring
+    // Boot and Event Wiring (Null-Safe for Multi-Page Architecture)
     // =========================================================================
     function init() {
         initSyncIndicator();
         loadStorage();
         BreakUI.init();
 
+        // 1. Navigation & Drawer Bindings
         const sidebarDrawer = document.getElementById('sidebarDrawer');
         const drawerBackdrop = document.getElementById('drawerBackdrop');
         const openDrawerBtn = document.getElementById('openDrawerBtn');
@@ -1535,9 +1547,13 @@ window.TaskitatorApp = (() => {
             });
         });
 
-        window.addEventListener('hashchange', handleHashRouting);
-        handleHashRouting();
+        // 2. Hash Routing (Only on index.html / main shell)
+        if (document.getElementById('pageViewHeading')) {
+            window.addEventListener('hashchange', handleHashRouting);
+            handleHashRouting();
+        }
 
+        // 3. Completed Modal Toggle
         const completedModal = document.getElementById('completedModal');
         const openCompletedModalBtn = document.getElementById('openCompletedModalBtn');
         const closeCompletedModalBtn = document.getElementById('closeCompletedModalBtn');
@@ -1554,6 +1570,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // 4. Copilot Drawer Bindings
         const copilotDrawer = document.getElementById('copilotDrawer');
         const copilotBackdrop = document.getElementById('copilotBackdrop');
         const openCopilotNavBtn = document.getElementById('openCopilotNavBtn');
@@ -1590,6 +1607,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // 5. Floating + Task Button (Null-Safe Guarded)
         const openRootAddModalBtn = document.getElementById('openRootAddModalBtn');
         if (openRootAddModalBtn) {
             openRootAddModalBtn.addEventListener('click', () => {
@@ -1597,6 +1615,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // 6. Filter Popover Actions
         const openFilterModalBtn = document.getElementById('openFilterModalBtn');
         const closeFilterModalBtn = document.getElementById('closeFilterModalBtn');
         const clearFiltersBtn = document.getElementById('clearFiltersBtn');
@@ -1640,6 +1659,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // 7. Quick Tag Adds
         const createQuickTagBtn = document.getElementById('createQuickTagBtn');
         if (createQuickTagBtn) {
             createQuickTagBtn.addEventListener('click', () => {
@@ -1672,6 +1692,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // 8. Task Creation Form
         const aiLockCheckbox = document.getElementById('aiLockCheckbox');
         if (aiLockCheckbox) {
             aiLockCheckbox.addEventListener('change', () => {
@@ -1787,10 +1808,17 @@ window.TaskitatorApp = (() => {
 
                 saveStorageAndPush();
                 if (addTaskModal) addTaskModal.classList.remove('open');
-                renderUnifiedView();
+                
+                // If on projects.html, trigger its specific workspace update
+                if (typeof window.refreshCurrentProjectView === 'function') {
+                    window.refreshCurrentProjectView();
+                } else {
+                    renderUnifiedView();
+                }
             });
         }
 
+        // 9. Task Detail Modal Actions
         const taskDetailModal = document.getElementById('taskDetailModal');
         const closeDetailModalBtn = document.getElementById('closeDetailModalBtn');
         if (closeDetailModalBtn && taskDetailModal) {
@@ -1865,8 +1893,12 @@ window.TaskitatorApp = (() => {
 
                 saveStorageAndPush();
                 if (taskDetailModal) taskDetailModal.classList.remove('open');
+                
+                const customRender = taskDetailModal?._customRenderFn;
                 activeDetailTaskId = null;
-                renderUnifiedView();
+
+                if (typeof customRender === 'function') customRender();
+                else renderUnifiedView();
             });
         }
 
@@ -1874,7 +1906,8 @@ window.TaskitatorApp = (() => {
         if (deleteFromDetailBtn) {
             deleteFromDetailBtn.addEventListener('click', () => {
                 if (!activeDetailTaskId) return;
-                deleteTask(activeDetailTaskId);
+                const customRender = taskDetailModal?._customRenderFn;
+                deleteTask(activeDetailTaskId, customRender);
                 if (taskDetailModal) taskDetailModal.classList.remove('open');
                 activeDetailTaskId = null;
             });
@@ -1891,6 +1924,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // 10. Audit Modal Handlers
         const auditModal = document.getElementById('auditModal');
         const closeAuditModalBtn = document.getElementById('closeAuditModalBtn');
         if (closeAuditModalBtn && auditModal) {
@@ -1967,6 +2001,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // 11. Criteria Validation
         const validateCriteriaBtn = document.getElementById('validateCriteriaBtn');
         if (validateCriteriaBtn) {
             validateCriteriaBtn.addEventListener('click', async () => {
@@ -2048,6 +2083,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // 12. Template Modal Pickers
         const openTemplatesBtn = document.getElementById('openTemplatesBtn');
         const templatesModal = document.getElementById('templatesModal');
         const closeTemplatesModalBtn = document.getElementById('closeTemplatesModalBtn');
@@ -2102,6 +2138,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // 13. Emergency Confirm Modal Handlers
         const emergencyTriggerBtn = document.getElementById('emergencyTriggerBtn');
         const emergencyConfirmModal = document.getElementById('emergencyConfirmModal');
         const cancelEmergencyBtn = document.getElementById('cancelEmergencyBtn');
@@ -2156,6 +2193,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // 14. Sync Modal Bindings
         const syncStatusDot = document.getElementById('syncStatusDot');
         const syncInfoModal = document.getElementById('syncInfoModal');
         const closeSyncInfoModalBtn = document.getElementById('closeSyncInfoModalBtn');
@@ -2195,6 +2233,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // Sync & Task State Event Listeners
         window.addEventListener('taskitator-synced', () => {
             updateSyncDot('synced');
             if (!activeDetailTaskId) {
@@ -2212,6 +2251,7 @@ window.TaskitatorApp = (() => {
             updateSyncDot('error');
         });
 
+        // Initialize Background Polling
         if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
             SyncEngine.pull(() => {
                 if (!activeDetailTaskId) {
@@ -2222,7 +2262,6 @@ window.TaskitatorApp = (() => {
         }
     }
 
-    // Explicitly Exporting Core View/Data Handlers Required By projects.html
     return {
         init,
         setView,
