@@ -33,6 +33,11 @@
             border: 1px solid #881337;
             color: #fda4af;
         }
+        .notice-success {
+            background: #052e16;
+            border: 1px solid #166534;
+            color: #86efac;
+        }
         .quota-indicator {
             display: inline-flex;
             align-items: center;
@@ -255,6 +260,33 @@
             cursor: not-allowed;
         }
 
+        /* File Input Customization */
+        input[type="file"] {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            border: 1px dashed var(--primary);
+            border-radius: 8px;
+            background: rgba(59, 130, 246, 0.05);
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        input[type="file"]::file-selector-button {
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-weight: 600;
+            margin-right: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        input[type="file"]::file-selector-button:hover {
+            background: var(--primary-hover);
+        }
+
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-4px); }
             to { opacity: 1; transform: translateY(0); }
@@ -270,6 +302,7 @@
     <nav class="drawer-links" id="drawerNavLinks">
         <a href="index.html">📅 Today</a>
         <a href="general.html">🗂️ General Tasks</a>
+        <a href="projects.html">📁 Projects</a>
         <a href="stats.html">📊 Stats</a>
         <a href="trash.html">🗑️ Trash</a>
         <a href="settings.html" class="active">⚙️ Settings</a>
@@ -302,11 +335,12 @@
             </button>
         </div>
 
-        <!-- 3-Tab Navigation Header -->
+        <!-- 4-Tab Navigation Header -->
         <nav class="settings-tab-nav">
-            <button type="button" class="tab-btn active" data-tab="tab-account">👤 Account & Setup</button>
-            <button type="button" class="tab-btn" data-tab="tab-system">🎛️ System Configuration</button>
-            <button type="button" class="tab-btn" data-tab="tab-tasks">🏷️ Task Settings</button>
+            <button type="button" class="tab-btn active" data-tab="tab-account">👤 Account</button>
+            <button type="button" class="tab-btn" data-tab="tab-system">🎛️ System</button>
+            <button type="button" class="tab-btn" data-tab="tab-tasks">🏷️ Tags & Prio</button>
+            <button type="button" class="tab-btn" data-tab="tab-data">💾 Data & Backup</button>
         </nav>
 
         <!-- ========================================================================= -->
@@ -510,6 +544,59 @@
 
                 <div id="prioritiesListContainer"></div>
             </div>
+        </div>
+
+        <!-- ========================================================================= -->
+        <!-- TAB 4: Data Backup, Import & Export Engine                               -->
+        <!-- ========================================================================= -->
+        <div class="tab-pane" id="tab-data">
+            
+            <!-- Export Card -->
+            <div class="settings-card">
+                <h3 style="margin-top: 0; color: var(--primary);">📤 Offline Snapshot Backup</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
+                    Download a full JSON snapshot of your local data, including tasks, projects, settings, and break configurations. Keep this file safe as an offline restore point.
+                </p>
+                <button type="button" class="icon-btn" id="exportDataBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 8px 18px;">
+                    Download Snapshot Backup
+                </button>
+            </div>
+
+            <!-- Import Card -->
+            <div class="settings-card">
+                <h3 style="margin-top: 0; color: var(--primary);">📥 Restore / Merge Data</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
+                    Select a previously exported `.json` file to restore.
+                </p>
+                <input type="file" id="importFileInput" accept=".json">
+                
+                <div style="display: flex; gap: 10px; margin-top: 14px;">
+                    <button type="button" class="icon-btn" id="importMergeBtn" style="border-color: var(--primary); color: var(--primary);" title="Combines file data with active tasks, keeping the newest changes.">
+                        Smart Merge
+                    </button>
+                    <button type="button" class="icon-btn" id="importReplaceBtn" style="border-color: #f59e0b; color: #f59e0b;" title="Wipes current local data and replaces it entirely with the backup file.">
+                        Clean Restore
+                    </button>
+                </div>
+                <div id="importFeedback" class="notice-banner"></div>
+            </div>
+
+            <!-- Danger Zone Wipes -->
+            <div class="settings-card" style="border: 1px solid #7f1d1d; background: rgba(127, 29, 29, 0.1);">
+                <h3 style="margin-top: 0; color: var(--danger);">⚠️ Danger Zone</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
+                    Hard-reset utilities. These actions sync immediately and cannot be undone without a JSON backup.
+                </p>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button type="button" class="icon-btn" id="clearCompletedTrashBtn" style="border-color: #991b1b; color: #f87171;">
+                        Wipe Completed & Trash
+                    </button>
+                    <button type="button" class="icon-btn" id="factoryResetBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 700;">
+                        Factory Reset App
+                    </button>
+                </div>
+            </div>
+
         </div>
 
     </div>
@@ -993,7 +1080,7 @@ document.getElementById('testGeminiBtn').addEventListener('click', async () => {
         });
 
         if (res.ok) {
-            feedback.className = 'notice-banner notice-info';
+            feedback.className = 'notice-banner notice-success';
             feedback.innerHTML = '<strong>Success!</strong> API key valid and connected to gemini-3.5-flash-lite.';
         } else {
             const errData = await res.json();
@@ -1005,6 +1092,163 @@ document.getElementById('testGeminiBtn').addEventListener('click', async () => {
         feedback.textContent = `Network Error: ${err.message}`;
     }
 });
+
+// =========================================================================
+// Data Backup, Import, and Reset Engine
+// =========================================================================
+const importFileInput = document.getElementById('importFileInput');
+const importFeedback = document.getElementById('importFeedback');
+
+function showImportFeedback(msg, isError = false) {
+    importFeedback.style.display = 'block';
+    importFeedback.className = `notice-banner ${isError ? 'notice-warning' : 'notice-success'}`;
+    importFeedback.innerHTML = msg;
+}
+
+document.getElementById('exportDataBtn').addEventListener('click', () => {
+    const data = {
+        taskitator_tasks: JSON.parse(localStorage.getItem('taskitator_tasks') || '[]'),
+        taskitator_projects: JSON.parse(localStorage.getItem('taskitator_projects') || '[]'),
+        taskitator_daily_breaks: JSON.parse(localStorage.getItem('taskitator_daily_breaks') || '[]'),
+        taskitator_settings: JSON.parse(localStorage.getItem('taskitator_settings') || '{}'),
+        taskitator_collapsed_nodes: JSON.parse(localStorage.getItem('taskitator_collapsed_nodes') || '[]'),
+        export_date: new Date().toISOString(),
+        version: '1.0'
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const dateStr = data.export_date.split('T')[0];
+    
+    a.href = url;
+    a.download = `taskitator_backup_${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+});
+
+async function processImport(mode) {
+    const file = importFileInput.files[0];
+    if (!file) {
+        showImportFeedback('Please select a JSON backup file first.', true);
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to perform a ${mode.toUpperCase()} using this file?`)) {
+        return;
+    }
+
+    try {
+        const text = await file.text();
+        const imported = JSON.parse(text);
+
+        if (!imported.taskitator_tasks || !imported.taskitator_settings) {
+            throw new Error('Invalid backup file format. Missing core Taskitator properties.');
+        }
+
+        // Preserve current active worker credentials (never lock the user out)
+        const localSettingsRaw = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+        const currentUser = localSettingsRaw.worker_username;
+        const currentKey = localSettingsRaw.worker_passkey;
+        const currentUrl = localSettingsRaw.worker_url;
+
+        if (mode === 'replace') {
+            const newSettings = imported.taskitator_settings || {};
+            if (currentUser) newSettings.worker_username = currentUser;
+            if (currentKey) newSettings.worker_passkey = currentKey;
+            if (currentUrl) newSettings.worker_url = currentUrl;
+
+            localStorage.setItem('taskitator_settings', JSON.stringify(newSettings));
+            localStorage.setItem('taskitator_tasks', JSON.stringify(imported.taskitator_tasks || []));
+            localStorage.setItem('taskitator_projects', JSON.stringify(imported.taskitator_projects || []));
+            localStorage.setItem('taskitator_daily_breaks', JSON.stringify(imported.taskitator_daily_breaks || []));
+            localStorage.setItem('taskitator_collapsed_nodes', JSON.stringify(imported.taskitator_collapsed_nodes || []));
+            
+        } else if (mode === 'merge') {
+            // Smart Merge - Projects
+            const localProjects = JSON.parse(localStorage.getItem('taskitator_projects') || '[]');
+            const projMap = new Map(localProjects.map(p => [p.id, p]));
+            (imported.taskitator_projects || []).forEach(imp => {
+                if (!projMap.has(imp.id)) projMap.set(imp.id, imp);
+                else projMap.set(imp.id, { ...projMap.get(imp.id), ...imp });
+            });
+            localStorage.setItem('taskitator_projects', JSON.stringify(Array.from(projMap.values())));
+
+            // Smart Merge - Tasks (Keep newest based on completion, fallback to importing)
+            const localTasks = JSON.parse(localStorage.getItem('taskitator_tasks') || '[]');
+            const taskMap = new Map(localTasks.map(t => [t.id, t]));
+            (imported.taskitator_tasks || []).forEach(imp => {
+                const loc = taskMap.get(imp.id);
+                if (!loc) {
+                    taskMap.set(imp.id, imp);
+                } else {
+                    if (imp.status === 'completed' && loc.status !== 'completed') {
+                        taskMap.set(imp.id, imp);
+                    } else if (imp.status === 'trash' && loc.status !== 'trash') {
+                        taskMap.set(imp.id, imp);
+                    } else if (imp.status === 'completed' && loc.status === 'completed') {
+                        const impDate = new Date(imp.completed_at || 0);
+                        const locDate = new Date(loc.completed_at || 0);
+                        if (impDate > locDate) taskMap.set(imp.id, imp);
+                    }
+                }
+            });
+            localStorage.setItem('taskitator_tasks', JSON.stringify(Array.from(taskMap.values())));
+
+            // Smart Merge - Tags
+            const impSettings = imported.taskitator_settings || {};
+            const localTags = localSettingsRaw.custom_tags || [];
+            const impTags = impSettings.custom_tags || [];
+            localSettingsRaw.custom_tags = [...new Set([...localTags, ...impTags])];
+            localStorage.setItem('taskitator_settings', JSON.stringify(localSettingsRaw));
+        }
+
+        if (window.SyncEngine) {
+            SyncEngine.markLocalModified();
+            await SyncEngine.forceImmediateSync();
+        }
+
+        showImportFeedback(`<strong>Success!</strong> Data successfully ${mode === 'replace' ? 'restored' : 'merged'}. Reloading...`);
+        importFileInput.value = '';
+        setTimeout(() => window.location.reload(), 1500);
+
+    } catch (err) {
+        showImportFeedback(`<strong>Import Failed:</strong> ${err.message}`, true);
+    }
+}
+
+document.getElementById('importReplaceBtn').addEventListener('click', () => processImport('replace'));
+document.getElementById('importMergeBtn').addEventListener('click', () => processImport('merge'));
+
+document.getElementById('clearCompletedTrashBtn').addEventListener('click', async () => {
+    if (!confirm('Permanently delete all completed and trashed tasks? This clears historical data and cannot be undone.')) return;
+    
+    let tasks = JSON.parse(localStorage.getItem('taskitator_tasks') || '[]');
+    const originalLength = tasks.length;
+    tasks = tasks.filter(t => t.status === 'active');
+    
+    localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
+    if (window.SyncEngine) {
+        SyncEngine.markLocalModified();
+        await SyncEngine.forceImmediateSync();
+    }
+    alert(`Cleanup complete. Removed ${originalLength - tasks.length} tasks.`);
+});
+
+document.getElementById('factoryResetBtn').addEventListener('click', () => {
+    const confirmation = prompt('DANGER: Type "RESET" to confirm total wipe of this device (logs you out and clears all data).');
+    if (confirmation === 'RESET') {
+        localStorage.clear();
+        window.location.replace('login.html');
+    }
+});
+
+// =========================================================================
+// End Backup Engine
+// =========================================================================
 
 document.getElementById('openLogoutModalBtn').addEventListener('click', () => {
     logoutConfirmModal.classList.add('open');
