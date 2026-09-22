@@ -660,6 +660,18 @@ body {
     gap: 3px;
 }
 
+.project-badge-chip {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 6px;
+    border: 1px solid currentColor;
+    background: rgba(0, 0, 0, 0.2);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
 .tag-chip {
     background: var(--tag-bg);
     color: var(--tag-text);
