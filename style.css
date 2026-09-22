@@ -44,77 +44,120 @@ body {
     padding: 16px 16px 90px 16px;
 }
 
-/* Navbar */
+/* =========================================================================
+   Top Navbar & Unified Button Frames (Dark UI Native)
+   ========================================================================= */
 .top-navbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     padding: 12px 0 16px 0;
     border-bottom: 2px solid var(--border-color);
     margin-bottom: 18px;
 }
 
-.nav-left, .nav-right {
+.nav-left, 
+.nav-center,
+.nav-right {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    flex-wrap: nowrap;
 }
 
-.icon-btn {
+/* Enforce uniform height, UI background, and border across all navbar buttons */
+.icon-btn,
+.icon-only-btn,
+.nav-link-btn,
+.break-status-pill,
+.emergency-icon-btn,
+.emergency-pill-btn {
+    height: 38px;
     background: var(--card-bg);
-    border: 1px solid var(--border-color);
+    border: 1.5px solid var(--border-color);
     color: var(--text-color);
-    border-radius: 8px;
-    padding: 7px 12px;
+    border-radius: 10px;
+    padding: 0 12px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 600;
+    box-sizing: border-box;
     transition: all 0.15s ease;
+    outline: none;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
-.icon-btn:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-    background: var(--accent-light);
+/* Square icon buttons */
+.icon-only-btn,
+.emergency-icon-btn {
+    width: 38px;
+    padding: 0;
+    position: relative;
 }
 
-.emergency-pill-btn {
-    background: #2a1215;
-    border: 1.5px solid #7f1d1d;
-    color: #f87171;
-    border-radius: 20px;
-    padding: 5px 12px;
-    font-size: 0.8rem;
-    font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    cursor: pointer;
-    transition: all 0.15s ease;
+#openDrawerBtn {
+    width: 38px;
+    padding: 0;
 }
 
-.emergency-pill-btn:hover {
-    background: #450a0a;
-}
-
+/* Small info circle button */
 .info-tiny-btn {
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
     background: var(--card-bg);
-    border: 1px solid var(--border-color);
+    border: 1.5px solid var(--border-color);
     color: var(--text-muted);
     font-size: 0.75rem;
-    font-weight: bold;
+    font-weight: 700;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 0;
+    box-sizing: border-box;
+}
+
+/* Hover States */
+.icon-btn:hover,
+.icon-only-btn:hover,
+.nav-link-btn:hover,
+.info-tiny-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--accent-light);
+}
+
+/* Emergency button variant */
+.emergency-icon-btn,
+.emergency-pill-btn {
+    background: #2a1215;
+    border-color: #7f1d1d;
+    color: #f87171;
+}
+
+.emergency-icon-btn:hover,
+.emergency-pill-btn:hover {
+    background: #450a0a;
+    border-color: #ef4444;
+}
+
+/* Filter Dot Indicator Position */
+.filter-active-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 8px;
+    height: 8px;
+    background: var(--danger);
+    border-radius: 50%;
+    border: 1.5px solid var(--card-bg);
+    display: none;
 }
 
 /* Left Navigation Sidebar Drawer */
@@ -579,22 +622,6 @@ body {
     background: rgba(255, 255, 255, 0.1);
 }
 
-.filter-active-dot {
-    position: absolute;
-    top: -2px;
-    right: -2px;
-    width: 10px;
-    height: 10px;
-    background: var(--danger);
-    border-radius: 50%;
-    border: 2px solid var(--card-bg);
-    display: none;
-}
-
-.icon-only-btn {
-    position: relative; /* Required for the filter dot absolute positioning */
-}
-
 /* Banners */
 .banner-emergency {
     background: #380d15;
@@ -854,7 +881,7 @@ body {
     line-height: 1.4;
 }
 
-/* Sync Dot Indicator (Today's Page) */
+/* Sync Dot Indicator */
 .sync-dot {
     width: 10px;
     height: 10px;
@@ -884,7 +911,7 @@ body {
     box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
 }
 
-/* Full Sync Status Badge (Settings Page) */
+/* Full Sync Status Badge */
 .sync-badge-word {
     display: inline-flex;
     align-items: center;
@@ -920,11 +947,10 @@ body {
     color: #f87171;
     background: #450a0a;
 }
+
 /* =========================================================================
    Micro-Interactions & Motion Transitions
    ========================================================================= */
-
-/* 1. Modal Dialog Scale & Fade-in */
 .modal-overlay.open .modal-box {
     animation: modalPopEntry 0.16s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -940,7 +966,6 @@ body {
     }
 }
 
-/* 2. Task Tree Item Mount Transition */
 .task-node {
     animation: nodeSlideIn 0.14s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -956,7 +981,6 @@ body {
     }
 }
 
-/* 3. Tactile Press Feedback for Interactive Elements */
 .icon-btn:active,
 .icon-only-btn:active,
 .break-status-pill:active,
@@ -968,7 +992,6 @@ body {
     transition: transform 0.08s ease;
 }
 
-/* 4. Smooth Completion Text & Checkmark Transition */
 .task-title {
     transition: color 0.18s ease, text-decoration 0.18s ease;
 }
@@ -977,7 +1000,6 @@ body {
     transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
-/* 5. Subtree Chevron Transition */
 .collapse-toggle {
     transition: transform 0.15s ease;
     display: inline-flex;
