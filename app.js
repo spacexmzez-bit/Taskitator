@@ -1252,7 +1252,6 @@ window.TaskitatorApp = (() => {
             titleSpan.textContent = task.title;
             main.appendChild(titleSpan);
 
-            // Project Chip (Icon + Name)
             const projObj = globalProjects.find(pr => pr.id === (task.project_id || 'inbox'));
             if (projObj && projObj.id !== 'inbox') {
                 const projBadge = document.createElement('span');
@@ -1366,7 +1365,7 @@ window.TaskitatorApp = (() => {
             if (pendingGraceCompletions.has(t.id)) return false;
             if (currentView === 'general') return true;
 
-            const due = String(t.due_date || 'today').trim().toLowerCase();
+            const due = String(t.due_date || '').trim().toLowerCase();
             const compDate = t.completed_at ? t.completed_at.split('T')[0] : '';
             return due === 'today' || due === todayStr || compDate === todayStr;
         });
@@ -1517,14 +1516,13 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Boot and Event Wiring (Null-Safe for Multi-Page Architecture)
+    // Boot and Event Wiring
     // =========================================================================
     function init() {
         initSyncIndicator();
         loadStorage();
         BreakUI.init();
 
-        // 1. Navigation & Drawer Bindings
         const sidebarDrawer = document.getElementById('sidebarDrawer');
         const drawerBackdrop = document.getElementById('drawerBackdrop');
         const openDrawerBtn = document.getElementById('openDrawerBtn');
@@ -1547,13 +1545,9 @@ window.TaskitatorApp = (() => {
             });
         });
 
-        // 2. Hash Routing (Only on index.html / main shell)
-        if (document.getElementById('pageViewHeading')) {
-            window.addEventListener('hashchange', handleHashRouting);
-            handleHashRouting();
-        }
+        window.addEventListener('hashchange', handleHashRouting);
+        handleHashRouting();
 
-        // 3. Completed Modal Toggle
         const completedModal = document.getElementById('completedModal');
         const openCompletedModalBtn = document.getElementById('openCompletedModalBtn');
         const closeCompletedModalBtn = document.getElementById('closeCompletedModalBtn');
@@ -1570,7 +1564,6 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 4. Copilot Drawer Bindings
         const copilotDrawer = document.getElementById('copilotDrawer');
         const copilotBackdrop = document.getElementById('copilotBackdrop');
         const openCopilotNavBtn = document.getElementById('openCopilotNavBtn');
@@ -1607,7 +1600,6 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 5. Floating + Task Button (Null-Safe Guarded)
         const openRootAddModalBtn = document.getElementById('openRootAddModalBtn');
         if (openRootAddModalBtn) {
             openRootAddModalBtn.addEventListener('click', () => {
@@ -1615,7 +1607,6 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 6. Filter Popover Actions
         const openFilterModalBtn = document.getElementById('openFilterModalBtn');
         const closeFilterModalBtn = document.getElementById('closeFilterModalBtn');
         const clearFiltersBtn = document.getElementById('clearFiltersBtn');
@@ -1659,7 +1650,6 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 7. Quick Tag Adds
         const createQuickTagBtn = document.getElementById('createQuickTagBtn');
         if (createQuickTagBtn) {
             createQuickTagBtn.addEventListener('click', () => {
@@ -1692,7 +1682,6 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 8. Task Creation Form
         const aiLockCheckbox = document.getElementById('aiLockCheckbox');
         if (aiLockCheckbox) {
             aiLockCheckbox.addEventListener('change', () => {
@@ -1808,17 +1797,10 @@ window.TaskitatorApp = (() => {
 
                 saveStorageAndPush();
                 if (addTaskModal) addTaskModal.classList.remove('open');
-                
-                // If on projects.html, trigger its specific workspace update
-                if (typeof window.refreshCurrentProjectView === 'function') {
-                    window.refreshCurrentProjectView();
-                } else {
-                    renderUnifiedView();
-                }
+                renderUnifiedView();
             });
         }
 
-        // 9. Task Detail Modal Actions
         const taskDetailModal = document.getElementById('taskDetailModal');
         const closeDetailModalBtn = document.getElementById('closeDetailModalBtn');
         if (closeDetailModalBtn && taskDetailModal) {
@@ -1893,12 +1875,8 @@ window.TaskitatorApp = (() => {
 
                 saveStorageAndPush();
                 if (taskDetailModal) taskDetailModal.classList.remove('open');
-                
-                const customRender = taskDetailModal?._customRenderFn;
                 activeDetailTaskId = null;
-
-                if (typeof customRender === 'function') customRender();
-                else renderUnifiedView();
+                renderUnifiedView();
             });
         }
 
@@ -1906,8 +1884,7 @@ window.TaskitatorApp = (() => {
         if (deleteFromDetailBtn) {
             deleteFromDetailBtn.addEventListener('click', () => {
                 if (!activeDetailTaskId) return;
-                const customRender = taskDetailModal?._customRenderFn;
-                deleteTask(activeDetailTaskId, customRender);
+                deleteTask(activeDetailTaskId);
                 if (taskDetailModal) taskDetailModal.classList.remove('open');
                 activeDetailTaskId = null;
             });
@@ -1924,7 +1901,6 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 10. Audit Modal Handlers
         const auditModal = document.getElementById('auditModal');
         const closeAuditModalBtn = document.getElementById('closeAuditModalBtn');
         if (closeAuditModalBtn && auditModal) {
@@ -2001,7 +1977,6 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 11. Criteria Validation
         const validateCriteriaBtn = document.getElementById('validateCriteriaBtn');
         if (validateCriteriaBtn) {
             validateCriteriaBtn.addEventListener('click', async () => {
@@ -2083,7 +2058,6 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 12. Template Modal Pickers
         const openTemplatesBtn = document.getElementById('openTemplatesBtn');
         const templatesModal = document.getElementById('templatesModal');
         const closeTemplatesModalBtn = document.getElementById('closeTemplatesModalBtn');
@@ -2138,7 +2112,6 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 13. Emergency Confirm Modal Handlers
         const emergencyTriggerBtn = document.getElementById('emergencyTriggerBtn');
         const emergencyConfirmModal = document.getElementById('emergencyConfirmModal');
         const cancelEmergencyBtn = document.getElementById('cancelEmergencyBtn');
@@ -2193,7 +2166,6 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 14. Sync Modal Bindings
         const syncStatusDot = document.getElementById('syncStatusDot');
         const syncInfoModal = document.getElementById('syncInfoModal');
         const closeSyncInfoModalBtn = document.getElementById('closeSyncInfoModalBtn');
@@ -2233,7 +2205,6 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // Sync & Task State Event Listeners
         window.addEventListener('taskitator-synced', () => {
             updateSyncDot('synced');
             if (!activeDetailTaskId) {
@@ -2251,7 +2222,6 @@ window.TaskitatorApp = (() => {
             updateSyncDot('error');
         });
 
-        // Initialize Background Polling
         if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
             SyncEngine.pull(() => {
                 if (!activeDetailTaskId) {
@@ -2283,7 +2253,6 @@ window.TaskitatorApp = (() => {
     };
 })();
 
-// Bootstrap Application on DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
     TaskitatorApp.init();
 });
