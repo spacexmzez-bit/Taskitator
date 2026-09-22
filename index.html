@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Taskitator - Today</title>
+    <title>Taskitator</title>
 
     <!-- PWA Installation Manifest & Meta Tags -->
     <link rel="manifest" href="manifest.json">
@@ -43,18 +43,20 @@
 </head>
 <body>
 
+<!-- Sidebar Drawer -->
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="sidebar-drawer" id="sidebarDrawer">
     <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
-    <nav class="drawer-links">
-        <a href="index.html" class="active">📅 Today</a>
-        <a href="general.html">🗂️ General Tasks</a>
+    <nav class="drawer-links" id="drawerNavLinks">
+        <a href="#today" id="navLinkToday" class="active">📅 Today</a>
+        <a href="#general" id="navLinkGeneral">🗂️ General Tasks</a>
         <a href="stats.html">📊 Stats</a>
         <a href="trash.html">🗑️ Trash</a>
         <a href="settings.html">⚙️ Settings</a>
     </nav>
 </aside>
 
+<!-- Copilot Slide-Over Drawer -->
 <div class="copilot-backdrop" id="copilotBackdrop"></div>
 <aside class="copilot-drawer" id="copilotDrawer">
     <div class="copilot-header">
@@ -97,21 +99,25 @@
         </div>
 
         <div class="nav-center" style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
+            <!-- Filter Funnel Trigger button -->
             <button class="icon-only-btn" id="openFilterModalBtn" title="Filter Tasks" aria-label="Filter Tasks">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M3 4c0-.55.45-1 1-1h16c.55 0 1 .45 1 1s-.45 1-1 1h-1.5l-6.5 8.67V20c0 .38-.21.73-.55.91l-3 1.5c-.52.26-1.12-.1-1.12-.68v-7.06L3.5 5H3c-.55 0-1-.45-1-1z"/>
                 </svg>
                 <span class="filter-active-dot" id="filterActiveDot"></span>
             </button>
-            
+
             <button class="icon-only-btn" id="openCompletedModalBtn" title="Completed Tasks" aria-label="View Completed Tasks">
                 <span style="font-size: 1.05rem; font-weight: bold; color: var(--success);">✓</span>
             </button>
+            
             <button id="breakStatusPill" class="break-status-pill" title="Daily Breaks" aria-label="Manage Daily Breaks">
                 <span id="breakPillIcon">⏸️</span>
                 <span id="breakPillText">Breaks</span>
             </button>
+            
             <span class="sync-dot local-only" id="syncStatusDot" title="Click to view Sync Status details"></span>
+            
             <button class="emergency-icon-btn" id="emergencyTriggerBtn" title="Emergency Bypass" aria-label="Emergency Bypass">
                 <span>🚨</span>
             </button>
@@ -127,7 +133,7 @@
     </header>
 
     <div class="page-title-section">
-        <h1>Today's Focus</h1>
+        <h1 id="pageViewHeading">Today's Focus</h1>
     </div>
 
     <div id="activeEmergencyBanner" class="banner-emergency" style="display: none;">
@@ -135,7 +141,7 @@
         <span id="emergencyCountdownTimer">15:00</span>
     </div>
 
-    <ul class="task-list-tree" id="todayTaskList"></ul>
+    <ul class="task-list-tree" id="taskListContainer"></ul>
 </div>
 
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
@@ -151,7 +157,7 @@
         <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;">
             Matched tasks isolate their active branches. Non-matching parents remain as muted structural breadcrumbs.
         </p>
-        
+
         <div class="filter-section-title">Priorities</div>
         <div id="filterPriorityCloud" class="tag-select-cloud"></div>
 
@@ -165,7 +171,7 @@
     </div>
 </div>
 
-<!-- Modals (Breaks, Completed, Sync, Info) -->
+<!-- Modal: Daily Breaks -->
 <div class="modal-overlay" id="breakModal">
     <div class="modal-box" style="max-width: 440px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -184,16 +190,18 @@
     </div>
 </div>
 
+<!-- Modal: Completed Tasks -->
 <div class="modal-overlay" id="completedModal">
     <div class="modal-box">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <h3 style="margin: 0; color: var(--primary);">✓ Today's Completed Tasks</h3>
+            <h3 style="margin: 0; color: var(--primary);" id="completedModalTitle">✓ Completed Tasks</h3>
             <button class="icon-btn" id="closeCompletedModalBtn" style="padding: 2px 8px;">✕</button>
         </div>
         <div id="completedTasksListContainer" style="max-height: 60vh; overflow-y: auto;"></div>
     </div>
 </div>
 
+<!-- Modal: Sync Status Guide -->
 <div class="modal-overlay" id="syncInfoModal">
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--primary);">🌐 Sync Status Guide</h3>
@@ -288,7 +296,7 @@
             <div class="form-group" id="criteriaBoxContainer" style="display: none;">
                 <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt; (Visual Verification Requirements)</label>
                 <textarea id="taskCriteriaInput" rows="2" placeholder="e.g. Photo clearly showing completed worksheet #4 with current date handwritten."></textarea>
-                
+
                 <div class="criteria-actions-bar">
                     <button type="button" class="icon-btn" id="openTemplatesBtn" style="font-size: 0.78rem; padding: 4px 10px;">💡 Recommended</button>
                     <button type="button" class="icon-btn" id="validateCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px; background: var(--accent-light); color: var(--accent); border-color: var(--border-color);">🔍 Validate Criteria</button>
@@ -310,6 +318,7 @@
     </div>
 </div>
 
+<!-- Modal: Templates -->
 <div class="modal-overlay" id="templatesModal">
     <div class="modal-box" style="max-width: 500px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -396,6 +405,7 @@
     </div>
 </div>
 
+<!-- Modal: Proof Verification Submission -->
 <div class="modal-overlay" id="auditModal">
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--primary);">Submit AI Verification Proof</h3>
@@ -421,6 +431,7 @@
     </div>
 </div>
 
+<!-- Modal: Emergency Bypass Confirmation -->
 <div class="modal-overlay" id="emergencyConfirmModal">
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--danger);">🚨 Activate Emergency Bypass?</h3>
@@ -436,6 +447,7 @@
     </div>
 </div>
 
+<!-- Modal: Emergency Rules Info -->
 <div class="modal-overlay" id="emergencyInfoModal">
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--primary);">ℹ️ Emergency Rules</h3>
@@ -455,651 +467,5 @@
 <script src="sync-engine.js"></script>
 <script src="agent-engine.js"></script>
 <script src="app.js"></script>
-<script>
-// =========================================================================
-// Today's View Tree Rendering & Subtractive Path-Preserving Filtering
-// =========================================================================
-function isTaskVisuallyActive(task) {
-    if (task.status === 'trash') return false;
-    if (task.status === 'active') return true;
-    if (task.status === 'completed' && TaskitatorApp.getPendingGraceCompletions().has(task.id)) return true;
-    return false;
-}
-
-function renderTodayTaskTree() {
-    const list = document.getElementById('todayTaskList');
-    if (!list) return;
-    list.innerHTML = '';
-
-    const tasks = TaskitatorApp.getTasks();
-    const collapsedNodes = TaskitatorApp.getCollapsedNodes();
-    const activeFilters = TaskitatorApp.getActiveFilters();
-    const pendingGrace = TaskitatorApp.getPendingGraceCompletions();
-    const globalPriorities = TaskitatorApp.getGlobalPriorities();
-
-    const todayStr = new Date().toISOString().split('T')[0];
-    const isBypassActive = window.TaskitatorEngine?.EmergencyManager?.isBypassActive ? TaskitatorEngine.EmergencyManager.isBypassActive() : false;
-
-    const allChildrenMap = new Map();
-    const visibleChildrenMap = new Map();
-
-    tasks.forEach(t => {
-        if (t.status === 'trash') return;
-        const pId = t.parent_id || 'root';
-
-        if (!allChildrenMap.has(pId)) allChildrenMap.set(pId, []);
-        allChildrenMap.get(pId).push(t);
-
-        if (isTaskVisuallyActive(t)) {
-            if (!visibleChildrenMap.has(pId)) visibleChildrenMap.set(pId, []);
-            visibleChildrenMap.get(pId).push(t);
-        }
-    });
-
-    function belongsToToday(task) {
-        const rawDue = (task.due_date || '').trim().toLowerCase();
-        if (rawDue === 'today') return true;
-        if (/^\d{4}-\d{2}-\d{2}$/.test(rawDue) && rawDue <= todayStr) return true;
-        const kids = allChildrenMap.get(task.id) || [];
-        return kids.some(k => belongsToToday(k));
-    }
-
-    function hasVisibleDescendant(taskId) {
-        const kids = visibleChildrenMap.get(taskId) || [];
-        if (kids.length > 0) return true;
-        const allKids = allChildrenMap.get(taskId) || [];
-        return allKids.some(k => hasVisibleDescendant(k.id));
-    }
-
-    // Path-Preserving Subtractive Filter Engine
-    const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0;
-    const matchMap = new Map();
-    const descMatchMap = new Map();
-
-    if (hasFilters) {
-        tasks.forEach(t => {
-            const tagMatch = activeFilters.tags.size === 0 || (t.tags && t.tags.some(tag => activeFilters.tags.has(tag)));
-            const prioMatch = activeFilters.priorities.size === 0 || activeFilters.priorities.has(t.priority_id);
-            matchMap.set(t.id, tagMatch && prioMatch);
-        });
-
-        function checkDesc(nodeId) {
-            if (descMatchMap.has(nodeId)) return descMatchMap.get(nodeId);
-            const kids = allChildrenMap.get(nodeId) || [];
-            let has = false;
-            for (const k of kids) {
-                if (matchMap.get(k.id) || checkDesc(k.id)) has = true;
-            }
-            descMatchMap.set(nodeId, has);
-            return has;
-        }
-        tasks.forEach(t => checkDesc(t.id));
-    }
-
-    let rootTasks = (allChildrenMap.get('root') || []).filter(t => {
-        if (!belongsToToday(t)) return false;
-        if (hasFilters) {
-            const m = matchMap.get(t.id);
-            const d = descMatchMap.get(t.id);
-            if (!m && !d) return false;
-        }
-        return isTaskVisuallyActive(t) || hasVisibleDescendant(t.id);
-    });
-
-    rootTasks = TaskitatorApp.sortTasks(rootTasks);
-
-    if (rootTasks.length === 0) {
-        list.innerHTML = '<li style="text-align: center; color: var(--text-muted); padding: 32px;">No active tasks scheduled for today.</li>';
-        return;
-    }
-
-    function buildNodeElement(task, depth = 0) {
-        const li = document.createElement('li');
-        const isDone = task.status === 'completed';
-        li.className = `task-node ${isDone ? 'completed' : ''}`;
-
-        let isBreadcrumb = false;
-        if (hasFilters) {
-            const m = matchMap.get(task.id);
-            const d = descMatchMap.get(task.id);
-            if (!m && d) {
-                isBreadcrumb = true;
-            }
-        }
-
-        if (pendingGrace.has(task.id) && !isBreadcrumb) {
-            const graceInfo = pendingGrace.get(task.id);
-            const graceRow = document.createElement('div');
-            graceRow.className = 'undo-grace-row';
-            graceRow.style.marginLeft = `${depth * 20}px`;
-            graceRow.innerHTML = `
-                <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
-                    <span style="color: var(--success); font-weight: 700;">✓ Completed:</span>
-                    <span style="text-decoration: line-through; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${task.title}</span>
-                </div>
-                <button class="undo-grace-btn" id="undoBtn_${task.id}">Undo (<span id="undoTimerSec_${task.id}">${graceInfo.remainingSec}</span>s)</button>
-            `;
-            const uBtn = graceRow.querySelector(`#undoBtn_${task.id}`);
-            if (uBtn) {
-                uBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    TaskitatorApp.undoTaskCompletion(task.id, renderAllTodayViews);
-                });
-            }
-            li.appendChild(graceRow);
-            return li;
-        }
-
-        const row = document.createElement('div');
-        row.className = 'task-row';
-        row.style.marginLeft = `${depth * 20}px`;
-
-        if (isBreadcrumb) {
-            row.classList.add('muted-breadcrumb');
-        }
-
-        const pObj = globalPriorities.find(x => x.id === task.priority_id);
-        if (pObj) {
-            row.style.borderLeftColor = pObj.color;
-        }
-
-        const main = document.createElement('div');
-        main.className = 'task-main';
-
-        let visibleChildren = visibleChildrenMap.get(task.id) || [];
-        if (hasFilters) {
-            visibleChildren = (allChildrenMap.get(task.id) || []).filter(c => {
-                const m = matchMap.get(c.id);
-                const d = descMatchMap.get(c.id);
-                return m || d;
-            });
-        }
-        visibleChildren = TaskitatorApp.sortTasks(visibleChildren);
-
-        const hasVisibleChildren = visibleChildren.length > 0;
-        let isCollapsed = collapsedNodes.has(task.id);
-        if (isBreadcrumb) isCollapsed = false;
-
-        if (hasVisibleChildren) {
-            const toggleBtn = document.createElement('button');
-            toggleBtn.className = 'collapse-toggle';
-            toggleBtn.textContent = isCollapsed ? '▶' : '▼';
-            toggleBtn.title = isCollapsed ? 'Expand subtasks' : 'Collapse subtasks';
-            toggleBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (collapsedNodes.has(task.id)) {
-                    collapsedNodes.delete(task.id);
-                } else {
-                    collapsedNodes.add(task.id);
-                }
-                TaskitatorApp.saveStorageAndPush();
-                renderTodayTaskTree();
-            });
-            main.appendChild(toggleBtn);
-        } else {
-            const spacer = document.createElement('span');
-            spacer.className = 'collapse-spacer';
-            main.appendChild(spacer);
-        }
-
-        const checkBtn = document.createElement('button');
-        checkBtn.className = 'check-circle';
-        checkBtn.textContent = isDone ? '✓' : '';
-        checkBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            TaskitatorApp.handleTaskCompletion(task.id, renderAllTodayViews);
-        });
-        main.appendChild(checkBtn);
-
-        const titleSpan = document.createElement('span');
-        titleSpan.className = 'task-title';
-        titleSpan.textContent = task.title;
-        main.appendChild(titleSpan);
-
-        if (task.ai_locked) {
-            const badge = document.createElement('span');
-            badge.className = 'ai-badge';
-            badge.innerHTML = '🔒 AI';
-            main.appendChild(badge);
-        }
-
-        if (task.strict_prerequisites) {
-            const shieldBadge = document.createElement('span');
-            shieldBadge.className = 'ai-badge';
-            shieldBadge.innerHTML = '🛡️ Shielded';
-            shieldBadge.style.background = '#451a03';
-            shieldBadge.style.color = '#fde68a';
-            shieldBadge.style.borderColor = '#78350f';
-            main.appendChild(shieldBadge);
-        }
-
-        const allDesc = allChildrenMap.get(task.id);
-        if (allDesc && allDesc.length > 0) {
-            const doneKidsCount = allDesc.filter(k => k.status === 'completed').length;
-            const countBadge = document.createElement('span');
-            countBadge.className = 'subtasks-count-badge';
-            countBadge.textContent = `✓ ${doneKidsCount}/${allDesc.length} Subtasks`;
-            main.appendChild(countBadge);
-        }
-
-        if (task.tags && task.tags.length > 0) {
-            task.tags.forEach(tag => {
-                const tagChip = document.createElement('span');
-                tagChip.className = 'tag-chip';
-                tagChip.textContent = tag;
-                main.appendChild(tagChip);
-            });
-        }
-
-        row.appendChild(main);
-
-        const delBtn = document.createElement('button');
-        delBtn.className = 'action-del-btn';
-        delBtn.textContent = '✕';
-        delBtn.title = 'Delete Task';
-
-        if (task.ai_locked && !isBypassActive) {
-            delBtn.disabled = true;
-            delBtn.title = 'AI tasks cannot be deleted without an active emergency bypass';
-        } else {
-            delBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                TaskitatorApp.deleteTask(task.id, renderAllTodayViews);
-            });
-        }
-        row.appendChild(delBtn);
-
-        row.addEventListener('click', () => {
-            if (!isBreadcrumb) TaskitatorApp.openTaskDetailModal(task.id, renderAllTodayViews);
-        });
-
-        li.appendChild(row);
-
-        if (hasVisibleChildren) {
-            const subUl = document.createElement('ul');
-            subUl.className = `task-subtree ${isCollapsed ? 'collapsed' : ''}`;
-            visibleChildren.forEach(child => {
-                subUl.appendChild(buildNodeElement(child, depth + 1));
-            });
-            li.appendChild(subUl);
-        }
-
-        return li;
-    }
-
-    rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
-}
-
-// =========================================================================
-// Today Completed Tasks Modal
-// =========================================================================
-const completedModal = document.getElementById('completedModal');
-const openCompletedModalBtn = document.getElementById('openCompletedModalBtn');
-const closeCompletedModalBtn = document.getElementById('closeCompletedModalBtn');
-const completedTasksListContainer = document.getElementById('completedTasksListContainer');
-
-function renderCompletedModalList() {
-    if (!completedTasksListContainer) return;
-    completedTasksListContainer.innerHTML = '';
-
-    const todayStr = new Date().toISOString().split('T')[0];
-    const tasks = TaskitatorApp.getTasks();
-    const pendingGrace = TaskitatorApp.getPendingGraceCompletions();
-
-    const completedList = tasks.filter(t => {
-        if (t.status !== 'completed') return false;
-        if (pendingGrace.has(t.id)) return false;
-        const due = String(t.due_date || 'today').trim().toLowerCase();
-        const compDate = t.completed_at ? t.completed_at.split('T')[0] : '';
-        return due === 'today' || due === todayStr || compDate === todayStr;
-    });
-
-    if (completedList.length === 0) {
-        completedTasksListContainer.innerHTML = `
-            <div style="text-align: center; color: var(--text-muted); padding: 24px 0;">
-                No completed tasks for today yet.
-            </div>
-        `;
-        return;
-    }
-
-    const isBypassActive = window.TaskitatorEngine?.EmergencyManager?.isBypassActive ? TaskitatorEngine.EmergencyManager.isBypassActive() : false;
-
-    completedList.forEach(task => {
-        const row = document.createElement('div');
-        row.className = 'completed-item-row';
-
-        const info = document.createElement('div');
-        info.style.cssText = 'flex: 1; margin-right: 12px;';
-
-        let badgesHtml = '';
-        if (task.ai_locked) badgesHtml += '<span class="ai-badge">🔒 AI</span> ';
-        if (task.strict_prerequisites) badgesHtml += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️ Shielded</span>';
-
-        info.innerHTML = `
-            <div style="font-weight: 600; text-decoration: line-through; color: var(--text-muted);">
-                ${task.title} ${badgesHtml}
-            </div>
-            ${task.completed_at ? `<small style="color: var(--text-muted); font-size: 0.75rem;">Done at: ${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
-        `;
-
-        const actionContainer = document.createElement('div');
-
-        if (task.ai_locked && !isBypassActive) {
-            const lockedBtn = document.createElement('span');
-            lockedBtn.className = 'ai-locked-btn';
-            lockedBtn.title = 'AI tasks are permanently locked and cannot be uncompleted';
-            lockedBtn.innerHTML = '🔒 Locked';
-            actionContainer.appendChild(lockedBtn);
-        } else {
-            const actionBtn = document.createElement('button');
-            actionBtn.className = 'icon-btn';
-            actionBtn.style.padding = '4px 10px';
-            actionBtn.style.fontSize = '0.8rem';
-            actionBtn.innerHTML = '↺ Uncomplete';
-
-            actionBtn.addEventListener('click', () => {
-                uncompleteFromModal(task.id);
-            });
-            actionContainer.appendChild(actionBtn);
-        }
-
-        row.appendChild(info);
-        row.appendChild(actionContainer);
-        completedTasksListContainer.appendChild(row);
-    });
-}
-
-function uncompleteFromModal(taskId) {
-    const tasks = TaskitatorApp.getTasks();
-    const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-
-    const isBypassActive = window.TaskitatorEngine?.EmergencyManager?.isBypassActive ? TaskitatorEngine.EmergencyManager.isBypassActive() : false;
-    if (task.ai_locked && !isBypassActive) {
-        alert('Blocked: AI-checked tasks are permanent and cannot be uncompleted.');
-        return;
-    }
-
-    if (task.parent_id) {
-        const parent = tasks.find(t => t.id === task.parent_id);
-        if (!parent || parent.status === 'trash') {
-            task.parent_id = null;
-        }
-    }
-
-    task.status = 'active';
-    task.completed_at = null;
-
-    TaskitatorApp.saveStorageAndPush();
-    renderAllTodayViews();
-}
-
-if (openCompletedModalBtn && completedModal) {
-    openCompletedModalBtn.addEventListener('click', () => {
-        renderCompletedModalList();
-        completedModal.classList.add('open');
-    });
-}
-
-if (closeCompletedModalBtn && completedModal) {
-    closeCompletedModalBtn.addEventListener('click', () => {
-        completedModal.classList.remove('open');
-    });
-}
-
-// =========================================================================
-// Break System UI Controller
-// =========================================================================
-const BreakUI = {
-    pill: document.getElementById('breakStatusPill'),
-    pillText: document.getElementById('breakPillText'),
-    pillIcon: document.getElementById('breakPillIcon'),
-    modal: document.getElementById('breakModal'),
-    rowsContainer: document.getElementById('breakRowsContainer'),
-    errorBox: document.getElementById('breakModalError'),
-    saveBtn: document.getElementById('saveBreaksModalBtn'),
-    addBtn: document.getElementById('addBreakRowModalBtn'),
-    closeBtn: document.getElementById('closeBreakModalBtn'),
-
-    init() {
-        if (!this.pill || !this.modal) return;
-        this.pill.addEventListener('click', () => this.openModal());
-        if (this.closeBtn) this.closeBtn.addEventListener('click', () => this.closeModal());
-        if (this.addBtn) this.addBtn.addEventListener('click', () => this.addBreakRow());
-        if (this.saveBtn) this.saveBtn.addEventListener('click', () => this.saveBreaks());
-        this.modal.addEventListener('click', (e) => {
-            if (e.target === this.modal) this.closeModal();
-        });
-        this.updateStatusPill();
-        setInterval(() => this.updateStatusPill(), 30000);
-    },
-
-    getTodayBreaks() {
-        if (window.TaskitatorEngine?.BreakEngine?.getTodayBreaks) {
-            return TaskitatorEngine.BreakEngine.getTodayBreaks();
-        }
-        try {
-            return JSON.parse(localStorage.getItem('taskitator_daily_breaks') || '[]');
-        } catch (e) {
-            return [];
-        }
-    },
-
-    isSelectionWindowOpen() {
-        if (window.TaskitatorEngine?.BreakEngine?.isSelectionWindowOpen) {
-            return TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
-        }
-        return true;
-    },
-
-    updateStatusPill() {
-        if (!this.pill) return;
-        const isWindowOpen = this.isSelectionWindowOpen();
-        const breaks = this.getTodayBreaks();
-        const now = new Date();
-        const curMins = now.getHours() * 60 + now.getMinutes();
-
-        this.pill.className = 'break-status-pill';
-
-        const activeBreak = breaks.find(b => {
-            if (!b.start || !b.end) return false;
-            const [sH, sM] = b.start.split(':').map(Number);
-            const [eH, eM] = b.end.split(':').map(Number);
-            return curMins >= (sH * 60 + sM) && curMins <= (eH * 60 + eM);
-        });
-
-        if (activeBreak) {
-            const [eH, eM] = activeBreak.end.split(':').map(Number);
-            const minsLeft = (eH * 60 + eM) - curMins;
-            this.pill.classList.add('active-break');
-            if (this.pillIcon) this.pillIcon.textContent = '🟢';
-            if (this.pillText) this.pillText.textContent = `${minsLeft}m left`;
-            return;
-        }
-
-        const upcomingBreak = breaks
-            .map(b => {
-                if (!b.start) return null;
-                const [sH, sM] = b.start.split(':').map(Number);
-                return { ...b, startMins: sH * 60 + sM };
-            })
-            .filter(b => b && b.startMins > curMins)
-            .sort((a, b) => a.startMins - b.startMins)[0];
-
-        if (upcomingBreak) {
-            if (this.pillIcon) this.pillIcon.textContent = '☕';
-            if (this.pillText) this.pillText.textContent = `Next: ${upcomingBreak.start}`;
-            return;
-        }
-
-        if (isWindowOpen) {
-            this.pill.classList.add('window-open');
-            if (this.pillIcon) this.pillIcon.textContent = '⏸️';
-            if (this.pillText) this.pillText.textContent = breaks.length > 0 ? 'Edit Breaks' : 'Breaks';
-        } else {
-            if (this.pillIcon) this.pillIcon.textContent = '🔒';
-            if (this.pillText) this.pillText.textContent = 'Breaks Locked';
-        }
-    },
-
-    openModal() {
-        const isWindowOpen = this.isSelectionWindowOpen();
-        const breaks = this.getTodayBreaks();
-
-        if (this.rowsContainer) this.rowsContainer.innerHTML = '';
-        this.hideError();
-
-        if (breaks.length > 0) {
-            breaks.forEach(b => this.addBreakRow(b.start, b.end, !isWindowOpen));
-        } else if (isWindowOpen) {
-            this.addBreakRow();
-        }
-
-        if (this.addBtn) this.addBtn.style.display = isWindowOpen ? 'inline-block' : 'none';
-        if (this.saveBtn) this.saveBtn.style.display = isWindowOpen ? 'inline-block' : 'none';
-
-        const desc = document.getElementById('breakModalStatusDesc');
-        if (desc) {
-            desc.textContent = isWindowOpen
-                ? 'Schedule up to 3 non-overlapping breaks (≤ 3 hours total). The window locks permanently once closed.'
-                : 'The break scheduling window is now closed for today. Configured breaks are read-only.';
-        }
-
-        if (this.modal) this.modal.classList.add('open');
-    },
-
-    closeModal() {
-        if (this.modal) this.modal.classList.remove('open');
-    },
-
-    addBreakRow(startVal = '', endVal = '', disabled = false) {
-        if (!this.rowsContainer) return;
-        const rows = this.rowsContainer.querySelectorAll('.break-row-item');
-        if (rows.length >= 3) {
-            this.showError('Maximum 3 breaks allowed per day.');
-            return;
-        }
-
-        const row = document.createElement('div');
-        row.className = 'break-row-item';
-        row.style.cssText = 'display: flex; align-items: center; gap: 8px;';
-
-        row.innerHTML = `
-            <input type="time" class="b-start" value="${startVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
-            <span style="color: var(--text-muted); font-size: 0.85rem;">to</span>
-            <input type="time" class="b-end" value="${endVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
-            ${!disabled ? '<button type="button" class="del-break-row-btn" style="background: none; border: none; color: var(--danger); font-size: 1.2rem; cursor: pointer; padding: 0 4px; line-height: 1;">&times;</button>' : ''}
-        `;
-
-        if (!disabled) {
-            row.querySelector('.del-break-row-btn').addEventListener('click', () => {
-                row.remove();
-                this.hideError();
-            });
-        }
-        this.rowsContainer.appendChild(row);
-    },
-
-    saveBreaks() {
-        if (!this.rowsContainer) return;
-        const rows = this.rowsContainer.querySelectorAll('.break-row-item');
-        const breaksArray = [];
-
-        for (const r of rows) {
-            const start = r.querySelector('.b-start')?.value;
-            const end = r.querySelector('.b-end')?.value;
-            if (start && end) {
-                breaksArray.push({ start, end });
-            }
-        }
-
-        if (window.TaskitatorEngine?.BreakEngine?.saveTodayBreaks) {
-            const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(breaksArray);
-            if (!res.valid) {
-                this.showError(res.error);
-                return;
-            }
-        } else {
-            localStorage.setItem('taskitator_daily_breaks', JSON.stringify(breaksArray));
-        }
-
-        TaskitatorApp.saveStorageAndPush();
-        this.closeModal();
-        this.updateStatusPill();
-    },
-
-    showError(msg) {
-        if (!this.errorBox) return;
-        this.errorBox.textContent = msg;
-        this.errorBox.style.display = 'block';
-    },
-
-    hideError() {
-        if (!this.errorBox) return;
-        this.errorBox.style.display = 'none';
-        this.errorBox.textContent = '';
-    }
-};
-
-// =========================================================================
-// Master Page Orchestrator & Boot
-// =========================================================================
-function renderAllTodayViews() {
-    renderTodayTaskTree();
-    renderCompletedModalList();
-    BreakUI.updateStatusPill();
-}
-
-document.getElementById('openRootAddModalBtn').addEventListener('click', () => {
-    const today = new Date().toISOString().split('T')[0];
-    TaskitatorApp.openTaskCreationModal(null, 'Create New Task', today);
-});
-
-// App Sync and Storage Event Listeners
-window.addEventListener('taskitator-synced', () => {
-    TaskitatorApp.updateSyncDot('synced');
-    if (!TaskitatorApp.getActiveDetailTaskId()) {
-        TaskitatorApp.loadStorage();
-        renderAllTodayViews();
-    }
-});
-
-window.addEventListener('taskitator-tasks-updated', () => {
-    if (!TaskitatorApp.getActiveDetailTaskId()) {
-        TaskitatorApp.loadStorage();
-        renderAllTodayViews();
-    }
-});
-
-window.addEventListener('taskitator-sync-error', () => {
-    TaskitatorApp.updateSyncDot('error');
-});
-
-document.addEventListener('DOMContentLoaded', () => {
-    TaskitatorApp.initSyncIndicator();
-    TaskitatorApp.loadStorage();
-    TaskitatorApp.updateEmergencyUI(renderAllTodayViews);
-    TaskitatorApp.initSharedUI(renderAllTodayViews);
-    BreakUI.init();
-    renderAllTodayViews();
-
-    if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
-        SyncEngine.pull(() => {
-            if (!TaskitatorApp.getActiveDetailTaskId()) {
-                TaskitatorApp.loadStorage();
-                renderAllTodayViews();
-            }
-        });
-    }
-});
-
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-            .catch(err => console.error('SW Registration failed:', err));
-    });
-}
-</script>
 </body>
 </html>
