@@ -35,10 +35,6 @@
         .subtask-input-title {
             flex: 1;
         }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-3px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
     </style>
 </head>
 <body>
@@ -50,6 +46,7 @@
     <nav class="drawer-links" id="drawerNavLinks">
         <a href="#today" id="navLinkToday" class="active">📅 Today</a>
         <a href="#general" id="navLinkGeneral">🗂️ General Tasks</a>
+        <a href="projects.html">📁 Projects</a>
         <a href="stats.html">📊 Stats</a>
         <a href="trash.html">🗑️ Trash</a>
         <a href="settings.html">⚙️ Settings</a>
@@ -93,12 +90,12 @@
 </aside>
 
 <div class="app-container">
-    <header class="top-navbar" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-        <div class="nav-left" style="display: flex; align-items: center; gap: 8px;">
+    <header class="top-navbar">
+        <div class="nav-left">
             <button class="icon-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer">☰</button>
         </div>
 
-        <div class="nav-center" style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
+        <div class="nav-center">
             <!-- Filter Funnel Trigger button -->
             <button class="icon-only-btn" id="openFilterModalBtn" title="Filter Tasks" aria-label="Filter Tasks">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -124,7 +121,7 @@
             <button class="info-tiny-btn" id="emergencyInfoBtn" title="Emergency Rules">!</button>
         </div>
 
-        <div class="nav-right" style="display: flex; align-items: center;">
+        <div class="nav-right">
             <button class="nav-link-btn" id="openCopilotNavBtn" title="Open Ari Assistant" aria-label="Open Ari Assistant" style="gap: 6px;">
                 <span>💬</span>
                 <span>Ari</span>
@@ -157,6 +154,9 @@
         <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;">
             Matched tasks isolate their active branches. Non-matching parents remain as muted structural breadcrumbs.
         </p>
+
+        <div class="filter-section-title">Projects</div>
+        <div id="filterProjectCloud" class="tag-select-cloud"></div>
 
         <div class="filter-section-title">Priorities</div>
         <div id="filterPriorityCloud" class="tag-select-cloud"></div>
@@ -261,6 +261,11 @@
             </div>
 
             <div class="form-group">
+                <label>Project</label>
+                <div id="createProjectCloud" class="priority-select-group"></div>
+            </div>
+
+            <div class="form-group">
                 <label>Priority</label>
                 <div id="createPriorityCloud" class="priority-select-group"></div>
             </div>
@@ -348,6 +353,11 @@
         <div class="form-group">
             <label for="editTaskDesc">Description (Always Editable)</label>
             <textarea id="editTaskDesc" rows="2"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Project</label>
+            <div id="editProjectCloud" class="priority-select-group"></div>
         </div>
 
         <div class="form-group">
