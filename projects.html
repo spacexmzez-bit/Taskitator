@@ -1,0 +1,784 @@
+<!-- projects.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taskitator - Projects</title>
+
+    <!-- PWA Installation Manifest & Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0c1b38">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icon/icon-192.png">
+
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .projects-header-strip {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            overflow-x: auto;
+            padding: 10px 4px 14px 4px;
+            white-space: nowrap;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+        }
+        .projects-header-strip::-webkit-scrollbar {
+            height: 4px;
+        }
+        .projects-header-strip::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+        .project-tab-pill {
+            height: 38px;
+            background: var(--card-bg);
+            border: 1.5px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 10px;
+            padding: 0 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-size: 0.88rem;
+            font-weight: 700;
+            flex-shrink: 0;
+            transition: all 0.15s ease;
+            box-sizing: border-box;
+        }
+        .project-tab-pill:hover {
+            border-color: var(--primary);
+            background: var(--accent-light);
+        }
+        .project-tab-pill.active {
+            border-color: currentColor;
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 0 0 1px currentColor;
+        }
+        .add-project-pill-btn {
+            height: 38px;
+            width: 38px;
+            background: var(--card-bg);
+            border: 1.5px dashed var(--primary);
+            color: var(--primary);
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.25rem;
+            font-weight: 800;
+            flex-shrink: 0;
+            transition: all 0.15s ease;
+            box-sizing: border-box;
+        }
+        .add-project-pill-btn:hover {
+            background: var(--accent-light);
+            border-style: solid;
+            transform: scale(1.04);
+        }
+        .emoji-picker-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+        .emoji-grid-item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            padding: 8px 4px;
+            background: var(--card-subtle);
+            border: 1.5px solid var(--border-color);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .emoji-grid-item:hover {
+            background: var(--accent-light);
+            border-color: var(--primary);
+        }
+        .emoji-grid-item.selected {
+            border-color: var(--primary);
+            background: rgba(59, 130, 246, 0.2);
+            box-shadow: 0 0 0 1.5px var(--primary);
+        }
+        .color-picker-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+        .color-picker-dot {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.15s ease;
+        }
+        .color-picker-dot:hover {
+            transform: scale(1.15);
+        }
+        .color-picker-dot.selected {
+            border-color: #ffffff;
+            transform: scale(1.15);
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
+        }
+        .fab-edit-project {
+            position: fixed;
+            bottom: 24px;
+            right: 90px;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--card-bg);
+            border: 1.5px solid var(--border-color);
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            cursor: pointer;
+            z-index: 100;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+            transition: transform 0.15s ease, background 0.15s ease;
+        }
+        .fab-edit-project:hover {
+            background: var(--accent-light);
+            border-color: var(--primary);
+            transform: scale(1.08);
+        }
+        .cascade-options-card {
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Left Navigation Sidebar Drawer -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<aside class="sidebar-drawer" id="sidebarDrawer">
+    <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
+    <nav class="drawer-links" id="drawerNavLinks">
+        <a href="index.html#today">📅 Today</a>
+        <a href="index.html#general">🗂️ General Tasks</a>
+        <a href="projects.html" class="active">📁 Projects</a>
+        <a href="stats.html">📊 Stats</a>
+        <a href="trash.html">🗑️ Trash</a>
+        <a href="settings.html">⚙️ Settings</a>
+    </nav>
+</aside>
+
+<!-- Copilot Slide-Over Drawer -->
+<div class="copilot-backdrop" id="copilotBackdrop"></div>
+<aside class="copilot-drawer" id="copilotDrawer">
+    <div class="copilot-header">
+        <div class="copilot-title-group">
+            <span>🤖 Focus Copilot</span>
+            <span class="copilot-model-chip">3.5 Flash Lite</span>
+        </div>
+        <button class="icon-btn" id="closeCopilotBtn" style="padding: 2px 8px;">✕</button>
+    </div>
+
+    <div class="copilot-body">
+        <div class="copilot-standby-view" id="copilotStandbyView">
+            <div class="copilot-standby-icon">🎯</div>
+            <div class="copilot-standby-title">Focus Copilot</div>
+            <div class="copilot-standby-desc">
+                Organize and review tasks within your selected projects.
+            </div>
+            <button class="icon-btn" id="startCopilotBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 10px 22px;">
+                Start Conversation
+            </button>
+        </div>
+        <div class="copilot-chat-view" id="copilotChatView">
+            <div class="copilot-messages" id="copilotMessages">
+                <div class="chat-bubble bot">
+                    Ready. Managing your project workspaces.
+                </div>
+            </div>
+            <form class="copilot-input-bar" id="copilotForm">
+                <input type="text" id="copilotInput" placeholder="Ask Copilot..." autocomplete="off" required>
+                <button type="submit" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Send</button>
+            </form>
+        </div>
+    </div>
+</aside>
+
+<div class="app-container">
+    <header class="top-navbar">
+        <div class="nav-left">
+            <button class="icon-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer">☰</button>
+        </div>
+
+        <div class="nav-center">
+            <span class="sync-dot local-only" id="syncStatusDot" title="Sync Status"></span>
+            <button class="emergency-icon-btn" id="emergencyTriggerBtn" title="Emergency Bypass" aria-label="Emergency Bypass">
+                <span>🚨</span>
+            </button>
+            <button class="info-tiny-btn" id="emergencyInfoBtn" title="Emergency Rules">!</button>
+        </div>
+
+        <div class="nav-right">
+            <button class="nav-link-btn" id="openCopilotNavBtn" title="Open Ari Assistant" aria-label="Open Ari Assistant" style="gap: 6px;">
+                <span>💬</span>
+                <span>Ari</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Horizontal Projects Strip -->
+    <div class="projects-header-strip" id="projectsHeaderStrip">
+        <button class="add-project-pill-btn" id="openCreateProjectModalBtn" title="Create New Project">+</button>
+        <!-- Dynamic project pills render here -->
+    </div>
+
+    <div class="page-title-section" style="padding: 12px 4px 6px 4px; display: flex; align-items: center; justify-content: space-between;">
+        <h1 id="activeProjectTitleHeader" style="display: flex; align-items: center; gap: 8px;">
+            <span id="activeProjectIcon">📥</span>
+            <span id="activeProjectName">Inbox</span>
+        </h1>
+        <span id="projectTaskCountBadge" class="due-badge" style="font-size: 0.8rem;">0 Tasks</span>
+    </div>
+
+    <div id="activeEmergencyBanner" class="banner-emergency" style="display: none;">
+        <span>🚨 Emergency Mode Active: Task deletion & editing unlocked!</span>
+        <span id="emergencyCountdownTimer">15:00</span>
+    </div>
+
+    <ul class="task-list-tree" id="projectTaskListContainer"></ul>
+</div>
+
+<!-- Floating Action Buttons -->
+<button class="fab-edit-project" id="openEditActiveProjectFab" title="Edit Project Settings">✎</button>
+<button class="fab-add" id="openProjectTaskAddModalBtn" title="Create Task Under Active Project">+</button>
+
+<!-- Modal: Create / Edit Project -->
+<div class="modal-overlay" id="projectModal">
+    <div class="modal-box" style="max-width: 440px;">
+        <h3 style="margin-top: 0; color: var(--primary);" id="projectModalTitle">Create Project</h3>
+        
+        <form id="projectForm">
+            <input type="hidden" id="editingProjectId" value="">
+
+            <div class="form-group">
+                <label for="projectNameInput">Project Name</label>
+                <input type="text" id="projectNameInput" placeholder="e.g. Biology, Personal, Work" required autocomplete="off">
+            </div>
+
+            <div class="form-group">
+                <label>Select Icon / Emoji</label>
+                <div class="emoji-picker-grid" id="emojiPickerGrid"></div>
+            </div>
+
+            <div class="form-group">
+                <label>Theme Color</label>
+                <div class="color-picker-row" id="colorPickerRow"></div>
+            </div>
+
+            <div id="projectDeleteSection" style="display: none; border-top: 1px solid var(--border-color); padding-top: 14px; margin-top: 14px;">
+                <button type="button" class="icon-btn" id="triggerProjectDeleteToggleBtn" style="color: var(--danger); border-color: #7f1d1d; width: 100%; justify-content: center;">
+                    🗑️ Delete Project
+                </button>
+
+                <div id="cascadeDeleteOptionsPanel" style="display: none;" class="cascade-options-card">
+                    <strong>What should happen to existing tasks?</strong>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="radio" name="cascadeChoice" value="inbox" checked>
+                        <span>Divert all tasks to <strong>📥 Inbox</strong></span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="radio" name="cascadeChoice" value="reassign">
+                        <span>Reassign tasks to another project:</span>
+                    </label>
+                    <select id="reassignTargetProjectSelect" style="padding: 6px; border-radius: 6px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color);"></select>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--danger);">
+                        <input type="radio" name="cascadeChoice" value="trash">
+                        <span>Delete all tasks with this project</span>
+                    </label>
+                    <button type="button" class="icon-btn" id="confirmDeleteProjectBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 700; margin-top: 6px;">
+                        Confirm Project Deletion
+                    </button>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button type="button" class="icon-btn" id="closeProjectModalBtn">Cancel</button>
+                <button type="submit" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Project</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Comprehensive Task Creation -->
+<div class="modal-overlay" id="addTaskModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0; color: var(--primary);" id="addTaskModalTitle">Create New Task</h3>
+        <form id="taskCreateForm">
+            <input type="hidden" id="creationParentId" value="">
+
+            <div class="form-group">
+                <label for="taskTitleInput">Task Title</label>
+                <input type="text" id="taskTitleInput" placeholder="What needs to be done?" required autocomplete="off">
+            </div>
+
+            <div class="form-group">
+                <label for="taskDescInput">Description</label>
+                <textarea id="taskDescInput" rows="2" placeholder="Add optional details..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Project</label>
+                <div id="createProjectCloud" class="priority-select-group"></div>
+            </div>
+
+            <div class="form-group">
+                <label>Priority</label>
+                <div id="createPriorityCloud" class="priority-select-group"></div>
+            </div>
+
+            <div class="form-group">
+                <label>Tags</label>
+                <div id="createTagCloud" class="tag-select-cloud"></div>
+                <div class="quick-add-tag-group">
+                    <input type="text" id="createQuickTagInput" class="quick-add-tag-input" placeholder="Quick add tag..." autocomplete="off">
+                    <button type="button" class="icon-btn" id="createQuickTagBtn" style="padding: 4px 10px; font-size: 0.8rem;">+ Add</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="taskDueDateInput">Due Date</label>
+                <input type="date" id="taskDueDateInput">
+            </div>
+
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="aiLockCheckbox">
+                    <span>Require AI Proof Verification (Irrevocable)</span>
+                </label>
+                <div id="prerequisiteBoxContainer" style="display: none; margin-top: 8px; margin-left: 28px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="strictPrereqCheckbox">
+                        <span style="font-size: 0.85rem;">Require all subtasks first (Irreversible Shield)</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-group" id="criteriaBoxContainer" style="display: none;">
+                <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt;</label>
+                <textarea id="taskCriteriaInput" rows="2" placeholder="Visual verification requirements..."></textarea>
+                <div id="criteriaFeedbackBox" class="criteria-feedback-box"></div>
+            </div>
+
+            <div class="form-group">
+                <label>Quick Subtasks</label>
+                <div id="subtaskBuilderList"></div>
+                <button type="button" class="icon-btn" id="addSubtaskFieldBtn" style="padding: 4px 10px; font-size: 0.8rem; margin-top: 6px;">+ Quick Subtask</button>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button type="button" class="icon-btn" id="closeAddTaskModalBtn">Cancel</button>
+                <button type="submit" class="icon-btn" id="submitTaskCreateBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Task</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Task Detail & Edit Panel -->
+<div class="modal-overlay" id="taskDetailModal">
+    <div class="modal-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <h3 style="margin: 0; color: var(--primary);" id="detailTaskTitleHeader">Task Details</h3>
+            <span id="detailLockStatusBadge"></span>
+        </div>
+
+        <div class="form-group">
+            <label for="editTaskTitle">Title</label>
+            <input type="text" id="editTaskTitle">
+        </div>
+
+        <div class="form-group">
+            <label for="editTaskDesc">Description</label>
+            <textarea id="editTaskDesc" rows="2"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Project</label>
+            <div id="editProjectCloud" class="priority-select-group"></div>
+        </div>
+
+        <div class="form-group">
+            <label>Priority</label>
+            <div id="editPriorityCloud" class="priority-select-group"></div>
+        </div>
+
+        <div class="form-group">
+            <label>Tags</label>
+            <div id="editTagCloud" class="tag-select-cloud"></div>
+        </div>
+
+        <div class="form-group">
+            <label for="editTaskDueDate">Due Date</label>
+            <input type="date" id="editTaskDueDate">
+        </div>
+
+        <div class="form-group" style="margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <label style="margin: 0;">Subtasks Under This Task</label>
+                <button type="button" class="icon-btn" id="openChildAddModalBtn" style="padding: 4px 10px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">+ Add Subtask</button>
+            </div>
+            <ul id="detailSubtasksList" style="list-style: none; padding: 0; margin: 0;"></ul>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
+            <button type="button" class="icon-btn" id="deleteFromDetailBtn" style="color: var(--danger); border-color: #7f1d1d;">Delete Task</button>
+            <div style="display: flex; gap: 10px;">
+                <button type="button" class="icon-btn" id="closeDetailModalBtn">Cancel</button>
+                <button type="button" class="icon-btn" id="saveTaskDetailsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="audit-engine.js"></script>
+<script src="sync-engine.js"></script>
+<script src="agent-engine.js"></script>
+<script src="app.js"></script>
+<script>
+(() => {
+    let activeProjectId = 'inbox';
+    let selectedEmoji = '📁';
+    let selectedColor = '#3b82f6';
+
+    // 1. Projects Strip & Page State
+    function renderProjectStrip() {
+        const strip = document.getElementById('projectsHeaderStrip');
+        const addBtn = document.getElementById('openCreateProjectModalBtn');
+        if (!strip || !addBtn) return;
+
+        // Keep the + button as the very first element
+        strip.innerHTML = '';
+        strip.appendChild(addBtn);
+
+        const projects = TaskitatorApp.getGlobalProjects();
+        if (!projects.some(p => p.id === activeProjectId)) {
+            activeProjectId = 'inbox';
+        }
+
+        projects.forEach(p => {
+            const pill = document.createElement('div');
+            pill.className = `project-tab-pill ${p.id === activeProjectId ? 'active' : ''}`;
+            if (p.id === activeProjectId) {
+                pill.style.color = p.color;
+            }
+            pill.innerHTML = `<span>${p.icon}</span> <span>${p.name}</span>`;
+            pill.addEventListener('click', () => {
+                activeProjectId = p.id;
+                renderProjectStrip();
+                renderProjectWorkspace();
+            });
+            strip.appendChild(pill);
+        });
+    }
+
+    function renderProjectWorkspace() {
+        const projects = TaskitatorApp.getGlobalProjects();
+        const activeProj = projects.find(p => p.id === activeProjectId) || projects[0];
+
+        const iconEl = document.getElementById('activeProjectIcon');
+        const nameEl = document.getElementById('activeProjectName');
+        const countBadge = document.getElementById('projectTaskCountBadge');
+        const list = document.getElementById('projectTaskListContainer');
+        const editFab = document.getElementById('openEditActiveProjectFab');
+
+        if (iconEl) iconEl.textContent = activeProj.icon;
+        if (nameEl) {
+            nameEl.textContent = activeProj.name;
+            nameEl.style.color = activeProj.color;
+        }
+
+        // Hide edit FAB if Inbox is selected (default project is permanent)
+        if (editFab) {
+            editFab.style.display = (activeProj.id === 'inbox') ? 'none' : 'flex';
+        }
+
+        // Filter tasks belonging to this project
+        const tasks = TaskitatorApp.getTasks();
+        const allChildrenMap = new Map();
+        const visibleChildrenMap = new Map();
+
+        tasks.forEach(t => {
+            if (t.status === 'trash') return;
+            const pId = t.parent_id || 'root';
+            if (!allChildrenMap.has(pId)) allChildrenMap.set(pId, []);
+            allChildrenMap.get(pId).push(t);
+
+            if (t.status === 'active') {
+                if (!visibleChildrenMap.has(pId)) visibleChildrenMap.set(pId, []);
+                visibleChildrenMap.get(pId).push(t);
+            }
+        });
+
+        const projectTasks = tasks.filter(t => (t.project_id || 'inbox') === activeProjectId && t.status !== 'trash');
+        if (countBadge) countBadge.textContent = `${projectTasks.length} Tasks`;
+
+        if (!list) return;
+        list.innerHTML = '';
+
+        let rootTasks = (allChildrenMap.get('root') || []).filter(t => (t.project_id || 'inbox') === activeProjectId && t.status !== 'trash');
+        rootTasks = TaskitatorApp.sortTasks(rootTasks);
+
+        if (rootTasks.length === 0) {
+            list.innerHTML = `<li style="text-align: center; color: var(--text-muted); padding: 32px;">No active tasks in ${activeProj.name}.</li>`;
+            return;
+        }
+
+        function buildNode(task, depth = 0) {
+            const li = document.createElement('li');
+            li.className = `task-node ${task.status === 'completed' ? 'completed' : ''}`;
+
+            const row = document.createElement('div');
+            row.className = 'task-row';
+            row.style.marginLeft = `${depth * 20}px`;
+
+            const main = document.createElement('div');
+            main.className = 'task-main';
+
+            const checkBtn = document.createElement('button');
+            checkBtn.className = 'check-circle';
+            checkBtn.textContent = task.status === 'completed' ? '✓' : '';
+            checkBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                TaskitatorApp.handleTaskCompletion(task.id, renderProjectWorkspace);
+            });
+            main.appendChild(checkBtn);
+
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'task-title';
+            titleSpan.textContent = task.title;
+            main.appendChild(titleSpan);
+
+            if (task.due_date) {
+                const due = document.createElement('span');
+                due.className = 'due-badge';
+                due.textContent = task.due_date;
+                main.appendChild(due);
+            }
+
+            row.appendChild(main);
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'action-del-btn';
+            delBtn.textContent = '✕';
+            delBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                TaskitatorApp.deleteTask(task.id, renderProjectWorkspace);
+            });
+            row.appendChild(delBtn);
+
+            row.addEventListener('click', () => {
+                TaskitatorApp.openTaskDetailModal(task.id, renderProjectWorkspace);
+            });
+
+            li.appendChild(row);
+
+            const kids = visibleChildrenMap.get(task.id) || [];
+            if (kids.length > 0) {
+                const subUl = document.createElement('ul');
+                subUl.className = 'task-subtree';
+                kids.forEach(k => subUl.appendChild(buildNode(k, depth + 1)));
+                li.appendChild(subUl);
+            }
+
+            return li;
+        }
+
+        rootTasks.forEach(t => list.appendChild(buildNode(t, 0)));
+    }
+
+    // 2. Project Creation & Edit Modal
+    function openProjectModal(isEdit = false) {
+        const modal = document.getElementById('projectModal');
+        const modalTitle = document.getElementById('projectModalTitle');
+        const idInput = document.getElementById('editingProjectId');
+        const nameInput = document.getElementById('projectNameInput');
+        const deleteSection = document.getElementById('projectDeleteSection');
+        const cascadePanel = document.getElementById('cascadeDeleteOptionsPanel');
+
+        if (!modal) return;
+
+        if (cascadePanel) cascadePanel.style.display = 'none';
+
+        if (isEdit) {
+            const projects = TaskitatorApp.getGlobalProjects();
+            const curr = projects.find(p => p.id === activeProjectId);
+            if (!curr || curr.id === 'inbox') return;
+
+            if (modalTitle) modalTitle.textContent = 'Edit Project';
+            if (idInput) idInput.value = curr.id;
+            if (nameInput) nameInput.value = curr.name;
+            selectedEmoji = curr.icon || '📁';
+            selectedColor = curr.color || '#3b82f6';
+            if (deleteSection) deleteSection.style.display = 'block';
+
+            // Populate reassign dropdown
+            const reassignSelect = document.getElementById('reassignTargetProjectSelect');
+            if (reassignSelect) {
+                reassignSelect.innerHTML = '';
+                projects.filter(p => p.id !== curr.id).forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = `${p.icon} ${p.name}`;
+                    reassignSelect.appendChild(opt);
+                });
+            }
+        } else {
+            if (modalTitle) modalTitle.textContent = 'Create New Project';
+            if (idInput) idInput.value = '';
+            if (nameInput) nameInput.value = '';
+            selectedEmoji = '📁';
+            selectedColor = '#3b82f6';
+            if (deleteSection) deleteSection.style.display = 'none';
+        }
+
+        renderEmojiGrid();
+        renderColorRow();
+        modal.classList.add('open');
+    }
+
+    function renderEmojiGrid() {
+        const grid = document.getElementById('emojiPickerGrid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        TaskitatorApp.PROJECT_ICONS.forEach(em => {
+            const div = document.createElement('div');
+            div.className = `emoji-grid-item ${em === selectedEmoji ? 'selected' : ''}`;
+            div.textContent = em;
+            div.addEventListener('click', () => {
+                selectedEmoji = em;
+                renderEmojiGrid();
+            });
+            grid.appendChild(div);
+        });
+    }
+
+    function renderColorRow() {
+        const row = document.getElementById('colorPickerRow');
+        if (!row) return;
+        row.innerHTML = '';
+        TaskitatorApp.PROJECT_COLORS.forEach(c => {
+            const dot = document.createElement('div');
+            dot.className = `color-picker-dot ${c === selectedColor ? 'selected' : ''}`;
+            dot.style.backgroundColor = c;
+            dot.addEventListener('click', () => {
+                selectedColor = c;
+                renderColorRow();
+            });
+            row.appendChild(dot);
+        });
+    }
+
+    // 3. Event Wiring
+    document.addEventListener('DOMContentLoaded', () => {
+        TaskitatorApp.loadStorage();
+        renderProjectStrip();
+        renderProjectWorkspace();
+
+        const openCreateBtn = document.getElementById('openCreateProjectModalBtn');
+        if (openCreateBtn) openCreateBtn.addEventListener('click', () => openProjectModal(false));
+
+        const openEditFab = document.getElementById('openEditActiveProjectFab');
+        if (openEditFab) openEditFab.addEventListener('click', () => openProjectModal(true));
+
+        const closeProjectModalBtn = document.getElementById('closeProjectModalBtn');
+        const projectModal = document.getElementById('projectModal');
+        if (closeProjectModalBtn && projectModal) {
+            closeProjectModalBtn.addEventListener('click', () => projectModal.classList.remove('open'));
+        }
+
+        const projectForm = document.getElementById('projectForm');
+        if (projectForm && projectModal) {
+            projectForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const name = document.getElementById('projectNameInput')?.value.trim();
+                const id = document.getElementById('editingProjectId')?.value || null;
+                if (!name) return;
+
+                TaskitatorApp.saveProject({
+                    id: id,
+                    name: name,
+                    icon: selectedEmoji,
+                    color: selectedColor
+                });
+
+                projectModal.classList.remove('open');
+                renderProjectStrip();
+                renderProjectWorkspace();
+            });
+        }
+
+        // Cascade Delete Triggers
+        const triggerDeleteToggle = document.getElementById('triggerProjectDeleteToggleBtn');
+        const cascadePanel = document.getElementById('cascadeDeleteOptionsPanel');
+        if (triggerDeleteToggle && cascadePanel) {
+            triggerDeleteToggle.addEventListener('click', () => {
+                cascadePanel.style.display = cascadePanel.style.display === 'none' ? 'flex' : 'none';
+            });
+        }
+
+        const confirmDeleteBtn = document.getElementById('confirmDeleteProjectBtn');
+        if (confirmDeleteBtn && projectModal) {
+            confirmDeleteBtn.addEventListener('click', () => {
+                const choice = document.querySelector('input[name="cascadeChoice"]:checked')?.value || 'inbox';
+                const targetProj = document.getElementById('reassignTargetProjectSelect')?.value || 'inbox';
+
+                TaskitatorApp.deleteProjectWithCascade(activeProjectId, choice, targetProj);
+                activeProjectId = 'inbox';
+                projectModal.classList.remove('open');
+                renderProjectStrip();
+                renderProjectWorkspace();
+            });
+        }
+
+        // Floating Task Add Button inside Projects View
+        const addTaskBtn = document.getElementById('openProjectTaskAddModalBtn');
+        if (addTaskBtn) {
+            addTaskBtn.addEventListener('click', () => {
+                TaskitatorApp.openTaskCreationModal(null, `Create Task in ${document.getElementById('activeProjectName')?.textContent || 'Project'}`, activeProjectId);
+            });
+        }
+
+        // Drawer navigation wiring
+        const drawer = document.getElementById('sidebarDrawer');
+        const backdrop = document.getElementById('drawerBackdrop');
+        const openDrawerBtn = document.getElementById('openDrawerBtn');
+        if (openDrawerBtn && drawer && backdrop) {
+            openDrawerBtn.addEventListener('click', () => {
+                drawer.classList.add('open');
+                backdrop.classList.add('open');
+            });
+            backdrop.addEventListener('click', () => {
+                drawer.classList.remove('open');
+                backdrop.classList.remove('open');
+            });
+        }
+    });
+})();
+</script>
+</body>
+</html>
