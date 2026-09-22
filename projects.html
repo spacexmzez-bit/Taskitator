@@ -184,7 +184,7 @@
     </nav>
 </aside>
 
-<!-- Copilot Slide-Over Drawer -->
+<!-- Copilot Slide-Over Drawer (Fully Integrated with Ari) -->
 <div class="copilot-backdrop" id="copilotBackdrop"></div>
 <aside class="copilot-drawer" id="copilotDrawer">
     <div class="copilot-header">
@@ -200,7 +200,7 @@
             <div class="copilot-standby-icon">🎯</div>
             <div class="copilot-standby-title">Focus Copilot</div>
             <div class="copilot-standby-desc">
-                Organize and review tasks within your selected projects.
+                On-call task orchestrator. Ask for project planning, breakdown of complex milestones, or scheduling.
             </div>
             <button class="icon-btn" id="startCopilotBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 10px 22px;">
                 Start Conversation
@@ -361,6 +361,11 @@
                 </div>
             </div>
 
+            <div class="form-group" id="criteriaBoxContainer" style="display: none;">
+                <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt;</label>
+                <textarea id="taskCriteriaInput" rows="2" placeholder="Visual verification requirements..."></textarea>
+            </div>
+
             <div class="form-group">
                 <label for="taskDueDateInput">Due Date</label>
                 <input type="date" id="taskDueDateInput">
@@ -371,24 +376,6 @@
                     <input type="checkbox" id="aiLockCheckbox">
                     <span>Require AI Proof Verification (Irrevocable)</span>
                 </label>
-                <div id="prerequisiteBoxContainer" style="display: none; margin-top: 8px; margin-left: 28px;">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                        <input type="checkbox" id="strictPrereqCheckbox">
-                        <span style="font-size: 0.85rem;">Require all subtasks first (Irreversible Shield)</span>
-                    </label>
-                </div>
-            </div>
-
-            <div class="form-group" id="criteriaBoxContainer" style="display: none;">
-                <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt;</label>
-                <textarea id="taskCriteriaInput" rows="2" placeholder="Visual verification requirements..."></textarea>
-                <div id="criteriaFeedbackBox" class="criteria-feedback-box"></div>
-            </div>
-
-            <div class="form-group">
-                <label>Quick Subtasks</label>
-                <div id="subtaskBuilderList"></div>
-                <button type="button" class="icon-btn" id="addSubtaskFieldBtn" style="padding: 4px 10px; font-size: 0.8rem; margin-top: 6px;">+ Quick Subtask</button>
             </div>
 
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
@@ -437,20 +424,38 @@
             <input type="date" id="editTaskDueDate">
         </div>
 
-        <div class="form-group" style="margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <label style="margin: 0;">Subtasks Under This Task</label>
-                <button type="button" class="icon-btn" id="openChildAddModalBtn" style="padding: 4px 10px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">+ Add Subtask</button>
-            </div>
-            <ul id="detailSubtasksList" style="list-style: none; padding: 0; margin: 0;"></ul>
-        </div>
-
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
             <button type="button" class="icon-btn" id="deleteFromDetailBtn" style="color: var(--danger); border-color: #7f1d1d;">Delete Task</button>
             <div style="display: flex; gap: 10px;">
                 <button type="button" class="icon-btn" id="closeDetailModalBtn">Cancel</button>
                 <button type="button" class="icon-btn" id="saveTaskDetailsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Changes</button>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Audit Modal -->
+<div class="modal-overlay" id="auditModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0; color: var(--primary);">Submit AI Verification Proof</h3>
+        <p id="auditTaskTitleDisplay" style="font-weight: 600; margin-bottom: 6px;"></p>
+        <div id="auditCriteriaDisplay" style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 14px; background: var(--card-subtle); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);"></div>
+
+        <div class="form-group">
+            <label>Upload Proof (Photo or PDF &le; 4MB):</label>
+            <input type="file" id="auditImageInput" accept="image/*,application/pdf">
+        </div>
+
+        <div class="form-group">
+            <label>Optional Note / Clarification:</label>
+            <textarea id="auditContextInput" rows="2" placeholder="Any details for the auditor..."></textarea>
+        </div>
+
+        <div id="auditFeedbackContainer" style="display: none;"></div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+            <button type="button" class="icon-btn" id="closeAuditModalBtn">Cancel</button>
+            <button type="button" class="icon-btn" id="submitProofBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Submit Proof</button>
         </div>
     </div>
 </div>
@@ -465,13 +470,11 @@
     let selectedEmoji = '📁';
     let selectedColor = '#3b82f6';
 
-    // 1. Projects Strip & Page State
     function renderProjectStrip() {
         const strip = document.getElementById('projectsHeaderStrip');
         const addBtn = document.getElementById('openCreateProjectModalBtn');
         if (!strip || !addBtn) return;
 
-        // Keep the + button as the very first element
         strip.innerHTML = '';
         strip.appendChild(addBtn);
 
@@ -512,12 +515,10 @@
             nameEl.style.color = activeProj.color;
         }
 
-        // Hide edit FAB if Inbox is selected (default project is permanent)
         if (editFab) {
             editFab.style.display = (activeProj.id === 'inbox') ? 'none' : 'flex';
         }
 
-        // Filter tasks belonging to this project
         const tasks = TaskitatorApp.getTasks();
         const allChildrenMap = new Map();
         const visibleChildrenMap = new Map();
@@ -564,7 +565,7 @@
             checkBtn.textContent = task.status === 'completed' ? '✓' : '';
             checkBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                TaskitatorApp.handleTaskCompletion(task.id, renderProjectWorkspace);
+                TaskitatorApp.handleTaskCompletion(task.id);
             });
             main.appendChild(checkBtn);
 
@@ -587,12 +588,12 @@
             delBtn.textContent = '✕';
             delBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                TaskitatorApp.deleteTask(task.id, renderProjectWorkspace);
+                TaskitatorApp.deleteTask(task.id);
             });
             row.appendChild(delBtn);
 
             row.addEventListener('click', () => {
-                TaskitatorApp.openTaskDetailModal(task.id, renderProjectWorkspace);
+                TaskitatorApp.openTaskDetailModal(task.id);
             });
 
             li.appendChild(row);
@@ -611,7 +612,6 @@
         rootTasks.forEach(t => list.appendChild(buildNode(t, 0)));
     }
 
-    // 2. Project Creation & Edit Modal
     function openProjectModal(isEdit = false) {
         const modal = document.getElementById('projectModal');
         const modalTitle = document.getElementById('projectModalTitle');
@@ -621,7 +621,6 @@
         const cascadePanel = document.getElementById('cascadeDeleteOptionsPanel');
 
         if (!modal) return;
-
         if (cascadePanel) cascadePanel.style.display = 'none';
 
         if (isEdit) {
@@ -636,7 +635,6 @@
             selectedColor = curr.color || '#3b82f6';
             if (deleteSection) deleteSection.style.display = 'block';
 
-            // Populate reassign dropdown
             const reassignSelect = document.getElementById('reassignTargetProjectSelect');
             if (reassignSelect) {
                 reassignSelect.innerHTML = '';
@@ -693,11 +691,91 @@
         });
     }
 
-    // 3. Event Wiring
+    // =========================================================================
+    // Copilot (Ari) Integration
+    // =========================================================================
+    function initAriCopilot() {
+        const copilotDrawer = document.getElementById('copilotDrawer');
+        const copilotBackdrop = document.getElementById('copilotBackdrop');
+        const openBtn = document.getElementById('openCopilotNavBtn');
+        const closeBtn = document.getElementById('closeCopilotBtn');
+        const startBtn = document.getElementById('startCopilotBtn');
+        const standbyView = document.getElementById('copilotStandbyView');
+        const chatView = document.getElementById('copilotChatView');
+        const form = document.getElementById('copilotForm');
+        const input = document.getElementById('copilotInput');
+        const messages = document.getElementById('copilotMessages');
+
+        function open() {
+            if (copilotDrawer && copilotBackdrop) {
+                copilotDrawer.classList.add('open');
+                copilotBackdrop.classList.add('open');
+            }
+        }
+        function close() {
+            if (copilotDrawer && copilotBackdrop) {
+                copilotDrawer.classList.remove('open');
+                copilotBackdrop.classList.remove('open');
+            }
+        }
+
+        if (openBtn) openBtn.addEventListener('click', open);
+        if (closeBtn) closeBtn.addEventListener('click', close);
+        if (copilotBackdrop) copilotBackdrop.addEventListener('click', close);
+
+        if (startBtn) {
+            startBtn.addEventListener('click', () => {
+                if (standbyView) standbyView.style.display = 'none';
+                if (chatView) chatView.classList.add('active');
+                if (input) input.focus();
+            });
+        }
+
+        if (form && input && messages) {
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const query = input.value.trim();
+                if (!query) return;
+
+                const userBubble = document.createElement('div');
+                userBubble.className = 'chat-bubble user';
+                userBubble.textContent = query;
+                messages.appendChild(userBubble);
+                input.value = '';
+
+                const loadingBubble = document.createElement('div');
+                loadingBubble.className = 'chat-bubble loading';
+                loadingBubble.textContent = 'Ari is thinking...';
+                messages.appendChild(loadingBubble);
+                messages.scrollTop = messages.scrollHeight;
+
+                try {
+                    let botReply = 'I am here to assist with your projects.';
+                    if (window.AgentEngine && typeof AgentEngine.sendMessage === 'function') {
+                        botReply = await AgentEngine.sendMessage(query, { current_project_id: activeProjectId });
+                    }
+                    loadingBubble.remove();
+                    const replyBubble = document.createElement('div');
+                    replyBubble.className = 'chat-bubble bot';
+                    replyBubble.textContent = botReply;
+                    messages.appendChild(replyBubble);
+                } catch (err) {
+                    loadingBubble.remove();
+                    const errBubble = document.createElement('div');
+                    errBubble.className = 'chat-bubble bot';
+                    errBubble.textContent = 'Connection error. Check settings or worker passkey.';
+                    messages.appendChild(errBubble);
+                }
+                messages.scrollTop = messages.scrollHeight;
+            });
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         TaskitatorApp.loadStorage();
         renderProjectStrip();
         renderProjectWorkspace();
+        initAriCopilot();
 
         const openCreateBtn = document.getElementById('openCreateProjectModalBtn');
         if (openCreateBtn) openCreateBtn.addEventListener('click', () => openProjectModal(false));
@@ -732,7 +810,6 @@
             });
         }
 
-        // Cascade Delete Triggers
         const triggerDeleteToggle = document.getElementById('triggerProjectDeleteToggleBtn');
         const cascadePanel = document.getElementById('cascadeDeleteOptionsPanel');
         if (triggerDeleteToggle && cascadePanel) {
@@ -755,7 +832,6 @@
             });
         }
 
-        // Floating Task Add Button inside Projects View
         const addTaskBtn = document.getElementById('openProjectTaskAddModalBtn');
         if (addTaskBtn) {
             addTaskBtn.addEventListener('click', () => {
@@ -763,7 +839,6 @@
             });
         }
 
-        // Drawer navigation wiring
         const drawer = document.getElementById('sidebarDrawer');
         const backdrop = document.getElementById('drawerBackdrop');
         const openDrawerBtn = document.getElementById('openDrawerBtn');
@@ -777,6 +852,13 @@
                 backdrop.classList.remove('open');
             });
         }
+
+        // React to background Cloudflare sync events
+        window.addEventListener('taskitator-synced', () => {
+            TaskitatorApp.loadStorage();
+            renderProjectStrip();
+            renderProjectWorkspace();
+        });
     });
 })();
 </script>
