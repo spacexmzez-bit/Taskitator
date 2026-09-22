@@ -592,7 +592,7 @@
                         Wipe Completed & Trash
                     </button>
                     <button type="button" class="icon-btn" id="factoryResetBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 700;">
-                        Factory Reset App
+                        Rest account's data
                     </button>
                 </div>
             </div>
@@ -1239,7 +1239,7 @@ document.getElementById('clearCompletedTrashBtn').addEventListener('click', asyn
 });
 
 document.getElementById('factoryResetBtn').addEventListener('click', () => {
-    const confirmation = prompt('DANGER: Type "RESET" to confirm total wipe of this device (logs you out and clears all data).');
+    const confirmation = prompt('DANGER: Type "RESET" to confirm total wipe of this account (logs you out and clears all data).');
     if (confirmation === 'RESET') {
         localStorage.clear();
         window.location.replace('login.html');
