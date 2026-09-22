@@ -680,6 +680,222 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
+    // Todoist-Style NLP Smart Creation Engine
+    // =========================================================================
+    const NLPEngine = (() => {
+        function upgradeInput(inputId, contextType) {
+            const el = document.getElementById(inputId);
+            if (!el || el.tagName !== 'INPUT') return el;
+            
+            const div = document.createElement('div');
+            div.id = inputId;
+            div.className = 'task-rich-input';
+            div.contentEditable = 'true';
+            div.setAttribute('data-placeholder', el.getAttribute('placeholder') || 'Task Title...');
+            
+            el.parentNode.replaceChild(div, el);
+            
+            div.addEventListener('input', (e) => handleInput(e, contextType, div));
+            div.addEventListener('click', (e) => handleClick(e, contextType, div));
+            div.addEventListener('keydown', handleKeydown);
+            div.addEventListener('paste', handlePaste);
+            
+            return div;
+        }
+
+        function handleInput(e, contextType, div) {
+            const sel = window.getSelection();
+            if (!sel.rangeCount) return;
+            
+            const range = sel.getRangeAt(0);
+            const node = range.startContainer;
+            
+            if (node.nodeType !== Node.TEXT_NODE) return;
+            
+            const textBeforeCaret = node.textContent.substring(0, range.startOffset);
+            if (!textBeforeCaret.endsWith(' ')) return;
+            
+            const match = textBeforeCaret.match(/(?:^|\s)([#!@][a-zA-Z0-9_.-]+)\s$/);
+            if (!match) return;
+            
+            const rawToken = match[1];
+            const prefix = rawToken[0];
+            const value = rawToken.substring(1).toLowerCase();
+            
+            let chipData = null;
+            
+            if (prefix === '!') {
+                const prios = getGlobalPriorities();
+                let pId = null;
+                if (['p1', 'high'].includes(value)) pId = prios.find(p => p.rank === 1)?.id;
+                else if (['p2', 'med', 'medium'].includes(value)) pId = prios.find(p => p.rank === 2)?.id;
+                else if (['p3', 'low'].includes(value)) pId = prios.find(p => p.rank === 3)?.id;
+                
+                if (pId) {
+                    const pObj = prios.find(p => p.id === pId);
+                    chipData = {
+                        html: `<span class="nlp-chip nlp-prio" contenteditable="false" data-type="prio" data-id="${pId}" data-raw="${rawToken}"><span class="priority-color-dot" style="background:${pObj.color}; width:8px; height:8px; display:inline-block; border-radius:50%; margin-right:4px;"></span>${pObj.name} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                        action: () => {
+                            if (contextType === 'edit') {
+                                editModalSelectedPriority = pId;
+                                renderModalPriorityCloud('editPriorityCloud', true);
+                            } else {
+                                createModalSelectedPriority = pId;
+                                renderModalPriorityCloud('createPriorityCloud', false);
+                            }
+                        }
+                    };
+                }
+            } else if (prefix === '#') {
+                const projs = getGlobalProjects();
+                const pObj = projs.find(p => p.name.replace(/\s+/g, '').toLowerCase() === value);
+                if (pObj && pObj.id !== 'inbox') {
+                    chipData = {
+                        html: `<span class="nlp-chip nlp-proj" contenteditable="false" data-type="proj" data-id="${pObj.id}" data-raw="${rawToken}"><span>${pObj.icon}</span> ${pObj.name} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                        action: () => {
+                            if (contextType === 'edit') {
+                                editModalSelectedProject = pObj.id;
+                                renderModalProjectCloud('editProjectCloud', true);
+                            } else {
+                                createModalSelectedProject = pObj.id;
+                                renderModalProjectCloud('createProjectCloud', false);
+                            }
+                        }
+                    };
+                }
+            } else if (prefix === '@') {
+                chipData = {
+                    html: `<span class="nlp-chip nlp-tag" contenteditable="false" data-type="tag" data-id="${value}" data-raw="${rawToken}"># ${value} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                    action: () => {
+                        saveGlobalTag(value);
+                        if (contextType === 'edit') {
+                            editModalSelectedTags.add(value);
+                            renderModalTagCloud('editTagCloud', editModalSelectedTags);
+                        } else {
+                            createModalSelectedTags.add(value);
+                            renderModalTagCloud('createTagCloud', createModalSelectedTags);
+                        }
+                    }
+                };
+            }
+            
+            if (chipData) {
+                const startOffset = match.index + (match[0].startsWith(' ') ? 1 : 0);
+                const endOffset = range.startOffset; 
+                
+                const beforeText = node.textContent.substring(0, startOffset);
+                const afterText = node.textContent.substring(endOffset);
+                
+                node.textContent = beforeText;
+                
+                const chipWrapper = document.createElement('span');
+                chipWrapper.innerHTML = chipData.html;
+                const chipNode = chipWrapper.firstChild;
+                
+                const afterNode = document.createTextNode('\u00A0' + afterText); 
+                
+                const parent = node.parentNode;
+                parent.insertBefore(chipNode, node.nextSibling);
+                parent.insertBefore(afterNode, chipNode.nextSibling);
+                
+                chipData.action();
+                
+                const newRange = document.createRange();
+                newRange.setStart(afterNode, 1);
+                newRange.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(newRange);
+            }
+        }
+        
+        function handleClick(e, contextType, div) {
+            if (e.target.matches('.nlp-chip-remove')) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const chip = e.target.closest('.nlp-chip');
+                if (!chip) return;
+                
+                const raw = chip.getAttribute('data-raw');
+                const type = chip.getAttribute('data-type');
+                const id = chip.getAttribute('data-id');
+                
+                if (type === 'prio') {
+                    if (contextType === 'edit' && editModalSelectedPriority === id) {
+                        editModalSelectedPriority = getLowestPriorityId();
+                        renderModalPriorityCloud('editPriorityCloud', true);
+                    } else if (contextType === 'create' && createModalSelectedPriority === id) {
+                        createModalSelectedPriority = getLowestPriorityId();
+                        renderModalPriorityCloud('createPriorityCloud', false);
+                    }
+                } else if (type === 'proj') {
+                    if (contextType === 'edit' && editModalSelectedProject === id) {
+                        editModalSelectedProject = 'inbox';
+                        renderModalProjectCloud('editProjectCloud', true);
+                    } else if (contextType === 'create' && createModalSelectedProject === id) {
+                        createModalSelectedProject = 'inbox';
+                        renderModalProjectCloud('createProjectCloud', false);
+                    }
+                } else if (type === 'tag') {
+                    if (contextType === 'edit') {
+                        editModalSelectedTags.delete(id);
+                        renderModalTagCloud('editTagCloud', editModalSelectedTags);
+                    } else {
+                        createModalSelectedTags.delete(id);
+                        renderModalTagCloud('createTagCloud', createModalSelectedTags);
+                    }
+                }
+                
+                // Replace with literal text & non-breaking space to prevent re-triggering
+                const textNode = document.createTextNode(raw + '\u00A0');
+                chip.parentNode.replaceChild(textNode, chip);
+                
+                div.focus();
+                const sel = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(div);
+                range.collapse(false);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        }
+
+        function handleKeydown(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const form = this.closest('form');
+                if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+            }
+        }
+
+        function handlePaste(e) {
+            e.preventDefault();
+            const text = (e.originalEvent || e).clipboardData.getData('text/plain');
+            document.execCommand('insertText', false, text);
+        }
+
+        function extractCleanTitle(inputId) {
+            const div = document.getElementById(inputId);
+            if (!div) return '';
+            if (div.tagName === 'INPUT') return div.value.trim();
+            
+            let text = '';
+            div.childNodes.forEach(node => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    text += node.textContent;
+                } else if (node.nodeType === Node.ELEMENT_NODE) {
+                    if (!node.classList.contains('nlp-chip')) {
+                        text += node.textContent;
+                    }
+                }
+            });
+            return text.replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
+        }
+
+        return { upgradeInput, extractCleanTitle };
+    })();
+
+    // =========================================================================
     // Proof Audit Modal Engine
     // =========================================================================
     function openAuditModal(task) {
@@ -730,7 +946,12 @@ window.TaskitatorApp = (() => {
 
         const titleH = document.getElementById('detailTaskTitleHeader');
         if (titleH) titleH.textContent = task.title;
-        if (editTaskTitle) editTaskTitle.value = task.title || '';
+        
+        if (editTaskTitle) {
+            if (editTaskTitle.tagName === 'DIV') editTaskTitle.innerHTML = task.title || '';
+            else editTaskTitle.value = task.title || '';
+        }
+        
         if (editTaskDesc) editTaskDesc.value = task.description || '';
         if (editTaskDueDate) editTaskDueDate.value = task.due_date === 'today' ? new Date().toISOString().split('T')[0] : (task.due_date || '');
 
@@ -751,7 +972,7 @@ window.TaskitatorApp = (() => {
 
         const cannotModifyLocked = isLocked && !isBypassActive;
 
-        if (editTaskTitle) editTaskTitle.disabled = cannotModifyLocked;
+        if (editTaskTitle) editTaskTitle.contentEditable = cannotModifyLocked ? 'false' : 'true';
         if (editTaskDueDate) editTaskDueDate.disabled = cannotModifyLocked;
         if (editAiLockCheckbox) editAiLockCheckbox.disabled = cannotModifyLocked;
         if (editStrictPrereqCheckbox) editStrictPrereqCheckbox.disabled = cannotModifyLocked;
@@ -813,6 +1034,12 @@ window.TaskitatorApp = (() => {
         const form = document.getElementById('taskCreateForm');
         if (form) form.reset();
 
+        const titleEl = document.getElementById('taskTitleInput');
+        if (titleEl) {
+            if (titleEl.tagName === 'DIV') titleEl.innerHTML = '';
+            else titleEl.value = '';
+        }
+
         const pIdField = document.getElementById('creationParentId');
         if (pIdField) pIdField.value = parentId || '';
 
@@ -856,7 +1083,10 @@ window.TaskitatorApp = (() => {
         }
 
         const modal = document.getElementById('addTaskModal');
-        if (modal) modal.classList.add('open');
+        if (modal) {
+            modal.classList.add('open');
+            setTimeout(() => { if(titleEl) titleEl.focus(); }, 100);
+        }
     }
 
     // =========================================================================
@@ -1714,11 +1944,14 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        NLPEngine.upgradeInput('taskTitleInput', 'create');
+        NLPEngine.upgradeInput('editTaskTitle', 'edit');
+
         const taskCreateForm = document.getElementById('taskCreateForm');
         if (taskCreateForm) {
             taskCreateForm.addEventListener('submit', (e) => {
                 e.preventDefault();
-                const title = document.getElementById('taskTitleInput')?.value.trim() || '';
+                const title = NLPEngine.extractCleanTitle('taskTitleInput');
                 const desc = document.getElementById('taskDescInput')?.value.trim() || '';
                 const dueDate = document.getElementById('taskDueDateInput')?.value || '';
                 const isAi = Boolean(document.getElementById('aiLockCheckbox')?.checked);
@@ -1797,7 +2030,12 @@ window.TaskitatorApp = (() => {
 
                 saveStorageAndPush();
                 if (addTaskModal) addTaskModal.classList.remove('open');
-                renderUnifiedView();
+                
+                if (typeof window.refreshCurrentProjectView === 'function') {
+                    window.refreshCurrentProjectView();
+                } else {
+                    renderUnifiedView();
+                }
             });
         }
 
@@ -1866,7 +2104,7 @@ window.TaskitatorApp = (() => {
                 }
 
                 if (!task.ai_locked || isBypassActive) {
-                    task.title = document.getElementById('editTaskTitle')?.value.trim() || task.title;
+                    task.title = NLPEngine.extractCleanTitle('editTaskTitle') || task.title;
                     task.due_date = document.getElementById('editTaskDueDate')?.value || '';
                     task.ai_locked = willBeAiLocked;
                     task.strict_prerequisites = willBeStrict;
@@ -1875,8 +2113,12 @@ window.TaskitatorApp = (() => {
 
                 saveStorageAndPush();
                 if (taskDetailModal) taskDetailModal.classList.remove('open');
+                
+                const customRender = taskDetailModal?._customRenderFn;
                 activeDetailTaskId = null;
-                renderUnifiedView();
+
+                if (typeof customRender === 'function') customRender();
+                else renderUnifiedView();
             });
         }
 
@@ -1884,7 +2126,8 @@ window.TaskitatorApp = (() => {
         if (deleteFromDetailBtn) {
             deleteFromDetailBtn.addEventListener('click', () => {
                 if (!activeDetailTaskId) return;
-                deleteTask(activeDetailTaskId);
+                const customRender = taskDetailModal?._customRenderFn;
+                deleteTask(activeDetailTaskId, customRender);
                 if (taskDetailModal) taskDetailModal.classList.remove('open');
                 activeDetailTaskId = null;
             });
@@ -1981,7 +2224,7 @@ window.TaskitatorApp = (() => {
         if (validateCriteriaBtn) {
             validateCriteriaBtn.addEventListener('click', async () => {
                 const criteriaText = document.getElementById('taskCriteriaInput')?.value.trim() || '';
-                const taskTitle = document.getElementById('taskTitleInput')?.value.trim() || '';
+                const taskTitle = NLPEngine.extractCleanTitle('taskTitleInput') || '';
                 const feedback = document.getElementById('criteriaFeedbackBox');
 
                 if (!criteriaText) {
