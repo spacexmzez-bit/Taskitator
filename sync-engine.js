@@ -3,11 +3,14 @@
  * Taskitator Unified Cloud Sync Engine
  * Automated debounced push/pull bridge for Cloudflare Worker KV
  * Supports Zero-Knowledge Client-Side Hashing & Mandatory Authentication Gate
+ * Synchronizes: Tasks, Projects, Daily Breaks, and App Settings.
  */
 
 const SyncEngine = {
     STORAGE_KEY_SETTINGS: 'taskitator_settings',
     STORAGE_KEY_TASKS: 'taskitator_tasks',
+    STORAGE_KEY_PROJECTS: 'taskitator_projects',
+    STORAGE_KEY_BREAKS: 'taskitator_daily_breaks',
     STORAGE_KEY_LAST_LOGIN: 'taskitator_last_login',
     STORAGE_KEY_LAST_MODIFIED: 'taskitator_tasks_last_modified',
     HARDCODED_WORKER_URL: 'https://taskitator-sync.spacexmzez.workers.dev',
@@ -77,19 +80,19 @@ const SyncEngine = {
 
     getPayload(force = false, extraData = {}) {
         let tasks = [];
+        let projects = [];
+        let breaks = [];
         let settings = {};
-        try {
-            tasks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_TASKS) || '[]');
-            settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
-        } catch (e) {
-            tasks = [];
-            settings = {};
-        }
 
-        // Automatically fetch current daily breaks snapshot if engine is loaded
-        const todayBreaks = window.TaskitatorEngine && TaskitatorEngine.BreakEngine
+        try { tasks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_TASKS) || '[]'); } catch (e) {}
+        try { projects = JSON.parse(localStorage.getItem(this.STORAGE_KEY_PROJECTS) || '[]'); } catch (e) {}
+        try { settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}'); } catch (e) {}
+        try { breaks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_BREAKS) || '[]'); } catch (e) {}
+
+        // Fallback to active engine snapshot if BreakEngine is loaded
+        const todayBreaks = (window.TaskitatorEngine && TaskitatorEngine.BreakEngine)
             ? TaskitatorEngine.BreakEngine.getTodayBreaks()
-            : [];
+            : breaks;
 
         const lastLogin = localStorage.getItem(this.STORAGE_KEY_LAST_LOGIN) || null;
         const nowIso = new Date().toISOString();
@@ -100,6 +103,7 @@ const SyncEngine = {
             updated_at: nowIso,
             force: force,
             tasks: tasks,
+            projects: projects,
             settings: settings,
             today_breaks: todayBreaks,
             last_login: lastLogin,
@@ -232,11 +236,17 @@ const SyncEngine = {
             const localTasksRaw = localStorage.getItem(this.STORAGE_KEY_TASKS);
             const remoteTasksRaw = JSON.stringify(data.tasks);
 
+            // Reconcile Tasks
             localStorage.setItem(this.STORAGE_KEY_TASKS, remoteTasksRaw);
+
+            // Reconcile Projects
+            if (data.projects && Array.isArray(data.projects)) {
+                localStorage.setItem(this.STORAGE_KEY_PROJECTS, JSON.stringify(data.projects));
+            }
             
+            // Reconcile Settings
             if (data.settings) {
                 data.settings.last_synced = new Date().toISOString();
-                // Retain active auth passkey when overwriting settings from remote
                 if (config.secret && !data.settings.worker_passkey) {
                     data.settings.worker_passkey = config.secret;
                 }
@@ -246,16 +256,9 @@ const SyncEngine = {
                 localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(data.settings));
             }
 
+            // Reconcile Breaks (standardized array format)
             if (data.today_breaks && Array.isArray(data.today_breaks)) {
-                const todayStr = new Date().toISOString().split('T')[0];
-                let breaksMap = {};
-                try {
-                    breaksMap = JSON.parse(localStorage.getItem('taskitator_daily_breaks') || '{}');
-                } catch (e) {
-                    breaksMap = {};
-                }
-                breaksMap[todayStr] = data.today_breaks;
-                localStorage.setItem('taskitator_daily_breaks', JSON.stringify(breaksMap));
+                localStorage.setItem(this.STORAGE_KEY_BREAKS, JSON.stringify(data.today_breaks));
             }
 
             if (data.last_login) {
