@@ -1,0 +1,685 @@
+<!-- calendar.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taskitator - Calendar</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#081226">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icon/icon-192.png">
+
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .calendar-card {
+            background: var(--card-bg);
+            border: 1.5px solid var(--border-color);
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: var(--card-shadow);
+        }
+
+        .calendar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+
+        .calendar-month-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+
+        .calendar-nav-group {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            text-align: center;
+        }
+
+        .calendar-day-header {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            padding-bottom: 8px;
+        }
+
+        .calendar-cell {
+            min-height: 48px;
+            border-radius: 8px;
+            background: var(--card-subtle);
+            border: 1px solid transparent;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 6px 2px;
+            cursor: pointer;
+            transition: all 0.12s ease;
+            position: relative;
+        }
+
+        .calendar-cell:hover:not(.empty) {
+            border-color: var(--primary);
+            background: var(--accent-light);
+        }
+
+        .calendar-cell.empty {
+            background: transparent;
+            cursor: default;
+        }
+
+        .calendar-cell.today {
+            border-color: var(--accent);
+        }
+
+        .calendar-cell.selected {
+            background: var(--primary) !important;
+            color: #ffffff !important;
+            border-color: var(--primary) !important;
+        }
+
+        .calendar-cell.selected .calendar-date-number {
+            color: #ffffff;
+            font-weight: 800;
+        }
+
+        .calendar-cell.selected .cal-dot-solid {
+            background: #ffffff;
+        }
+
+        .calendar-cell.selected .cal-dot-ring {
+            border-color: #ffffff;
+        }
+
+        .calendar-date-number {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-color);
+            line-height: 1;
+        }
+
+        .calendar-dots-row {
+            display: flex;
+            gap: 3px;
+            align-items: center;
+            justify-content: center;
+            margin-top: 5px;
+            height: 6px;
+        }
+
+        .cal-dot-solid {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--primary);
+        }
+
+        .cal-dot-ring {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            border: 1.5px solid var(--accent);
+            background: transparent;
+            box-sizing: border-box;
+        }
+
+        .agenda-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1.5px solid var(--border-color);
+        }
+
+        .agenda-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+
+        .agenda-count-badge {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .agenda-tree-container {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .unscheduled-toggle-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            margin-top: 24px;
+            overflow: hidden;
+        }
+
+        .unscheduled-header {
+            padding: 12px 16px;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        .unscheduled-header:hover {
+            color: var(--text-color);
+        }
+
+        .unscheduled-body {
+            display: none;
+            padding: 12px 14px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .unscheduled-toggle-card.open .unscheduled-body {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Sidebar Drawer -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<aside class="sidebar-drawer" id="sidebarDrawer">
+    <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
+    <nav class="drawer-links" id="drawerNavLinks">
+        <a href="index.html#today">📅 Today</a>
+        <a href="index.html#general">🗂️ General Tasks</a>
+        <a href="calendar.html" class="active">🗓️ Calendar</a>
+        <a href="projects.html">📁 Projects</a>
+        <a href="stats.html">📊 Stats</a>
+        <a href="trash.html">🗑️ Trash</a>
+        <a href="settings.html">⚙️ Settings</a>
+    </nav>
+</aside>
+
+<div class="app-container">
+    <!-- Top Navbar -->
+    <header class="top-navbar">
+        <div class="nav-left">
+            <button class="icon-btn" id="openDrawerBtn" title="Menu">☰</button>
+            <h2 style="margin: 0; font-size: 1.25rem;">Calendar</h2>
+        </div>
+        <div class="nav-right">
+            <button type="button" class="icon-btn" id="todayJumpBtn" style="font-size: 0.8rem; font-weight: 700; padding: 0 10px;">Today</button>
+            <button type="button" class="icon-btn" id="openCopilotNavBtn" title="Focus Copilot" style="font-size: 0.85rem; font-weight: 600; padding: 6px 12px;">💬 Copilot</button>
+        </div>
+    </header>
+
+    <!-- Month Navigation & Calendar Grid -->
+    <div class="calendar-card">
+        <div class="calendar-header">
+            <span class="calendar-month-title" id="calendarMonthTitle">Month Year</span>
+            <div class="calendar-nav-group">
+                <button type="button" class="icon-btn icon-only-btn" id="prevMonthBtn" title="Previous Month">‹</button>
+                <button type="button" class="icon-btn icon-only-btn" id="nextMonthBtn" title="Next Month">›</button>
+            </div>
+        </div>
+
+        <div class="calendar-grid" id="calendarDaysHeader">
+            <div class="calendar-day-header">Mon</div>
+            <div class="calendar-day-header">Tue</div>
+            <div class="calendar-day-header">Wed</div>
+            <div class="calendar-day-header">Thu</div>
+            <div class="calendar-day-header">Fri</div>
+            <div class="calendar-day-header">Sat</div>
+            <div class="calendar-day-header">Sun</div>
+        </div>
+
+        <div class="calendar-grid" id="calendarGridBody"></div>
+    </div>
+
+    <!-- Selected Day Agenda -->
+    <div class="agenda-header">
+        <div class="agenda-title" id="selectedDateHeading">Agenda</div>
+        <span class="agenda-count-badge" id="agendaCountBadge">0 tasks</span>
+    </div>
+
+    <ul class="agenda-tree-container" id="agendaListContainer"></ul>
+
+    <!-- Collapsible Unscheduled / Backlog Tasks -->
+    <div class="unscheduled-toggle-card" id="unscheduledCard">
+        <div class="unscheduled-header" onclick="toggleUnscheduledCard()">
+            <span id="unscheduledTitle">▸ Unscheduled Tasks</span>
+            <span class="agenda-count-badge" id="unscheduledCountBadge">0</span>
+        </div>
+        <div class="unscheduled-body">
+            <ul class="agenda-tree-container" id="unscheduledListContainer"></ul>
+        </div>
+    </div>
+</div>
+
+<!-- Copilot Slide-Over Drawer -->
+<div class="copilot-drawer-backdrop" id="copilotBackdrop"></div>
+<aside class="copilot-drawer" id="copilotDrawer">
+    <div class="copilot-header">
+        <div class="copilot-title-group">
+            <span style="font-weight: 800; font-size: 1.05rem;">🤖 Focus Copilot</span>
+            <span class="copilot-model-chip">3.5 Flash Lite</span>
+        </div>
+        <button type="button" class="icon-btn" id="closeCopilotBtn" style="border: none; font-size: 1.2rem; line-height: 1; padding: 4px 8px;">✕</button>
+    </div>
+
+    <div class="copilot-messages" id="copilotMessages">
+        <div class="copilot-standby-card">
+            <div style="font-size: 2rem; margin-bottom: 6px;">🗓️</div>
+            <strong class="copilot-standby-title" style="font-size: 1rem; color: var(--primary);">Calendar Copilot</strong>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 6px 0 0 0; line-height: 1.4;">
+                Ask me about scheduled milestones, deadlines, or workload balance across your month.
+            </p>
+        </div>
+    </div>
+
+    <form class="copilot-footer" id="copilotForm">
+        <input type="text" id="copilotInput" placeholder="Ask Copilot..." autocomplete="off" required>
+        <button type="submit" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 8px 16px;">Send</button>
+    </form>
+</aside>
+
+<script src="sync-engine.js"></script>
+<script src="agent-engine.js"></script>
+<script>
+const TASKS_KEY = 'taskitator_tasks';
+const PROJECTS_KEY = 'taskitator_projects';
+const SETTINGS_KEY = 'taskitator_settings';
+
+let tasks = [];
+let projects = [];
+let currentDate = new Date();
+let selectedDateStr = new Date().toISOString().split('T')[0];
+
+function loadData() {
+    try { tasks = JSON.parse(localStorage.getItem(TASKS_KEY) || '[]'); } catch (e) { tasks = []; }
+    try { projects = JSON.parse(localStorage.getItem(PROJECTS_KEY) || '[]'); } catch (e) { projects = []; }
+}
+
+function saveDataAndSync() {
+    localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+    if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
+        SyncEngine.markLocalModified();
+        SyncEngine.scheduleAutoPush();
+    }
+}
+
+function getNormalizedTaskDueDate(task) {
+    const raw = String(task.due_date || '').trim().toLowerCase();
+    if (!raw) return '';
+    if (raw === 'today') return new Date().toISOString().split('T')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    return '';
+}
+
+function isTaskRecurring(task) {
+    return Boolean(task.recurring || task.recurrence || (task.tags && task.tags.includes('recurring')));
+}
+
+function renderCalendar() {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+
+    const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    document.getElementById('calendarMonthTitle').textContent = `${monthNames[month]} ${year}`;
+
+    const grid = document.getElementById('calendarGridBody');
+    grid.innerHTML = '';
+
+    const firstDayIndex = new Date(year, month, 1).getDay();
+    const offset = (firstDayIndex === 0 ? 6 : firstDayIndex - 1); // Monday start
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // Compute task date map
+    const activeTasks = tasks.filter(t => t.status === 'active');
+    const dayMetaMap = new Map();
+
+    activeTasks.forEach(t => {
+        const d = getNormalizedTaskDueDate(t);
+        if (!d) return;
+        if (!dayMetaMap.has(d)) {
+            dayMetaMap.set(d, { hasSolid: false, hasRing: false });
+        }
+        const meta = dayMetaMap.get(d);
+        if (isTaskRecurring(t)) {
+            meta.hasRing = true;
+        } else {
+            meta.hasSolid = true;
+        }
+    });
+
+    // Empty lead cells
+    for (let i = 0; i < offset; i++) {
+        const emptyCell = document.createElement('div');
+        emptyCell.className = 'calendar-cell empty';
+        grid.appendChild(emptyCell);
+    }
+
+    // Month day cells
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const cell = document.createElement('div');
+        cell.className = 'calendar-cell';
+
+        if (dateStr === todayStr) cell.classList.add('today');
+        if (dateStr === selectedDateStr) cell.classList.add('selected');
+
+        const numberSpan = document.createElement('span');
+        numberSpan.className = 'calendar-date-number';
+        numberSpan.textContent = day;
+        cell.appendChild(numberSpan);
+
+        const dotsRow = document.createElement('div');
+        dotsRow.className = 'calendar-dots-row';
+
+        const meta = dayMetaMap.get(dateStr);
+        if (meta) {
+            if (meta.hasSolid) {
+                const sDot = document.createElement('span');
+                sDot.className = 'cal-dot-solid';
+                dotsRow.appendChild(sDot);
+            }
+            if (meta.hasRing) {
+                const rDot = document.createElement('span');
+                rDot.className = 'cal-dot-ring';
+                dotsRow.appendChild(rDot);
+            }
+        }
+        cell.appendChild(dotsRow);
+
+        cell.addEventListener('click', () => {
+            selectedDateStr = dateStr;
+            renderCalendar();
+            renderAgenda();
+        });
+
+        grid.appendChild(cell);
+    }
+}
+
+// Path-Preserving Tree Engine for Selected Date
+function renderAgenda() {
+    const list = document.getElementById('agendaListContainer');
+    list.innerHTML = '';
+
+    const dateParts = selectedDateStr.split('-');
+    const dateObj = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+    const options = { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' };
+    document.getElementById('selectedDateHeading').textContent = dateObj.toLocaleDateString(undefined, options);
+
+    const activeTasks = tasks.filter(t => t.status === 'active');
+    const allChildrenMap = new Map();
+
+    activeTasks.forEach(t => {
+        const pId = t.parent_id || 'root';
+        if (!allChildrenMap.has(pId)) allChildrenMap.set(pId, []);
+        allChildrenMap.get(pId).push(t);
+    });
+
+    const matchMap = new Map();
+    const descMatchMap = new Map();
+
+    activeTasks.forEach(t => {
+        const isMatch = getNormalizedTaskDueDate(t) === selectedDateStr;
+        matchMap.set(t.id, isMatch);
+    });
+
+    function checkDesc(nodeId) {
+        if (descMatchMap.has(nodeId)) return descMatchMap.get(nodeId);
+        const kids = allChildrenMap.get(nodeId) || [];
+        let has = false;
+        for (let k of kids) {
+            if (matchMap.get(k.id) || checkDesc(k.id)) has = true;
+        }
+        descMatchMap.set(nodeId, has);
+        return has;
+    }
+    activeTasks.forEach(t => checkDesc(t.id));
+
+    let rootTasks = (allChildrenMap.get('root') || []).filter(t => {
+        return matchMap.get(t.id) || descMatchMap.get(t.id);
+    });
+
+    const totalMatchingCount = activeTasks.filter(t => matchMap.get(t.id)).length;
+    document.getElementById('agendaCountBadge').textContent = `${totalMatchingCount} task${totalMatchingCount === 1 ? '' : 's'}`;
+
+    if (rootTasks.length === 0) {
+        list.innerHTML = `<li style="text-align: center; color: var(--text-muted); padding: 24px 0; font-size: 0.88rem;">No tasks assigned to this date.</li>`;
+    } else {
+        rootTasks.forEach(t => list.appendChild(buildAgendaNode(t, 0, allChildrenMap, matchMap, descMatchMap)));
+    }
+
+    renderUnscheduledBacklog();
+}
+
+function buildAgendaNode(task, depth, allChildrenMap, matchMap, descMatchMap) {
+    const li = document.createElement('li');
+    li.className = 'task-node';
+
+    const isMatch = matchMap.get(task.id);
+    const hasDescMatch = descMatchMap.get(task.id);
+    const isBreadcrumb = !isMatch && hasDescMatch;
+
+    const row = document.createElement('div');
+    row.className = 'task-row';
+    row.style.marginLeft = `${depth * 20}px`;
+
+    if (isBreadcrumb) {
+        row.classList.add('muted-breadcrumb');
+    }
+
+    const main = document.createElement('div');
+    main.className = 'task-main';
+
+    const checkBtn = document.createElement('button');
+    checkBtn.className = 'check-circle';
+    checkBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        task.status = 'completed';
+        task.completed_at = new Date().toISOString();
+        saveDataAndSync();
+        loadData();
+        renderCalendar();
+        renderAgenda();
+    });
+    main.appendChild(checkBtn);
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'task-title';
+    titleSpan.textContent = task.title;
+    main.appendChild(titleSpan);
+
+    const proj = projects.find(p => p.id === (task.project_id || 'inbox'));
+    if (proj && proj.id !== 'inbox') {
+        const pBadge = document.createElement('span');
+        pBadge.className = 'project-badge-chip';
+        pBadge.style.borderColor = proj.color;
+        pBadge.style.color = proj.color;
+        pBadge.innerHTML = `<span>${proj.icon}</span> <span>${proj.name}</span>`;
+        main.appendChild(pBadge);
+    }
+
+    row.appendChild(main);
+    li.appendChild(row);
+
+    const kids = (allChildrenMap.get(task.id) || []).filter(k => matchMap.get(k.id) || descMatchMap.get(k.id));
+    if (kids.length > 0) {
+        const subUl = document.createElement('ul');
+        subUl.className = 'task-subtree';
+        kids.forEach(k => subUl.appendChild(buildAgendaNode(k, depth + 1, allChildrenMap, matchMap, descMatchMap)));
+        li.appendChild(subUl);
+    }
+
+    return li;
+}
+
+function renderUnscheduledBacklog() {
+    const list = document.getElementById('unscheduledListContainer');
+    list.innerHTML = '';
+
+    const unscheduledTasks = tasks.filter(t => t.status === 'active' && !getNormalizedTaskDueDate(t));
+    document.getElementById('unscheduledCountBadge').textContent = unscheduledTasks.length;
+
+    if (unscheduledTasks.length === 0) {
+        list.innerHTML = `<li style="color: var(--text-muted); font-size: 0.82rem; padding: 6px 0;">No unscheduled tasks.</li>`;
+        return;
+    }
+
+    unscheduledTasks.forEach(task => {
+        const li = document.createElement('li');
+        li.className = 'task-node';
+        li.style.marginBottom = '6px';
+
+        const row = document.createElement('div');
+        row.className = 'task-row';
+        row.style.padding = '8px 12px';
+
+        const main = document.createElement('div');
+        main.className = 'task-main';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'task-title';
+        titleSpan.style.fontSize = '0.88rem';
+        titleSpan.textContent = task.title;
+        main.appendChild(titleSpan);
+
+        row.appendChild(main);
+
+        const assignBtn = document.createElement('button');
+        assignBtn.className = 'icon-btn';
+        assignBtn.style.padding = '2px 8px';
+        assignBtn.style.fontSize = '0.75rem';
+        assignBtn.textContent = 'Assign to Today';
+        assignBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            task.due_date = new Date().toISOString().split('T')[0];
+            saveDataAndSync();
+            loadData();
+            renderCalendar();
+            renderAgenda();
+        });
+        row.appendChild(assignBtn);
+
+        li.appendChild(row);
+        list.appendChild(li);
+    });
+}
+
+function toggleUnscheduledCard() {
+    const card = document.getElementById('unscheduledCard');
+    card.classList.toggle('open');
+    const headerTitle = document.getElementById('unscheduledTitle');
+    headerTitle.textContent = card.classList.contains('open') ? '▾ Unscheduled Tasks' : '▸ Unscheduled Tasks';
+}
+
+// Navigation Events
+document.getElementById('prevMonthBtn').addEventListener('click', () => {
+    currentDate.setMonth(currentDate.getMonth() - 1);
+    renderCalendar();
+});
+
+document.getElementById('nextMonthBtn').addEventListener('click', () => {
+    currentDate.setMonth(currentDate.getMonth() + 1);
+    renderCalendar();
+});
+
+document.getElementById('todayJumpBtn').addEventListener('click', () => {
+    currentDate = new Date();
+    selectedDateStr = new Date().toISOString().split('T')[0];
+    renderCalendar();
+    renderAgenda();
+});
+
+// Drawer Navigation
+const sidebarDrawer = document.getElementById('sidebarDrawer');
+const drawerBackdrop = document.getElementById('drawerBackdrop');
+
+document.getElementById('openDrawerBtn').addEventListener('click', () => {
+    sidebarDrawer.classList.add('open');
+    drawerBackdrop.classList.add('open');
+});
+
+drawerBackdrop.addEventListener('click', () => {
+    sidebarDrawer.classList.remove('open');
+    drawerBackdrop.classList.remove('open');
+});
+
+// Copilot Drawer Toggle
+const copilotDrawer = document.getElementById('copilotDrawer');
+const copilotBackdrop = document.getElementById('copilotBackdrop');
+const openCopilotNavBtn = document.getElementById('openCopilotNavBtn');
+const closeCopilotBtn = document.getElementById('closeCopilotBtn');
+
+if (openCopilotNavBtn && copilotDrawer && copilotBackdrop) {
+    openCopilotNavBtn.addEventListener('click', () => {
+        copilotDrawer.classList.add('open');
+        copilotBackdrop.classList.add('open');
+        const input = document.getElementById('copilotInput');
+        if (input) setTimeout(() => input.focus(), 150);
+    });
+}
+
+if (closeCopilotBtn && copilotDrawer && copilotBackdrop) {
+    closeCopilotBtn.addEventListener('click', () => {
+        copilotDrawer.classList.remove('open');
+        copilotBackdrop.classList.remove('open');
+    });
+    copilotBackdrop.addEventListener('click', () => {
+        copilotDrawer.classList.remove('open');
+        copilotBackdrop.classList.remove('open');
+    });
+}
+
+window.addEventListener('taskitator-synced', () => {
+    loadData();
+    renderCalendar();
+    renderAgenda();
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadData();
+    renderCalendar();
+    renderAgenda();
+});
+
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .catch(err => console.error('SW Registration failed:', err));
+    });
+}
+</script>
+</body>
+</html>
