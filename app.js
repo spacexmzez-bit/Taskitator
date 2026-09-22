@@ -1,17 +1,18 @@
 /**
  * Taskitator Unified Application Engine (app.js)
- * Consolidated state, registries, tree hierarchy algorithms, audio feedback,
- * modal bindings, and path-preserving filter engine shared across views.
+ * Manages view routing (#today / #general), unified task trees,
+ * break UI, proofs, emergency quotas, and persistent filters.
  */
 
 window.TaskitatorApp = (() => {
     // =========================================================================
-    // Storage Keys & Core State
+    // Storage Keys & State
     // =========================================================================
     const TASKS_KEY = 'taskitator_tasks';
     const COLLAPSED_STATE_KEY = 'taskitator_collapsed_nodes';
     const SETTINGS_KEY = 'taskitator_settings';
 
+    let currentView = 'today'; // 'today' | 'general'
     let tasks = [];
     let collapsedNodes = new Set();
     let pendingAuditTaskId = null;
@@ -22,17 +23,14 @@ window.TaskitatorApp = (() => {
     let cachedTemplates = null;
     const pendingGraceCompletions = new Map();
 
-    // Active Filter State
     const activeFilters = { tags: new Set(), priorities: new Set() };
     const draftFilters = { tags: new Set(), priorities: new Set() };
 
-    // Modal Selection State
     const createModalSelectedTags = new Set();
     let createModalSelectedPriority = null;
     const editModalSelectedTags = new Set();
     let editModalSelectedPriority = null;
 
-    // Default System Registries
     const DEFAULT_TAGS = ['study', 'work', 'personal'];
     const DEFAULT_PRIORITIES = [
         { id: 'prio_high', name: 'High', color: '#ef4444', rank: 1 },
@@ -41,7 +39,7 @@ window.TaskitatorApp = (() => {
     ];
 
     // =========================================================================
-    // Web Audio API Synthesizer (SoundFX)
+    // Web Audio API Synthesizer
     // =========================================================================
     const SoundFX = {
         ctx: null,
@@ -102,7 +100,7 @@ window.TaskitatorApp = (() => {
     };
 
     // =========================================================================
-    // Registries & Settings Accessors
+    // Registries & Preferences
     // =========================================================================
     function getGlobalTags() {
         try {
@@ -189,7 +187,7 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Storage Pipeline
+    // Storage & Sync Pipeline
     // =========================================================================
     function loadStorage() {
         try {
@@ -227,9 +225,6 @@ window.TaskitatorApp = (() => {
         }
     }
 
-    // =========================================================================
-    // Sync Indicator
-    // =========================================================================
     function updateSyncDot(state) {
         const dot = document.getElementById('syncStatusDot');
         if (!dot) return;
@@ -329,7 +324,7 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     // Grace Timers & Completion Handlers
     // =========================================================================
-    function startGraceCompletionTimer(taskId, triggerRenderFn) {
+    function startGraceCompletionTimer(taskId) {
         if (pendingGraceCompletions.has(taskId)) {
             const existing = pendingGraceCompletions.get(taskId);
             clearTimeout(existing.timerId);
@@ -339,7 +334,7 @@ window.TaskitatorApp = (() => {
         let remaining = 10;
         const intervalId = setInterval(() => {
             remaining -= 1;
-            const el = document.getElementById(`undoTimerSec_${taskId}`) || document.getElementById(`undoGeneralTimerSec_${taskId}`);
+            const el = document.getElementById(`undoTimerSec_${taskId}`);
             if (el) el.textContent = remaining;
             if (remaining <= 0) {
                 clearInterval(intervalId);
@@ -349,13 +344,13 @@ window.TaskitatorApp = (() => {
         const timerId = setTimeout(() => {
             clearInterval(intervalId);
             pendingGraceCompletions.delete(taskId);
-            if (typeof triggerRenderFn === 'function') triggerRenderFn();
+            renderUnifiedView();
         }, 10000);
 
         pendingGraceCompletions.set(taskId, { timerId, intervalId, remainingSec: remaining });
     }
 
-    function undoTaskCompletion(taskId, triggerRenderFn) {
+    function undoTaskCompletion(taskId) {
         if (pendingGraceCompletions.has(taskId)) {
             const grace = pendingGraceCompletions.get(taskId);
             clearTimeout(grace.timerId);
@@ -365,10 +360,10 @@ window.TaskitatorApp = (() => {
 
         cascadeTaskStatus(taskId, 'active', null);
         saveStorageAndPush();
-        if (typeof triggerRenderFn === 'function') triggerRenderFn();
+        renderUnifiedView();
     }
 
-    function handleTaskCompletion(taskId, triggerRenderFn) {
+    function handleTaskCompletion(taskId) {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
 
@@ -379,7 +374,7 @@ window.TaskitatorApp = (() => {
             }
             cascadeTaskStatus(taskId, 'active', null);
             saveStorageAndPush();
-            if (typeof triggerRenderFn === 'function') triggerRenderFn();
+            renderUnifiedView();
             return;
         }
 
@@ -389,18 +384,18 @@ window.TaskitatorApp = (() => {
         }
 
         if (task.ai_locked) {
-            openAuditModal(task, triggerRenderFn);
+            openAuditModal(task);
             return;
         }
 
         cascadeTaskStatus(taskId, 'completed', new Date().toISOString());
-        startGraceCompletionTimer(taskId, triggerRenderFn);
+        startGraceCompletionTimer(taskId);
         SoundFX.playComplete();
         saveStorageAndPush();
-        if (typeof triggerRenderFn === 'function') triggerRenderFn();
+        renderUnifiedView();
     }
 
-    function deleteTask(taskId, triggerRenderFn) {
+    function deleteTask(taskId) {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
 
@@ -417,7 +412,7 @@ window.TaskitatorApp = (() => {
             }
             markTrash(taskId);
             saveStorageAndPush();
-            if (typeof triggerRenderFn === 'function') triggerRenderFn();
+            renderUnifiedView();
         }
     }
 
@@ -486,9 +481,6 @@ window.TaskitatorApp = (() => {
         });
     }
 
-    // =========================================================================
-    // Filter Popover Cloud Rendering
-    // =========================================================================
     function renderFilterClouds() {
         const pCloud = document.getElementById('filterPriorityCloud');
         if (pCloud) {
@@ -531,7 +523,7 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     // Proof Audit Modal Engine
     // =========================================================================
-    function openAuditModal(task, triggerRenderFn) {
+    function openAuditModal(task) {
         pendingAuditTaskId = task.id;
         const auditModal = document.getElementById('auditModal');
         const auditTaskTitle = document.getElementById('auditTaskTitleDisplay');
@@ -551,13 +543,12 @@ window.TaskitatorApp = (() => {
             submitProofBtn.textContent = 'Submit Proof';
         }
         if (auditModal) auditModal.classList.add('open');
-        auditModal._triggerRenderFn = triggerRenderFn;
     }
 
     // =========================================================================
     // Task Detail / Edit Modal Engine
     // =========================================================================
-    function openTaskDetailModal(taskId, triggerRenderFn) {
+    function openTaskDetailModal(taskId) {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
         activeDetailTaskId = taskId;
@@ -641,23 +632,20 @@ window.TaskitatorApp = (() => {
                     `;
                     sLi.querySelector('button').addEventListener('click', () => {
                         if (taskDetailModal) taskDetailModal.classList.remove('open');
-                        openTaskDetailModal(child.id, triggerRenderFn);
+                        openTaskDetailModal(child.id);
                     });
                     detailSubtasksList.appendChild(sLi);
                 });
             }
         }
 
-        if (taskDetailModal) {
-            taskDetailModal.classList.add('open');
-            taskDetailModal._triggerRenderFn = triggerRenderFn;
-        }
+        if (taskDetailModal) taskDetailModal.classList.add('open');
     }
 
     // =========================================================================
-    // Task Creation Modal Launcher
+    // Task Creation Launcher
     // =========================================================================
-    function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task', defaultDueDate = '') {
+    function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task') {
         const form = document.getElementById('taskCreateForm');
         if (form) form.reset();
 
@@ -677,7 +665,9 @@ window.TaskitatorApp = (() => {
         if (subtaskList) subtaskList.innerHTML = '';
 
         const dueIn = document.getElementById('taskDueDateInput');
-        if (dueIn) dueIn.value = defaultDueDate;
+        if (dueIn) {
+            dueIn.value = (currentView === 'today') ? new Date().toISOString().split('T')[0] : '';
+        }
 
         createModalSelectedTags.clear();
         createModalSelectedPriority = getLowestPriorityId();
@@ -698,10 +688,658 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Shared Event Bindings Initializer
+    // Break System UI Controller
     // =========================================================================
-    function initSharedUI(triggerRenderFn) {
-        // 1. Navigation Sidebar Drawer
+    const BreakUI = {
+        pill: null,
+        pillText: null,
+        pillIcon: null,
+        modal: null,
+        rowsContainer: null,
+        errorBox: null,
+        saveBtn: null,
+        addBtn: null,
+        closeBtn: null,
+
+        init() {
+            this.pill = document.getElementById('breakStatusPill');
+            this.pillText = document.getElementById('breakPillText');
+            this.pillIcon = document.getElementById('breakPillIcon');
+            this.modal = document.getElementById('breakModal');
+            this.rowsContainer = document.getElementById('breakRowsContainer');
+            this.errorBox = document.getElementById('breakModalError');
+            this.saveBtn = document.getElementById('saveBreaksModalBtn');
+            this.addBtn = document.getElementById('addBreakRowModalBtn');
+            this.closeBtn = document.getElementById('closeBreakModalBtn');
+
+            if (!this.pill || !this.modal) return;
+            this.pill.addEventListener('click', () => this.openModal());
+            if (this.closeBtn) this.closeBtn.addEventListener('click', () => this.closeModal());
+            if (this.addBtn) this.addBtn.addEventListener('click', () => this.addBreakRow());
+            if (this.saveBtn) this.saveBtn.addEventListener('click', () => this.saveBreaks());
+            this.modal.addEventListener('click', (e) => {
+                if (e.target === this.modal) this.closeModal();
+            });
+            this.updateStatusPill();
+            setInterval(() => this.updateStatusPill(), 30000);
+        },
+
+        updateStatusPill() {
+            if (!this.pill) return;
+            if (currentView !== 'today') {
+                this.pill.style.display = 'none';
+                return;
+            }
+            this.pill.style.display = 'inline-flex';
+
+            const isWindowOpen = isSelectionWindowOpenSafe();
+            const breaks = getTodayBreaksSafe();
+            const now = new Date();
+            const curMins = now.getHours() * 60 + now.getMinutes();
+
+            this.pill.className = 'break-status-pill';
+
+            const activeBreak = breaks.find(b => {
+                if (!b.start || !b.end) return false;
+                const [sH, sM] = b.start.split(':').map(Number);
+                const [eH, eM] = b.end.split(':').map(Number);
+                return curMins >= (sH * 60 + sM) && curMins <= (eH * 60 + eM);
+            });
+
+            if (activeBreak) {
+                const [eH, eM] = activeBreak.end.split(':').map(Number);
+                const minsLeft = (eH * 60 + eM) - curMins;
+                this.pill.classList.add('active-break');
+                if (this.pillIcon) this.pillIcon.textContent = '🟢';
+                if (this.pillText) this.pillText.textContent = `${minsLeft}m left`;
+                return;
+            }
+
+            const upcomingBreak = breaks
+                .map(b => {
+                    if (!b.start) return null;
+                    const [sH, sM] = b.start.split(':').map(Number);
+                    return { ...b, startMins: sH * 60 + sM };
+                })
+                .filter(b => b && b.startMins > curMins)
+                .sort((a, b) => a.startMins - b.startMins)[0];
+
+            if (upcomingBreak) {
+                if (this.pillIcon) this.pillIcon.textContent = '☕';
+                if (this.pillText) this.pillText.textContent = `Next: ${upcomingBreak.start}`;
+                return;
+            }
+
+            if (isWindowOpen) {
+                this.pill.classList.add('window-open');
+                if (this.pillIcon) this.pillIcon.textContent = '⏸️';
+                if (this.pillText) this.pillText.textContent = breaks.length > 0 ? 'Edit Breaks' : 'Breaks';
+            } else {
+                if (this.pillIcon) this.pillIcon.textContent = '🔒';
+                if (this.pillText) this.pillText.textContent = 'Breaks Locked';
+            }
+        },
+
+        openModal() {
+            const isWindowOpen = isSelectionWindowOpenSafe();
+            const breaks = getTodayBreaksSafe();
+
+            if (this.rowsContainer) this.rowsContainer.innerHTML = '';
+            this.hideError();
+
+            if (breaks.length > 0) {
+                breaks.forEach(b => this.addBreakRow(b.start, b.end, !isWindowOpen));
+            } else if (isWindowOpen) {
+                this.addBreakRow();
+            }
+
+            if (this.addBtn) this.addBtn.style.display = isWindowOpen ? 'inline-block' : 'none';
+            if (this.saveBtn) this.saveBtn.style.display = isWindowOpen ? 'inline-block' : 'none';
+
+            const desc = document.getElementById('breakModalStatusDesc');
+            if (desc) {
+                desc.textContent = isWindowOpen
+                    ? 'Schedule up to 3 non-overlapping breaks (≤ 3 hours total). The window locks permanently once closed.'
+                    : 'The break scheduling window is now closed for today. Configured breaks are read-only.';
+            }
+
+            if (this.modal) this.modal.classList.add('open');
+        },
+
+        closeModal() {
+            if (this.modal) this.modal.classList.remove('open');
+        },
+
+        addBreakRow(startVal = '', endVal = '', disabled = false) {
+            if (!this.rowsContainer) return;
+            const rows = this.rowsContainer.querySelectorAll('.break-row-item');
+            if (rows.length >= 3) {
+                this.showError('Maximum 3 breaks allowed per day.');
+                return;
+            }
+
+            const row = document.createElement('div');
+            row.className = 'break-row-item';
+            row.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+            row.innerHTML = `
+                <input type="time" class="b-start" value="${startVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
+                <span style="color: var(--text-muted); font-size: 0.85rem;">to</span>
+                <input type="time" class="b-end" value="${endVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
+                ${!disabled ? '<button type="button" class="del-break-row-btn" style="background: none; border: none; color: var(--danger); font-size: 1.2rem; cursor: pointer; padding: 0 4px; line-height: 1;">&times;</button>' : ''}
+            `;
+
+            if (!disabled) {
+                row.querySelector('.del-break-row-btn').addEventListener('click', () => {
+                    row.remove();
+                    this.hideError();
+                });
+            }
+            this.rowsContainer.appendChild(row);
+        },
+
+        saveBreaks() {
+            if (!this.rowsContainer) return;
+            const rows = this.rowsContainer.querySelectorAll('.break-row-item');
+            const breaksArray = [];
+
+            for (const r of rows) {
+                const start = r.querySelector('.b-start')?.value;
+                const end = r.querySelector('.b-end')?.value;
+                if (start && end) {
+                    breaksArray.push({ start, end });
+                }
+            }
+
+            if (window.TaskitatorEngine?.BreakEngine?.saveTodayBreaks) {
+                const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(breaksArray);
+                if (!res.valid) {
+                    this.showError(res.error);
+                    return;
+                }
+            } else {
+                localStorage.setItem('taskitator_daily_breaks', JSON.stringify(breaksArray));
+            }
+
+            saveStorageAndPush();
+            this.closeModal();
+            this.updateStatusPill();
+        },
+
+        showError(msg) {
+            if (!this.errorBox) return;
+            this.errorBox.textContent = msg;
+            this.errorBox.style.display = 'block';
+        },
+
+        hideError() {
+            if (!this.errorBox) return;
+            this.errorBox.style.display = 'none';
+            this.errorBox.textContent = '';
+        }
+    };
+
+    // =========================================================================
+    // Core Tree Rendering & Path-Preserving Subtractive Filter
+    // =========================================================================
+    function isTaskVisuallyActive(task) {
+        if (task.status === 'trash') return false;
+        if (task.status === 'active') return true;
+        if (task.status === 'completed' && pendingGraceCompletions.has(task.id)) return true;
+        return false;
+    }
+
+    function renderUnifiedTaskTree() {
+        const list = document.getElementById('taskListContainer');
+        if (!list) return;
+        list.innerHTML = '';
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        const isBypassActive = isBypassActiveSafe();
+        const globalPriorities = getGlobalPriorities();
+
+        const allChildrenMap = new Map();
+        const visibleChildrenMap = new Map();
+
+        tasks.forEach(t => {
+            if (t.status === 'trash') return;
+            const pId = t.parent_id || 'root';
+
+            if (!allChildrenMap.has(pId)) allChildrenMap.set(pId, []);
+            allChildrenMap.get(pId).push(t);
+
+            if (isTaskVisuallyActive(t)) {
+                if (!visibleChildrenMap.has(pId)) visibleChildrenMap.set(pId, []);
+                visibleChildrenMap.get(pId).push(t);
+            }
+        });
+
+        function belongsToCurrentView(task) {
+            if (currentView === 'general') return true;
+            const rawDue = (task.due_date || '').trim().toLowerCase();
+            if (rawDue === 'today') return true;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(rawDue) && rawDue <= todayStr) return true;
+            const kids = allChildrenMap.get(task.id) || [];
+            return kids.some(k => belongsToCurrentView(k));
+        }
+
+        function hasVisibleDescendant(taskId) {
+            const kids = visibleChildrenMap.get(taskId) || [];
+            if (kids.length > 0) return true;
+            const allKids = allChildrenMap.get(taskId) || [];
+            return allKids.some(k => hasVisibleDescendant(k.id));
+        }
+
+        // Subtractive Filter Engine
+        const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0;
+        const matchMap = new Map();
+        const descMatchMap = new Map();
+
+        if (hasFilters) {
+            tasks.forEach(t => {
+                const tagMatch = activeFilters.tags.size === 0 || (t.tags && t.tags.some(tag => activeFilters.tags.has(tag)));
+                const prioMatch = activeFilters.priorities.size === 0 || activeFilters.priorities.has(t.priority_id);
+                matchMap.set(t.id, tagMatch && prioMatch);
+            });
+
+            function checkDesc(nodeId) {
+                if (descMatchMap.has(nodeId)) return descMatchMap.get(nodeId);
+                const kids = allChildrenMap.get(nodeId) || [];
+                let has = false;
+                for (let k of kids) {
+                    if (matchMap.get(k.id) || checkDesc(k.id)) has = true;
+                }
+                descMatchMap.set(nodeId, has);
+                return has;
+            }
+            tasks.forEach(t => checkDesc(t.id));
+        }
+
+        let rootTasks = (allChildrenMap.get('root') || []).filter(t => {
+            if (!belongsToCurrentView(t)) return false;
+            if (hasFilters) {
+                const m = matchMap.get(t.id);
+                const d = descMatchMap.get(t.id);
+                if (!m && !d) return false;
+            }
+            return isTaskVisuallyActive(t) || hasVisibleDescendant(t.id);
+        });
+
+        rootTasks = sortTasks(rootTasks);
+
+        if (rootTasks.length === 0) {
+            const msg = (currentView === 'today') 
+                ? 'No active tasks scheduled for today.' 
+                : 'No active tasks found in workspace.';
+            list.innerHTML = `<li style="text-align: center; color: var(--text-muted); padding: 32px;">${msg}</li>`;
+            return;
+        }
+
+        function buildNodeElement(task, depth = 0) {
+            const li = document.createElement('li');
+            const isDone = task.status === 'completed';
+            li.className = `task-node ${isDone ? 'completed' : ''}`;
+
+            let isBreadcrumb = false;
+            if (hasFilters) {
+                const m = matchMap.get(task.id);
+                const d = descMatchMap.get(task.id);
+                if (!m && d) {
+                    isBreadcrumb = true;
+                }
+            }
+
+            if (pendingGraceCompletions.has(task.id) && !isBreadcrumb) {
+                const graceInfo = pendingGraceCompletions.get(task.id);
+                const graceRow = document.createElement('div');
+                graceRow.className = 'undo-grace-row';
+                graceRow.style.marginLeft = `${depth * 20}px`;
+                graceRow.innerHTML = `
+                    <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
+                        <span style="color: var(--success); font-weight: 700;">✓ Completed:</span>
+                        <span style="text-decoration: line-through; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${task.title}</span>
+                    </div>
+                    <button class="undo-grace-btn" id="undoBtn_${task.id}">Undo (<span id="undoTimerSec_${task.id}">${graceInfo.remainingSec}</span>s)</button>
+                `;
+                const uBtn = graceRow.querySelector(`#undoBtn_${task.id}`);
+                if (uBtn) {
+                    uBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        undoTaskCompletion(task.id);
+                    });
+                }
+                li.appendChild(graceRow);
+                return li;
+            }
+
+            const row = document.createElement('div');
+            row.className = 'task-row';
+            row.style.marginLeft = `${depth * 20}px`;
+
+            if (isBreadcrumb) {
+                row.classList.add('muted-breadcrumb');
+            }
+
+            const pObj = globalPriorities.find(x => x.id === task.priority_id);
+            if (pObj) {
+                row.style.borderLeftColor = pObj.color;
+            }
+
+            const main = document.createElement('div');
+            main.className = 'task-main';
+
+            let visibleChildren = visibleChildrenMap.get(task.id) || [];
+            if (hasFilters) {
+                visibleChildren = (allChildrenMap.get(task.id) || []).filter(c => {
+                    const m = matchMap.get(c.id);
+                    const d = descMatchMap.get(c.id);
+                    return m || d;
+                });
+            }
+            visibleChildren = sortTasks(visibleChildren);
+
+            const hasVisibleChildren = visibleChildren.length > 0;
+            let isCollapsed = collapsedNodes.has(task.id);
+            if (isBreadcrumb) isCollapsed = false;
+
+            if (hasVisibleChildren) {
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'collapse-toggle';
+                toggleBtn.textContent = isCollapsed ? '▶' : '▼';
+                toggleBtn.title = isCollapsed ? 'Expand subtasks' : 'Collapse subtasks';
+                toggleBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (collapsedNodes.has(task.id)) {
+                        collapsedNodes.delete(task.id);
+                    } else {
+                        collapsedNodes.add(task.id);
+                    }
+                    saveStorageAndPush();
+                    renderUnifiedTaskTree();
+                });
+                main.appendChild(toggleBtn);
+            } else {
+                const spacer = document.createElement('span');
+                spacer.className = 'collapse-spacer';
+                main.appendChild(spacer);
+            }
+
+            const checkBtn = document.createElement('button');
+            checkBtn.className = 'check-circle';
+            checkBtn.textContent = isDone ? '✓' : '';
+            checkBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleTaskCompletion(task.id);
+            });
+            main.appendChild(checkBtn);
+
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'task-title';
+            titleSpan.textContent = task.title;
+            main.appendChild(titleSpan);
+
+            if (task.ai_locked) {
+                const badge = document.createElement('span');
+                badge.className = 'ai-badge';
+                badge.innerHTML = '🔒 AI';
+                main.appendChild(badge);
+            }
+
+            if (task.strict_prerequisites) {
+                const shieldBadge = document.createElement('span');
+                shieldBadge.className = 'ai-badge';
+                shieldBadge.innerHTML = '🛡️ Shielded';
+                shieldBadge.style.background = '#451a03';
+                shieldBadge.style.color = '#fde68a';
+                shieldBadge.style.borderColor = '#78350f';
+                main.appendChild(shieldBadge);
+            }
+
+            const allDesc = allChildrenMap.get(task.id);
+            if (allDesc && allDesc.length > 0) {
+                const doneKidsCount = allDesc.filter(k => k.status === 'completed').length;
+                const countBadge = document.createElement('span');
+                countBadge.className = 'subtasks-count-badge';
+                countBadge.textContent = `✓ ${doneKidsCount}/${allDesc.length} Subtasks`;
+                main.appendChild(countBadge);
+            }
+
+            if (task.due_date && currentView === 'general') {
+                const dueBadge = document.createElement('span');
+                dueBadge.className = 'due-badge';
+                dueBadge.textContent = task.due_date;
+                main.appendChild(dueBadge);
+            }
+
+            if (task.tags && task.tags.length > 0) {
+                task.tags.forEach(tag => {
+                    const tagChip = document.createElement('span');
+                    tagChip.className = 'tag-chip';
+                    tagChip.textContent = tag;
+                    main.appendChild(tagChip);
+                });
+            }
+
+            row.appendChild(main);
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'action-del-btn';
+            delBtn.textContent = '✕';
+            delBtn.title = 'Delete Task';
+
+            if (task.ai_locked && !isBypassActive) {
+                delBtn.disabled = true;
+                delBtn.title = 'AI tasks cannot be deleted without an active emergency bypass';
+            } else {
+                delBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteTask(task.id);
+                });
+            }
+            row.appendChild(delBtn);
+
+            row.addEventListener('click', () => {
+                if (!isBreadcrumb) openTaskDetailModal(task.id);
+            });
+
+            li.appendChild(row);
+
+            if (hasVisibleChildren) {
+                const subUl = document.createElement('ul');
+                subUl.className = `task-subtree ${isCollapsed ? 'collapsed' : ''}`;
+                visibleChildren.forEach(child => {
+                    subUl.appendChild(buildNodeElement(child, depth + 1));
+                });
+                li.appendChild(subUl);
+            }
+
+            return li;
+        }
+
+        rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
+    }
+
+    // =========================================================================
+    // Completed Tasks Modal
+    // =========================================================================
+    function renderCompletedModalList() {
+        const container = document.getElementById('completedTasksListContainer');
+        const titleEl = document.getElementById('completedModalTitle');
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (titleEl) {
+            titleEl.textContent = (currentView === 'today') 
+                ? "✓ Today's Completed Tasks" 
+                : "✓ Workspace Completed Tasks";
+        }
+
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        const completedList = tasks.filter(t => {
+            if (t.status !== 'completed') return false;
+            if (pendingGraceCompletions.has(t.id)) return false;
+            if (currentView === 'general') return true;
+
+            const due = String(t.due_date || 'today').trim().toLowerCase();
+            const compDate = t.completed_at ? t.completed_at.split('T')[0] : '';
+            return due === 'today' || due === todayStr || compDate === todayStr;
+        });
+
+        if (completedList.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; color: var(--text-muted); padding: 24px 0;">
+                    No completed tasks found.
+                </div>
+            `;
+            return;
+        }
+
+        const isBypassActive = isBypassActiveSafe();
+
+        completedList.forEach(task => {
+            const row = document.createElement('div');
+            row.className = 'completed-item-row';
+
+            const info = document.createElement('div');
+            info.style.cssText = 'flex: 1; margin-right: 12px;';
+
+            let badgesHtml = '';
+            if (task.ai_locked) badgesHtml += '<span class="ai-badge">🔒 AI</span> ';
+            if (task.strict_prerequisites) badgesHtml += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️ Shielded</span>';
+
+            info.innerHTML = `
+                <div style="font-weight: 600; text-decoration: line-through; color: var(--text-muted);">
+                    ${task.title} ${badgesHtml}
+                </div>
+                ${task.completed_at ? `<small style="color: var(--text-muted); font-size: 0.75rem;">Done at: ${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
+            `;
+
+            const actionContainer = document.createElement('div');
+
+            if (task.ai_locked && !isBypassActive) {
+                const lockedBtn = document.createElement('span');
+                lockedBtn.className = 'ai-locked-btn';
+                lockedBtn.title = 'AI tasks are permanently locked and cannot be uncompleted';
+                lockedBtn.innerHTML = '🔒 Locked';
+                actionContainer.appendChild(lockedBtn);
+            } else {
+                const actionBtn = document.createElement('button');
+                actionBtn.className = 'icon-btn';
+                actionBtn.style.padding = '4px 10px';
+                actionBtn.style.fontSize = '0.8rem';
+                actionBtn.innerHTML = '↺ Uncomplete';
+
+                actionBtn.addEventListener('click', () => {
+                    uncompleteFromModal(task.id);
+                });
+                actionContainer.appendChild(actionBtn);
+            }
+
+            row.appendChild(info);
+            row.appendChild(actionContainer);
+            container.appendChild(row);
+        });
+    }
+
+    function uncompleteFromModal(taskId) {
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        if (task.ai_locked && !isBypassActiveSafe()) {
+            alert('Blocked: AI-checked tasks are permanent and cannot be uncompleted.');
+            return;
+        }
+
+        if (task.parent_id) {
+            const parent = tasks.find(t => t.id === task.parent_id);
+            if (!parent || parent.status === 'trash') {
+                task.parent_id = null;
+            }
+        }
+
+        task.status = 'active';
+        task.completed_at = null;
+
+        saveStorageAndPush();
+        renderUnifiedView();
+    }
+
+    // =========================================================================
+    // Master View Render & Router
+    // =========================================================================
+    function renderUnifiedView() {
+        renderUnifiedTaskTree();
+        renderCompletedModalList();
+        BreakUI.updateStatusPill();
+    }
+
+    function setView(viewName) {
+        currentView = (viewName === 'general') ? 'general' : 'today';
+
+        const heading = document.getElementById('pageViewHeading');
+        const linkToday = document.getElementById('navLinkToday');
+        const linkGeneral = document.getElementById('navLinkGeneral');
+
+        if (currentView === 'today') {
+            if (heading) heading.textContent = "Today's Focus";
+            if (linkToday) linkToday.classList.add('active');
+            if (linkGeneral) linkGeneral.classList.remove('active');
+        } else {
+            if (heading) heading.textContent = "General Tasks";
+            if (linkToday) linkToday.classList.remove('active');
+            if (linkGeneral) linkGeneral.classList.add('active');
+        }
+
+        renderUnifiedView();
+    }
+
+    function handleHashRouting() {
+        const hash = window.location.hash.replace('#', '').toLowerCase();
+        setView(hash === 'general' ? 'general' : 'today');
+    }
+
+    // =========================================================================
+    // Emergency Countdown UI
+    // =========================================================================
+    function updateEmergencyUI() {
+        const banner = document.getElementById('activeEmergencyBanner');
+        if (isBypassActiveSafe()) {
+            if (banner) banner.style.display = 'flex';
+            clearInterval(emergencyTimerInterval);
+            emergencyTimerInterval = setInterval(() => {
+                let remaining = 0;
+                if (window.TaskitatorEngine?.EmergencyManager?.getRemainingWindowSeconds) {
+                    remaining = TaskitatorEngine.EmergencyManager.getRemainingWindowSeconds();
+                }
+                if (remaining <= 0) {
+                    clearInterval(emergencyTimerInterval);
+                    updateEmergencyUI();
+                    return;
+                }
+                const m = Math.floor(remaining / 60);
+                const s = remaining % 60;
+                const timerEl = document.getElementById('emergencyCountdownTimer');
+                if (timerEl) {
+                    timerEl.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                }
+            }, 1000);
+        } else {
+            if (banner) banner.style.display = 'none';
+            clearInterval(emergencyTimerInterval);
+        }
+        renderUnifiedTaskTree();
+    }
+
+    // =========================================================================
+    // Boot and Event Wiring
+    // =========================================================================
+    function init() {
+        initSyncIndicator();
+        loadStorage();
+        BreakUI.init();
+
+        // 1. Navigation & Drawer Bindings
         const sidebarDrawer = document.getElementById('sidebarDrawer');
         const drawerBackdrop = document.getElementById('drawerBackdrop');
         const openDrawerBtn = document.getElementById('openDrawerBtn');
@@ -717,7 +1355,35 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 2. Copilot Drawer
+        document.querySelectorAll('#drawerNavLinks a').forEach(link => {
+            link.addEventListener('click', () => {
+                if (sidebarDrawer) sidebarDrawer.classList.remove('open');
+                if (drawerBackdrop) drawerBackdrop.classList.remove('open');
+            });
+        });
+
+        // 2. Hash Routing
+        window.addEventListener('hashchange', handleHashRouting);
+        handleHashRouting();
+
+        // 3. Completed Modal Toggle
+        const completedModal = document.getElementById('completedModal');
+        const openCompletedModalBtn = document.getElementById('openCompletedModalBtn');
+        const closeCompletedModalBtn = document.getElementById('closeCompletedModalBtn');
+
+        if (openCompletedModalBtn && completedModal) {
+            openCompletedModalBtn.addEventListener('click', () => {
+                renderCompletedModalList();
+                completedModal.classList.add('open');
+            });
+        }
+        if (closeCompletedModalBtn && completedModal) {
+            closeCompletedModalBtn.addEventListener('click', () => {
+                completedModal.classList.remove('open');
+            });
+        }
+
+        // 4. Copilot Drawer Bindings
         const copilotDrawer = document.getElementById('copilotDrawer');
         const copilotBackdrop = document.getElementById('copilotBackdrop');
         const openCopilotNavBtn = document.getElementById('openCopilotNavBtn');
@@ -743,39 +1409,45 @@ window.TaskitatorApp = (() => {
         if (copilotBackdrop) copilotBackdrop.addEventListener('click', closeCopilot);
 
         const startCopilotBtn = document.getElementById('startCopilotBtn');
-        const copilotStandbyView = document.getElementById('copilotStandbyView');
-        const copilotChatView = document.getElementById('copilotChatView');
-
         if (startCopilotBtn) {
             startCopilotBtn.addEventListener('click', () => {
-                if (copilotStandbyView) copilotStandbyView.style.display = 'none';
-                if (copilotChatView) copilotChatView.classList.add('active');
-                const input = document.getElementById('copilotInput');
-                if (input) input.focus();
+                const sb = document.getElementById('copilotStandbyView');
+                const cv = document.getElementById('copilotChatView');
+                if (sb) sb.style.display = 'none';
+                if (cv) cv.classList.add('active');
+                const inp = document.getElementById('copilotInput');
+                if (inp) inp.focus();
             });
         }
 
-        // 3. Filter Popover Bindings
+        // 5. Floating + Task Button
+        const openRootAddModalBtn = document.getElementById('openRootAddModalBtn');
+        if (openRootAddModalBtn) {
+            openRootAddModalBtn.addEventListener('click', () => {
+                openTaskCreationModal(null, 'Create New Task');
+            });
+        }
+
+        // 6. Filter Popover Actions
         const openFilterModalBtn = document.getElementById('openFilterModalBtn');
-        if (openFilterModalBtn) {
+        const closeFilterModalBtn = document.getElementById('closeFilterModalBtn');
+        const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+        const applyFiltersBtn = document.getElementById('applyFiltersBtn');
+        const filterModal = document.getElementById('filterModal');
+
+        if (openFilterModalBtn && filterModal) {
             openFilterModalBtn.addEventListener('click', () => {
                 draftFilters.tags = new Set(activeFilters.tags);
                 draftFilters.priorities = new Set(activeFilters.priorities);
                 renderFilterClouds();
-                const modal = document.getElementById('filterModal');
-                if (modal) modal.classList.add('open');
+                filterModal.classList.add('open');
             });
         }
-
-        const closeFilterModalBtn = document.getElementById('closeFilterModalBtn');
-        if (closeFilterModalBtn) {
+        if (closeFilterModalBtn && filterModal) {
             closeFilterModalBtn.addEventListener('click', () => {
-                const modal = document.getElementById('filterModal');
-                if (modal) modal.classList.remove('open');
+                filterModal.classList.remove('open');
             });
         }
-
-        const clearFiltersBtn = document.getElementById('clearFiltersBtn');
         if (clearFiltersBtn) {
             clearFiltersBtn.addEventListener('click', () => {
                 draftFilters.tags.clear();
@@ -783,9 +1455,7 @@ window.TaskitatorApp = (() => {
                 renderFilterClouds();
             });
         }
-
-        const applyFiltersBtn = document.getElementById('applyFiltersBtn');
-        if (applyFiltersBtn) {
+        if (applyFiltersBtn && filterModal) {
             applyFiltersBtn.addEventListener('click', () => {
                 activeFilters.tags = new Set(draftFilters.tags);
                 activeFilters.priorities = new Set(draftFilters.priorities);
@@ -794,20 +1464,18 @@ window.TaskitatorApp = (() => {
                 const dot = document.getElementById('filterActiveDot');
                 if (dot) dot.style.display = hasFilters ? 'block' : 'none';
 
-                const modal = document.getElementById('filterModal');
-                if (modal) modal.classList.remove('open');
-                if (typeof triggerRenderFn === 'function') triggerRenderFn();
+                filterModal.classList.remove('open');
+                renderUnifiedTaskTree();
             });
         }
 
-        // 4. Quick Tag Add Buttons
+        // 7. Quick Tag Adds
         const createQuickTagBtn = document.getElementById('createQuickTagBtn');
         if (createQuickTagBtn) {
             createQuickTagBtn.addEventListener('click', () => {
                 handleQuickAddTag('createQuickTagInput', createModalSelectedTags, 'createTagCloud');
             });
         }
-
         const createQuickTagInput = document.getElementById('createQuickTagInput');
         if (createQuickTagInput) {
             createQuickTagInput.addEventListener('keydown', (e) => {
@@ -824,7 +1492,6 @@ window.TaskitatorApp = (() => {
                 handleQuickAddTag('editQuickTagInput', editModalSelectedTags, 'editTagCloud');
             });
         }
-
         const editQuickTagInput = document.getElementById('editQuickTagInput');
         if (editQuickTagInput) {
             editQuickTagInput.addEventListener('keydown', (e) => {
@@ -835,7 +1502,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 5. Creation Modal Pre-Flight Verification & Subtask Fields
+        // 8. Task Creation Form
         const aiLockCheckbox = document.getElementById('aiLockCheckbox');
         if (aiLockCheckbox) {
             aiLockCheckbox.addEventListener('change', () => {
@@ -943,11 +1610,11 @@ window.TaskitatorApp = (() => {
 
                 saveStorageAndPush();
                 if (addTaskModal) addTaskModal.classList.remove('open');
-                if (typeof triggerRenderFn === 'function') triggerRenderFn();
+                renderUnifiedView();
             });
         }
 
-        // 6. Task Detail Modal Actions
+        // 9. Task Detail Modal Actions
         const taskDetailModal = document.getElementById('taskDetailModal');
         const closeDetailModalBtn = document.getElementById('closeDetailModalBtn');
         if (closeDetailModalBtn && taskDetailModal) {
@@ -978,7 +1645,7 @@ window.TaskitatorApp = (() => {
                     alert('This task was removed in a background synchronization.');
                     if (taskDetailModal) taskDetailModal.classList.remove('open');
                     activeDetailTaskId = null;
-                    if (typeof triggerRenderFn === 'function') triggerRenderFn();
+                    renderUnifiedView();
                     return;
                 }
 
@@ -1011,7 +1678,7 @@ window.TaskitatorApp = (() => {
                 saveStorageAndPush();
                 if (taskDetailModal) taskDetailModal.classList.remove('open');
                 activeDetailTaskId = null;
-                if (typeof triggerRenderFn === 'function') triggerRenderFn();
+                renderUnifiedView();
             });
         }
 
@@ -1019,7 +1686,7 @@ window.TaskitatorApp = (() => {
         if (deleteFromDetailBtn) {
             deleteFromDetailBtn.addEventListener('click', () => {
                 if (!activeDetailTaskId) return;
-                deleteTask(activeDetailTaskId, triggerRenderFn);
+                deleteTask(activeDetailTaskId);
                 if (taskDetailModal) taskDetailModal.classList.remove('open');
                 activeDetailTaskId = null;
             });
@@ -1036,7 +1703,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 7. Audit Modal Event Listeners
+        // 10. Audit Modal Handlers
         const auditModal = document.getElementById('auditModal');
         const closeAuditModalBtn = document.getElementById('closeAuditModalBtn');
         if (closeAuditModalBtn && auditModal) {
@@ -1100,7 +1767,7 @@ window.TaskitatorApp = (() => {
                     saveStorageAndPush();
                     if (auditModal) auditModal.classList.remove('open');
                     pendingAuditTaskId = null;
-                    if (typeof triggerRenderFn === 'function') triggerRenderFn();
+                    renderUnifiedView();
                 } else {
                     submitProofBtn.disabled = false;
                     submitProofBtn.textContent = 'Retry Submission';
@@ -1113,7 +1780,144 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // 8. Emergency Bypass Listeners
+        // 11. Criteria Validation Button
+        const validateCriteriaBtn = document.getElementById('validateCriteriaBtn');
+        if (validateCriteriaBtn) {
+            validateCriteriaBtn.addEventListener('click', async () => {
+                const criteriaText = document.getElementById('taskCriteriaInput')?.value.trim() || '';
+                const taskTitle = document.getElementById('taskTitleInput')?.value.trim() || '';
+                const feedback = document.getElementById('criteriaFeedbackBox');
+
+                if (!criteriaText) {
+                    if (feedback) {
+                        feedback.style.display = 'block';
+                        feedback.className = 'criteria-feedback-box fail';
+                        feedback.textContent = 'Please enter proof criteria before validating.';
+                    }
+                    return;
+                }
+
+                validateCriteriaBtn.disabled = true;
+                validateCriteriaBtn.textContent = 'Validating...';
+                if (feedback) {
+                    feedback.style.display = 'block';
+                    feedback.className = 'criteria-feedback-box loading';
+                    feedback.textContent = 'Auditing criteria with forensic model...';
+                }
+
+                let res = { success: false, error: 'Audit engine missing' };
+                if (window.TaskitatorEngine?.AuditEngine?.validateCriteria) {
+                    res = await TaskitatorEngine.AuditEngine.validateCriteria(criteriaText, taskTitle);
+                }
+
+                validateCriteriaBtn.disabled = false;
+                validateCriteriaBtn.textContent = '🔍 Validate Criteria';
+
+                if (!res.success) {
+                    if (feedback) {
+                        feedback.className = 'criteria-feedback-box fail';
+                        feedback.innerHTML = `<strong>Audit Halted:</strong> ${res.error || 'Failed to communicate with AI model.'}`;
+                    }
+                    criteriaValidationState = { validated: false, score: 0, isTemplate: false };
+                    return;
+                }
+
+                criteriaValidationState = {
+                    validated: true,
+                    score: res.score,
+                    isTemplate: false
+                };
+
+                if (feedback) {
+                    if (res.passed) {
+                        feedback.className = 'criteria-feedback-box pass';
+                        feedback.innerHTML = `<strong>✓ Verified (${res.score}/10)</strong>: ${res.critique}`;
+                    } else {
+                        feedback.className = 'criteria-feedback-box fail';
+                        let feedbackHtml = `<strong>⚠️ Low Quality Rating (${res.score}/10)</strong>: ${res.critique}`;
+                        if (res.suggested_rewrite) {
+                            feedbackHtml += `
+                                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2);">
+                                    <strong>Suggested Artifact:</strong> "${res.suggested_rewrite}"
+                                    <div style="margin-top: 6px;">
+                                        <button type="button" class="icon-btn" id="applySuggestionBtn" style="padding: 3px 8px; font-size: 0.75rem; background: var(--card-subtle);">Use Suggestion</button>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        feedback.innerHTML = feedbackHtml;
+
+                        const applyBtn = feedback.querySelector('#applySuggestionBtn');
+                        if (applyBtn) {
+                            applyBtn.addEventListener('click', () => {
+                                const tIn = document.getElementById('taskCriteriaInput');
+                                if (tIn) tIn.value = res.suggested_rewrite;
+                                criteriaValidationState = { validated: true, score: 9, isTemplate: true };
+                                feedback.className = 'criteria-feedback-box pass';
+                                feedback.innerHTML = `<strong>✓ Verified (9/10)</strong>: Applied forensic suggestion.`;
+                            });
+                        }
+                    }
+                }
+            });
+        }
+
+        // 12. Template Modal Pickers
+        const openTemplatesBtn = document.getElementById('openTemplatesBtn');
+        const templatesModal = document.getElementById('templatesModal');
+        const closeTemplatesModalBtn = document.getElementById('closeTemplatesModalBtn');
+
+        if (openTemplatesBtn && templatesModal) {
+            openTemplatesBtn.addEventListener('click', async () => {
+                if (!cachedTemplates) {
+                    try {
+                        const resp = await fetch('./CRITERIA_TEMPLATES.json');
+                        if (resp.ok) cachedTemplates = await resp.json();
+                    } catch (e) {}
+                }
+                const container = document.getElementById('templatesListContainer');
+                if (container) {
+                    container.innerHTML = '';
+                    const list = cachedTemplates || [];
+                    if (list.length === 0) {
+                        container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 12px 0;">No templates available.</div>';
+                    } else {
+                        list.forEach(t => {
+                            const card = document.createElement('div');
+                            card.className = 'template-picker-card';
+                            card.innerHTML = `
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <strong style="color: var(--text-color); font-size: 0.88rem;">${t.label}</strong>
+                                    <span class="tag-chip" style="font-size: 0.7rem;">${t.category}</span>
+                                </div>
+                                <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.35;">${t.template}</p>
+                            `;
+                            card.addEventListener('click', () => {
+                                const tIn = document.getElementById('taskCriteriaInput');
+                                if (tIn) tIn.value = t.template;
+                                criteriaValidationState = { validated: true, score: 10, isTemplate: true };
+                                const fb = document.getElementById('criteriaFeedbackBox');
+                                if (fb) {
+                                    fb.style.display = 'block';
+                                    fb.className = 'criteria-feedback-box pass';
+                                    fb.innerHTML = `<strong>✓ Verified (10/10)</strong>: Standard verified artifact template selected.`;
+                                }
+                                templatesModal.classList.remove('open');
+                            });
+                            container.appendChild(card);
+                        });
+                    }
+                }
+                templatesModal.classList.add('open');
+            });
+        }
+        if (closeTemplatesModalBtn && templatesModal) {
+            closeTemplatesModalBtn.addEventListener('click', () => {
+                templatesModal.classList.remove('open');
+            });
+        }
+
+        // 13. Emergency Confirm Modal Handlers
         const emergencyTriggerBtn = document.getElementById('emergencyTriggerBtn');
         const emergencyConfirmModal = document.getElementById('emergencyConfirmModal');
         const cancelEmergencyBtn = document.getElementById('cancelEmergencyBtn');
@@ -1138,13 +1942,11 @@ window.TaskitatorApp = (() => {
                 if (emergencyConfirmModal) emergencyConfirmModal.classList.add('open');
             });
         }
-
         if (cancelEmergencyBtn && emergencyConfirmModal) {
             cancelEmergencyBtn.addEventListener('click', () => {
                 emergencyConfirmModal.classList.remove('open');
             });
         }
-
         if (confirmEmergencyBtn && emergencyConfirmModal) {
             confirmEmergencyBtn.addEventListener('click', () => {
                 let res = { success: false, error: 'Emergency manager uninitialized' };
@@ -1153,106 +1955,107 @@ window.TaskitatorApp = (() => {
                 }
                 emergencyConfirmModal.classList.remove('open');
                 if (res.success) {
-                    updateEmergencyUI(triggerRenderFn);
+                    updateEmergencyUI();
                 } else {
                     alert(res.error);
                 }
             });
         }
-
         if (emergencyInfoBtn && emergencyInfoModal) {
             emergencyInfoBtn.addEventListener('click', () => {
                 emergencyInfoModal.classList.add('open');
             });
         }
-
         if (closeEmergencyInfoModalBtn && emergencyInfoModal) {
             closeEmergencyInfoModalBtn.addEventListener('click', () => {
                 emergencyInfoModal.classList.remove('open');
             });
         }
-    }
 
-    function updateEmergencyUI(triggerRenderFn) {
-        const banner = document.getElementById('activeEmergencyBanner');
-        const countDisplay = document.getElementById('emergencyCountDisplay');
+        // 14. Sync Modal Bindings
+        const syncStatusDot = document.getElementById('syncStatusDot');
+        const syncInfoModal = document.getElementById('syncInfoModal');
+        const closeSyncInfoModalBtn = document.getElementById('closeSyncInfoModalBtn');
+        const forceSyncFromModalBtn = document.getElementById('forceSyncFromModalBtn');
 
-        const state = getEmergencyStateSafe();
-        if (countDisplay) countDisplay.textContent = `${state.uses_left}/4`;
+        if (syncStatusDot && syncInfoModal) {
+            syncStatusDot.addEventListener('click', () => syncInfoModal.classList.add('open'));
+        }
+        if (closeSyncInfoModalBtn && syncInfoModal) {
+            closeSyncInfoModalBtn.addEventListener('click', () => syncInfoModal.classList.remove('open'));
+        }
+        if (forceSyncFromModalBtn) {
+            forceSyncFromModalBtn.addEventListener('click', async () => {
+                let settings = {};
+                try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch (e) {}
 
-        if (isBypassActiveSafe()) {
-            if (banner) banner.style.display = 'flex';
-            clearInterval(emergencyTimerInterval);
-            emergencyTimerInterval = setInterval(() => {
-                let remaining = 0;
-                if (window.TaskitatorEngine?.EmergencyManager?.getRemainingWindowSeconds) {
-                    remaining = TaskitatorEngine.EmergencyManager.getRemainingWindowSeconds();
-                }
-                if (remaining <= 0) {
-                    clearInterval(emergencyTimerInterval);
-                    updateEmergencyUI(triggerRenderFn);
+                if (!settings.worker_passkey) {
+                    alert('Cannot sync: No secret passkey configured in Settings.');
+                    updateSyncDot('local-only');
                     return;
                 }
-                const m = Math.floor(remaining / 60);
-                const s = remaining % 60;
-                const timerEl = document.getElementById('emergencyCountdownTimer');
-                if (timerEl) {
-                    timerEl.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+
+                updateSyncDot('pending');
+                if (syncInfoModal) syncInfoModal.classList.remove('open');
+
+                if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
+                    const breaks = getTodayBreaksSafe();
+                    const ok = await SyncEngine.forceImmediateSync({ today_breaks: breaks });
+                    if (ok) {
+                        updateSyncDot('synced');
+                        loadStorage();
+                        renderUnifiedView();
+                    } else {
+                        updateSyncDot('error');
+                    }
                 }
-            }, 1000);
-        } else {
-            if (banner) banner.style.display = 'none';
-            clearInterval(emergencyTimerInterval);
+            });
         }
 
-        if (typeof triggerRenderFn === 'function') triggerRenderFn();
+        // Sync & Task State Event Listeners
+        window.addEventListener('taskitator-synced', () => {
+            updateSyncDot('synced');
+            if (!activeDetailTaskId) {
+                loadStorage();
+                renderUnifiedView();
+            }
+        });
+        window.addEventListener('taskitator-tasks-updated', () => {
+            if (!activeDetailTaskId) {
+                loadStorage();
+                renderUnifiedView();
+            }
+        });
+        window.addEventListener('taskitator-sync-error', () => {
+            updateSyncDot('error');
+        });
+
+        // Initialize Background Polling
+        if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
+            SyncEngine.pull(() => {
+                if (!activeDetailTaskId) {
+                    loadStorage();
+                    renderUnifiedView();
+                }
+            });
+        }
     }
 
-    // =========================================================================
-    // Public Module API
-    // =========================================================================
     return {
-        // Data & State
-        getTasks: () => tasks,
-        getCollapsedNodes: () => collapsedNodes,
-        getActiveFilters: () => activeFilters,
-        getPendingGraceCompletions: () => pendingGraceCompletions,
-        getActiveDetailTaskId: () => activeDetailTaskId,
-
-        // Core Actions
-        loadStorage,
-        saveStorageAndPush,
-        initSyncIndicator,
-        updateSyncDot,
-        updateEmergencyUI,
-        initSharedUI,
-
-        // Hierarchy, Sorting & State
-        sortTasks,
-        getAllDescendants,
-        hasUncompletedDescendant,
-        isCompletionBlocked,
-        cascadeTaskStatus,
-        handleTaskCompletion,
-        undoTaskCompletion,
-        deleteTask,
-
-        // Modals & UI
-        openTaskCreationModal,
-        openTaskDetailModal,
-        openAuditModal,
-        renderModalTagCloud,
-        renderModalPriorityCloud,
-        handleQuickAddTag,
-        renderFilterClouds,
-
-        // Registries
-        getGlobalTags,
-        getGlobalPriorities,
-        saveGlobalTag,
-        getLowestPriorityId,
-
-        // Audio
-        SoundFX
+        init,
+        setView,
+        renderUnifiedView
     };
 })();
+
+// Bootstrap Application on DOM Ready
+document.addEventListener('DOMContentLoaded', () => {
+    TaskitatorApp.init();
+});
+
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .catch(err => console.error('SW Registration failed:', err));
+    });
+}
