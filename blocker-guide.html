@@ -90,7 +90,7 @@
             color: var(--primary, #3b82f6);
         }
 
-        /* --- Phase 2 Sequential Engine Styles --- */
+        /* --- Sequential Checklist Engine Styles --- */
         .progress-header {
             display: flex;
             justify-content: space-between;
@@ -296,78 +296,178 @@
         </p>
     </header>
 
-    <!-- PHASE 1: App Blocker Macro -->
+    <!-- PHASE 1: App Blocker Macro (Interactive Sequential Engine) -->
     <div class="step-card">
         <span class="step-badge">Phase 1: Macro 1</span>
         <h2 style="margin: 4px 0 10px 0; font-size: 1.2rem;">Building the App Blocker</h2>
-        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
-            This macro monitors your device and immediately terminates distracting apps whenever tasks remain unfinished.
+        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 16px;">
+            This macro monitors your device and immediately terminates distracting apps whenever tasks remain unfinished. Complete the checkpoints below.
         </p>
 
-        <!-- Substep 1 -->
-        <h4 style="margin: 16px 0 6px 0; color: #f8fafc;">1. Open the Macros Tab</h4>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 8px 0;">
-            Open MacroDroid and tap the <strong>Macros</strong> tab on the bottom bar to open your macros list. Tap the floating <strong>+</strong> button (or select <strong>Add Macro</strong> from the home grid).
-        </p>
-        <div class="guide-screenshot-container">
-            <img src="image/phase1/Ph1_S1.png" alt="MacroDroid Home Tab" class="guide-screenshot" loading="lazy">
-            <span class="screenshot-caption">Fig 1: Tap Macros at the bottom bar to view and manage macros.</span>
-        </div>
-
-        <!-- Substep 2 -->
-        <h4 style="margin: 20px 0 6px 0; color: #f8fafc;">2. Name the Macro & Add the Trigger</h4>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 8px 0;">
-            Tap the top text field <code>(#1)</code> and enter the name <code>App Blocker</code>. Next, tap the <strong>+</strong> button on the red <strong>Triggers</strong> card <code>(#2)</code>.
-        </p>
-        <div class="guide-screenshot-container">
-            <img src="image/phase1/Ph1_S2.png" alt="MacroDroid Macro Editor" class="guide-screenshot" loading="lazy">
-            <span class="screenshot-caption">Fig 2: Enter App Blocker at (#1) and tap the red Triggers plus button at (#2).</span>
-        </div>
-
-        <!-- Substep 3 -->
-        <h4 style="margin: 20px 0 6px 0; color: #f8fafc;">3. Choose Application Launched</h4>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 8px 0;">
-            Select <strong>Applications</strong> &rarr; <strong>Application Launched/Closed</strong>. Choose <strong>Application Launched</strong>, then select all apps you want to restrict during work hours (e.g., YouTube, Instagram, Games).
-        </p>
-        <div class="guide-screenshot-container">
-            <img src="image/phase1/Ph1_S3.png" alt="Add Trigger - Applications" class="guide-screenshot" loading="lazy">
-            <span class="screenshot-caption">Fig 3: Tap Application Launched/Closed (ignore the crossed-out options).</span>
-        </div>
-        <div class="warning-callout">
-            ⚠️ <strong>Anti-Lockout Protection:</strong> Never check the <strong>Phone Dialer</strong>, <strong>SMS Messages</strong>, <strong>Android Settings</strong>, or <strong>MacroDroid</strong> itself. Keep all emergency and critical tools accessible.
-        </div>
-
-        <!-- Substep 4 -->
-        <h4 style="margin: 20px 0 6px 0; color: #f8fafc;">4. Add Lockdown Actions</h4>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 8px 0;">
-            Tap the <strong>+</strong> button on the blue <strong>Actions</strong> card <code>(#3)</code> to add your block handlers:
-        </p>
-        <div class="guide-screenshot-container">
-            <img src="image/phase1/Ph1_S4.png" alt="Actions Section" class="guide-screenshot" loading="lazy">
-            <span class="screenshot-caption">Fig 4: Tap the blue Actions plus button at (#3) to attach exit actions.</span>
-        </div>
-
-        <!-- Recommendation Block with Search Screenshot -->
-        <div class="recommendation-box">
-            <h4 style="margin: 0 0 6px 0; color: var(--primary);">💡 Recommended Exit Action: "Launch Home Screen"</h4>
-            <p style="font-size: 0.83rem; color: var(--text-muted); line-height: 1.5; margin: 0 0 10px 0;">
-                The cleanest, most reliable way to kick yourself out of a blocked app without lag is the <strong>Launch Home Screen</strong> action. Search for <code>launch home screen</code> in the action search bar to locate it instantly:
-            </p>
-            <div class="guide-screenshot-container">
-                <img src="image/phase1/Ph1_S5.png" alt="Search for Launch Home Screen Action" class="guide-screenshot" loading="lazy">
-                <span class="screenshot-caption">Fig 5: Under Device Actions, select Launch Home Screen.</span>
-            </div>
-            
-            <div class="visual-tree" style="margin-top: 12px;">
-                <strong>Recommended Complete Action Chain:</strong><br>
-                &bull; Device Actions &rarr; Launch Home Screen<br>
-                &bull; Notification &rarr; Display Pop-Up Message &rarr; <em>"Tasks incomplete! Complete them first."</em>
+        <!-- Progress Tracker -->
+        <div class="progress-header">
+            <span>Progress: <strong id="p1-step-count" style="color: var(--text-color);">0 / 6</strong> sub-steps completed</span>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <span id="p1-percent-text" style="font-weight: 600;">0%</span>
+                <button class="reset-link" onclick="resetPhase1Progress()">Reset</button>
             </div>
         </div>
+        <div class="progress-bar-bg">
+            <div id="p1-progress-fill" class="progress-bar-fill"></div>
+        </div>
 
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 14px;">
-            Tap the checkmark in the bottom-right corner to save your <strong>App Blocker</strong> macro.
-        </p>
+        <!-- ==================== PHASE 1 MAJOR STEP 1 ==================== -->
+        <div class="major-block" id="p1-major-1">
+            <div class="major-header" onclick="toggleP1Major(1)">
+                <span class="major-title"><span class="major-badge">Step 1</span> Macro Setup & Triggers</span>
+                <span class="major-status" id="p1-status-major-1">0/3</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S1 -->
+                <div class="minor-block" id="p1-minor-1">
+                    <div class="minor-header" onclick="toggleP1Minor(1)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.1 Open the Macros Tab</span>
+                        <span class="minor-status" id="p1-status-minor-1">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Open MacroDroid and tap the Macros tab on the bottom bar to open your macros list. Tap the floating <strong>+</strong> button (or select <strong>Add Macro</strong> from the home grid).</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase1/Ph1_S1.png" alt="MacroDroid Home Tab" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Fig 1: Tap Macros at the bottom bar to view and manage macros.</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="p1-item-sub-1">
+                                <input type="checkbox" id="p1-sub-1" onchange="toggleP1Sub('p1-sub-1')">
+                                <label class="sub-label" for="p1-sub-1"><span class="hash-tag">#1</span> Tap Macros tab and open a new macro creation screen.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S2 -->
+                <div class="minor-block" id="p1-minor-2">
+                    <div class="minor-header" onclick="toggleP1Minor(2)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.2 Name Macro & Add Trigger</span>
+                        <span class="minor-status" id="p1-status-minor-2">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Tap the top text field <code>(#1)</code> and enter the name <code>App Blocker</code>. Next, tap the <strong>+</strong> button on the red <strong>Triggers</strong> card <code>(#2)</code>.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase1/Ph1_S2.png" alt="MacroDroid Macro Editor" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Fig 2: Enter App Blocker at (#1) and tap the red Triggers plus button at (#2).</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="p1-item-sub-2">
+                                <input type="checkbox" id="p1-sub-2" onchange="toggleP1Sub('p1-sub-2')">
+                                <label class="sub-label" for="p1-sub-2"><span class="hash-tag">#2</span> Name macro "App Blocker" and open the Triggers menu.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S3 -->
+                <div class="minor-block" id="p1-minor-3">
+                    <div class="minor-header" onclick="toggleP1Minor(3)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.3 Choose Application Launched</span>
+                        <span class="minor-status" id="p1-status-minor-3">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Select <strong>Applications</strong> &rarr; <strong>Application Launched/Closed</strong>. Choose <strong>Application Launched</strong>, then select all apps you want to restrict during work hours.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase1/Ph1_S3.png" alt="Add Trigger - Applications" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Fig 3: Tap Application Launched/Closed (ignore the crossed-out options).</span>
+                        </div>
+                        <div class="warning-callout" style="margin-bottom:12px;">
+                            ⚠️ <strong>Anti-Lockout Protection:</strong> Never check the <strong>Phone Dialer</strong>, <strong>SMS Messages</strong>, <strong>Android Settings</strong>, or <strong>MacroDroid</strong> itself. Keep all emergency and critical tools accessible.
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="p1-item-sub-3">
+                                <input type="checkbox" id="p1-sub-3" onchange="toggleP1Sub('p1-sub-3')">
+                                <label class="sub-label" for="p1-sub-3"><span class="hash-tag">#3</span> Select restricted distracting apps under Application Launched.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== PHASE 1 MAJOR STEP 2 ==================== -->
+        <div class="major-block" id="p1-major-2">
+            <div class="major-header" onclick="toggleP1Major(2)">
+                <span class="major-title"><span class="major-badge">Step 2</span> Lockdown Actions & Home Screen Exit</span>
+                <span class="major-status" id="p1-status-major-2">0/3</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S4 -->
+                <div class="minor-block" id="p1-minor-4">
+                    <div class="minor-header" onclick="toggleP1Minor(4)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.1 Add Lockdown Actions</span>
+                        <span class="minor-status" id="p1-status-minor-4">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Tap the <strong>+</strong> button on the blue <strong>Actions</strong> card <code>(#3)</code> to add your block handlers.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase1/Ph1_S4.png" alt="Actions Section" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Fig 4: Tap the blue Actions plus button at (#3) to attach exit actions.</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="p1-item-sub-4">
+                                <input type="checkbox" id="p1-sub-4" onchange="toggleP1Sub('p1-sub-4')">
+                                <label class="sub-label" for="p1-sub-4"><span class="hash-tag">#4</span> Tap the blue Actions plus button to add response behavior.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S5 -->
+                <div class="minor-block" id="p1-minor-5">
+                    <div class="minor-header" onclick="toggleP1Minor(5)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.2 Select Launch Home Screen</span>
+                        <span class="minor-status" id="p1-status-minor-5">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">The cleanest, most reliable way to kick yourself out of a blocked app without lag is the <strong>Launch Home Screen</strong> action. Search for <code>launch home screen</code> in the action search bar to locate it instantly.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase1/Ph1_S5.png" alt="Search for Launch Home Screen Action" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Fig 5: Under Device Actions, select Launch Home Screen.</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="p1-item-sub-5">
+                                <input type="checkbox" id="p1-sub-5" onchange="toggleP1Sub('p1-sub-5')">
+                                <label class="sub-label" for="p1-sub-5"><span class="hash-tag">#5</span> Locate and configure Device Actions &rarr; Launch Home Screen.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S6 -->
+                <div class="minor-block" id="p1-minor-6">
+                    <div class="minor-header" onclick="toggleP1Minor(6)">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.3 Save App Blocker Macro</span>
+                        <span class="minor-status" id="p1-status-minor-6">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Review your complete action chain and commit the macro configuration.</p>
+                        <div class="visual-tree" style="margin-bottom: 12px;">
+                            <strong>Recommended Complete Action Chain:</strong><br>
+                            &bull; Device Actions &rarr; Launch Home Screen<br>
+                            &bull; Notification &rarr; Display Pop-Up Message &rarr; <em>"Tasks incomplete! Complete them first."</em>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="p1-item-sub-6">
+                                <input type="checkbox" id="p1-sub-6" onchange="toggleP1Sub('p1-sub-6')">
+                                <label class="sub-label" for="p1-sub-6"><span class="hash-tag">#6</span> Tap the checkmark in the bottom-right corner to save your App Blocker macro.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
     </div>
 
     <!-- PHASE 2: Cloud Bridge Macro (Interactive Sequential Engine) -->
@@ -887,6 +987,146 @@
 
 <script src="agent-engine.js"></script>
 <script>
+    // --- Phase 1 Sequential Engine Config ---
+    const P1_TOTAL_SUBS = 6;
+    const P1_STORAGE_KEY = 'taskitator_guide_phase1_progress';
+
+    const P1_STRUCTURE = {
+        major: {
+            1: [1, 2, 3],
+            2: [4, 5, 6]
+        },
+        minor: {
+            1: [1],
+            2: [2],
+            3: [3],
+            4: [4],
+            5: [5],
+            6: [6]
+        }
+    };
+
+    function getP1SavedState() {
+        try {
+            return JSON.parse(localStorage.getItem(P1_STORAGE_KEY) || '{}');
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function setP1SavedState(state) {
+        localStorage.setItem(P1_STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function toggleP1Major(majorId) {
+        const el = document.getElementById(`p1-major-${majorId}`);
+        if (el) el.classList.toggle('open');
+    }
+
+    function toggleP1Minor(minorId) {
+        const el = document.getElementById(`p1-minor-${minorId}`);
+        if (el) el.classList.toggle('open');
+    }
+
+    function openP1MinorAndMajor(minorId) {
+        const minorEl = document.getElementById(`p1-minor-${minorId}`);
+        if (minorEl) minorEl.classList.add('open');
+        for (const [majorId, subs] of Object.entries(P1_STRUCTURE.major)) {
+            const minorSubs = P1_STRUCTURE.minor[majorId];
+            if (subs.includes(Number(minorId) === 1 || Number(minorId) === 2 || Number(minorId) === 3 ? 1 : 4)) {
+                // simple mapping for major check
+            }
+        }
+        // Auto open corresponding major block
+        if (minorId <= 3) {
+            const maj = document.getElementById('p1-major-1');
+            if (maj) maj.classList.add('open');
+        } else {
+            const maj = document.getElementById('p1-major-2');
+            if (maj) maj.classList.add('open');
+        }
+    }
+
+    function toggleP1Sub(subId) {
+        const cb = document.getElementById(subId);
+        const item = document.getElementById(`item-${subId}`);
+        const state = getP1SavedState();
+
+        if (cb.checked) {
+            state[subId] = true;
+            item.classList.add('checked');
+        } else {
+            delete state[subId];
+            item.classList.remove('checked');
+        }
+
+        setP1SavedState(state);
+        evaluateP1Rollups(state, true);
+    }
+
+    function evaluateP1Rollups(state, shouldAutoAdvance = false) {
+        let completedSubs = 0;
+        for (let i = 1; i <= P1_TOTAL_SUBS; i++) {
+            if (state[`p1-sub-${i}`]) completedSubs++;
+        }
+
+        const pct = Math.round((completedSubs / P1_TOTAL_SUBS) * 100);
+        document.getElementById('p1-progress-fill').style.width = `${pct}%`;
+        document.getElementById('p1-step-count').innerText = `${completedSubs} / ${P1_TOTAL_SUBS}`;
+        document.getElementById('p1-percent-text').innerText = `${pct}%`;
+
+        let firstIncompleteMinor = null;
+
+        // Roll up Minor Steps
+        for (const [minorId, subs] of Object.entries(P1_STRUCTURE.minor)) {
+            const done = subs.filter(s => state[`p1-sub-${s}`]).length;
+            const statusEl = document.getElementById(`p1-status-minor-${minorId}`);
+            if (statusEl) {
+                if (done === subs.length) {
+                    statusEl.innerText = `✓ Done`;
+                    statusEl.classList.add('done');
+                } else {
+                    statusEl.innerText = `${done}/${subs.length}`;
+                    statusEl.classList.remove('done');
+                    if (!firstIncompleteMinor) firstIncompleteMinor = minorId;
+                }
+            }
+        }
+
+        // Roll up Major Steps
+        for (const [majorId, subs] of Object.entries(P1_STRUCTURE.major)) {
+            const done = subs.filter(s => state[`p1-sub-${s}`]).length;
+            const statusEl = document.getElementById(`p1-status-major-${majorId}`);
+            if (statusEl) {
+                if (done === subs.length) {
+                    statusEl.innerText = `✓ Completed`;
+                    statusEl.classList.add('done');
+                } else {
+                    statusEl.innerText = `${done}/${subs.length}`;
+                    statusEl.classList.remove('done');
+                }
+            }
+        }
+
+        if (shouldAutoAdvance && firstIncompleteMinor) {
+            openP1MinorAndMajor(firstIncompleteMinor);
+        }
+    }
+
+    function resetPhase1Progress() {
+        if (!confirm("Reset all checked sub-steps in Phase 1?")) return;
+        localStorage.removeItem(P1_STORAGE_KEY);
+        for (let i = 1; i <= P1_TOTAL_SUBS; i++) {
+            const cb = document.getElementById(`p1-sub-${i}`);
+            const item = document.getElementById(`p1-item-sub-${i}`);
+            if (cb) cb.checked = false;
+            if (item) item.classList.remove('checked');
+        }
+        evaluateP1Rollups({});
+        openP1MinorAndMajor(1);
+    }
+
+    // --- Phase 2 Sequential Engine Config ---
     const TOTAL_SUBS = 26;
     const STORAGE_KEY = 'taskitator_guide_phase2_progress';
 
@@ -946,7 +1186,7 @@
         const minorEl = document.getElementById(`minor-${minorId}`);
         if (minorEl) minorEl.classList.add('open');
         for (const [majorId, subs] of Object.entries(STRUCTURE.major)) {
-            const minorSubs = STRUCTURE.minor[minorId];
+            const minorSubs = STRUCTURE.minor[majorId];
             if (minorSubs && subs.includes(minorSubs[0])) {
                 const majorEl = document.getElementById(`major-${majorId}`);
                 if (majorEl) majorEl.classList.add('open');
@@ -1015,7 +1255,6 @@
             }
         }
 
-        // Auto advance to next open minor step upon completion
         if (shouldAutoAdvance && firstIncompleteMinor) {
             openMinorAndMajor(firstIncompleteMinor);
         }
@@ -1063,6 +1302,20 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        // Init Phase 1
+        const p1State = getP1SavedState();
+        for (let i = 1; i <= P1_TOTAL_SUBS; i++) {
+            const cb = document.getElementById(`p1-sub-${i}`);
+            const item = document.getElementById(`p1-item-sub-${i}`);
+            if (cb && p1State[`p1-sub-${i}`]) {
+                cb.checked = true;
+                if (item) item.classList.add('checked');
+            }
+        }
+        evaluateP1Rollups(p1State, false);
+        openP1MinorAndMajor(1);
+
+        // Init Phase 2
         const state = getSavedState();
         for (let i = 1; i <= TOTAL_SUBS; i++) {
             const cb = document.getElementById(`sub-${i}`);
