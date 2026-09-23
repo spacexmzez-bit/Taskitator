@@ -505,6 +505,126 @@ body {
 }
 
 /* =========================================================================
+   Exemplar Visual Reference Storage UI
+   ========================================================================= */
+.file-picker-wrapper {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+}
+
+.file-picker-wrapper input[type="file"] {
+    display: none;
+}
+
+.file-picker-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1.5px dashed var(--primary);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--primary);
+    background: rgba(59, 130, 246, 0.08);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.file-picker-label:hover {
+    background: rgba(59, 130, 246, 0.15);
+    border-style: solid;
+}
+
+.exemplar-chip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--card-subtle);
+    border: 1px solid var(--primary);
+    border-radius: 8px;
+    margin-top: 8px;
+}
+
+.exemplar-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+}
+
+.exemplar-filename {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+
+.exemplar-size {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.tooltip-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--border-color);
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    font-weight: 800;
+    cursor: help;
+    position: relative;
+}
+
+.tooltip-badge .tooltip-text {
+    visibility: hidden;
+    width: 220px;
+    background: #000;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 6px 8px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.2s;
+    font-weight: normal;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    border: 1px solid var(--border-color);
+}
+
+.tooltip-badge:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+.guidance-note {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.05);
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-top: 8px;
+    line-height: 1.4;
+    border-left: 2px solid var(--text-muted);
+}
+
+/* =========================================================================
    NLP Smart Creation Composer & Chips (Todoist-Style)
    ========================================================================= */
 .task-rich-input {
