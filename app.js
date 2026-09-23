@@ -178,6 +178,7 @@ window.TaskitatorApp = (() => {
             if (t.project_id === projectId) {
                 if (cascadeMode === 'trash') {
                     t.status = 'trash';
+                    if (window.ExemplarStore) window.ExemplarStore.deleteExemplar(t.id);
                 } else if (cascadeMode === 'reassign' && targetProjectId) {
                     t.project_id = targetProjectId;
                 } else {
@@ -412,10 +413,17 @@ window.TaskitatorApp = (() => {
         target.status = newStatus;
         target.completed_at = timestamp;
 
+        if (newStatus === 'completed' && window.ExemplarStore) {
+            window.ExemplarStore.deleteExemplar(target.id);
+        }
+
         function cascadeChildren(parentId) {
             tasks.filter(t => t.parent_id === parentId && t.status !== 'trash').forEach(child => {
                 child.status = newStatus;
                 child.completed_at = timestamp;
+                if (newStatus === 'completed' && window.ExemplarStore) {
+                    window.ExemplarStore.deleteExemplar(child.id);
+                }
                 cascadeChildren(child.id);
             });
         }
@@ -512,7 +520,10 @@ window.TaskitatorApp = (() => {
         if (confirm(`Delete "${task.title}" and any associated subtasks?`)) {
             function markTrash(id) {
                 const target = tasks.find(t => t.id === id);
-                if (target) target.status = 'trash';
+                if (target) {
+                    target.status = 'trash';
+                    if (window.ExemplarStore) window.ExemplarStore.deleteExemplar(id);
+                }
                 tasks.filter(t => t.parent_id === id).forEach(k => markTrash(k.id));
             }
             markTrash(taskId);
@@ -896,9 +907,9 @@ window.TaskitatorApp = (() => {
     })();
 
     // =========================================================================
-    // Proof Audit Modal Engine
+    // Proof Audit Modal Engine (Dual-Evidence)
     // =========================================================================
-    function openAuditModal(task) {
+    async function openAuditModal(task) {
         pendingAuditTaskId = task.id;
         const auditModal = document.getElementById('auditModal');
         const auditTaskTitle = document.getElementById('auditTaskTitleDisplay');
@@ -909,10 +920,22 @@ window.TaskitatorApp = (() => {
         const submitProofBtn = document.getElementById('submitProofBtn');
 
         if (auditTaskTitle) auditTaskTitle.textContent = task.title;
-        if (auditCriteria) auditCriteria.innerHTML = `<strong>Required Criteria &lt;PC&gt;:</strong> ${task.proof_criteria || 'General confirmation of task completion.'}`;
+        
+        let criteriaHtml = `<strong>Required Criteria &lt;PC&gt;:</strong> ${task.proof_criteria || 'General confirmation of task completion.'}`;
+        
+        // Append exemplar status
+        if (window.ExemplarStore) {
+            const hasExemplar = await ExemplarStore.hasExemplar(task.id);
+            if (hasExemplar) {
+                criteriaHtml += `<div style="margin-top: 6px; display: inline-flex; align-items: center; gap: 4px; color: var(--primary); font-size: 0.75rem; font-weight: 600;"><span>📎</span> Reference Exemplar Required for Match</div>`;
+            }
+        }
+        
+        if (auditCriteria) auditCriteria.innerHTML = criteriaHtml;
         if (auditImage) auditImage.value = '';
         if (auditContext) auditContext.value = '';
         if (auditFeedback) auditFeedback.style.display = 'none';
+        
         if (submitProofBtn) {
             submitProofBtn.disabled = false;
             submitProofBtn.textContent = 'Submit Proof';
@@ -923,7 +946,7 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     // Task Detail / Edit Modal Engine
     // =========================================================================
-    function openTaskDetailModal(taskId, triggerRenderFn) {
+    async function openTaskDetailModal(taskId, triggerRenderFn) {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
         activeDetailTaskId = taskId;
@@ -943,6 +966,7 @@ window.TaskitatorApp = (() => {
         const detailSubtasksList = document.getElementById('detailSubtasksList');
         const detailLockStatusBadge = document.getElementById('detailLockStatusBadge');
         const deleteFromDetailBtn = document.getElementById('deleteFromDetailBtn');
+        const editExemplarChip = document.getElementById('editExemplarChip');
 
         const titleH = document.getElementById('detailTaskTitleHeader');
         if (titleH) titleH.textContent = task.title;
@@ -969,6 +993,11 @@ window.TaskitatorApp = (() => {
 
         if (editCriteriaBoxContainer) editCriteriaBoxContainer.style.display = isLocked ? 'block' : 'none';
         if (editPrerequisiteBoxContainer) editPrerequisiteBoxContainer.style.display = isLocked ? 'block' : 'none';
+
+        if (editExemplarChip && window.ExemplarStore) {
+            const hasRef = await ExemplarStore.hasExemplar(task.id);
+            editExemplarChip.style.display = (isLocked && hasRef) ? 'flex' : 'none';
+        }
 
         const cannotModifyLocked = isLocked && !isBypassActive;
 
@@ -1059,6 +1088,14 @@ window.TaskitatorApp = (() => {
         if (dueIn) {
             dueIn.value = (currentView === 'today') ? new Date().toISOString().split('T')[0] : '';
         }
+        
+        // Reset Exemplar File UI
+        const exemplarInput = document.getElementById('createExemplarInput');
+        const exemplarChip = document.getElementById('createExemplarChip');
+        const exemplarGuidance = document.getElementById('exemplarGuidanceNote');
+        if (exemplarInput) exemplarInput.value = '';
+        if (exemplarChip) exemplarChip.style.display = 'none';
+        if (exemplarGuidance) exemplarGuidance.style.display = 'none';
 
         createModalSelectedTags.clear();
         createModalSelectedPriority = getLowestPriorityId();
@@ -1944,12 +1981,62 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // =====================================================================
+        // UI Handling for Exemplar Picker in Task Creation
+        // =====================================================================
+        const createExemplarInput = document.getElementById('createExemplarInput');
+        const createExemplarChip = document.getElementById('createExemplarChip');
+        const createExemplarName = document.getElementById('createExemplarName');
+        const createExemplarSize = document.getElementById('createExemplarSize');
+        const removeCreateExemplarBtn = document.getElementById('removeCreateExemplarBtn');
+        const exemplarGuidanceNote = document.getElementById('exemplarGuidanceNote');
+
+        if (createExemplarInput) {
+            createExemplarInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) {
+                    createExemplarChip.style.display = 'none';
+                    exemplarGuidanceNote.style.display = 'none';
+                    return;
+                }
+                const maxBytes = 5 * 1024 * 1024;
+                if (file.size > maxBytes) {
+                    alert(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum allowed is 5 MB.`);
+                    createExemplarInput.value = '';
+                    createExemplarChip.style.display = 'none';
+                    exemplarGuidanceNote.style.display = 'none';
+                    return;
+                }
+                createExemplarName.textContent = file.name;
+                createExemplarSize.textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+                createExemplarChip.style.display = 'flex';
+                exemplarGuidanceNote.style.display = 'block';
+            });
+        }
+
+        if (removeCreateExemplarBtn) {
+            removeCreateExemplarBtn.addEventListener('click', () => {
+                createExemplarInput.value = '';
+                createExemplarChip.style.display = 'none';
+                exemplarGuidanceNote.style.display = 'none';
+                criteriaValidationState = { validated: false, score: 0, isTemplate: false };
+                const feedback = document.getElementById('criteriaFeedbackBox');
+                if (feedback) {
+                    feedback.style.display = 'none';
+                    feedback.innerHTML = '';
+                }
+            });
+        }
+
         NLPEngine.upgradeInput('taskTitleInput', 'create');
         NLPEngine.upgradeInput('editTaskTitle', 'edit');
 
+        // =====================================================================
+        // Task Creation Submission hook
+        // =====================================================================
         const taskCreateForm = document.getElementById('taskCreateForm');
         if (taskCreateForm) {
-            taskCreateForm.addEventListener('submit', (e) => {
+            taskCreateForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const title = NLPEngine.extractCleanTitle('taskTitleInput');
                 const desc = document.getElementById('taskDescInput')?.value.trim() || '';
@@ -1958,6 +2045,9 @@ window.TaskitatorApp = (() => {
                 const isStrictPrereq = isAi ? Boolean(document.getElementById('strictPrereqCheckbox')?.checked) : false;
                 const criteria = document.getElementById('taskCriteriaInput')?.value.trim() || '';
                 const parentId = document.getElementById('creationParentId')?.value || null;
+                
+                const exemplarInput = document.getElementById('createExemplarInput');
+                const exemplarFile = (isAi && exemplarInput && exemplarInput.files.length > 0) ? exemplarInput.files[0] : null;
 
                 if (!title) return;
 
@@ -1984,7 +2074,24 @@ window.TaskitatorApp = (() => {
                     if (parentTask) assignedProject = parentTask.project_id || 'inbox';
                 }
 
+                const submitBtn = document.getElementById('submitTaskCreateBtn');
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = 'Saving...';
+                }
+
                 const newTaskId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+                
+                if (exemplarFile && window.ExemplarStore) {
+                    try {
+                        await window.ExemplarStore.saveExemplar(newTaskId, exemplarFile);
+                    } catch (err) {
+                        alert(`Failed to save exemplar image locally: ${err.message}`);
+                        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Save Task'; }
+                        return;
+                    }
+                }
+
                 const newTask = {
                     id: newTaskId,
                     parent_id: parentId,
@@ -2029,6 +2136,11 @@ window.TaskitatorApp = (() => {
                 }
 
                 saveStorageAndPush();
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Save Task';
+                }
+                
                 if (addTaskModal) addTaskModal.classList.remove('open');
                 
                 if (typeof window.refreshCurrentProjectView === 'function') {
@@ -2153,6 +2265,9 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // =====================================================================
+        // Dual-Evidence Audit Submission
+        // =====================================================================
         const submitProofBtn = document.getElementById('submitProofBtn');
         if (submitProofBtn) {
             submitProofBtn.addEventListener('click', async () => {
@@ -2181,11 +2296,21 @@ window.TaskitatorApp = (() => {
 
                 let result = { success: false, error: 'Audit engine missing' };
                 if (window.TaskitatorEngine?.AuditEngine?.verifyProof) {
+                    
+                    let refExemplarPart = null;
+                    if (window.ExemplarStore) {
+                        const exemplarRecord = await ExemplarStore.getExemplar(task.id);
+                        if (exemplarRecord && exemplarRecord.inlineData) {
+                            refExemplarPart = exemplarRecord.inlineData;
+                        }
+                    }
+
                     result = await TaskitatorEngine.AuditEngine.verifyProof({
                         file: file,
                         taskTitle: task.title,
                         criteria: task.proof_criteria,
-                        userContext: document.getElementById('auditContextInput')?.value.trim() || ''
+                        userContext: document.getElementById('auditContextInput')?.value.trim() || '',
+                        exemplarPart: refExemplarPart
                     });
                 }
 
@@ -2220,12 +2345,18 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // =====================================================================
+        // Validate Criteria (Pre-flight) with Exemplar Attached
+        // =====================================================================
         const validateCriteriaBtn = document.getElementById('validateCriteriaBtn');
         if (validateCriteriaBtn) {
             validateCriteriaBtn.addEventListener('click', async () => {
                 const criteriaText = document.getElementById('taskCriteriaInput')?.value.trim() || '';
                 const taskTitle = NLPEngine.extractCleanTitle('taskTitleInput') || '';
                 const feedback = document.getElementById('criteriaFeedbackBox');
+                
+                const exemplarInput = document.getElementById('createExemplarInput');
+                const exemplarFile = (exemplarInput && exemplarInput.files.length > 0) ? exemplarInput.files[0] : null;
 
                 if (!criteriaText) {
                     if (feedback) {
@@ -2246,7 +2377,7 @@ window.TaskitatorApp = (() => {
 
                 let res = { success: false, error: 'Audit engine missing' };
                 if (window.TaskitatorEngine?.AuditEngine?.validateCriteria) {
-                    res = await TaskitatorEngine.AuditEngine.validateCriteria(criteriaText, taskTitle);
+                    res = await TaskitatorEngine.AuditEngine.validateCriteria(criteriaText, taskTitle, exemplarFile);
                 }
 
                 validateCriteriaBtn.disabled = false;
