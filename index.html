@@ -303,7 +303,30 @@
                 <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt; (Visual Verification Requirements)</label>
                 <textarea id="taskCriteriaInput" rows="2" placeholder="e.g. Photo clearly showing completed worksheet #4 with current date handwritten."></textarea>
 
-                <div class="criteria-actions-bar">
+                <!-- Optional Exemplar Attachment -->
+                <div class="file-picker-wrapper" style="margin-top: 10px;">
+                    <label for="createExemplarInput" class="file-picker-label">
+                        <span>📎 Attach Reference Exemplar</span>
+                        <span class="tooltip-badge">!
+                            <span class="tooltip-text">Max 1 file (5 MB). For multiple pages or photos, combine into a single PDF.</span>
+                        </span>
+                    </label>
+                    <input type="file" id="createExemplarInput" accept="image/*,application/pdf">
+                </div>
+                
+                <div class="guidance-note" id="exemplarGuidanceNote" style="display: none;">
+                    ℹ️ <strong>Tip:</strong> Attaching an exemplar takes longer to verify and requires the AI to inspect strict visual details. Use only when text criteria alone cannot describe the proof.
+                </div>
+
+                <div id="createExemplarChip" class="exemplar-chip" style="display: none;">
+                    <div class="exemplar-info">
+                        <span class="exemplar-filename" id="createExemplarName">doc.pdf</span>
+                        <span class="exemplar-size" id="createExemplarSize">0 MB</span>
+                    </div>
+                    <button type="button" class="icon-btn" id="removeCreateExemplarBtn" style="padding: 2px 6px; font-size: 0.75rem; border: none; color: var(--danger);">✕</button>
+                </div>
+
+                <div class="criteria-actions-bar" style="margin-top: 14px;">
                     <button type="button" class="icon-btn" id="openTemplatesBtn" style="font-size: 0.78rem; padding: 4px 10px;">💡 Recommended</button>
                     <button type="button" class="icon-btn" id="validateCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px; background: var(--accent-light); color: var(--accent); border-color: var(--border-color);">🔍 Validate Criteria</button>
                 </div>
@@ -396,6 +419,12 @@
         <div class="form-group" id="editCriteriaBoxContainer" style="display: none;">
             <label for="editTaskCriteria">Proof Criteria &lt;PC&gt;</label>
             <textarea id="editTaskCriteria" rows="2"></textarea>
+            
+            <div id="editExemplarChip" class="exemplar-chip" style="display: none; margin-top: 10px;">
+                <div class="exemplar-info">
+                    <span class="exemplar-filename">Has Reference Exemplar Attached</span>
+                </div>
+            </div>
         </div>
 
         <div class="form-group" style="margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px;">
@@ -424,8 +453,8 @@
         <div id="auditCriteriaDisplay" style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 14px; background: var(--card-subtle); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);"></div>
 
         <div class="form-group">
-            <label>Upload Proof (Photo or PDF &le; 4MB):</label>
-            <input type="file" id="auditImageInput" accept="image/*,application/pdf">
+            <label>Upload Proof (Photo or PDF &le; 5MB):</label>
+            <input type="file" id="auditImageInput" accept="image/*,application/pdf" style="display: block; width: 100%; padding: 10px; border: 1.5px solid var(--border-color); border-radius: 8px; background: var(--card-subtle);">
         </div>
 
         <div class="form-group">
@@ -474,6 +503,7 @@
     </div>
 </div>
 
+<script src="exemplar-store.js"></script>
 <script src="audit-engine.js"></script>
 <script src="sync-engine.js"></script>
 <script src="agent-engine.js"></script>
