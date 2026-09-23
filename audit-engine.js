@@ -1,7 +1,7 @@
 // audit-engine.js
 /**
  * Taskitator Core Engine
- * Manages BYOK Gemini Verification Cascade, Pre-Flight Criteria Validation,
+ * Manages BYOK Gemini Verification Cascade, Multimodal Pre-Flight Criteria Validation,
  * Emergency Bypass Tokens, and Break Limits
  */
 
@@ -14,7 +14,7 @@ const TaskitatorEngine = {
     FALLBACK_MODEL: 'gemini-3.1-flash-lite',
 
     // Enforced upload limit across files (Photos, Gallery, PDFs)
-    MAX_FILE_SIZE_MB: 4,
+    MAX_FILE_SIZE_MB: 5,
 
     // In-memory cache for pre-flight criteria validations to prevent duplicate API hits
     _criteriaValidationCache: new Map(),
@@ -267,11 +267,11 @@ const TaskitatorEngine = {
             });
         },
 
-        async callGemini(modelName, apiKey, inlineDataPart, promptText) {
+        async callGeminiWithParts(modelName, apiKey, partsArray) {
             const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
             const payload = {
                 contents: [{
-                    parts: [inlineDataPart, { text: promptText }]
+                    parts: partsArray
                 }],
                 generationConfig: {
                     temperature: 0.1,
@@ -284,33 +284,25 @@ const TaskitatorEngine = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+        },
+
+        async callGemini(modelName, apiKey, inlineDataPart, promptText) {
+            return await this.callGeminiWithParts(modelName, apiKey, [inlineDataPart, { text: promptText }]);
         },
 
         async callGeminiTextOnly(modelName, apiKey, promptText) {
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-            const payload = {
-                contents: [{
-                    parts: [{ text: promptText }]
-                }],
-                generationConfig: {
-                    temperature: 0.1,
-                    responseMimeType: 'application/json'
-                }
-            };
-
-            return await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            return await this.callGeminiWithParts(modelName, apiKey, [{ text: promptText }]);
         },
 
         /**
-         * Pre-flight Criteria Evaluation
-         * Analyzes whether criteria demand an objective, verifiable artifact.
-         * Returns: { success: boolean, score: number, passed: boolean, critique: string, suggested_rewrite: string, error?: string }
+         * Pre-flight Criteria Evaluation (Multimodal)
+         * Evaluates whether proposed criteria demand an objective, verifiable artifact.
+         * If an exemplar reference file is supplied, enforces strict cross-referencing in criteria.
+         * @param {string} criteriaText 
+         * @param {string} taskTitle 
+         * @param {File|Blob|null} exemplarFile 
          */
-        async validateCriteria(criteriaText, taskTitle = '') {
+        async validateCriteria(criteriaText, taskTitle = '', exemplarFile = null) {
             const trimmedCriteria = (criteriaText || '').trim();
             const trimmedTitle = (taskTitle || '').trim();
 
@@ -324,8 +316,9 @@ const TaskitatorEngine = {
                 };
             }
 
-            // Check cache to avoid duplicate API calls
-            const cacheKey = `${trimmedTitle}:::${trimmedCriteria}`;
+            // Cache key includes file signature if present to prevent false cache collisions
+            const fileSignature = exemplarFile ? `${exemplarFile.name}_${exemplarFile.size}` : 'nofile';
+            const cacheKey = `${trimmedTitle}:::${trimmedCriteria}:::${fileSignature}`;
             if (TaskitatorEngine._criteriaValidationCache.has(cacheKey)) {
                 return TaskitatorEngine._criteriaValidationCache.get(cacheKey);
             }
@@ -345,16 +338,33 @@ const TaskitatorEngine = {
                 };
             }
 
-            const prompt = `You are a forensic proof auditor. Evaluate whether this task acceptance criterion can be objectively verified using a single submitted photo or screenshot evidence file.
+            let inlineExemplarPart = null;
+            if (exemplarFile) {
+                const check = this.validateFile(exemplarFile, TaskitatorEngine.MAX_FILE_SIZE_MB);
+                if (!check.valid) {
+                    return { success: false, error: check.error };
+                }
+                inlineExemplarPart = await this.fileToBase64(exemplarFile);
+            }
+
+            let prompt = `You are a forensic proof auditor for a task execution system.
+Evaluate whether this task acceptance criterion can be objectively verified using submitted evidence.
 
 TASK TITLE: "${trimmedTitle || 'Untitled Task'}"
 PROPOSED CRITERIA: "${trimmedCriteria}"
 
 Evaluation Rules:
-1. Objectivity: Does it require a tangible, visual artifact (handwritten page with date, screen terminal diff, completed checklist, cleared room surface)?
-2. Disqualify Subjective Action: Strongly penalize unprovable internal states ("read", "understand", "study", "learn", "plan") unless tied to an explicit physical proof artifact (e.g. "photo of written notes").
-3. Ambiguity: Reject criteria with unclear boundaries.
-4. Pass Threshold: Score on a strict 1 to 10 scale. A score >= 7 means acceptable for automated AI audit.
+1. Objectivity: Does it require a tangible, visual artifact (e.g., handwritten page with date, terminal output diff, completed checklist, cleared workspace)?
+2. Disqualify Subjective Action: Strongly penalize unprovable internal states ("read", "understand", "study", "learn", "plan") unless tied to an explicit physical proof artifact.
+3. Ambiguity: Reject criteria with vague or non-falsifiable boundaries.
+4. Pass Threshold: Score on a strict 1 to 10 scale. A score >= 7 means acceptable for automated AI audit.`;
+
+            if (inlineExemplarPart) {
+                prompt += `
+5. MANDATORY REFERENCE CROSS-CHECK: An exemplar reference document/image is attached. You MUST inspect whether the PROPOSED CRITERIA explicitly mentions, explains, and references this attachment (e.g. how the submitted proof must match or follow this exemplar). If an exemplar is attached without direct explanatory context in the text, you MUST rate the criteria below 7/10 and reject it.`;
+            }
+
+            prompt += `
 
 Return strictly valid JSON with this exact schema:
 {
@@ -364,15 +374,21 @@ Return strictly valid JSON with this exact schema:
   "suggested_rewrite": "<a concrete, artifact-based rewrite if score < 7, else empty string>"
 }`;
 
+            const parts = [];
+            if (inlineExemplarPart) {
+                parts.push(inlineExemplarPart);
+            }
+            parts.push({ text: prompt });
+
             try {
                 let usedModel = TaskitatorEngine.PRIMARY_MODEL;
-                let res = await this.callGeminiTextOnly(usedModel, apiKey, prompt);
+                let res = await this.callGeminiWithParts(usedModel, apiKey, parts);
 
-                // Cascade on rate limit
+                // Cascade on 429 rate limit
                 if (res.status === 429) {
                     console.warn(`[AuditEngine] Model ${usedModel} hit 429 during criteria validation. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
                     usedModel = TaskitatorEngine.FALLBACK_MODEL;
-                    res = await this.callGeminiTextOnly(usedModel, apiKey, prompt);
+                    res = await this.callGeminiWithParts(usedModel, apiKey, parts);
                 }
 
                 if (!res.ok) {
@@ -385,8 +401,6 @@ Return strictly valid JSON with this exact schema:
 
                 const data = await res.json();
                 let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-
-                // Strip potential Markdown wrapping
                 rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
 
                 const parsed = JSON.parse(rawText);
@@ -413,7 +427,11 @@ Return strictly valid JSON with this exact schema:
             }
         },
 
-        async verifyProof({ file, taskTitle, criteria, userContext }) {
+        /**
+         * Dual-Evidence Verification Audit
+         * Supports passing both submitted proof and saved reference exemplar to Gemini.
+         */
+        async verifyProof({ file, taskTitle, criteria, userContext, exemplarPart = null }) {
             let settings = {};
             try {
                 settings = JSON.parse(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_SETTINGS) || '{}');
@@ -427,14 +445,14 @@ Return strictly valid JSON with this exact schema:
             }
 
             // Client-side validation: enforce size cap & supported formats
-            const check = this.validateFile(file);
+            const check = this.validateFile(file, TaskitatorEngine.MAX_FILE_SIZE_MB);
             if (!check.valid) {
                 return { success: false, error: check.error };
             }
 
-            const inlinePart = await this.fileToBase64(file);
+            const proofPart = await this.fileToBase64(file);
 
-            const systemPrompt = `
+            let systemPrompt = `
 You are the Taskitator Forensic Audit AI. Your job is to strictly evaluate whether evidence (image or PDF document) legitimately proves completion of a task based on provided criteria.
 
 Task: "${taskTitle}"
@@ -444,7 +462,14 @@ User Note: "${userContext || 'None'}"
 Evaluation Rules:
 1. Be skeptical and rigorous. Do not accept ambiguous, staged, or generic proof.
 2. Verify specific criteria details if specified (e.g., dates, handwriting, calculated numbers, finished document structure).
-3. If criteria are met, approve. If doubtful or incomplete, reject.
+3. If criteria are met, approve. If doubtful or incomplete, reject.`;
+
+            if (exemplarPart) {
+                systemPrompt += `
+4. EXEMPLAR COMPARISON: The first attached document/image is the creator's Reference Exemplar. The second attached document/image is the User's Submitted Proof. Verify that the submitted proof satisfies the criteria and aligns with the expected format/substance demonstrated in the reference exemplar.`;
+            }
+
+            systemPrompt += `
 
 Return valid JSON matching this schema:
 {
@@ -454,14 +479,21 @@ Return valid JSON matching this schema:
 }
 `;
 
+            const parts = [];
+            if (exemplarPart) {
+                parts.push(exemplarPart);
+            }
+            parts.push(proofPart);
+            parts.push({ text: systemPrompt });
+
             let usedModel = TaskitatorEngine.PRIMARY_MODEL;
-            let res = await this.callGemini(usedModel, apiKey, inlinePart, systemPrompt);
+            let res = await this.callGeminiWithParts(usedModel, apiKey, parts);
 
             // Cascade to secondary model on 429 RPD/RPS limit
             if (res.status === 429) {
                 console.warn(`[AuditEngine] Model ${usedModel} hit 429. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
                 usedModel = TaskitatorEngine.FALLBACK_MODEL;
-                res = await this.callGemini(usedModel, apiKey, inlinePart, systemPrompt);
+                res = await this.callGeminiWithParts(usedModel, apiKey, parts);
             }
 
             if (!res.ok) {
