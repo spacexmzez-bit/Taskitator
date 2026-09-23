@@ -988,6 +988,12 @@ window.TaskitatorApp = (() => {
         renderModalPriorityCloud('editPriorityCloud', true);
         renderModalProjectCloud('editProjectCloud', true);
 
+        // Hide project selection if the task has a parent
+        const editProjectGroup = document.getElementById('editProjectCloud')?.closest('.form-group');
+        if (editProjectGroup) {
+            editProjectGroup.style.display = task.parent_id ? 'none' : 'block';
+        }
+
         if (editAiLockCheckbox) editAiLockCheckbox.checked = isLocked;
         if (editStrictPrereqCheckbox) editStrictPrereqCheckbox.checked = Boolean(task.strict_prerequisites);
 
@@ -1097,11 +1103,19 @@ window.TaskitatorApp = (() => {
         if (exemplarChip) exemplarChip.style.display = 'none';
         if (exemplarGuidance) exemplarGuidance.style.display = 'none';
 
+        const pIdFieldVal = parentId || '';
+
+        // Hide project selection if this is a subtask
+        const projectGroup = document.getElementById('createProjectCloud')?.closest('.form-group');
+        if (projectGroup) {
+            projectGroup.style.display = pIdFieldVal ? 'none' : 'block';
+        }
+
         createModalSelectedTags.clear();
         createModalSelectedPriority = getLowestPriorityId();
 
-        if (parentId) {
-            const parentTask = tasks.find(t => t.id === parentId);
+        if (pIdFieldVal) {
+            const parentTask = tasks.find(t => t.id === pIdFieldVal);
             createModalSelectedProject = parentTask ? parentTask.project_id : 'inbox';
         } else {
             createModalSelectedProject = preselectedProjectId || 'inbox';
@@ -2203,16 +2217,19 @@ window.TaskitatorApp = (() => {
                 task.tags = Array.from(editModalSelectedTags);
                 task.priority_id = editModalSelectedPriority;
 
-                const oldProjectId = task.project_id;
-                task.project_id = editModalSelectedProject || 'inbox';
-                if (oldProjectId !== task.project_id) {
-                    function cascadeProject(pId, newProj) {
-                        tasks.filter(k => k.parent_id === pId && k.status !== 'trash').forEach(child => {
-                            child.project_id = newProj;
-                            cascadeProject(child.id, newProj);
-                        });
+                // Only allow project mutation if this is a root task
+                if (!task.parent_id) {
+                    const oldProjectId = task.project_id;
+                    task.project_id = editModalSelectedProject || 'inbox';
+                    if (oldProjectId !== task.project_id) {
+                        function cascadeProject(pId, newProj) {
+                            tasks.filter(k => k.parent_id === pId && k.status !== 'trash').forEach(child => {
+                                child.project_id = newProj;
+                                cascadeProject(child.id, newProj);
+                            });
+                        }
+                        cascadeProject(task.id, task.project_id);
                     }
-                    cascadeProject(task.id, task.project_id);
                 }
 
                 if (!task.ai_locked || isBypassActive) {
