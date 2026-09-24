@@ -1,10 +1,12 @@
 // sw.js - Taskitator Service Worker
-const CACHE_NAME = 'taskitator-v34';
+const CACHE_NAME = 'taskitator-v36';
 
 const STATIC_ASSETS = [
     './',
     './index.html',
     './general.html',
+    './calendar.html',
+    './projects.html',
     './stats.html',
     './settings.html',
     './trash.html',
@@ -14,6 +16,8 @@ const STATIC_ASSETS = [
     './manifest.json',
     './SYSTEM_PROMPT.md',
     './CRITERIA_TEMPLATES.json',
+    './app.js',
+    './exemplar-store.js',
     './agent-engine.js',
     './audit-engine.js',
     './sync-engine.js',
@@ -21,11 +25,24 @@ const STATIC_ASSETS = [
     './icon/icon-512.png'
 ];
 
-// Install: Cache all core application assets
+// Install: Resilient pre-caching (individual fetches prevent a single 404 from breaking installation)
 self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(STATIC_ASSETS);
+        caches.open(CACHE_NAME).then(async (cache) => {
+            const cachePromises = STATIC_ASSETS.map(async (url) => {
+                try {
+                    const response = await fetch(url);
+                    if (response && response.status === 200) {
+                        await cache.put(url, response);
+                    } else {
+                        console.warn(`[SW] Skipped caching ${url}: HTTP ${response ? response.status : 'No Response'}`);
+                    }
+                } catch (err) {
+                    console.warn(`[SW] Failed to fetch ${url} during pre-cache:`, err.message);
+                }
+            });
+
+            await Promise.allSettled(cachePromises);
         }).then(() => self.skipWaiting())
     );
 });
@@ -45,12 +62,17 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// Fetch: Stale-while-revalidate for dynamic runtime files, network-first for HTML
+// Fetch: Network-first for HTML navigation, cache-first with query normalization for static assets
 self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
 
-    // Bypass caching for cross-origin API calls (Gemini API & Cloudflare Worker)
+    // Only intercept standard GET requests
+    if (request.method !== 'GET') {
+        return;
+    }
+
+    // Bypass caching for cross-origin API calls (Gemini API, external CDNs & Cloudflare Worker)
     if (url.origin !== self.location.origin) {
         return;
     }
@@ -59,19 +81,21 @@ self.addEventListener('fetch', (event) => {
     if (request.mode === 'navigate') {
         event.respondWith(
             fetch(request).then((response) => {
-                const responseClone = response.clone();
-                caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
+                if (response && response.status === 200) {
+                    const responseClone = response.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
+                }
                 return response;
-            }).catch(() => caches.match(request))
+            }).catch(() => caches.match(request, { ignoreSearch: true }))
         );
         return;
     }
 
-    // Cache-first falling back to network for all local assets
+    // Cache-first falling back to network with ignoreSearch: true
     event.respondWith(
-        caches.match(request).then((cachedResponse) => {
+        caches.match(request, { ignoreSearch: true }).then((cachedResponse) => {
             if (cachedResponse) {
-                // Background refresh
+                // Background refresh for stale assets
                 fetch(request).then((networkResponse) => {
                     if (networkResponse && networkResponse.status === 200) {
                         caches.open(CACHE_NAME).then((cache) => cache.put(request, networkResponse));
