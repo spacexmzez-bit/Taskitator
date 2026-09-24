@@ -300,13 +300,13 @@
 <aside class="sidebar-drawer" id="sidebarDrawer">
     <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
     <nav class="drawer-links" id="drawerNavLinks">
-        <a href="index.html">📅 Today</a>
-        <a href="general.html">📋 General Tasks</a>
+        <a href="index.html#today">📅 Today</a>
+        <a href="index.html#general">📋 General Tasks</a>
         <a href="calendar.html">🗓️ Calendar</a>
         <a href="projects.html">📁 Projects</a>
         <a href="stats.html">📊 Stats</a>
         <a href="trash.html">🗑️ Trash</a>
-        <a href="settings.html" class="active">Settings</a>
+        <a href="settings.html" class="active">⚙️ Settings</a>
     </nav>
 </aside>
 
@@ -556,7 +556,7 @@
             <div class="settings-card">
                 <h3 style="margin-top: 0; color: var(--primary);">📤 Offline Snapshot Backup</h3>
                 <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
-                    Download a full JSON backup file of your local data, including tasks, projects, settings, and break configurations. Keep this file as an offline restore point.
+                    Download a full JSON backup file of your local data, including tasks, projects, settings, breaks, and audit history. Keep this file as an offline restore point.
                 </p>
                 <button type="button" class="icon-btn" id="exportDataBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 8px 18px;">
                     Download Backup file
@@ -644,6 +644,7 @@
     </form>
 </aside>
 
+<script src="exemplar-store.js"></script>
 <script src="audit-engine.js"></script>
 <script src="sync-engine.js"></script>
 <script src="agent-engine.js"></script>
@@ -1111,10 +1112,11 @@ document.getElementById('exportDataBtn').addEventListener('click', () => {
         taskitator_tasks: JSON.parse(localStorage.getItem('taskitator_tasks') || '[]'),
         taskitator_projects: JSON.parse(localStorage.getItem('taskitator_projects') || '[]'),
         taskitator_daily_breaks: JSON.parse(localStorage.getItem('taskitator_daily_breaks') || '[]'),
+        taskitator_audit_ledger: JSON.parse(localStorage.getItem('taskitator_audit_ledger') || '[]'),
         taskitator_settings: JSON.parse(localStorage.getItem('taskitator_settings') || '{}'),
         taskitator_collapsed_nodes: JSON.parse(localStorage.getItem('taskitator_collapsed_nodes') || '[]'),
         export_date: new Date().toISOString(),
-        version: '1.0'
+        version: '1.1'
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1168,6 +1170,10 @@ async function processImport(mode) {
             localStorage.setItem('taskitator_daily_breaks', JSON.stringify(imported.taskitator_daily_breaks || []));
             localStorage.setItem('taskitator_collapsed_nodes', JSON.stringify(imported.taskitator_collapsed_nodes || []));
             
+            if (Array.isArray(imported.taskitator_audit_ledger)) {
+                localStorage.setItem('taskitator_audit_ledger', JSON.stringify(imported.taskitator_audit_ledger));
+            }
+            
         } else if (mode === 'merge') {
             // Smart Merge - Projects
             const localProjects = JSON.parse(localStorage.getItem('taskitator_projects') || '[]');
@@ -1199,6 +1205,20 @@ async function processImport(mode) {
             });
             localStorage.setItem('taskitator_tasks', JSON.stringify(Array.from(taskMap.values())));
 
+            // Smart Merge - Audit Ledger
+            if (Array.isArray(imported.taskitator_audit_ledger)) {
+                let localLedger = [];
+                try { localLedger = JSON.parse(localStorage.getItem('taskitator_audit_ledger') || '[]'); } catch (e) {}
+                const ledgerMap = new Map(localLedger.map(item => [item.sync_hash || item.task_id, item]));
+                imported.taskitator_audit_ledger.forEach(item => {
+                    const key = item.sync_hash || item.task_id;
+                    if (!ledgerMap.has(key)) ledgerMap.set(key, item);
+                });
+                let mergedLedger = Array.from(ledgerMap.values());
+                if (mergedLedger.length > 200) mergedLedger = mergedLedger.slice(mergedLedger.length - 200);
+                localStorage.setItem('taskitator_audit_ledger', JSON.stringify(mergedLedger));
+            }
+
             // Smart Merge - Tags
             const impSettings = imported.taskitator_settings || {};
             const localTags = localSettingsRaw.custom_tags || [];
@@ -1225,23 +1245,37 @@ document.getElementById('importReplaceBtn').addEventListener('click', () => proc
 document.getElementById('importMergeBtn').addEventListener('click', () => processImport('merge'));
 
 document.getElementById('clearCompletedTrashBtn').addEventListener('click', async () => {
-    if (!confirm('Permanently delete all completed and trashed tasks? This clears historical data and cannot be undone.')) return;
+    if (!confirm('Permanently delete all completed and trashed tasks? This clears historical task data and reference exemplars.')) return;
     
     let tasks = JSON.parse(localStorage.getItem('taskitator_tasks') || '[]');
     const originalLength = tasks.length;
+    const removedTasks = tasks.filter(t => t.status !== 'active');
     tasks = tasks.filter(t => t.status === 'active');
+
+    if (window.ExemplarStore) {
+        for (const t of removedTasks) {
+            try {
+                await ExemplarStore.deleteExemplar(t.id);
+            } catch (e) {}
+        }
+    }
     
     localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
     if (window.SyncEngine) {
         SyncEngine.markLocalModified();
         await SyncEngine.forceImmediateSync();
     }
-    alert(`Cleanup complete. Removed ${originalLength - tasks.length} tasks.`);
+    alert(`Cleanup complete. Removed ${originalLength - tasks.length} tasks and associated exemplar files.`);
 });
 
-document.getElementById('factoryResetBtn').addEventListener('click', () => {
-    const confirmation = prompt('DANGER: Type "RESET" to confirm total wipe of this account (logs you out and clears all data).');
+document.getElementById('factoryResetBtn').addEventListener('click', async () => {
+    const confirmation = prompt('DANGER: Type "RESET" to confirm total wipe of this account (logs you out and clears all tasks, projects, breaks, and exemplars).');
     if (confirmation === 'RESET') {
+        if (window.ExemplarStore) {
+            try {
+                await ExemplarStore.clearAll();
+            } catch (e) {}
+        }
         localStorage.clear();
         window.location.replace('login.html');
     }
@@ -1259,11 +1293,17 @@ document.getElementById('cancelLogoutBtn').addEventListener('click', () => {
     logoutConfirmModal.classList.remove('open');
 });
 
-document.getElementById('confirmLogoutBtn').addEventListener('click', () => {
+document.getElementById('confirmLogoutBtn').addEventListener('click', async () => {
     markSaved();
     SyncEngine.logout();
+    if (window.ExemplarStore) {
+        try {
+            await ExemplarStore.clearAll();
+        } catch (e) {}
+    }
     localStorage.removeItem('taskitator_tasks');
     localStorage.removeItem('taskitator_daily_breaks');
+    localStorage.removeItem('taskitator_audit_ledger');
     logoutConfirmModal.classList.remove('open');
     window.location.replace('login.html');
 });
