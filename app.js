@@ -12,6 +12,7 @@ window.TaskitatorApp = (() => {
     const COLLAPSED_STATE_KEY = 'taskitator_collapsed_nodes';
     const SETTINGS_KEY = 'taskitator_settings';
     const PROJECTS_KEY = 'taskitator_projects';
+    const AUDIT_LEDGER_KEY = 'taskitator_audit_ledger';
 
     let currentView = 'today'; // 'today' | 'general'
     let tasks = [];
@@ -431,8 +432,68 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Grace Timers & Completion Handlers
+    // Grace Timers, Ledger Bridge & Completion Handlers
     // =========================================================================
+    
+    /**
+     * Appends completed tasks to the unified sync ledger for Mr. Study progression.
+     * Enforces the 200 event sliding window to prevent KV bloat.
+     */
+    async function finalizeTaskCompletion(taskId) {
+        const task = tasks.find(t => t.id === taskId);
+        if (!task || task.status !== 'completed') return;
+
+        let hasExemplar = false;
+        if (window.ExemplarStore) {
+            hasExemplar = await window.ExemplarStore.hasExemplar(task.id);
+        }
+
+        let ledger = [];
+        try {
+            ledger = JSON.parse(localStorage.getItem(AUDIT_LEDGER_KEY) || '[]');
+        } catch (e) {}
+
+        const prios = getGlobalPriorities();
+
+        function pushToLedger(targetTask, eventType) {
+            const pObj = prios.find(p => p.id === targetTask.priority_id);
+            const rank = pObj ? pObj.rank : 3;
+
+            ledger.push({
+                sync_hash: 'evt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8),
+                task_id: targetTask.id,
+                title: targetTask.title,
+                event_type: eventType,
+                priority_rank: rank,
+                verified_by_ai: Boolean(targetTask.ai_locked),
+                verification_model: targetTask.verified_model || null,
+                completed_at: targetTask.completed_at || new Date().toISOString(),
+                has_exemplar: hasExemplar && targetTask.id === taskId
+            });
+        }
+
+        const eventType = task.parent_id ? 'SUBTASK' : 'ROOT';
+        pushToLedger(task, eventType);
+
+        const descendants = getAllDescendants(taskId);
+        descendants.forEach(child => {
+            if (child.status === 'completed' && child.completed_at === task.completed_at) {
+                pushToLedger(child, 'CASCADE');
+            }
+        });
+
+        // Sliding compaction window limit
+        if (ledger.length > 200) {
+            ledger = ledger.slice(ledger.length - 200);
+        }
+
+        localStorage.setItem(AUDIT_LEDGER_KEY, JSON.stringify(ledger));
+        
+        if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
+            SyncEngine.markLocalModified();
+        }
+    }
+
     function startGraceCompletionTimer(taskId, triggerRenderFn) {
         if (pendingGraceCompletions.has(taskId)) {
             const existing = pendingGraceCompletions.get(taskId);
@@ -453,6 +514,10 @@ window.TaskitatorApp = (() => {
         const timerId = setTimeout(() => {
             clearInterval(intervalId);
             pendingGraceCompletions.delete(taskId);
+            
+            // Commit to the bridge ledger only after grace expires
+            finalizeTaskCompletion(taskId);
+
             if (typeof triggerRenderFn === 'function') triggerRenderFn();
             else renderUnifiedView();
         }, 10000);
@@ -2347,6 +2412,16 @@ window.TaskitatorApp = (() => {
                     cascadeTaskStatus(pendingAuditTaskId, 'completed', new Date().toISOString());
                     SoundFX.playSuccessAudit();
                     saveStorageAndPush();
+                    
+                    // Finalize instantly and trigger forced sync bypassing debounce timer
+                    const completedTaskId = pendingAuditTaskId;
+                    finalizeTaskCompletion(completedTaskId).then(() => {
+                        if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
+                            const breaks = getTodayBreaksSafe();
+                            SyncEngine.forceImmediateSync({ today_breaks: breaks });
+                        }
+                    });
+
                     if (auditModal) auditModal.classList.remove('open');
                     pendingAuditTaskId = null;
                     renderUnifiedView();
