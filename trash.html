@@ -56,8 +56,10 @@
 <aside class="sidebar-drawer" id="sidebarDrawer">
     <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
     <nav class="drawer-links">
-        <a href="index.html">📅 Today</a>
-        <a href="general.html">🗂️ General Tasks</a>
+        <a href="index.html#today">📅 Today</a>
+        <a href="index.html#general">📋 General Tasks</a>
+        <a href="calendar.html">🗓️ Calendar</a>
+        <a href="projects.html">📁 Projects</a>
         <a href="stats.html">📊 Stats</a>
         <a href="trash.html" class="active">🗑️ Trash</a>
         <a href="settings.html">⚙️ Settings</a>
@@ -107,6 +109,7 @@
     </form>
 </aside>
 
+<script src="exemplar-store.js"></script>
 <script src="sync-engine.js"></script>
 <script src="agent-engine.js"></script>
 <script>
@@ -203,7 +206,7 @@ function restoreTask(taskId) {
     renderTrash();
 }
 
-function permanentlyDeleteTask(taskId) {
+async function permanentlyDeleteTask(taskId) {
     if (!confirm('Permanently delete this task and all its subtasks? This cannot be undone.')) return;
 
     const idsToDelete = new Set();
@@ -213,18 +216,36 @@ function permanentlyDeleteTask(taskId) {
     }
     collectIds(taskId);
 
+    if (window.ExemplarStore) {
+        for (const id of idsToDelete) {
+            try {
+                await ExemplarStore.deleteExemplar(id);
+            } catch (e) {
+                console.warn('Failed to delete exemplar for task:', id);
+            }
+        }
+    }
+
     tasks = tasks.filter(t => !idsToDelete.has(t.id));
     saveTasksAndPush();
     renderTrash();
 }
 
-document.getElementById('emptyTrashBtn').addEventListener('click', () => {
-    const count = tasks.filter(t => t.status === 'trash').length;
+document.getElementById('emptyTrashBtn').addEventListener('click', async () => {
+    const trashedTasks = tasks.filter(t => t.status === 'trash');
+    const count = trashedTasks.length;
     if (count === 0) {
         alert('Trash is already empty.');
         return;
     }
     if (confirm(`Permanently delete all ${count} items in the trash?`)) {
+        if (window.ExemplarStore) {
+            for (const t of trashedTasks) {
+                try {
+                    await ExemplarStore.deleteExemplar(t.id);
+                } catch (e) {}
+            }
+        }
         tasks = tasks.filter(t => t.status !== 'trash');
         saveTasksAndPush();
         renderTrash();
