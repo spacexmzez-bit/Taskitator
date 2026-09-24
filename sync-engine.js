@@ -2,8 +2,8 @@
 /**
  * Taskitator Unified Cloud Sync Engine
  * Automated debounced push/pull bridge for Cloudflare Worker KV
- * Supports Zero-Knowledge Client-Side Hashing & Mandatory Authentication Gate
- * Synchronizes: Tasks, Projects, Daily Breaks, and App Settings.
+ * Supports Client-Side SHA-256 Bearer Hashing & Multi-App Namespace Bridge
+ * Synchronizes: Tasks, Projects, Daily Breaks, App Settings, and Audit Ledger.
  */
 
 const SyncEngine = {
@@ -11,6 +11,7 @@ const SyncEngine = {
     STORAGE_KEY_TASKS: 'taskitator_tasks',
     STORAGE_KEY_PROJECTS: 'taskitator_projects',
     STORAGE_KEY_BREAKS: 'taskitator_daily_breaks',
+    STORAGE_KEY_LEDGER: 'taskitator_audit_ledger',
     STORAGE_KEY_LAST_LOGIN: 'taskitator_last_login',
     STORAGE_KEY_LAST_MODIFIED: 'taskitator_tasks_last_modified',
     HARDCODED_WORKER_URL: 'https://taskitator-sync.spacexmzez.workers.dev',
@@ -37,7 +38,7 @@ const SyncEngine = {
 
     /**
      * Derives an irreversible 64-character SHA-256 authentication token client-side.
-     * Prevents raw password exposure across the network or in Cloudflare KV.
+     * Prevents raw secret exposure across the network or in Cloudflare KV.
      */
     async hashCredentials(username, password) {
         const cleanUser = String(username || '').trim().toLowerCase();
@@ -48,6 +49,21 @@ const SyncEngine = {
         const payloadData = encoder.encode(`${cleanUser}:${cleanPass}:${salt}`);
         const hashBuffer = await crypto.subtle.digest('SHA-256', payloadData);
         
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    },
+
+    /**
+     * Ensures any raw secret or token string is converted to a uniform 64-character SHA-256 hex string.
+     */
+    async ensureSha256(rawSecret) {
+        const str = String(rawSecret || '').trim();
+        if (/^[a-f0-9]{64}$/i.test(str)) {
+            return str.toLowerCase();
+        }
+        const encoder = new TextEncoder();
+        const data = encoder.encode(str);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     },
@@ -63,7 +79,7 @@ const SyncEngine = {
         return {
             url: this.HARDCODED_WORKER_URL,
             username: (settings.worker_username || '').trim().toLowerCase(),
-            secret: (settings.worker_passkey || '').trim(), // Stores derived SHA-256 bearer token
+            secret: (settings.worker_passkey || '').trim(), // SHA-256 bearer token
             last_synced: settings.last_synced || null
         };
     },
@@ -82,12 +98,14 @@ const SyncEngine = {
         let tasks = [];
         let projects = [];
         let breaks = [];
+        let ledger = [];
         let settings = {};
 
         try { tasks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_TASKS) || '[]'); } catch (e) {}
         try { projects = JSON.parse(localStorage.getItem(this.STORAGE_KEY_PROJECTS) || '[]'); } catch (e) {}
         try { settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}'); } catch (e) {}
         try { breaks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_BREAKS) || '[]'); } catch (e) {}
+        try { ledger = JSON.parse(localStorage.getItem(this.STORAGE_KEY_LEDGER) || '[]'); } catch (e) {}
 
         // Fallback to active engine snapshot if BreakEngine is loaded
         const todayBreaks = (window.TaskitatorEngine && TaskitatorEngine.BreakEngine)
@@ -106,6 +124,7 @@ const SyncEngine = {
             projects: projects,
             settings: settings,
             today_breaks: todayBreaks,
+            completed_audit_ledger: ledger,
             last_login: lastLogin,
             ...extraData
         };
@@ -120,13 +139,15 @@ const SyncEngine = {
 
         this.notify('syncing');
         const payload = this.getPayload(force, extraData);
+        const bearerToken = await this.ensureSha256(config.secret);
 
         try {
-            const res = await fetch(config.url, {
+            const res = await fetch(`${config.url}/sync/push`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${config.secret}`,
+                    'Authorization': `Bearer ${bearerToken}`,
+                    'X-App-ID': 'taskitator',
                     'X-Taskitator-User': config.username
                 },
                 body: JSON.stringify(payload)
@@ -197,12 +218,14 @@ const SyncEngine = {
         }
 
         this.notify('syncing');
+        const bearerToken = await this.ensureSha256(config.secret);
 
         try {
-            const res = await fetch(config.url, {
+            const res = await fetch(`${config.url}/sync/pull`, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${config.secret}`,
+                    'Authorization': `Bearer ${bearerToken}`,
+                    'X-App-ID': 'taskitator',
                     'X-Taskitator-User': config.username
                 }
             });
@@ -256,9 +279,14 @@ const SyncEngine = {
                 localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(data.settings));
             }
 
-            // Reconcile Breaks (standardized array format)
+            // Reconcile Breaks
             if (data.today_breaks && Array.isArray(data.today_breaks)) {
                 localStorage.setItem(this.STORAGE_KEY_BREAKS, JSON.stringify(data.today_breaks));
+            }
+
+            // Reconcile Audit Ledger
+            if (data.completed_audit_ledger && Array.isArray(data.completed_audit_ledger)) {
+                localStorage.setItem(this.STORAGE_KEY_LEDGER, JSON.stringify(data.completed_audit_ledger));
             }
 
             if (data.last_login) {
