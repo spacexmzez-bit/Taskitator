@@ -38,6 +38,10 @@ window.TaskitatorApp = (() => {
     let editModalSelectedPriority = null;
     let editModalSelectedProject = 'inbox';
 
+    // Mr. Study Gamification State
+    let activeMrStudyRules = [];
+    let isMrStudyLinked = false;
+
     // Default Registries
     const DEFAULT_TAGS = ['study', 'work', 'personal'];
     const DEFAULT_PRIORITIES = [
@@ -49,7 +53,6 @@ window.TaskitatorApp = (() => {
         { id: 'inbox', name: 'Inbox', color: '#94a3b8', icon: '📥', is_default: true }
     ];
 
-    // Curated Project Icon Palettes for Project Customization
     const PROJECT_ICONS = ['📥', '📚', '💼', '⚡', '🔬', '🏥', '🎯', '💻', '📝', '🎨', '🚀', '🧠', '🏋️', '💰', '🛠️', '🌐'];
     const PROJECT_COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#f97316'];
 
@@ -432,9 +435,36 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Grace Timers, Ledger Bridge & Completion Handlers
+    // Gamification Bridge, Grace Timers & Ledger Handling
     // =========================================================================
     
+    /**
+     * Re-renders the Mr. Study dropdown list in the Task Creation Modal
+     */
+    function updateMrStudyRuleDropdown() {
+        const container = document.getElementById('mrstudyRuleContainer');
+        const select = document.getElementById('taskMrstudyRuleSelect');
+        const rewardInputs = document.getElementById('mrstudyRewardInputs');
+        if (!container || !select) return;
+
+        if (!isMrStudyLinked || activeMrStudyRules.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+        select.innerHTML = '<option value="">None (Standard Task)</option>';
+
+        activeMrStudyRules.forEach(rule => {
+            const opt = document.createElement('option');
+            opt.value = rule.id;
+            opt.textContent = `${rule.title} [${rule.min_xp}-${rule.max_xp} XP]`;
+            select.appendChild(opt);
+        });
+
+        if (rewardInputs) rewardInputs.style.display = 'none';
+    }
+
     /**
      * Appends completed tasks to the unified sync ledger for Mr. Study progression.
      * Enforces the 200 event sliding window to prevent KV bloat.
@@ -459,7 +489,7 @@ window.TaskitatorApp = (() => {
             const pObj = prios.find(p => p.id === targetTask.priority_id);
             const rank = pObj ? pObj.rank : 3;
 
-            ledger.push({
+            const payload = {
                 sync_hash: 'evt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8),
                 task_id: targetTask.id,
                 title: targetTask.title,
@@ -469,7 +499,14 @@ window.TaskitatorApp = (() => {
                 verification_model: targetTask.verified_model || null,
                 completed_at: targetTask.completed_at || new Date().toISOString(),
                 has_exemplar: hasExemplar && targetTask.id === taskId
-            });
+            };
+
+            // Inject Mr. Study custom bindings if the user assigned them at creation
+            if (targetTask.mrstudy_binding) {
+                payload.mrstudy_binding = targetTask.mrstudy_binding;
+            }
+
+            ledger.push(payload);
         }
 
         const eventType = task.parent_id ? 'SUBTASK' : 'ROOT';
@@ -1159,6 +1196,21 @@ window.TaskitatorApp = (() => {
         if (dueIn) {
             dueIn.value = (currentView === 'today') ? new Date().toISOString().split('T')[0] : '';
         }
+
+        // Reset Mr. Study Gamification Inputs
+        const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
+        const mrStudyRewardInputs = document.getElementById('mrstudyRewardInputs');
+        const mrstudyXpInput = document.getElementById('mrstudyXpInput');
+        const mrstudyBanchInput = document.getElementById('mrstudyBanchInput');
+        const aiLockCheckbox = document.getElementById('aiLockCheckbox');
+        const mrstudyAiNotice = document.getElementById('mrstudyAiNotice');
+
+        if (mrStudySelect) mrStudySelect.value = '';
+        if (mrStudyRewardInputs) mrStudyRewardInputs.style.display = 'none';
+        if (mrstudyXpInput) mrstudyXpInput.value = '';
+        if (mrstudyBanchInput) mrstudyBanchInput.value = '';
+        if (aiLockCheckbox) aiLockCheckbox.disabled = false;
+        if (mrstudyAiNotice) mrstudyAiNotice.style.display = 'none';
         
         // Reset Exemplar File UI
         const exemplarInput = document.getElementById('createExemplarInput');
@@ -1197,6 +1249,9 @@ window.TaskitatorApp = (() => {
             feedback.className = 'criteria-feedback-box';
             feedback.innerHTML = '';
         }
+
+        // Re-evaluate available gamification rules
+        updateMrStudyRuleDropdown();
 
         const modal = document.getElementById('addTaskModal');
         if (modal) {
@@ -1869,6 +1924,14 @@ window.TaskitatorApp = (() => {
         loadStorage();
         BreakUI.init();
 
+        try {
+            const rawRules = localStorage.getItem('taskitator_mrstudy_rules');
+            if (rawRules) {
+                activeMrStudyRules = JSON.parse(rawRules) || [];
+                isMrStudyLinked = activeMrStudyRules.length > 0;
+            }
+        } catch (e) {}
+
         const sidebarDrawer = document.getElementById('sidebarDrawer');
         const drawerBackdrop = document.getElementById('drawerBackdrop');
         const openDrawerBtn = document.getElementById('openDrawerBtn');
@@ -2033,8 +2096,12 @@ window.TaskitatorApp = (() => {
             aiLockCheckbox.addEventListener('change', () => {
                 const cBox = document.getElementById('criteriaBoxContainer');
                 const pBox = document.getElementById('prerequisiteBoxContainer');
-                if (cBox) cBox.style.display = aiLockCheckbox.checked ? 'block' : 'none';
-                if (pBox) pBox.style.display = aiLockCheckbox.checked ? 'block' : 'none';
+                
+                // Allow manual override only if not hard-locked by a gamification rule
+                if (!aiLockCheckbox.disabled) {
+                    if (cBox) cBox.style.display = aiLockCheckbox.checked ? 'block' : 'none';
+                    if (pBox) pBox.style.display = aiLockCheckbox.checked ? 'block' : 'none';
+                }
             });
         }
 
@@ -2059,6 +2126,118 @@ window.TaskitatorApp = (() => {
                 addTaskModal.classList.remove('open');
             });
         }
+
+        // =====================================================================
+        // Gamification Selection Handlers (Mr. Study UI Logic)
+        // =====================================================================
+        const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
+        const mrStudyRewardInputs = document.getElementById('mrstudyRewardInputs');
+        const mrstudyXpInput = document.getElementById('mrstudyXpInput');
+        const mrstudyBanchInput = document.getElementById('mrstudyBanchInput');
+        const mrstudyXpRangeLabel = document.getElementById('mrstudyXpRangeLabel');
+        const mrstudyBanchRangeLabel = document.getElementById('mrstudyBanchRangeLabel');
+        const mrstudyAiNotice = document.getElementById('mrstudyAiNotice');
+        
+        const mrstudyInfoTriggerBtn = document.getElementById('mrstudyInfoTriggerBtn');
+        const mrstudyInfoModal = document.getElementById('mrstudyInfoModal');
+        const closeMrstudyInfoModalBtn = document.getElementById('closeMrstudyInfoModalBtn');
+        const dismissMrstudyInfoModalBtn = document.getElementById('dismissMrstudyInfoModalBtn');
+
+        if (mrstudyInfoTriggerBtn && mrstudyInfoModal) {
+            mrstudyInfoTriggerBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                mrstudyInfoModal.classList.add('open');
+            });
+            if (closeMrstudyInfoModalBtn) closeMrstudyInfoModalBtn.addEventListener('click', () => mrstudyInfoModal.classList.remove('open'));
+            if (dismissMrstudyInfoModalBtn) dismissMrstudyInfoModalBtn.addEventListener('click', () => mrstudyInfoModal.classList.remove('open'));
+        }
+
+        if (mrStudySelect && mrStudyRewardInputs && aiLockCheckbox) {
+            mrStudySelect.addEventListener('change', () => {
+                const ruleId = mrStudySelect.value;
+                if (!ruleId) {
+                    mrStudyRewardInputs.style.display = 'none';
+                    mrstudyXpInput.removeAttribute('required');
+                    mrstudyBanchInput.removeAttribute('required');
+                    aiLockCheckbox.disabled = false;
+                    mrstudyAiNotice.style.display = 'none';
+                    return;
+                }
+
+                const rule = activeMrStudyRules.find(r => r.id === ruleId);
+                if (rule) {
+                    mrStudyRewardInputs.style.display = 'block';
+                    
+                    mrstudyXpInput.min = rule.min_xp;
+                    mrstudyXpInput.max = rule.max_xp;
+                    mrstudyXpInput.value = rule.max_xp;
+                    mrstudyXpInput.required = true;
+                    if (mrstudyXpRangeLabel) mrstudyXpRangeLabel.textContent = `${rule.min_xp} – ${rule.max_xp}`;
+                    
+                    mrstudyBanchInput.min = rule.min_banch;
+                    mrstudyBanchInput.max = rule.max_banch;
+                    mrstudyBanchInput.value = rule.max_banch;
+                    mrstudyBanchInput.required = true;
+                    if (mrstudyBanchRangeLabel) mrstudyBanchRangeLabel.textContent = `${rule.min_banch} – ${rule.max_banch}`;
+
+                    if (rule.requires_ai) {
+                        aiLockCheckbox.checked = true;
+                        aiLockCheckbox.disabled = true;
+                        mrstudyAiNotice.style.display = 'block';
+                        
+                        // Force UI to show criteria boxes
+                        const cBox = document.getElementById('criteriaBoxContainer');
+                        const pBox = document.getElementById('prerequisiteBoxContainer');
+                        if (cBox) cBox.style.display = 'block';
+                        if (pBox) pBox.style.display = 'block';
+
+                        // Brief flash animation to alert user
+                        const labelEl = aiLockCheckbox.closest('label');
+                        if (labelEl) {
+                            labelEl.style.transition = 'color 0.3s ease';
+                            labelEl.style.color = '#fbbf24';
+                            setTimeout(() => labelEl.style.color = '', 800);
+                        }
+                    } else {
+                        aiLockCheckbox.disabled = false;
+                        mrstudyAiNotice.style.display = 'none';
+                    }
+                }
+            });
+
+            // Strict visual clamping on manual value entry to prevent DOM bypass
+            mrstudyXpInput.addEventListener('change', () => {
+                if (!mrstudyXpInput.value) return;
+                const min = parseInt(mrstudyXpInput.min, 10);
+                const max = parseInt(mrstudyXpInput.max, 10);
+                let val = parseInt(mrstudyXpInput.value, 10);
+                if (val < min) val = min;
+                if (val > max) val = max;
+                mrstudyXpInput.value = val;
+            });
+            mrstudyBanchInput.addEventListener('change', () => {
+                if (!mrstudyBanchInput.value) return;
+                const min = parseInt(mrstudyBanchInput.min, 10);
+                const max = parseInt(mrstudyBanchInput.max, 10);
+                let val = parseInt(mrstudyBanchInput.value, 10);
+                if (val < min) val = min;
+                if (val > max) val = max;
+                mrstudyBanchInput.value = val;
+            });
+        }
+
+        // Listen for background updates to Gamification Rules
+        window.addEventListener('taskitator-mrstudy-rules-updated', (e) => {
+            if (e.detail) {
+                isMrStudyLinked = e.detail.linked;
+                activeMrStudyRules = e.detail.rules || [];
+                // Only re-render if creation modal is actively open
+                const modal = document.getElementById('addTaskModal');
+                if (modal && modal.classList.contains('open')) {
+                    updateMrStudyRuleDropdown();
+                }
+            }
+        });
 
         // =====================================================================
         // UI Handling for Exemplar Picker in Task Creation
@@ -2187,6 +2366,21 @@ window.TaskitatorApp = (() => {
                     created_at: new Date().toISOString(),
                     completed_at: null
                 };
+
+                // Append Mr. Study Rule Bindings (Creation-Time Only)
+                const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
+                if (mrStudySelect && mrStudySelect.value && isMrStudyLinked) {
+                    const ruleId = mrStudySelect.value;
+                    const assignedXp = parseInt(document.getElementById('mrstudyXpInput')?.value || 0, 10);
+                    const assignedBanch = parseInt(document.getElementById('mrstudyBanchInput')?.value || 0, 10);
+                    
+                    newTask.mrstudy_binding = {
+                        rule_id: ruleId,
+                        assigned_xp: assignedXp,
+                        assigned_banch: assignedBanch
+                    };
+                }
+
                 tasks.push(newTask);
 
                 if (subtaskBuilderList) {
@@ -2220,6 +2414,7 @@ window.TaskitatorApp = (() => {
                     submitBtn.textContent = 'Save Task';
                 }
                 
+                const addTaskModal = document.getElementById('addTaskModal');
                 if (addTaskModal) addTaskModal.classList.remove('open');
                 
                 if (typeof window.refreshCurrentProjectView === 'function') {
