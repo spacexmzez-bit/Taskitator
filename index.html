@@ -35,6 +35,35 @@
         .subtask-input-title {
             flex: 1;
         }
+        .mrstudy-rule-box {
+            background: rgba(30, 58, 138, 0.25);
+            border: 1.5px dashed #3b82f6;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 10px;
+            margin-bottom: 12px;
+        }
+        .mrstudy-info-badge {
+            background: #1e3a8a;
+            color: #93c5fd;
+            border: 1px solid #3b82f6;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.72rem;
+            font-weight: 800;
+            cursor: pointer;
+            margin-left: 6px;
+            vertical-align: middle;
+            line-height: 1;
+        }
+        .mrstudy-info-badge:hover {
+            background: #3b82f6;
+            color: #ffffff;
+        }
     </style>
 </head>
 <body>
@@ -285,6 +314,43 @@
                 <input type="date" id="taskDueDateInput">
             </div>
 
+            <!-- Dynamic Mr. Study Rule Binding Container (Hidden until properly linked) -->
+            <div class="form-group" id="mrstudyRuleContainer" style="display: none;">
+                <div class="mrstudy-rule-box">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <label style="margin: 0; font-weight: 700; color: #93c5fd; display: flex; align-items: center;">
+                            <span>🏆 Link to Mr. Study Rule</span>
+                            <span class="mrstudy-info-badge" id="mrstudyInfoTriggerBtn" title="About Mr. Study">!</span>
+                        </label>
+                        <span style="font-size: 0.72rem; color: #60a5fa; font-weight: 600;">Creation-time only</span>
+                    </div>
+
+                    <select id="taskMrstudyRuleSelect" style="width: 100%; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.85rem; margin-bottom: 8px;">
+                        <option value="">None (Standard Task)</option>
+                    </select>
+
+                    <div id="mrstudyRewardInputs" style="display: none; padding-top: 8px; border-top: 1px dashed rgba(59, 130, 246, 0.3);">
+                        <div style="display: flex; gap: 12px; margin-bottom: 6px;">
+                            <div style="flex: 1;">
+                                <label for="mrstudyXpInput" style="font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+                                    <span>Assigned XP:</span>
+                                    <span id="mrstudyXpRangeLabel" style="color: #60a5fa; font-weight: 700;"></span>
+                                </label>
+                                <input type="number" id="mrstudyXpInput" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.85rem;">
+                            </div>
+                            <div style="flex: 1;">
+                                <label for="mrstudyBanchInput" style="font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+                                    <span>Assigned Banch:</span>
+                                    <span id="mrstudyBanchRangeLabel" style="color: #34d399; font-weight: 700;"></span>
+                                </label>
+                                <input type="number" id="mrstudyBanchInput" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.85rem;">
+                            </div>
+                        </div>
+                        <small id="mrstudyAiNotice" style="display: none; color: #fbbf24; font-size: 0.73rem;">⚠️ This rule enforces AI Proof Verification.</small>
+                    </div>
+                </div>
+            </div>
+
             <div class="form-group">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                     <input type="checkbox" id="aiLockCheckbox">
@@ -499,6 +565,30 @@
         </p>
         <div style="text-align: right; margin-top: 16px;">
             <button class="icon-btn" id="closeEmergencyInfoModalBtn" style="background: var(--primary); color: #fff; border: none;">Got it</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: About Mr. Study Info Panel -->
+<div class="modal-overlay" id="mrstudyInfoModal">
+    <div class="modal-box" style="max-width: 440px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="margin: 0; color: var(--primary); display: flex; align-items: center; gap: 8px;">
+                <span>🏆</span> About Mr. Study
+            </h3>
+            <button class="icon-btn" id="closeMrstudyInfoModalBtn" style="padding: 2px 8px;">✕</button>
+        </div>
+        <p style="font-size: 0.85rem; line-height: 1.5; color: var(--text-color); margin-bottom: 12px;">
+            <strong>Mr. Study</strong> is a gamified productivity and economy engine that tracks your study streaks, awards permanent <strong>Total XP</strong>, and provides spendable <strong>Banch Points</strong> for deep-work achievements.
+        </p>
+        <p style="font-size: 0.82rem; line-height: 1.5; color: var(--text-muted); margin-bottom: 16px;">
+            By linking tasks to rules, completing them in Taskitator will automatically deposit your assigned XP and Banch directly into your Mr. Study balance once verified.
+        </p>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 14px;">
+            <a href="https://mr.study.mazendev.com" target="_blank" rel="noopener noreferrer" class="icon-btn" style="text-decoration: none; background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 6px 14px; font-size: 0.85rem;">
+                Open Mr. Study ↗
+            </a>
+            <button type="button" class="icon-btn" id="dismissMrstudyInfoModalBtn">Close</button>
         </div>
     </div>
 </div>
