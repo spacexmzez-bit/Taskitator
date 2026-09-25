@@ -3,7 +3,7 @@
  * Taskitator Unified Cloud Sync Engine
  * Automated debounced push/pull bridge for Cloudflare Worker KV
  * Supports Client-Side SHA-256 Bearer Hashing & Multi-App Namespace Bridge
- * Synchronizes: Tasks, Projects, Daily Breaks, App Settings, and Audit Ledger.
+ * Synchronizes: Tasks, Projects, Daily Breaks, App Settings, Audit Ledger, and Mr. Study Rules.
  */
 
 const SyncEngine = {
@@ -12,6 +12,7 @@ const SyncEngine = {
     STORAGE_KEY_PROJECTS: 'taskitator_projects',
     STORAGE_KEY_BREAKS: 'taskitator_daily_breaks',
     STORAGE_KEY_LEDGER: 'taskitator_audit_ledger',
+    STORAGE_KEY_MRSTUDY_RULES: 'taskitator_mrstudy_rules',
     STORAGE_KEY_LAST_LOGIN: 'taskitator_last_login',
     STORAGE_KEY_LAST_MODIFIED: 'taskitator_tasks_last_modified',
     HARDCODED_WORKER_URL: 'https://taskitator-sync.spacexmzez.workers.dev',
@@ -205,6 +206,51 @@ const SyncEngine = {
         return res.success;
     },
 
+    /**
+     * Pulls active rules published by Mr. Study from Cloudflare KV.
+     * Caches them in localStorage and dispatches a notification event.
+     */
+    async fetchMrStudyRules() {
+        const config = this.getConfig();
+        if (!config.secret || !config.username) {
+            localStorage.removeItem(this.STORAGE_KEY_MRSTUDY_RULES);
+            window.dispatchEvent(new CustomEvent('taskitator-mrstudy-rules-updated', { detail: { rules: [], linked: false } }));
+            return { linked: false, rules: [] };
+        }
+
+        try {
+            const bearerToken = await this.ensureSha256(config.secret);
+            const res = await fetch(`${config.url}/sync/bridge/mrstudy-rules`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${bearerToken}`,
+                    'X-App-ID': 'taskitator',
+                    'X-Taskitator-User': config.username
+                }
+            });
+
+            if (!res.ok) {
+                return { linked: false, rules: [] };
+            }
+
+            const data = await res.json();
+            const rules = Array.isArray(data.rules) ? data.rules : [];
+            const isLinked = Boolean(data.linked && rules.length > 0);
+
+            if (isLinked) {
+                localStorage.setItem(this.STORAGE_KEY_MRSTUDY_RULES, JSON.stringify(rules));
+            } else {
+                localStorage.removeItem(this.STORAGE_KEY_MRSTUDY_RULES);
+            }
+
+            window.dispatchEvent(new CustomEvent('taskitator-mrstudy-rules-updated', { detail: { rules, linked: isLinked } }));
+            return { linked: isLinked, rules };
+        } catch (err) {
+            console.warn('[SyncEngine] Failed to fetch Mr. Study rules:', err.message);
+            return { linked: false, rules: [] };
+        }
+    },
+
     async pull(onUpdateCallback = null) {
         const config = this.getConfig();
         if (!config.secret || !config.username) {
@@ -239,6 +285,7 @@ const SyncEngine = {
 
             if (data.empty) {
                 this.notify('synced', { empty: true });
+                this.fetchMrStudyRules();
                 return { success: true, empty: true };
             }
 
@@ -252,6 +299,7 @@ const SyncEngine = {
                 const remoteTime = new Date(data.updated_at).getTime();
                 if (localTime > remoteTime) {
                     await this.push(true);
+                    this.fetchMrStudyRules();
                     return { success: true, localWasFresher: true };
                 }
             }
@@ -295,6 +343,9 @@ const SyncEngine = {
 
             this.notify('synced', { timestamp: new Date().toISOString() });
 
+            // Fetch latest companion rules in background
+            this.fetchMrStudyRules();
+
             if (onUpdateCallback && localTasksRaw !== remoteTasksRaw) {
                 onUpdateCallback();
             }
@@ -326,6 +377,7 @@ const SyncEngine = {
 
         localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
         localStorage.removeItem(this.STORAGE_KEY_LAST_LOGIN);
+        localStorage.removeItem(this.STORAGE_KEY_MRSTUDY_RULES);
 
         this.notify('unconfigured');
         return true;
