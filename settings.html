@@ -456,6 +456,18 @@
                     </div>
                     <input type="checkbox" id="strictCriteriaToggle" style="width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer;" checked>
                 </div>
+
+                <!-- Distraction Dump Settings -->
+                <div class="form-group" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
+                    <label for="dumpDurationSlider" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-weight: 700;">
+                        Distraction Dump Timer
+                        <span id="dumpDurationReadout" style="color: var(--primary); font-size: 0.9rem;">90s</span>
+                    </label>
+                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-bottom: 12px; line-height: 1.4;">
+                        Maximum time allowed to jot down a distracting idea in the scratchpad before it force-closes. <strong>Editable only while your daily break window is open.</strong>
+                    </small>
+                    <input type="range" id="dumpDurationSlider" min="30" max="300" step="15" value="90" style="width: 100%; accent-color: var(--primary); cursor: pointer;">
+                </div>
             </div>
 
             <!-- Weekend & Emergency Cycle Engine -->
@@ -679,6 +691,10 @@ const syncWordBadge = document.getElementById('syncWordBadge');
 const logoutConfirmModal = document.getElementById('logoutConfirmModal');
 const unsavedIndicator = document.getElementById('unsavedIndicator');
 
+// Distraction Dump UI Elements
+const dumpDurationSlider = document.getElementById('dumpDurationSlider');
+const dumpDurationReadout = document.getElementById('dumpDurationReadout');
+
 // MacroDroid integration elements
 const macroBearerToken = document.getElementById('macroBearerToken');
 const copyUrlBtn = document.getElementById('copyUrlBtn');
@@ -739,6 +755,16 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (targetPane) targetPane.classList.add('active');
     });
 });
+
+// =========================================================================
+// Formatting Utilities
+// =========================================================================
+function formatDumpDuration(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return s === 0 ? `${m}m` : `${m}m ${s}s`;
+}
 
 // =========================================================================
 // Tag & Priority Registry Handlers
@@ -893,6 +919,11 @@ function loadSettings() {
     geminiApiKeyInput.value = settings.gemini_api_key || '';
     strictCriteriaToggle.checked = settings.strict_criteria_validation !== false;
 
+    // Distraction Dump UI Load
+    const dumpDur = settings.dump_duration !== undefined ? settings.dump_duration : 90;
+    dumpDurationSlider.value = dumpDur;
+    dumpDurationReadout.textContent = formatDumpDuration(dumpDur);
+
     weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
     weekendEndSelect.value = settings.weekend_end !== undefined ? settings.weekend_end : '6';
 
@@ -934,14 +965,24 @@ async function saveSettings(silent = false) {
     const endStr = breakWindowEnd.value.trim();
     const savedStart = settings.break_selection_start || '';
     const savedEnd = settings.break_selection_end || '';
+    const currentDumpDur = parseInt(dumpDurationSlider.value, 10);
+    const savedDumpDur = settings.dump_duration !== undefined ? settings.dump_duration : 90;
 
-    if (savedStart && savedEnd && (savedStart !== startStr || savedEnd !== endStr)) {
-        const isOpen = window.TaskitatorEngine && TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
-        if (!isOpen) {
+    const isOpen = window.TaskitatorEngine && TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
+
+    if (!isOpen) {
+        if (savedStart && savedEnd && (savedStart !== startStr || savedEnd !== endStr)) {
             alert('Cannot modify break selection window while it is closed for the day.');
             breakWindowStart.value = savedStart;
             breakWindowEnd.value = savedEnd;
             updateBreakWindowStatus();
+            return false;
+        }
+
+        if (savedDumpDur !== currentDumpDur) {
+            alert('Cannot modify distraction dump timer while the break selection window is closed for the day.');
+            dumpDurationSlider.value = savedDumpDur;
+            dumpDurationReadout.textContent = formatDumpDuration(savedDumpDur);
             return false;
         }
     }
@@ -950,6 +991,7 @@ async function saveSettings(silent = false) {
     settings.copilot_name = (copilotNameInput.value.trim() || 'Focus Copilot').slice(0, 20);
     settings.gemini_api_key = geminiApiKeyInput.value.trim();
     settings.strict_criteria_validation = Boolean(strictCriteriaToggle.checked);
+    settings.dump_duration = currentDumpDur;
     settings.worker_url = HARDCODED_WORKER_URL;
     settings.weekend_start = parseInt(weekendStartSelect.value, 10);
     settings.weekend_end = parseInt(weekendEndSelect.value, 10);
@@ -1002,14 +1044,17 @@ function updateBreakWindowStatus() {
         badge.innerHTML = '<span class="tag-chip" style="background: #3f2c06; color: #fde047; font-weight: 700;">⚠️ Not Set (Configure your daily window)</span>';
         breakWindowStart.disabled = false;
         breakWindowEnd.disabled = false;
+        dumpDurationSlider.disabled = false;
     } else if (isOpen) {
         badge.innerHTML = '<span class="tag-chip" style="background: #052e16; color: #86efac; font-weight: 700;">● Window Currently Open (Editable)</span>';
         breakWindowStart.disabled = false;
         breakWindowEnd.disabled = false;
+        dumpDurationSlider.disabled = false;
     } else {
         badge.innerHTML = '<span class="tag-chip" style="background: #380d15; color: #fda4af; font-weight: 700;">🔒 Window Closed for Today (Locked across devices)</span>';
         breakWindowStart.disabled = true;
         breakWindowEnd.disabled = true;
+        dumpDurationSlider.disabled = true;
     }
 }
 
@@ -1021,6 +1066,12 @@ function updateWorkweekNotice() {
     document.getElementById('workweekCalcNotice').textContent =
         `Weekend: ${days[s]} to ${days[e]}. Emergency tokens reset every ${days[resetDay]} at 00:00.`;
 }
+
+// Live update for duration slider
+dumpDurationSlider.addEventListener('input', (e) => {
+    dumpDurationReadout.textContent = formatDumpDuration(parseInt(e.target.value, 10));
+    markUnsaved();
+});
 
 document.getElementById('toggleKeyVisibilityBtn').addEventListener('click', () => {
     const isPassword = geminiApiKeyInput.type === 'password';
