@@ -13,6 +13,7 @@ window.TaskitatorApp = (() => {
     const SETTINGS_KEY = 'taskitator_settings';
     const PROJECTS_KEY = 'taskitator_projects';
     const AUDIT_LEDGER_KEY = 'taskitator_audit_ledger';
+    const DISTRACTION_NOTES_KEY = 'taskitator_distraction_notes';
 
     let currentView = 'today'; // 'today' | 'general'
     let tasks = [];
@@ -114,8 +115,236 @@ window.TaskitatorApp = (() => {
                     osc.stop(startTime + 0.25);
                 });
             } catch (e) {}
+        },
+        playTimeoutAlert() {
+            if (this.isMuted()) return;
+            try {
+                const ctx = this.getAudioContext();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(150, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.2, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.3);
+            } catch (e) {}
         }
     };
+
+    // =========================================================================
+    // Distraction Dump & Local Escrow GC
+    // =========================================================================
+    const DistractionDumpEngine = (() => {
+        let activeTimer = null;
+        let activeInterval = null;
+        
+        function getNotes() {
+            try {
+                return JSON.parse(localStorage.getItem(DISTRACTION_NOTES_KEY) || '[]');
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveNotes(notesArray) {
+            localStorage.setItem(DISTRACTION_NOTES_KEY, JSON.stringify(notesArray));
+            updateTriggerIcon();
+        }
+
+        function garbageCollect() {
+            const now = Date.now();
+            const TTL_MS = 48 * 60 * 60 * 1000;
+            const notes = getNotes();
+            const valid = notes.filter(n => (now - n.created_at) < TTL_MS);
+            if (valid.length !== notes.length) {
+                saveNotes(valid);
+            } else {
+                updateTriggerIcon();
+            }
+        }
+
+        function updateTriggerIcon() {
+            const btn = document.getElementById('openDistractionDumpBtn');
+            const countDisplay = document.getElementById('dumpEscrowCountDisplay');
+            if (!btn) return;
+            
+            const count = getNotes().length;
+            if (count > 0) {
+                btn.classList.add('has-notes');
+            } else {
+                btn.classList.remove('has-notes');
+            }
+            if (countDisplay) countDisplay.textContent = count;
+        }
+
+        function formatRemainingTTL(createdTimestamp) {
+            const now = Date.now();
+            const TTL_MS = 48 * 60 * 60 * 1000;
+            const diff = TTL_MS - (now - createdTimestamp);
+            if (diff <= 0) return 'Expired';
+            
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            if (hours > 0) return `${hours}h remaining`;
+            const mins = Math.floor(diff / (1000 * 60));
+            return `${mins}m remaining`;
+        }
+
+        function openModal() {
+            const modal = document.getElementById('distractionDumpModal');
+            const input = document.getElementById('distractionNoteInput');
+            const display = document.getElementById('dumpCountdownDisplay');
+            const prog = document.getElementById('dumpTimerProgressBar');
+            
+            if (!modal || !input) return;
+
+            // Load user preferred duration setting
+            let durationSecs = 90;
+            try {
+                const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+                if (settings.dump_duration !== undefined) {
+                    durationSecs = parseInt(settings.dump_duration, 10);
+                }
+            } catch (e) {}
+
+            input.value = '';
+            modal.classList.add('open');
+            setTimeout(() => input.focus(), 150);
+
+            startHardTimer(durationSecs, display, prog);
+        }
+
+        function forceCommitAndClose() {
+            const input = document.getElementById('distractionNoteInput');
+            const val = (input?.value || '').trim();
+            
+            if (val) {
+                const notes = getNotes();
+                notes.push({
+                    id: 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                    text: val,
+                    created_at: Date.now()
+                });
+                saveNotes(notes);
+            }
+
+            closeModal();
+            SoundFX.playTimeoutAlert();
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('distractionDumpModal');
+            if (modal) modal.classList.remove('open');
+            if (activeTimer) clearTimeout(activeTimer);
+            if (activeInterval) clearInterval(activeInterval);
+        }
+
+        function startHardTimer(totalSecs, displayEl, progEl) {
+            if (activeTimer) clearTimeout(activeTimer);
+            if (activeInterval) clearInterval(activeInterval);
+
+            let remaining = totalSecs;
+            
+            const updateUI = () => {
+                if (displayEl) {
+                    const m = Math.floor(remaining / 60);
+                    const s = remaining % 60;
+                    displayEl.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                }
+                if (progEl) {
+                    const pct = (remaining / totalSecs) * 100;
+                    progEl.style.width = `${pct}%`;
+                    if (pct < 25) {
+                        progEl.classList.add('urgency');
+                    } else {
+                        progEl.classList.remove('urgency');
+                    }
+                }
+            };
+
+            updateUI();
+            
+            activeInterval = setInterval(() => {
+                remaining--;
+                updateUI();
+                if (remaining <= 0) {
+                    clearInterval(activeInterval);
+                    forceCommitAndClose();
+                }
+            }, 1000);
+        }
+
+        function openEscrowModal() {
+            closeModal();
+            const eModal = document.getElementById('distractionEscrowModal');
+            const listEl = document.getElementById('escrowNotesList');
+            const lockBanner = document.getElementById('escrowGateLockBanner');
+            const unlockedBanner = document.getElementById('escrowGateUnlockedBanner');
+            
+            if (!eModal || !listEl) return;
+
+            garbageCollect();
+            const notes = getNotes();
+            listEl.innerHTML = '';
+
+            if (notes.length === 0) {
+                listEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px 0;">No active ideas in escrow.</div>';
+            } else {
+                notes.forEach((n, idx) => {
+                    const card = document.createElement('div');
+                    card.className = 'dump-note-item-card';
+                    card.innerHTML = `
+                        <div style="flex: 1; font-size: 0.9rem; line-height: 1.4; color: var(--text-color); white-space: pre-wrap;">${n.text}</div>
+                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+                            <span style="font-size: 0.7rem; color: #f59e0b; font-weight: 700; white-space: nowrap;">⏳ ${formatRemainingTTL(n.created_at)}</span>
+                            <button type="button" class="icon-btn del-escrow-note" data-idx="${idx}" style="color: var(--danger); border: none; padding: 2px 6px;">✕</button>
+                        </div>
+                    `;
+                    listEl.appendChild(card);
+                });
+
+                listEl.querySelectorAll('.del-escrow-note').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const i = parseInt(e.target.getAttribute('data-idx'), 10);
+                        notes.splice(i, 1);
+                        saveNotes(notes);
+                        openEscrowModal();
+                    });
+                });
+            }
+
+            // Gate Logic: Are there ANY active AI-locked tasks (parent or child) remaining?
+            const hasPendingAiLocks = tasks.some(t => t.ai_locked && t.status !== 'completed' && t.status !== 'trash');
+            
+            if (lockBanner && unlockedBanner) {
+                if (hasPendingAiLocks) {
+                    lockBanner.style.display = 'flex';
+                    unlockedBanner.style.display = 'none';
+                } else if (notes.length > 0) {
+                    lockBanner.style.display = 'none';
+                    unlockedBanner.style.display = 'flex';
+                } else {
+                    lockBanner.style.display = 'none';
+                    unlockedBanner.style.display = 'none';
+                }
+            }
+
+            eModal.classList.add('open');
+        }
+
+        return {
+            garbageCollect,
+            openModal,
+            closeModal,
+            openEscrowModal,
+            getNotes,
+            saveNotes,
+            updateTriggerIcon
+        };
+    })();
 
     // =========================================================================
     // Projects Registry CRUD & Cascades
@@ -1923,6 +2152,7 @@ window.TaskitatorApp = (() => {
         initSyncIndicator();
         loadStorage();
         BreakUI.init();
+        DistractionDumpEngine.garbageCollect();
 
         try {
             const rawRules = localStorage.getItem('taskitator_mrstudy_rules');
@@ -1956,6 +2186,88 @@ window.TaskitatorApp = (() => {
 
         window.addEventListener('hashchange', handleHashRouting);
         handleHashRouting();
+
+        // =====================================================================
+        // Distraction Dump UI Bindings
+        // =====================================================================
+        const openDistractionDumpBtn = document.getElementById('openDistractionDumpBtn');
+        const closeDumpModalBtn = document.getElementById('closeDumpModalBtn');
+        const saveDumpNoteBtn = document.getElementById('saveDumpNoteBtn');
+        const openDumpEscrowBtn = document.getElementById('openDumpEscrowBtn');
+        const closeDumpEscrowModalBtn = document.getElementById('closeDumpEscrowModalBtn');
+        const backToDumpInputBtn = document.getElementById('backToDumpInputBtn');
+        const startAiTriageBtn = document.getElementById('startAiTriageBtn');
+
+        if (openDistractionDumpBtn) {
+            openDistractionDumpBtn.addEventListener('click', () => DistractionDumpEngine.openModal());
+        }
+        if (closeDumpModalBtn) {
+            closeDumpModalBtn.addEventListener('click', () => DistractionDumpEngine.closeModal());
+        }
+        if (saveDumpNoteBtn) {
+            saveDumpNoteBtn.addEventListener('click', () => {
+                const input = document.getElementById('distractionNoteInput');
+                if (!input || !input.value.trim()) {
+                    DistractionDumpEngine.closeModal();
+                    return;
+                }
+                const notes = DistractionDumpEngine.getNotes();
+                notes.push({
+                    id: 'note_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                    text: input.value.trim(),
+                    created_at: Date.now()
+                });
+                DistractionDumpEngine.saveNotes(notes);
+                DistractionDumpEngine.closeModal();
+            });
+        }
+        if (openDumpEscrowBtn) {
+            openDumpEscrowBtn.addEventListener('click', () => DistractionDumpEngine.openEscrowModal());
+        }
+        if (closeDumpEscrowModalBtn) {
+            closeDumpEscrowModalBtn.addEventListener('click', () => {
+                const m = document.getElementById('distractionEscrowModal');
+                if (m) m.classList.remove('open');
+            });
+        }
+        if (backToDumpInputBtn) {
+            backToDumpInputBtn.addEventListener('click', () => {
+                const m = document.getElementById('distractionEscrowModal');
+                if (m) m.classList.remove('open');
+                DistractionDumpEngine.openModal();
+            });
+        }
+        if (startAiTriageBtn) {
+            startAiTriageBtn.addEventListener('click', async () => {
+                if (window.TaskitatorEngine?.AgentEngine?.triageNotes) {
+                    const notes = DistractionDumpEngine.getNotes();
+                    if (notes.length === 0) return;
+                    startAiTriageBtn.disabled = true;
+                    startAiTriageBtn.textContent = '🤖 Triaging...';
+                    
+                    const res = await TaskitatorEngine.AgentEngine.triageNotes(notes);
+                    
+                    startAiTriageBtn.disabled = false;
+                    startAiTriageBtn.innerHTML = '🤖 AI Triage Notes';
+                    
+                    if (res.success) {
+                        DistractionDumpEngine.saveNotes([]);
+                        const m = document.getElementById('distractionEscrowModal');
+                        if (m) m.classList.remove('open');
+                        
+                        // Force refresh if tasks were converted
+                        if (res.tasksGenerated) {
+                            loadStorage();
+                            renderUnifiedView();
+                        }
+                    } else {
+                        alert(`Triage failed: ${res.error}`);
+                    }
+                } else {
+                    alert('Agent Engine not loaded.');
+                }
+            });
+        }
 
         const completedModal = document.getElementById('completedModal');
         const openCompletedModalBtn = document.getElementById('openCompletedModalBtn');
