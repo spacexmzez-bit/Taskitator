@@ -689,8 +689,11 @@ ${notesFormatted}`;
         }
 
         // 3. Update Floating / Top Nav Buttons across pages
+        const navLabel = document.getElementById('copilotNavNameLabel');
         const navBtn = document.getElementById('openCopilotNavBtn');
-        if (navBtn) {
+        if (navLabel) {
+            navLabel.textContent = name;
+        } else if (navBtn) {
             navBtn.textContent = `💬 ${name}`;
         }
 
