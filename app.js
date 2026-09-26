@@ -1277,6 +1277,39 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     // Task Detail / Edit Modal Engine
     // =========================================================================
+    function refreshDetailSubtaskList(parentId, triggerRenderFn) {
+        const detailSubtasksList = document.getElementById('detailSubtasksList');
+        const taskDetailModal = document.getElementById('taskDetailModal');
+        if (!detailSubtasksList) return;
+        
+        detailSubtasksList.innerHTML = '';
+        const directChildren = tasks.filter(t => t.parent_id === parentId && t.status !== 'trash');
+        const sortedChildren = sortTasks([...directChildren]);
+
+        if (sortedChildren.length === 0) {
+            detailSubtasksList.innerHTML = '<li style="font-size: 0.825rem; color: var(--text-muted); padding: 4px 0;">No subtasks yet.</li>';
+        } else {
+            sortedChildren.forEach(child => {
+                const sLi = document.createElement('li');
+                sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
+
+                let cBadges = '';
+                if (child.ai_locked) cBadges += '<span class="ai-badge">🔒 AI</span> ';
+                if (child.strict_prerequisites) cBadges += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️</span>';
+
+                sLi.innerHTML = `
+                    <span>${child.status === 'completed' ? '✓ ' : ''}${child.title} ${cBadges}</span>
+                    <button type="button" class="icon-btn" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
+                `;
+                sLi.querySelector('button').addEventListener('click', () => {
+                    if (taskDetailModal) taskDetailModal.classList.remove('open');
+                    openTaskDetailModal(child.id, triggerRenderFn);
+                });
+                detailSubtasksList.appendChild(sLi);
+            });
+        }
+    }
+
     async function openTaskDetailModal(taskId, triggerRenderFn) {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
@@ -1294,10 +1327,10 @@ window.TaskitatorApp = (() => {
         const editPrerequisiteBoxContainer = document.getElementById('editPrerequisiteBoxContainer');
         const editCriteriaBoxContainer = document.getElementById('editCriteriaBoxContainer');
         const editTaskCriteria = document.getElementById('editTaskCriteria');
-        const detailSubtasksList = document.getElementById('detailSubtasksList');
         const detailLockStatusBadge = document.getElementById('detailLockStatusBadge');
         const deleteFromDetailBtn = document.getElementById('deleteFromDetailBtn');
         const editExemplarChip = document.getElementById('editExemplarChip');
+        const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
 
         const titleH = document.getElementById('detailTaskTitleHeader');
         if (titleH) titleH.textContent = task.title;
@@ -1309,6 +1342,7 @@ window.TaskitatorApp = (() => {
         
         if (editTaskDesc) editTaskDesc.value = task.description || '';
         if (editTaskDueDate) editTaskDueDate.value = task.due_date === 'today' ? new Date().toISOString().split('T')[0] : (task.due_date || '');
+        if (detailQuickSubtaskInput) detailQuickSubtaskInput.value = '';
 
         editModalSelectedTags.clear();
         (task.tags || []).forEach(t => editModalSelectedTags.add(t));
@@ -1358,34 +1392,7 @@ window.TaskitatorApp = (() => {
             }
         }
 
-        if (detailSubtasksList) {
-            detailSubtasksList.innerHTML = '';
-            const directChildren = tasks.filter(t => t.parent_id === taskId && t.status !== 'trash');
-            const sortedChildren = sortTasks([...directChildren]);
-
-            if (sortedChildren.length === 0) {
-                detailSubtasksList.innerHTML = '<li style="font-size: 0.825rem; color: var(--text-muted); padding: 4px 0;">No subtasks yet.</li>';
-            } else {
-                sortedChildren.forEach(child => {
-                    const sLi = document.createElement('li');
-                    sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
-
-                    let cBadges = '';
-                    if (child.ai_locked) cBadges += '<span class="ai-badge">🔒 AI</span> ';
-                    if (child.strict_prerequisites) cBadges += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️</span>';
-
-                    sLi.innerHTML = `
-                        <span>${child.status === 'completed' ? '✓ ' : ''}${child.title} ${cBadges}</span>
-                        <button type="button" class="icon-btn" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
-                    `;
-                    sLi.querySelector('button').addEventListener('click', () => {
-                        if (taskDetailModal) taskDetailModal.classList.remove('open');
-                        openTaskDetailModal(child.id, triggerRenderFn);
-                    });
-                    detailSubtasksList.appendChild(sLi);
-                });
-            }
-        }
+        refreshDetailSubtaskList(taskId, triggerRenderFn);
 
         if (taskDetailModal) {
             taskDetailModal._customRenderFn = triggerRenderFn;
@@ -1776,207 +1783,219 @@ window.TaskitatorApp = (() => {
                 ? 'No active tasks scheduled for today.' 
                 : 'No active tasks found in workspace.';
             list.innerHTML = `<li style="text-align: center; color: var(--text-muted); padding: 32px;">${msg}</li>`;
-            return;
-        }
+        } else {
+            function buildNodeElement(task, depth = 0) {
+                const li = document.createElement('li');
+                const isDone = task.status === 'completed';
+                
+                const isOverdue = !isDone && 
+                                  task.due_date && 
+                                  /^\d{4}-\d{2}-\d{2}$/.test(task.due_date) && 
+                                  task.due_date < todayStr;
 
-        function buildNodeElement(task, depth = 0) {
-            const li = document.createElement('li');
-            const isDone = task.status === 'completed';
-            
-            const isOverdue = !isDone && 
-                              task.due_date && 
-                              /^\d{4}-\d{2}-\d{2}$/.test(task.due_date) && 
-                              task.due_date < todayStr;
+                li.className = `task-node ${isDone ? 'completed' : ''} ${isOverdue ? 'is-overdue' : ''}`;
 
-            li.className = `task-node ${isDone ? 'completed' : ''} ${isOverdue ? 'is-overdue' : ''}`;
-
-            let isBreadcrumb = false;
-            if (hasFilters) {
-                const m = matchMap.get(task.id);
-                const d = descMatchMap.get(task.id);
-                if (!m && d) {
-                    isBreadcrumb = true;
+                let isBreadcrumb = false;
+                if (hasFilters) {
+                    const m = matchMap.get(task.id);
+                    const d = descMatchMap.get(task.id);
+                    if (!m && d) {
+                        isBreadcrumb = true;
+                    }
                 }
-            }
 
-            if (pendingGraceCompletions.has(task.id) && !isBreadcrumb) {
-                const graceInfo = pendingGraceCompletions.get(task.id);
-                const graceRow = document.createElement('div');
-                graceRow.className = 'undo-grace-row';
-                graceRow.style.marginLeft = `${depth * 20}px`;
-                graceRow.innerHTML = `
-                    <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
-                        <span style="color: var(--success); font-weight: 700;">✓ Completed:</span>
-                        <span style="text-decoration: line-through; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${task.title}</span>
-                    </div>
-                    <button class="undo-grace-btn" id="undoBtn_${task.id}">Undo (<span id="undoTimerSec_${task.id}">${graceInfo.remainingSec}</span>s)</button>
-                `;
-                const uBtn = graceRow.querySelector(`#undoBtn_${task.id}`);
-                if (uBtn) {
-                    uBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        undoTaskCompletion(task.id);
+                if (pendingGraceCompletions.has(task.id) && !isBreadcrumb) {
+                    const graceInfo = pendingGraceCompletions.get(task.id);
+                    const graceRow = document.createElement('div');
+                    graceRow.className = 'undo-grace-row';
+                    graceRow.style.marginLeft = `${depth * 20}px`;
+                    graceRow.innerHTML = `
+                        <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
+                            <span style="color: var(--success); font-weight: 700;">✓ Completed:</span>
+                            <span style="text-decoration: line-through; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${task.title}</span>
+                        </div>
+                        <button class="undo-grace-btn" id="undoBtn_${task.id}">Undo (<span id="undoTimerSec_${task.id}">${graceInfo.remainingSec}</span>s)</button>
+                    `;
+                    const uBtn = graceRow.querySelector(`#undoBtn_${task.id}`);
+                    if (uBtn) {
+                        uBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            undoTaskCompletion(task.id);
+                        });
+                    }
+                    li.appendChild(graceRow);
+                    return li;
+                }
+
+                const row = document.createElement('div');
+                row.className = 'task-row';
+                row.style.marginLeft = `${depth * 20}px`;
+
+                if (isBreadcrumb) {
+                    row.classList.add('muted-breadcrumb');
+                }
+
+                const pObj = globalPriorities.find(x => x.id === task.priority_id);
+                if (pObj) {
+                    row.style.borderLeftColor = pObj.color;
+                }
+
+                const main = document.createElement('div');
+                main.className = 'task-main';
+
+                let visibleChildren = visibleChildrenMap.get(task.id) || [];
+                if (hasFilters) {
+                    visibleChildren = (allChildrenMap.get(task.id) || []).filter(c => {
+                        const m = matchMap.get(c.id);
+                        const d = descMatchMap.get(c.id);
+                        return m || d;
                     });
                 }
-                li.appendChild(graceRow);
+                visibleChildren = sortTasks(visibleChildren);
+
+                const hasVisibleChildren = visibleChildren.length > 0;
+                let isCollapsed = collapsedNodes.has(task.id);
+                if (isBreadcrumb) isCollapsed = false;
+
+                if (hasVisibleChildren) {
+                    const toggleBtn = document.createElement('button');
+                    toggleBtn.className = 'collapse-toggle';
+                    toggleBtn.textContent = isCollapsed ? '▶' : '▼';
+                    toggleBtn.title = isCollapsed ? 'Expand subtasks' : 'Collapse subtasks';
+                    toggleBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (collapsedNodes.has(task.id)) {
+                            collapsedNodes.delete(task.id);
+                        } else {
+                            collapsedNodes.add(task.id);
+                        }
+                        saveStorageAndPush();
+                        renderUnifiedTaskTree();
+                    });
+                    main.appendChild(toggleBtn);
+                } else {
+                    const spacer = document.createElement('span');
+                    spacer.className = 'collapse-spacer';
+                    main.appendChild(spacer);
+                }
+
+                const checkBtn = document.createElement('button');
+                checkBtn.className = 'check-circle';
+                checkBtn.textContent = isDone ? '✓' : '';
+                checkBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    handleTaskCompletion(task.id);
+                });
+                main.appendChild(checkBtn);
+
+                const titleSpan = document.createElement('span');
+                titleSpan.className = 'task-title';
+                titleSpan.textContent = task.title;
+                main.appendChild(titleSpan);
+
+                const projObj = globalProjects.find(pr => pr.id === (task.project_id || 'inbox'));
+                if (projObj && projObj.id !== 'inbox') {
+                    const projBadge = document.createElement('span');
+                    projBadge.className = 'project-badge-chip';
+                    projBadge.style.borderColor = projObj.color;
+                    projBadge.style.color = projObj.color;
+                    projBadge.innerHTML = `<span>${projObj.icon}</span> <span>${projObj.name}</span>`;
+                    main.appendChild(projBadge);
+                }
+
+                if (task.ai_locked) {
+                    const badge = document.createElement('span');
+                    badge.className = 'ai-badge';
+                    badge.innerHTML = '🔒 AI';
+                    main.appendChild(badge);
+                }
+
+                if (task.strict_prerequisites) {
+                    const shieldBadge = document.createElement('span');
+                    shieldBadge.className = 'ai-badge';
+                    shieldBadge.innerHTML = '🛡️ Shielded';
+                    shieldBadge.style.background = '#451a03';
+                    shieldBadge.style.color = '#fde68a';
+                    shieldBadge.style.borderColor = '#78350f';
+                    main.appendChild(shieldBadge);
+                }
+
+                const allDesc = allChildrenMap.get(task.id);
+                if (allDesc && allDesc.length > 0) {
+                    const doneKidsCount = allDesc.filter(k => k.status === 'completed').length;
+                    const countBadge = document.createElement('span');
+                    countBadge.className = 'subtasks-count-badge';
+                    countBadge.textContent = `✓ ${doneKidsCount}/${allDesc.length} Subtasks`;
+                    main.appendChild(countBadge);
+                }
+
+                if (task.due_date && currentView === 'general') {
+                    const dueBadge = document.createElement('span');
+                    dueBadge.className = 'due-badge';
+                    dueBadge.textContent = task.due_date;
+                    main.appendChild(dueBadge);
+                }
+
+                if (task.tags && task.tags.length > 0) {
+                    task.tags.forEach(tag => {
+                        const tagChip = document.createElement('span');
+                        tagChip.className = 'tag-chip';
+                        tagChip.textContent = tag;
+                        main.appendChild(tagChip);
+                    });
+                }
+
+                row.appendChild(main);
+
+                const delBtn = document.createElement('button');
+                delBtn.className = 'action-del-btn';
+                delBtn.textContent = '✕';
+                delBtn.title = 'Delete Task';
+
+                if (task.ai_locked && !isBypassActive) {
+                    delBtn.disabled = true;
+                    delBtn.title = 'AI tasks cannot be deleted without an active emergency bypass';
+                } else {
+                    delBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        deleteTask(task.id);
+                    });
+                }
+                row.appendChild(delBtn);
+
+                row.addEventListener('click', () => {
+                    if (!isBreadcrumb) openTaskDetailModal(task.id);
+                });
+
+                li.appendChild(row);
+
+                if (hasVisibleChildren) {
+                    const subUl = document.createElement('ul');
+                    subUl.className = `task-subtree ${isCollapsed ? 'collapsed' : ''}`;
+                    visibleChildren.forEach(child => {
+                        subUl.appendChild(buildNodeElement(child, depth + 1));
+                    });
+                    li.appendChild(subUl);
+                }
+
                 return li;
             }
 
-            const row = document.createElement('div');
-            row.className = 'task-row';
-            row.style.marginLeft = `${depth * 20}px`;
-
-            if (isBreadcrumb) {
-                row.classList.add('muted-breadcrumb');
-            }
-
-            const pObj = globalPriorities.find(x => x.id === task.priority_id);
-            if (pObj) {
-                row.style.borderLeftColor = pObj.color;
-            }
-
-            const main = document.createElement('div');
-            main.className = 'task-main';
-
-            let visibleChildren = visibleChildrenMap.get(task.id) || [];
-            if (hasFilters) {
-                visibleChildren = (allChildrenMap.get(task.id) || []).filter(c => {
-                    const m = matchMap.get(c.id);
-                    const d = descMatchMap.get(c.id);
-                    return m || d;
-                });
-            }
-            visibleChildren = sortTasks(visibleChildren);
-
-            const hasVisibleChildren = visibleChildren.length > 0;
-            let isCollapsed = collapsedNodes.has(task.id);
-            if (isBreadcrumb) isCollapsed = false;
-
-            if (hasVisibleChildren) {
-                const toggleBtn = document.createElement('button');
-                toggleBtn.className = 'collapse-toggle';
-                toggleBtn.textContent = isCollapsed ? '▶' : '▼';
-                toggleBtn.title = isCollapsed ? 'Expand subtasks' : 'Collapse subtasks';
-                toggleBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (collapsedNodes.has(task.id)) {
-                        collapsedNodes.delete(task.id);
-                    } else {
-                        collapsedNodes.add(task.id);
-                    }
-                    saveStorageAndPush();
-                    renderUnifiedTaskTree();
-                });
-                main.appendChild(toggleBtn);
-            } else {
-                const spacer = document.createElement('span');
-                spacer.className = 'collapse-spacer';
-                main.appendChild(spacer);
-            }
-
-            const checkBtn = document.createElement('button');
-            checkBtn.className = 'check-circle';
-            checkBtn.textContent = isDone ? '✓' : '';
-            checkBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                handleTaskCompletion(task.id);
-            });
-            main.appendChild(checkBtn);
-
-            const titleSpan = document.createElement('span');
-            titleSpan.className = 'task-title';
-            titleSpan.textContent = task.title;
-            main.appendChild(titleSpan);
-
-            const projObj = globalProjects.find(pr => pr.id === (task.project_id || 'inbox'));
-            if (projObj && projObj.id !== 'inbox') {
-                const projBadge = document.createElement('span');
-                projBadge.className = 'project-badge-chip';
-                projBadge.style.borderColor = projObj.color;
-                projBadge.style.color = projObj.color;
-                projBadge.innerHTML = `<span>${projObj.icon}</span> <span>${projObj.name}</span>`;
-                main.appendChild(projBadge);
-            }
-
-            if (task.ai_locked) {
-                const badge = document.createElement('span');
-                badge.className = 'ai-badge';
-                badge.innerHTML = '🔒 AI';
-                main.appendChild(badge);
-            }
-
-            if (task.strict_prerequisites) {
-                const shieldBadge = document.createElement('span');
-                shieldBadge.className = 'ai-badge';
-                shieldBadge.innerHTML = '🛡️ Shielded';
-                shieldBadge.style.background = '#451a03';
-                shieldBadge.style.color = '#fde68a';
-                shieldBadge.style.borderColor = '#78350f';
-                main.appendChild(shieldBadge);
-            }
-
-            const allDesc = allChildrenMap.get(task.id);
-            if (allDesc && allDesc.length > 0) {
-                const doneKidsCount = allDesc.filter(k => k.status === 'completed').length;
-                const countBadge = document.createElement('span');
-                countBadge.className = 'subtasks-count-badge';
-                countBadge.textContent = `✓ ${doneKidsCount}/${allDesc.length} Subtasks`;
-                main.appendChild(countBadge);
-            }
-
-            if (task.due_date && currentView === 'general') {
-                const dueBadge = document.createElement('span');
-                dueBadge.className = 'due-badge';
-                dueBadge.textContent = task.due_date;
-                main.appendChild(dueBadge);
-            }
-
-            if (task.tags && task.tags.length > 0) {
-                task.tags.forEach(tag => {
-                    const tagChip = document.createElement('span');
-                    tagChip.className = 'tag-chip';
-                    tagChip.textContent = tag;
-                    main.appendChild(tagChip);
-                });
-            }
-
-            row.appendChild(main);
-
-            const delBtn = document.createElement('button');
-            delBtn.className = 'action-del-btn';
-            delBtn.textContent = '✕';
-            delBtn.title = 'Delete Task';
-
-            if (task.ai_locked && !isBypassActive) {
-                delBtn.disabled = true;
-                delBtn.title = 'AI tasks cannot be deleted without an active emergency bypass';
-            } else {
-                delBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    deleteTask(task.id);
-                });
-            }
-            row.appendChild(delBtn);
-
-            row.addEventListener('click', () => {
-                if (!isBreadcrumb) openTaskDetailModal(task.id);
-            });
-
-            li.appendChild(row);
-
-            if (hasVisibleChildren) {
-                const subUl = document.createElement('ul');
-                subUl.className = `task-subtree ${isCollapsed ? 'collapsed' : ''}`;
-                visibleChildren.forEach(child => {
-                    subUl.appendChild(buildNodeElement(child, depth + 1));
-                });
-                li.appendChild(subUl);
-            }
-
-            return li;
+            rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
         }
 
-        rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
+        // Overdue Reschedule Trigger Bar Visibility Logic
+        const overdueBar = document.getElementById('overdueRescheduleBar');
+        const countText = document.getElementById('overdueTasksCountText');
+        if (overdueBar && countText) {
+            const overdueTasks = tasks.filter(t => t.status === 'active' && t.due_date && /^\d{4}-\d{2}-\d{2}$/.test(t.due_date) && t.due_date < todayStr);
+            if (overdueTasks.length > 0) {
+                overdueBar.style.display = 'flex';
+                countText.textContent = `${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''}`;
+            } else {
+                overdueBar.style.display = 'none';
+            }
+        }
     }
 
     // =========================================================================
@@ -2192,6 +2211,135 @@ window.TaskitatorApp = (() => {
 
         window.addEventListener('hashchange', handleHashRouting);
         handleHashRouting();
+
+        // =====================================================================
+        // Bulk Reschedule Gate Logic
+        // =====================================================================
+        const rescheduleModal = document.getElementById('bulkRescheduleModal');
+        const openRescheduleBtn = document.getElementById('openRescheduleModalBtn');
+        const closeRescheduleBtn = document.getElementById('closeBulkRescheduleModalBtn');
+        const cancelRescheduleBtn = document.getElementById('cancelBulkRescheduleBtn');
+        const confirmRescheduleBtn = document.getElementById('confirmBulkRescheduleBtn');
+
+        let bulkRescheduleMode = 'standard';
+
+        function openBulkRescheduleModal() {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const overdueAiTasks = tasks.filter(t => t.ai_locked && t.status === 'active' && t.due_date && t.due_date < todayStr);
+            
+            const gateBanner = document.getElementById('rescheduleAiLockGateBanner');
+            const formGroup = document.getElementById('rescheduleFormGroupContainer');
+            const dateInput = document.getElementById('bulkRescheduleTargetDate');
+
+            if (overdueAiTasks.length > 0) {
+                bulkRescheduleMode = 'ai_rollover';
+                if (gateBanner) gateBanner.style.display = 'block';
+                if (formGroup) formGroup.style.display = 'none';
+                if (confirmRescheduleBtn) confirmRescheduleBtn.textContent = 'Bring AI Tasks to Today';
+            } else {
+                bulkRescheduleMode = 'standard';
+                if (gateBanner) gateBanner.style.display = 'none';
+                if (formGroup) formGroup.style.display = 'block';
+                if (confirmRescheduleBtn) confirmRescheduleBtn.textContent = 'Reschedule Tasks';
+                if (dateInput) {
+                    dateInput.value = todayStr;
+                    dateInput.min = todayStr;
+                }
+            }
+            if (rescheduleModal) rescheduleModal.classList.add('open');
+        }
+
+        if (openRescheduleBtn) openRescheduleBtn.addEventListener('click', openBulkRescheduleModal);
+        const closeReschedule = () => { if (rescheduleModal) rescheduleModal.classList.remove('open'); };
+        if (closeRescheduleBtn) closeRescheduleBtn.addEventListener('click', closeReschedule);
+        if (cancelRescheduleBtn) cancelRescheduleBtn.addEventListener('click', closeReschedule);
+
+        if (confirmRescheduleBtn) {
+            confirmRescheduleBtn.addEventListener('click', () => {
+                const todayStr = new Date().toISOString().split('T')[0];
+                let dirty = false;
+
+                if (bulkRescheduleMode === 'ai_rollover') {
+                    tasks.forEach(t => {
+                        if (t.ai_locked && t.status === 'active' && t.due_date && t.due_date < todayStr) {
+                            t.due_date = todayStr;
+                            dirty = true;
+                        }
+                    });
+                } else {
+                    const dateInput = document.getElementById('bulkRescheduleTargetDate');
+                    const targetDate = dateInput ? dateInput.value : '';
+                    if (!targetDate || targetDate < todayStr) {
+                        alert('Please select a valid future date or today.');
+                        return;
+                    }
+                    tasks.forEach(t => {
+                        if (!t.ai_locked && t.status === 'active' && t.due_date && t.due_date < todayStr) {
+                            t.due_date = targetDate;
+                            dirty = true;
+                        }
+                    });
+                }
+
+                if (dirty) {
+                    saveStorageAndPush();
+                    renderUnifiedView();
+                }
+                closeReschedule();
+            });
+        }
+
+        // =====================================================================
+        // Sequential Todoist-Style Subtask Entry
+        // =====================================================================
+        const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
+        if (detailQuickSubtaskInput) {
+            detailQuickSubtaskInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (!activeDetailTaskId) return;
+                    
+                    const subTitle = detailQuickSubtaskInput.value.trim();
+                    if (!subTitle) return;
+
+                    const parentTask = tasks.find(t => t.id === activeDetailTaskId);
+                    if (!parentTask) return;
+
+                    const newTaskId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+                    const newSubtask = {
+                        id: newTaskId,
+                        parent_id: activeDetailTaskId,
+                        title: subTitle,
+                        description: '',
+                        tags: [],
+                        priority_id: getLowestPriorityId(),
+                        project_id: parentTask.project_id || 'inbox',
+                        status: 'active',
+                        due_date: '',
+                        ai_locked: false,
+                        proof_criteria: '',
+                        strict_prerequisites: false,
+                        created_at: new Date().toISOString(),
+                        completed_at: null
+                    };
+
+                    tasks.push(newSubtask);
+                    saveStorageAndPush();
+
+                    const taskDetailModal = document.getElementById('taskDetailModal');
+                    refreshDetailSubtaskList(activeDetailTaskId, taskDetailModal?._customRenderFn);
+
+                    if (typeof taskDetailModal?._customRenderFn === 'function') {
+                        taskDetailModal._customRenderFn();
+                    } else {
+                        renderUnifiedView();
+                    }
+
+                    detailQuickSubtaskInput.value = '';
+                    detailQuickSubtaskInput.focus();
+                }
+            });
+        }
 
         // =====================================================================
         // Distraction Dump UI Bindings
