@@ -843,9 +843,18 @@ window.TaskitatorApp = (() => {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
 
-        if (task.ai_locked && !isBypassActiveSafe()) {
-            alert('Blocked: AI-locked tasks cannot be deleted without an active Emergency Bypass.');
-            return;
+        const isBypassActive = isBypassActiveSafe();
+        const isShielded = Boolean(task.strict_prerequisites);
+
+        if (!isBypassActive) {
+            if (task.ai_locked) {
+                alert('Blocked: AI-locked tasks cannot be deleted without an active Emergency Bypass.');
+                return;
+            }
+            if (isShielded && hasUncompletedDescendant(taskId)) {
+                alert('Blocked: Shielded tasks with pending subtasks cannot be deleted without an active Emergency Bypass.');
+                return;
+            }
         }
 
         if (confirm(`Delete "${task.title}" and any associated subtasks?`)) {
@@ -1317,6 +1326,7 @@ window.TaskitatorApp = (() => {
 
         const isBypassActive = isBypassActiveSafe();
         const isLocked = Boolean(task.ai_locked);
+        const isShielded = Boolean(task.strict_prerequisites);
 
         const taskDetailModal = document.getElementById('taskDetailModal');
         const editTaskTitle = document.getElementById('editTaskTitle');
@@ -1324,7 +1334,6 @@ window.TaskitatorApp = (() => {
         const editTaskDueDate = document.getElementById('editTaskDueDate');
         const editAiLockCheckbox = document.getElementById('editAiLockCheckbox');
         const editStrictPrereqCheckbox = document.getElementById('editStrictPrereqCheckbox');
-        const editPrerequisiteBoxContainer = document.getElementById('editPrerequisiteBoxContainer');
         const editCriteriaBoxContainer = document.getElementById('editCriteriaBoxContainer');
         const editTaskCriteria = document.getElementById('editTaskCriteria');
         const detailLockStatusBadge = document.getElementById('detailLockStatusBadge');
@@ -1359,28 +1368,37 @@ window.TaskitatorApp = (() => {
             editProjectGroup.style.display = task.parent_id ? 'none' : 'block';
         }
 
-        if (editAiLockCheckbox) editAiLockCheckbox.checked = isLocked;
-        if (editStrictPrereqCheckbox) editStrictPrereqCheckbox.checked = Boolean(task.strict_prerequisites);
+        const cannotModifyLocked = isLocked && !isBypassActive;
+        const cannotUnshield = isShielded && !isBypassActive;
+
+        if (editAiLockCheckbox) {
+            editAiLockCheckbox.checked = isLocked;
+            editAiLockCheckbox.disabled = cannotModifyLocked;
+        }
+
+        if (editStrictPrereqCheckbox) {
+            editStrictPrereqCheckbox.checked = isShielded;
+            editStrictPrereqCheckbox.disabled = cannotModifyLocked || cannotUnshield;
+        }
 
         if (editCriteriaBoxContainer) editCriteriaBoxContainer.style.display = isLocked ? 'block' : 'none';
-        if (editPrerequisiteBoxContainer) editPrerequisiteBoxContainer.style.display = isLocked ? 'block' : 'none';
 
         if (editExemplarChip && window.ExemplarStore) {
             const hasRef = await ExemplarStore.hasExemplar(task.id);
             editExemplarChip.style.display = (isLocked && hasRef) ? 'flex' : 'none';
         }
 
-        const cannotModifyLocked = isLocked && !isBypassActive;
-
         if (editTaskTitle) editTaskTitle.contentEditable = cannotModifyLocked ? 'false' : 'true';
         if (editTaskDueDate) editTaskDueDate.disabled = cannotModifyLocked;
-        if (editAiLockCheckbox) editAiLockCheckbox.disabled = cannotModifyLocked;
-        if (editStrictPrereqCheckbox) editStrictPrereqCheckbox.disabled = cannotModifyLocked;
         if (editTaskCriteria) {
             editTaskCriteria.disabled = cannotModifyLocked;
             editTaskCriteria.value = task.proof_criteria || '';
         }
-        if (deleteFromDetailBtn) deleteFromDetailBtn.disabled = cannotModifyLocked;
+
+        if (deleteFromDetailBtn) {
+            const isDeleteBlocked = !isBypassActive && (isLocked || (isShielded && hasUncompletedDescendant(taskId)));
+            deleteFromDetailBtn.disabled = isDeleteBlocked;
+        }
 
         if (detailLockStatusBadge) {
             if (isLocked) {
@@ -1422,9 +1440,6 @@ window.TaskitatorApp = (() => {
         const critBox = document.getElementById('criteriaBoxContainer');
         if (critBox) critBox.style.display = 'none';
 
-        const prereqBox = document.getElementById('prerequisiteBoxContainer');
-        if (prereqBox) prereqBox.style.display = 'none';
-
         const subtaskList = document.getElementById('subtaskBuilderList');
         if (subtaskList) subtaskList.innerHTML = '';
 
@@ -1439,13 +1454,21 @@ window.TaskitatorApp = (() => {
         const mrstudyXpInput = document.getElementById('mrstudyXpInput');
         const mrstudyBanchInput = document.getElementById('mrstudyBanchInput');
         const aiLockCheckbox = document.getElementById('aiLockCheckbox');
+        const strictPrereqCheckbox = document.getElementById('strictPrereqCheckbox');
         const mrstudyAiNotice = document.getElementById('mrstudyAiNotice');
 
         if (mrStudySelect) mrStudySelect.value = '';
         if (mrStudyRewardInputs) mrStudyRewardInputs.style.display = 'none';
         if (mrstudyXpInput) mrstudyXpInput.value = '';
         if (mrstudyBanchInput) mrstudyBanchInput.value = '';
-        if (aiLockCheckbox) aiLockCheckbox.disabled = false;
+        if (aiLockCheckbox) {
+            aiLockCheckbox.checked = false;
+            aiLockCheckbox.disabled = false;
+        }
+        if (strictPrereqCheckbox) {
+            strictPrereqCheckbox.checked = false;
+            strictPrereqCheckbox.disabled = false;
+        }
         if (mrstudyAiNotice) mrstudyAiNotice.style.display = 'none';
         
         // Reset Exemplar File UI
@@ -1952,9 +1975,9 @@ window.TaskitatorApp = (() => {
                 delBtn.textContent = '✕';
                 delBtn.title = 'Delete Task';
 
-                if (task.ai_locked && !isBypassActive) {
+                if (!isBypassActive && (task.ai_locked || (task.strict_prerequisites && hasVisibleChildren))) {
                     delBtn.disabled = true;
-                    delBtn.title = 'AI tasks cannot be deleted without an active emergency bypass';
+                    delBtn.title = 'Locked tasks or shielded tasks with subtasks cannot be deleted without an active emergency bypass';
                 } else {
                     delBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -2561,12 +2584,8 @@ window.TaskitatorApp = (() => {
         if (aiLockCheckbox) {
             aiLockCheckbox.addEventListener('change', () => {
                 const cBox = document.getElementById('criteriaBoxContainer');
-                const pBox = document.getElementById('prerequisiteBoxContainer');
-                
-                // Allow manual override only if not hard-locked by a gamification rule
-                if (!aiLockCheckbox.disabled) {
-                    if (cBox) cBox.style.display = aiLockCheckbox.checked ? 'block' : 'none';
-                    if (pBox) pBox.style.display = aiLockCheckbox.checked ? 'block' : 'none';
+                if (!aiLockCheckbox.disabled && cBox) {
+                    cBox.style.display = aiLockCheckbox.checked ? 'block' : 'none';
                 }
             });
         }
@@ -2653,9 +2672,7 @@ window.TaskitatorApp = (() => {
                         
                         // Force UI to show criteria boxes
                         const cBox = document.getElementById('criteriaBoxContainer');
-                        const pBox = document.getElementById('prerequisiteBoxContainer');
                         if (cBox) cBox.style.display = 'block';
-                        if (pBox) pBox.style.display = 'block';
 
                         // Brief flash animation to alert user
                         const labelEl = aiLockCheckbox.closest('label');
@@ -2766,7 +2783,7 @@ window.TaskitatorApp = (() => {
                 const desc = document.getElementById('taskDescInput')?.value.trim() || '';
                 const dueDate = document.getElementById('taskDueDateInput')?.value || '';
                 const isAi = Boolean(document.getElementById('aiLockCheckbox')?.checked);
-                const isStrictPrereq = isAi ? Boolean(document.getElementById('strictPrereqCheckbox')?.checked) : false;
+                const isStrictPrereq = Boolean(document.getElementById('strictPrereqCheckbox')?.checked);
                 const criteria = document.getElementById('taskCriteriaInput')?.value.trim() || '';
                 const parentId = document.getElementById('creationParentId')?.value || null;
                 
@@ -2787,6 +2804,14 @@ window.TaskitatorApp = (() => {
                         "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
                         "Once created, AI-Checked tasks CANNOT be edited (except description/tags) and CANNOT be deleted.\n\n" +
                         "If phone lock is active, your device stays locked until verified by AI proof.\n\n" +
+                        "Proceed with creation?"
+                    );
+                    if (!confirmed) return;
+                } else if (isStrictPrereq) {
+                    const confirmed = confirm(
+                        "⚠️ IRREVERSIBLE SHIELD ⚠️\n\n" +
+                        "The Shield is permanent.\n" +
+                        "Once created, this task cannot be completed until ALL subtasks are finished, and the Shield cannot be turned off.\n\n" +
                         "Proceed with creation?"
                     );
                     if (!confirmed) return;
@@ -2904,9 +2929,9 @@ window.TaskitatorApp = (() => {
         if (editAiLockCheckbox) {
             editAiLockCheckbox.addEventListener('change', () => {
                 const cBox = document.getElementById('editCriteriaBoxContainer');
-                const pBox = document.getElementById('editPrerequisiteBoxContainer');
-                if (cBox) cBox.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
-                if (pBox) pBox.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
+                if (!editAiLockCheckbox.disabled && cBox) {
+                    cBox.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
+                }
             });
         }
 
@@ -2927,7 +2952,11 @@ window.TaskitatorApp = (() => {
 
                 const isBypassActive = isBypassActiveSafe();
                 const willBeAiLocked = Boolean(document.getElementById('editAiLockCheckbox')?.checked);
-                const willBeStrict = willBeAiLocked ? Boolean(document.getElementById('editStrictPrereqCheckbox')?.checked) : false;
+                let willBeStrict = Boolean(document.getElementById('editStrictPrereqCheckbox')?.checked);
+
+                if (task.strict_prerequisites && !isBypassActive) {
+                    willBeStrict = true; // Enforce irrevocability
+                }
 
                 if (!task.ai_locked && willBeAiLocked) {
                     const confirmed = confirm(
@@ -2935,6 +2964,14 @@ window.TaskitatorApp = (() => {
                         "Enabling AI Proof on this task is permanent.\n" +
                         "Once saved, this task cannot be un-checked, criteria cannot be changed, and it CANNOT be deleted without an Emergency Bypass.\n\n" +
                         "Do you want to permanently lock this task?"
+                    );
+                    if (!confirmed) return;
+                } else if (!task.strict_prerequisites && willBeStrict && !willBeAiLocked) {
+                    const confirmed = confirm(
+                        "⚠️ IRREVERSIBLE SHIELD ⚠️\n\n" +
+                        "Enabling the Shield is permanent.\n" +
+                        "Once saved, this task cannot be completed until ALL subtasks are finished, and the Shield cannot be turned off.\n\n" +
+                        "Proceed?"
                     );
                     if (!confirmed) return;
                 }
@@ -2962,9 +2999,10 @@ window.TaskitatorApp = (() => {
                     task.title = NLPEngine.extractCleanTitle('editTaskTitle') || task.title;
                     task.due_date = document.getElementById('editTaskDueDate')?.value || '';
                     task.ai_locked = willBeAiLocked;
-                    task.strict_prerequisites = willBeStrict;
                     task.proof_criteria = willBeAiLocked ? (document.getElementById('editTaskCriteria')?.value.trim() || '') : '';
                 }
+                
+                task.strict_prerequisites = willBeStrict;
 
                 saveStorageAndPush();
                 if (taskDetailModal) taskDetailModal.classList.remove('open');
