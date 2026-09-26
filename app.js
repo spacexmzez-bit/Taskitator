@@ -1782,7 +1782,13 @@ window.TaskitatorApp = (() => {
         function buildNodeElement(task, depth = 0) {
             const li = document.createElement('li');
             const isDone = task.status === 'completed';
-            li.className = `task-node ${isDone ? 'completed' : ''}`;
+            
+            const isOverdue = !isDone && 
+                              task.due_date && 
+                              /^\d{4}-\d{2}-\d{2}$/.test(task.due_date) && 
+                              task.due_date < todayStr;
+
+            li.className = `task-node ${isDone ? 'completed' : ''} ${isOverdue ? 'is-overdue' : ''}`;
 
             let isBreadcrumb = false;
             if (hasFilters) {
