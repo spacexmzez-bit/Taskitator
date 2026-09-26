@@ -350,7 +350,7 @@
             <div class="dump-timer-progress" id="dumpTimerProgressBar"></div>
         </div>
 
-        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 10px 0; line-height: 1.35;">
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin-margin: 0 0 10px 0; line-height: 1.35;">
             Jot down intrusive ideas quickly so you can return to focus. When the timer hits 0:00, the pad force-saves and closes. Notes expire automatically in 48 hours.
         </p>
 
@@ -581,18 +581,23 @@
                 </div>
             </div>
 
+            <!-- Independent Subtask Shield Toggle -->
+            <div class="form-group" id="prerequisiteBoxContainer">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="strictPrereqCheckbox">
+                    <span>Require all subtasks first (Irreversible Shield)</span>
+                </label>
+                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                    Prevents completing this task until all subtasks beneath it are completely finished.
+                </small>
+            </div>
+
+            <!-- AI Proof Verification Option -->
             <div class="form-group">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                     <input type="checkbox" id="aiLockCheckbox">
                     <span>Require AI Proof Verification (Irrevocable)</span>
                 </label>
-                <div id="prerequisiteBoxContainer" style="display: none; margin-top: 8px; margin-left: 28px;">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                        <input type="checkbox" id="strictPrereqCheckbox">
-                        <span style="font-size: 0.85rem;">Require all subtasks first (Irreversible Shield)</span>
-                    </label>
-                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 24px;">Prevents bypassing this task's completion until all subtasks beneath it are completely finished.</small>
-                </div>
             </div>
 
             <div class="form-group" id="criteriaBoxContainer" style="display: none;">
@@ -699,17 +704,23 @@
             <input type="date" id="editTaskDueDate">
         </div>
 
+        <!-- Independent Subtask Shield in Details -->
+        <div class="form-group" id="editPrerequisiteBoxContainer">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="editStrictPrereqCheckbox">
+                <span>Require all subtasks first (Irreversible Shield)</span>
+            </label>
+            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                Prevents completing this task until all subtasks beneath it are completely finished.
+            </small>
+        </div>
+
+        <!-- AI Proof Verification in Details -->
         <div class="form-group">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                 <input type="checkbox" id="editAiLockCheckbox">
                 <span>AI Proof Required</span>
             </label>
-            <div id="editPrerequisiteBoxContainer" style="display: none; margin-top: 8px; margin-left: 28px;">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" id="editStrictPrereqCheckbox">
-                    <span style="font-size: 0.85rem;">Require all subtasks first (Shield)</span>
-                </label>
-            </div>
         </div>
 
         <div class="form-group" id="editCriteriaBoxContainer" style="display: none;">
