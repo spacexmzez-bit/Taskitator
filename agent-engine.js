@@ -15,6 +15,7 @@
  * - Read & Mutation dispatchers reading fresh localStorage directly.
  * - Absolute Lock-in Guardrails: Rejects any attempt to trash or alter ai_locked tasks.
  * - Event-Driven: Dispatches 'taskitator-tasks-updated' for reactive UI rerendering.
+ * - Distraction Dump Triage Agent: Enforces 100% completion on all AI-locked tasks before triaging notes into tasks, exports, or discards.
  * - Ephemeral UI Controller: In-memory session, sliding-window payload trimmer (last 6-8 messages).
  * - Valid API Roles: Maps function responses to role 'user' compliant with Gemini API schema.
  */
@@ -533,7 +534,128 @@ window.TaskitatorAgent = (() => {
     }
 
     // =========================================================================
-    // 9. Drawer UI Controller & Universal Name Binding
+    // 9. Distraction Dump Triage Agent (Escrow Gate & Extraction)
+    // =========================================================================
+    async function triageNotes(notesArray) {
+        const apiKey = getApiKey();
+        if (!apiKey) {
+            return { success: false, error: 'No Gemini API key configured.' };
+        }
+
+        // Strict Completion Gate: Verify every AI-locked task is 100% finished
+        let activeTasks = [];
+        try {
+            activeTasks = JSON.parse(localStorage.getItem(STORAGE_KEY_TASKS) || '[]');
+        } catch (e) {}
+
+        const hasPendingAiLocks = activeTasks.some(t => t.ai_locked && t.status !== 'completed' && t.status !== 'trash');
+        if (hasPendingAiLocks) {
+            return {
+                success: false,
+                error: 'Gate Locked: Complete and verify all active AI-locked tasks before triaging ideas.'
+            };
+        }
+
+        if (!notesArray || notesArray.length === 0) {
+            return { success: false, error: 'No notes found to triage.' };
+        }
+
+        const notesFormatted = notesArray.map((n, i) => `Note #${i + 1} (${new Date(n.created_at).toLocaleTimeString()}): ${n.text}`).join('\n\n');
+
+        const triagePrompt = `You are the Taskitator Triage Agent.
+You are reviewing raw distraction notes that the user jotted down during intense study blocks.
+Categorize each thought into exactly ONE of the following 3 groups:
+1. "tasks": Actionable, concrete items that should be added to Taskitator (e.g. "Buy replacement battery", "Fix CSS layout bug").
+2. "export_notes": Creative thoughts, long-form concepts, or project ideas that are not tasks, but worth preserving.
+3. "discarded": Random stream-of-consciousness, daydreaming, or irrelevant brain chatter that can be pruned.
+
+Output strictly valid JSON with this exact schema:
+{
+  "tasks": [
+    { "title": "Task title", "due_date": "today" }
+  ],
+  "export_notes": [
+    { "title": "Concept title", "summary": "Detailed concept text" }
+  ],
+  "discarded": [
+    "Short description of discarded thought"
+  ]
+}
+
+Raw distraction dump:
+${notesFormatted}`;
+
+        try {
+            const payload = {
+                contents: [{
+                    role: 'user',
+                    parts: [{ text: triagePrompt }]
+                }],
+                generationConfig: {
+                    temperature: 0.1,
+                    responseMimeType: 'application/json'
+                }
+            };
+
+            const { data } = await executeModelCall(payload, apiKey);
+            const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!rawJson) throw new Error('Model produced an empty triage response.');
+
+            const parsed = JSON.parse(rawJson);
+            let tasksGenerated = false;
+
+            // Commit generated tasks
+            if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
+                const globalTasks = JSON.parse(localStorage.getItem(STORAGE_KEY_TASKS) || '[]');
+                parsed.tasks.forEach(t => {
+                    if (!t.title) return;
+                    globalTasks.push({
+                        id: 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                        parent_id: null,
+                        title: t.title.trim(),
+                        description: 'Generated via Distraction Dump triage',
+                        tags: ['idea'],
+                        status: 'active',
+                        due_date: t.due_date || 'today',
+                        ai_locked: false,
+                        proof_criteria: '',
+                        created_at: new Date().toISOString(),
+                        completed_at: null
+                    });
+                });
+                commitTasks(globalTasks);
+                tasksGenerated = true;
+            }
+
+            // Export preserved concepts to a file download if present
+            if (Array.isArray(parsed.export_notes) && parsed.export_notes.length > 0) {
+                let exportText = `TASKITATOR DISTRACTION DUMP - PRESERVED CONCEPTS\nExported: ${new Date().toLocaleString()}\n\n`;
+                parsed.export_notes.forEach(item => {
+                    exportText += `### ${item.title}\n${item.summary}\n\n`;
+                });
+
+                const blob = new Blob([exportText], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `taskitator_ideas_${new Date().toISOString().split('T')[0]}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+
+            const summaryMessage = `Triage Complete!\n- ${parsed.tasks?.length || 0} task(s) added\n- ${parsed.export_notes?.length || 0} concept(s) exported\n- ${parsed.discarded?.length || 0} idea(s) discarded.`;
+            alert(summaryMessage);
+
+            return { success: true, tasksGenerated };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    }
+
+    // =========================================================================
+    // 10. Drawer UI Controller & Universal Name Binding
     // =========================================================================
     function refreshSystemNames() {
         const name = getCopilotName();
@@ -649,10 +771,17 @@ window.TaskitatorAgent = (() => {
         initUI();
     }
 
-    return {
+    const publicAPI = {
         sendMessage,
+        triageNotes,
         refreshSystemNames,
         getPageContext,
         getHistory: () => conversationHistory
     };
+
+    // Ensure double registration under TaskitatorEngine
+    if (!window.TaskitatorEngine) window.TaskitatorEngine = {};
+    window.TaskitatorEngine.AgentEngine = publicAPI;
+
+    return publicAPI;
 })();
