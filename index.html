@@ -64,6 +64,97 @@
             background: #3b82f6;
             color: #ffffff;
         }
+
+        /* Distraction Dump Grayscale Bulb & Scaffolding */
+        .dump-trigger-btn {
+            position: relative;
+            background: rgba(148, 163, 184, 0.08);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            border-radius: 8px;
+            padding: 5px 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            line-height: 1;
+            transition: all 0.2s ease;
+        }
+        .dump-trigger-btn:hover {
+            background: rgba(148, 163, 184, 0.16);
+            border-color: rgba(148, 163, 184, 0.4);
+        }
+        .dump-bulb-icon {
+            font-size: 1.05rem;
+            filter: grayscale(100%);
+            opacity: 0.45;
+            transition: all 0.2s ease;
+        }
+        .dump-trigger-btn.has-notes .dump-bulb-icon {
+            opacity: 0.95;
+            filter: grayscale(100%) contrast(150%);
+        }
+        .dump-active-dot {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #94a3b8;
+            box-shadow: 0 0 4px rgba(148, 163, 184, 0.8);
+            display: none;
+        }
+        .dump-trigger-btn.has-notes .dump-active-dot {
+            display: block;
+        }
+
+        /* Dump Modal Layout */
+        .dump-timer-bar-container {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 10px 0 14px 0;
+        }
+        .dump-timer-progress {
+            height: 100%;
+            width: 100%;
+            background: #94a3b8;
+            transition: width 1s linear;
+        }
+        .dump-timer-progress.urgency {
+            background: #ef4444;
+        }
+        .dump-textarea-raw {
+            width: 100%;
+            min-height: 170px;
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            color: var(--text-color);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            resize: none;
+            outline: none;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+        .dump-textarea-raw:focus {
+            border-color: #94a3b8;
+        }
+        .dump-note-item-card {
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+        }
     </style>
 </head>
 <body>
@@ -142,6 +233,12 @@
                 <span id="breakPillIcon">⏸️</span>
                 <span id="breakPillText">Breaks</span>
             </button>
+
+            <!-- Distraction Dump Trigger (Muted Grayscale Light Bulb) -->
+            <button type="button" class="dump-trigger-btn" id="openDistractionDumpBtn" title="Distraction Dump Scratchpad" aria-label="Distraction Dump Scratchpad">
+                <span class="dump-bulb-icon" id="dumpBulbIcon">💡</span>
+                <span class="dump-active-dot" id="dumpActiveIndicator"></span>
+            </button>
             
             <span class="sync-dot local-only" id="syncStatusDot" title="Click to view Sync Status details"></span>
             
@@ -173,6 +270,78 @@
 
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
 <button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot">🤖</button>
+
+<!-- Modal: Distraction Dump Capture -->
+<div class="modal-overlay" id="distractionDumpModal">
+    <div class="modal-box" style="max-width: 480px; border: 1.5px solid #64748b;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.15rem; filter: grayscale(100%);">💡</span>
+                <h3 style="margin: 0; color: #f1f5f9; font-size: 1.1rem;">Distraction Dump</h3>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span id="dumpCountdownDisplay" style="font-family: monospace; font-size: 0.95rem; font-weight: 800; color: #94a3b8; background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border-color);">01:30</span>
+                <button type="button" class="icon-btn" id="closeDumpModalBtn" style="padding: 2px 8px;">✕</button>
+            </div>
+        </div>
+
+        <div class="dump-timer-bar-container">
+            <div class="dump-timer-progress" id="dumpTimerProgressBar"></div>
+        </div>
+
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 10px 0; line-height: 1.35;">
+            Jot down intrusive ideas quickly so you can return to focus. When the timer hits 0:00, the pad force-saves and closes. Notes expire automatically in 48 hours.
+        </p>
+
+        <textarea id="distractionNoteInput" class="dump-textarea-raw" placeholder="Write whatever distracting thought is in your head..."></textarea>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;">
+            <button type="button" class="icon-btn" id="openDumpEscrowBtn" style="font-size: 0.8rem; color: #94a3b8; border-color: rgba(148, 163, 184, 0.3);">
+                📦 View Escrow (<span id="dumpEscrowCountDisplay">0</span>)
+            </button>
+            <button type="button" class="icon-btn" id="saveDumpNoteBtn" style="background: #475569; color: #fff; border: none; font-weight: 700; padding: 7px 16px; font-size: 0.85rem;">
+                Dump & Return ↵
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Distraction Escrow & Post-Study Triage Gate -->
+<div class="modal-overlay" id="distractionEscrowModal">
+    <div class="modal-box" style="max-width: 520px; border: 1.5px solid var(--border-color);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2rem;">📦</span>
+                <h3 style="margin: 0; color: var(--primary);">Idea Escrow</h3>
+            </div>
+            <button type="button" class="icon-btn" id="closeDumpEscrowModalBtn" style="padding: 2px 8px;">✕</button>
+        </div>
+
+        <!-- Strict Gate Status Banner -->
+        <div id="escrowGateLockBanner" style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; margin-bottom: 12px;">
+            <span style="font-size: 1.1rem; line-height: 1;">🔒</span>
+            <div style="font-size: 0.8rem; color: #fca5a5; line-height: 1.4;">
+                <strong>AI Organizer Locked:</strong> You have active tasks requiring AI proof verification. Complete and verify all locked tasks to release this escrow.
+            </div>
+        </div>
+
+        <div id="escrowGateUnlockedBanner" style="display: none; align-items: center; justify-content: space-between; padding: 10px 12px; background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.4); border-radius: 8px; margin-bottom: 12px;">
+            <div style="font-size: 0.82rem; color: #86efac; font-weight: 600;">
+                ✓ Study Complete! All locked tasks verified.
+            </div>
+            <button type="button" class="icon-btn" id="startAiTriageBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; font-size: 0.8rem; padding: 6px 14px;">
+                🤖 AI Triage Notes
+            </button>
+        </div>
+
+        <div id="escrowNotesList" style="max-height: 48vh; overflow-y: auto; margin-bottom: 14px;"></div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 12px;">
+            <small style="color: var(--text-muted); font-size: 0.75rem;">Notes automatically purge after 48 hours.</small>
+            <button type="button" class="icon-btn" id="backToDumpInputBtn" style="font-size: 0.82rem;">+ New Dump</button>
+        </div>
+    </div>
+</div>
 
 <!-- Filter Popover Drawer Modal -->
 <div class="modal-overlay" id="filterModal">
