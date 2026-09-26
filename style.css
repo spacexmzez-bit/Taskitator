@@ -990,6 +990,18 @@ body {
     transform: translateY(-1px);
 }
 
+/* Overdue Task Highlight */
+.task-node.is-overdue > .task-row .task-title {
+    color: #f87171 !important;
+    font-weight: 600;
+}
+
+.task-node.is-overdue > .task-row .due-badge {
+    background: rgba(239, 68, 68, 0.18) !important;
+    color: #fca5a5 !important;
+    border: 1px solid rgba(239, 68, 68, 0.4) !important;
+}
+
 /* Ghost Breadcrumb Modifier for Path-Preserving Filters */
 .muted-breadcrumb {
     opacity: 0.4 !important;
