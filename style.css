@@ -28,6 +28,12 @@
     box-sizing: border-box;
 }
 
+html, body {
+    max-width: 100vw;
+    width: 100%;
+    overflow-x: hidden;
+}
+
 body {
     background-color: var(--bg-color);
     color: var(--text-color);
@@ -40,8 +46,11 @@ body {
 
 .app-container {
     max-width: 720px;
+    width: 100%;
     margin: 0 auto;
-    padding: 16px 16px 90px 16px;
+    padding: 12px 10px 90px 10px;
+    box-sizing: border-box;
+    overflow-x: hidden;
 }
 
 /* =========================================================================
@@ -51,10 +60,13 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 12px 0 16px 0;
+    gap: 4px;
+    padding: 8px 0 12px 0;
     border-bottom: 2px solid var(--border-color);
-    margin-bottom: 18px;
+    margin-bottom: 14px;
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
 }
 
 .nav-left, 
@@ -62,8 +74,14 @@ body {
 .nav-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     flex-wrap: nowrap;
+}
+
+.nav-center {
+    justify-content: center;
+    flex: 1;
+    overflow: hidden;
 }
 
 /* Enforce uniform height, UI background, and border across all navbar buttons */
@@ -72,48 +90,77 @@ body {
 .nav-link-btn,
 .break-status-pill,
 .emergency-icon-btn,
-.emergency-pill-btn {
-    height: 38px;
+.emergency-pill-btn,
+.dump-trigger-btn {
+    height: 32px;
     background: var(--card-bg);
     border: 1.5px solid var(--border-color);
     color: var(--text-color);
-    border-radius: 10px;
-    padding: 0 12px;
+    border-radius: 8px;
+    padding: 0 8px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 4px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     font-weight: 600;
     box-sizing: border-box;
     transition: all 0.15s ease;
     outline: none;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    flex-shrink: 0;
 }
 
 /* Square icon buttons */
 .icon-only-btn,
-.emergency-icon-btn {
-    width: 38px;
+.emergency-icon-btn,
+#openDrawerBtn {
+    width: 32px;
+    height: 32px;
     padding: 0;
     position: relative;
 }
 
-#openDrawerBtn {
-    width: 38px;
-    padding: 0;
+/* Break status pill compact geometry */
+.break-status-pill {
+    padding: 0 8px;
+    font-size: 0.72rem;
+    white-space: nowrap;
+    flex-shrink: 1;
+}
+
+/* Responsive Copilot Nav Label */
+.nav-copilot-label {
+    display: none;
+}
+
+@media (max-width: 639px) {
+    #openCopilotNavBtn {
+        width: 32px !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        white-space: nowrap !important;
+        font-size: 0.9rem !important;
+    }
+}
+
+@media (min-width: 640px) {
+    .nav-copilot-label {
+        display: inline;
+        margin-left: 2px;
+    }
 }
 
 /* Small info circle button */
 .info-tiny-btn {
-    width: 26px;
-    height: 26px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     background: var(--card-bg);
     border: 1.5px solid var(--border-color);
     color: var(--text-muted);
-    font-size: 0.75rem;
+    font-size: 0.68rem;
     font-weight: 700;
     cursor: pointer;
     display: inline-flex;
@@ -121,13 +168,15 @@ body {
     justify-content: center;
     padding: 0;
     box-sizing: border-box;
+    flex-shrink: 0;
 }
 
 /* Hover States */
 .icon-btn:hover,
 .icon-only-btn:hover,
 .nav-link-btn:hover,
-.info-tiny-btn:hover {
+.info-tiny-btn:hover,
+.dump-trigger-btn:hover {
     border-color: var(--primary);
     color: var(--primary);
     background: var(--accent-light);
@@ -150,13 +199,13 @@ body {
 /* Filter Dot Indicator Position */
 .filter-active-dot {
     position: absolute;
-    top: 3px;
-    right: 3px;
-    width: 8px;
-    height: 8px;
+    top: 2px;
+    right: 2px;
+    width: 7px;
+    height: 7px;
     background: var(--danger);
     border-radius: 50%;
-    border: 1.5px solid var(--card-bg);
+    border: 1px solid var(--card-bg);
     display: none;
 }
 
@@ -1111,12 +1160,13 @@ body {
 
 /* Sync Dot Indicator */
 .sync-dot {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     display: inline-block;
     cursor: pointer;
     transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    flex-shrink: 0;
 }
 
 .sync-dot.local-only {
