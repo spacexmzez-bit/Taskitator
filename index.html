@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
     <title>Taskitator</title>
 
     <!-- PWA Installation Manifest & Meta Tags -->
@@ -16,65 +16,8 @@
 
     <link rel="stylesheet" href="style.css">
     <style>
-        html, body {
-            max-width: 100vw;
-            overflow-x: hidden;
-        }
-
-        /* Compact Header Constraint */
-        .top-navbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 8px 10px;
-            gap: 4px;
-            box-sizing: border-box;
-            width: 100%;
-            overflow-x: hidden;
-        }
-        .nav-left, .nav-right {
-            display: flex;
-            align-items: center;
-            flex-shrink: 0;
-        }
-        .nav-center {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 4px;
-            flex-wrap: nowrap;
-            overflow: hidden;
-            flex-shrink: 1;
-        }
-
-        /* Scaled Micro-Buttons */
-        .top-navbar .icon-btn,
-        .top-navbar .icon-only-btn,
-        .top-navbar .emergency-icon-btn,
-        .top-navbar .dump-trigger-btn {
-            padding: 4px 6px !important;
-            font-size: 0.9rem !important;
-            flex-shrink: 0;
-        }
-
-        .break-status-pill {
-            padding: 4px 8px !important;
-            font-size: 0.75rem !important;
-            gap: 4px !important;
-            white-space: nowrap;
-            flex-shrink: 1;
-        }
-
-        .info-tiny-btn {
-            width: 18px !important;
-            height: 18px !important;
-            font-size: 0.7rem !important;
-            flex-shrink: 0;
-            padding: 0 !important;
-        }
-
         .page-title-section {
-            padding: 16px 20px 4px 20px;
+            padding: 10px 0 8px 0;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -132,13 +75,16 @@
             background: rgba(148, 163, 184, 0.08);
             border: 1px solid rgba(148, 163, 184, 0.25);
             border-radius: 8px;
-            padding: 4px 6px;
+            width: 32px;
+            height: 32px;
+            padding: 0;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             line-height: 1;
             transition: all 0.2s ease;
+            flex-shrink: 0;
         }
         .dump-trigger-btn:hover {
             background: rgba(148, 163, 184, 0.16);
@@ -274,7 +220,7 @@
 <div class="app-container">
     <header class="top-navbar">
         <div class="nav-left">
-            <button class="icon-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer">☰</button>
+            <button class="icon-btn icon-only-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer">☰</button>
         </div>
 
         <div class="nav-center">
@@ -302,9 +248,10 @@
         </div>
 
         <div class="nav-right">
-            <!-- Sleek Icon-only button to avoid horizontal overflow -->
-            <button class="icon-btn" id="openCopilotNavBtn" title="Open Ari Assistant" aria-label="Open Ari Assistant" style="padding: 4px 8px; font-size: 0.9rem;">
-                💬
+            <!-- Responsive Copilot Trigger: Icon-only on mobile, full label on desktop -->
+            <button class="icon-btn nav-link-btn" id="openCopilotNavBtn" title="Open Ari Assistant" aria-label="Open Ari Assistant">
+                <span>💬</span>
+                <span class="nav-copilot-label" id="copilotNavNameLabel">Ari</span>
             </button>
         </div>
     </header>
