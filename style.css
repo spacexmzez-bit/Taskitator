@@ -923,6 +923,8 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 3px;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .project-badge-chip {
@@ -935,6 +937,8 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .tag-chip {
@@ -944,6 +948,8 @@ body {
     font-weight: 600;
     padding: 2px 8px;
     border-radius: 6px;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .due-badge {
@@ -953,6 +959,20 @@ body {
     font-weight: 600;
     padding: 2px 8px;
     border-radius: 6px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.subtasks-count-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.06);
+    padding: 2px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 /* Tree & Tasks */
@@ -977,10 +997,11 @@ body {
     border-left-width: 6px;
     border-left-color: transparent;
     border-radius: 10px;
-    padding: 12px 14px;
+    padding: 10px 12px;
     transition: all 0.15s ease;
     cursor: pointer;
     box-shadow: var(--card-shadow);
+    gap: 8px;
 }
 
 .task-row:hover {
@@ -1012,9 +1033,27 @@ body {
 .task-main {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     flex: 1;
-    overflow: hidden;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.task-title {
+    font-size: 0.95rem;
+    font-weight: 500;
+    word-break: normal;
+    overflow-wrap: break-word;
+    color: var(--text-color);
+    display: inline-block;
+    margin-right: 4px;
+}
+
+.task-badges-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
 }
 
 .collapse-toggle {
@@ -1067,12 +1106,6 @@ body {
     color: var(--text-muted);
 }
 
-.task-title {
-    font-size: 0.95rem;
-    font-weight: 500;
-    word-break: break-word;
-}
-
 .task-subtree {
     list-style: none;
     padding: 0;
@@ -1091,6 +1124,7 @@ body {
     font-size: 0.9rem;
     padding: 4px 6px;
     border-radius: 4px;
+    flex-shrink: 0;
 }
 
 .action-del-btn:hover {
