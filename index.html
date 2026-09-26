@@ -18,6 +18,10 @@
     <style>
         .page-title-section {
             padding: 16px 20px 4px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
         }
         .page-title-section h1 {
             font-size: 1.55rem;
@@ -217,14 +221,6 @@
         </div>
 
         <div class="nav-center">
-            <!-- Filter Funnel Trigger button -->
-            <button class="icon-only-btn" id="openFilterModalBtn" title="Filter Tasks" aria-label="Filter Tasks">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M3 4c0-.55.45-1 1-1h16c.55 0 1 .45 1 1s-.45 1-1 1h-1.5l-6.5 8.67V20c0 .38-.21.73-.55.91l-3 1.5c-.52.26-1.12-.1-1.12-.68v-7.06L3.5 5H3c-.55 0-1-.45-1-1z"/>
-                </svg>
-                <span class="filter-active-dot" id="filterActiveDot"></span>
-            </button>
-
             <button class="icon-only-btn" id="openCompletedModalBtn" title="Completed Tasks" aria-label="View Completed Tasks">
                 <span style="font-size: 1.05rem; font-weight: bold; color: var(--success);">✓</span>
             </button>
@@ -258,6 +254,12 @@
 
     <div class="page-title-section">
         <h1 id="pageViewHeading">Today's Focus</h1>
+        <button class="icon-only-btn" id="openFilterModalBtn" title="Filter Tasks" aria-label="Filter Tasks" style="position: relative;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M3 4c0-.55.45-1 1-1h16c.55 0 1 .45 1 1s-.45 1-1 1h-1.5l-6.5 8.67V20c0 .38-.21.73-.55.91l-3 1.5c-.52.26-1.12-.1-1.12-.68v-7.06L3.5 5H3c-.55 0-1-.45-1-1z"/>
+            </svg>
+            <span class="filter-active-dot" id="filterActiveDot"></span>
+        </button>
     </div>
 
     <div id="activeEmergencyBanner" class="banner-emergency" style="display: none;">
@@ -633,7 +635,7 @@
             </div>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="editDueDateContainer">
             <label for="editTaskDueDate">Due Date</label>
             <input type="date" id="editTaskDueDate">
         </div>
