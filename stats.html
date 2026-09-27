@@ -166,6 +166,53 @@
             font-weight: 700;
             font-size: 1.05rem;
         }
+
+        /* Distraction Archive Card Styling */
+        .archive-item-card {
+            background: var(--card-subtle);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .archive-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+        .archive-item-title {
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+        .archive-item-meta {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+        .archive-item-body {
+            font-size: 0.85rem;
+            line-height: 1.45;
+            color: var(--text-color);
+            white-space: pre-wrap;
+        }
+        .archive-raw-details {
+            margin-top: 4px;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            border-top: 1px dashed var(--border-color);
+            padding-top: 6px;
+        }
+        .archive-raw-details summary {
+            cursor: pointer;
+            outline: none;
+            color: var(--primary);
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -270,6 +317,20 @@
             <span class="bar-count" id="countStandard">0</span>
         </div>
     </div>
+
+    <!-- Distraction Archive Card -->
+    <div class="chart-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <h3 style="margin: 0;">📦 Distraction Archive</h3>
+            <button type="button" class="icon-btn" id="clearAllArchiveBtn" style="color: var(--danger); border-color: rgba(239, 68, 68, 0.4); font-size: 0.75rem; padding: 3px 8px;">
+                Clear Archive
+            </button>
+        </div>
+        <p class="chart-card-subtitle">
+            Historical thoughts extracted from the focus escrow scratchpad.
+        </p>
+        <div id="archiveNotesListContainer" style="max-height: 50vh; overflow-y: auto;"></div>
+    </div>
 </div>
 
 <!-- Copilot Slide-Over Drawer -->
@@ -305,6 +366,77 @@
 const TASKS_KEY = 'taskitator_tasks';
 const PROJECTS_KEY = 'taskitator_projects';
 const BREAKS_KEY = 'taskitator_daily_breaks';
+const ARCHIVED_NOTES_KEY = 'taskitator_archived_notes';
+
+function getArchivedNotes() {
+    try {
+        return JSON.parse(localStorage.getItem(ARCHIVED_NOTES_KEY) || '[]');
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveArchivedNotes(notes) {
+    localStorage.setItem(ARCHIVED_NOTES_KEY, JSON.stringify(notes));
+    renderArchiveList();
+}
+
+function renderArchiveList() {
+    const container = document.getElementById('archiveNotesListContainer');
+    const clearBtn = document.getElementById('clearAllArchiveBtn');
+    if (!container) return;
+
+    const archive = getArchivedNotes();
+    container.innerHTML = '';
+
+    if (archive.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 20px 0;">
+                No archived notes found. Extracted notes will appear here.
+            </div>
+        `;
+        if (clearBtn) clearBtn.style.display = 'none';
+        return;
+    }
+
+    if (clearBtn) clearBtn.style.display = 'inline-flex';
+
+    // Show newest first
+    const sorted = [...archive].reverse();
+
+    sorted.forEach((note) => {
+        const card = document.createElement('div');
+        card.className = 'archive-item-card';
+
+        const dateStr = note.archived_at ? new Date(note.archived_at).toLocaleDateString() : '';
+
+        card.innerHTML = `
+            <div class="archive-item-header">
+                <span class="archive-item-title">${note.title || 'Untitled Note'}</span>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="archive-item-meta">${dateStr}</span>
+                    <button type="button" class="icon-btn del-archive-note" data-id="${note.id}" style="color: var(--danger); border-color: rgba(239,68,68,0.3); padding: 2px 6px; font-size: 0.72rem;">✕</button>
+                </div>
+            </div>
+            <div class="archive-item-body">${note.clean_text || note.text || ''}</div>
+            ${note.original_text && note.original_text !== note.clean_text ? `
+                <details class="archive-raw-details">
+                    <summary>View raw original</summary>
+                    <div style="padding-top: 4px; white-space: pre-wrap;">${note.original_text}</div>
+                </details>
+            ` : ''}
+        `;
+
+        card.querySelector('.del-archive-note').addEventListener('click', (e) => {
+            const noteId = e.currentTarget.getAttribute('data-id');
+            const current = getArchivedNotes();
+            const updated = current.filter(n => n.id !== noteId);
+            saveArchivedNotes(updated);
+        });
+
+        container.appendChild(card);
+    });
+}
 
 function renderStats() {
     let tasks = [];
@@ -449,6 +581,21 @@ function renderStats() {
 
     document.getElementById('countStandard').textContent = standardDoneCount;
     document.getElementById('barStandard').style.width = `${(standardDoneCount / totalCompleted) * 100}%`;
+
+    // 6. Render Distraction Archive
+    renderArchiveList();
+}
+
+// Clear All Archive button listener
+const clearArchiveBtn = document.getElementById('clearAllArchiveBtn');
+if (clearArchiveBtn) {
+    clearArchiveBtn.addEventListener('click', () => {
+        const count = getArchivedNotes().length;
+        if (count === 0) return;
+        if (confirm(`Are you sure you want to permanently delete all ${count} archived notes?`)) {
+            saveArchivedNotes([]);
+        }
+    });
 }
 
 // Automatically update metrics on background cloud sync
