@@ -170,9 +170,29 @@
             padding: 10px 12px;
             margin-bottom: 8px;
             display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .dump-note-header {
+            display: flex;
             justify-content: space-between;
-            align-items: flex-start;
-            gap: 10px;
+            align-items: center;
+            gap: 8px;
+        }
+        .dump-note-title-input {
+            flex: 1;
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: var(--card-bg);
+            color: var(--text-color);
+            font-size: 0.8rem;
+            outline: none;
+        }
+        .dump-note-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
     </style>
 </head>
@@ -350,7 +370,7 @@
             <div class="dump-timer-progress" id="dumpTimerProgressBar"></div>
         </div>
 
-        <p style="font-size: 0.78rem; color: var(--text-muted); margin-margin: 0 0 10px 0; line-height: 1.35;">
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 10px 0; line-height: 1.35;">
             Jot down intrusive ideas quickly so you can return to focus. When the timer hits 0:00, the pad force-saves and closes. Notes expire automatically in 48 hours.
         </p>
 
@@ -374,6 +394,7 @@
             <div style="display: flex; align-items: center; gap: 8px;">
                 <span style="font-size: 1.2rem;">📦</span>
                 <h3 style="margin: 0; color: var(--primary);">Idea Escrow</h3>
+                <span class="mrstudy-info-badge" id="escrowArchiveInfoBtn" title="Archived notes are stored locally in the Stats page.">?</span>
             </div>
             <button type="button" class="icon-btn" id="closeDumpEscrowModalBtn" style="padding: 2px 8px;">✕</button>
         </div>
@@ -382,17 +403,27 @@
         <div id="escrowGateLockBanner" style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; margin-bottom: 12px;">
             <span style="font-size: 1.1rem; line-height: 1;">🔒</span>
             <div style="font-size: 0.8rem; color: #fca5a5; line-height: 1.4;">
-                <strong>AI Organizer Locked:</strong> You have active tasks requiring AI proof verification. Complete and verify all locked tasks to release this escrow.
+                <strong>Extraction Locked:</strong> You have active tasks requiring AI proof verification. Complete and verify all locked tasks for today to release this escrow.
             </div>
         </div>
 
-        <div id="escrowGateUnlockedBanner" style="display: none; align-items: center; justify-content: space-between; padding: 10px 12px; background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.4); border-radius: 8px; margin-bottom: 12px;">
-            <div style="font-size: 0.82rem; color: #86efac; font-weight: 600;">
-                ✓ Study Complete! All locked tasks verified.
+        <!-- Unlocked Action Controls Bar -->
+        <div id="escrowGateUnlockedBanner" style="display: none; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.4); border-radius: 8px; margin-bottom: 12px; gap: 8px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <label for="escrowExportFormatSelect" style="font-size: 0.78rem; color: #86efac; font-weight: 700; margin: 0;">Format:</label>
+                <select id="escrowExportFormatSelect" style="padding: 3px 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.78rem;">
+                    <option value="txt">Plain Text (.txt)</option>
+                    <option value="md">Markdown (.md)</option>
+                </select>
             </div>
-            <button type="button" class="icon-btn" id="startAiTriageBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; font-size: 0.8rem; padding: 6px 14px;">
-                🤖 AI Triage Notes
-            </button>
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <button type="button" class="icon-btn" id="deleteAllEscrowBtn" style="color: var(--danger); border-color: rgba(239,68,68,0.4); font-size: 0.78rem; padding: 4px 8px;">
+                    Delete All
+                </button>
+                <button type="button" class="icon-btn" id="extractAllEscrowBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; font-size: 0.78rem; padding: 5px 12px;">
+                    📥 Extract All
+                </button>
+            </div>
         </div>
 
         <div id="escrowNotesList" style="max-height: 48vh; overflow-y: auto; margin-bottom: 14px;"></div>
@@ -539,12 +570,6 @@
                 </div>
             </div>
 
-            <div class="form-group">
-                <label for="taskDueDateInput">Due Date</label>
-                <input type="date" id="taskDueDateInput">
-            </div>
-
-            <!-- Dynamic Mr. Study Rule Binding Container (Hidden until properly linked) -->
             <div class="form-group" id="mrstudyRuleContainer" style="display: none;">
                 <div class="mrstudy-rule-box">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
@@ -604,7 +629,6 @@
                 <label for="taskCriteriaInput">Proof Criteria &lt;PC&gt; (Visual Verification Requirements)</label>
                 <textarea id="taskCriteriaInput" rows="2" placeholder="e.g. Photo clearly showing completed worksheet #4 with current date handwritten."></textarea>
 
-                <!-- Optional Exemplar Attachment -->
                 <div class="file-picker-wrapper" style="margin-top: 10px;">
                     <label for="createExemplarInput" class="file-picker-label">
                         <span>📎 Attach Reference Exemplar</span>
