@@ -15,7 +15,7 @@
  * - Read & Mutation dispatchers reading fresh localStorage directly.
  * - Absolute Lock-in Guardrails: Rejects any attempt to trash or alter ai_locked tasks.
  * - Event-Driven: Dispatches 'taskitator-tasks-updated' for reactive UI rerendering.
- * - Distraction Dump Triage Agent: Enforces 100% completion on all AI-locked tasks before triaging notes into tasks, exports, or discards.
+ * - Single-Pass Batch Note Extraction & Proofreading (Escrow Gate).
  * - Ephemeral UI Controller: In-memory session, sliding-window payload trimmer (last 6-8 messages).
  * - Valid API Roles: Maps function responses to role 'user' compliant with Gemini API schema.
  */
@@ -33,7 +33,6 @@ window.TaskitatorAgent = (() => {
     let isProcessing = false;
 
     // Ephemeral in-memory conversation history
-    // Kept in memory across drawer toggles; reset on page unload/refresh
     const conversationHistory = [];
 
     // =========================================================================
@@ -336,7 +335,7 @@ window.TaskitatorAgent = (() => {
                 tags: [],
                 status: 'active',
                 due_date: args.due_date || 'today',
-                ai_locked: false, // Model is strictly forbidden from setting ai_locked
+                ai_locked: false,
                 proof_criteria: '',
                 created_at: new Date().toISOString(),
                 completed_at: null
@@ -409,7 +408,6 @@ window.TaskitatorAgent = (() => {
     function commitTasks(updatedTasks) {
         localStorage.setItem(STORAGE_KEY_TASKS, JSON.stringify(updatedTasks));
 
-        // Schedule background cloud sync debounced push
         if (window.SyncEngine) {
             if (typeof SyncEngine.markLocalModified === 'function') {
                 SyncEngine.markLocalModified();
@@ -420,7 +418,6 @@ window.TaskitatorAgent = (() => {
             }
         }
 
-        // Dispatch custom event for background UI rerendering without closing chat
         window.dispatchEvent(new CustomEvent('taskitator-tasks-updated'));
     }
 
@@ -428,7 +425,6 @@ window.TaskitatorAgent = (() => {
     // 7. Sliding-Window Payload Trimmer
     // =========================================================================
     function getTrimmedContents() {
-        // Retain the last 8 message turns maximum for network payload
         const recent = conversationHistory.slice(-8);
         return recent.map(msg => ({
             role: msg.role,
@@ -451,7 +447,6 @@ window.TaskitatorAgent = (() => {
         isProcessing = true;
 
         try {
-            // Append user message to in-memory history
             conversationHistory.push({
                 role: 'user',
                 parts: [{ text: userText }]
@@ -460,12 +455,10 @@ window.TaskitatorAgent = (() => {
             const systemText = await getSystemPrompt();
             const pageContext = getPageContext();
 
-            // Only expose task manipulation tools on Today and General pages
             const activeTools = (pageContext === 'today' || pageContext === 'general') 
                 ? AGENT_TOOLS 
                 : [];
 
-            // Run up to 4 consecutive tool execution loops (for chained operations)
             for (let loop = 0; loop < 4; loop++) {
                 const payload = {
                     contents: getTrimmedContents(),
@@ -492,7 +485,6 @@ window.TaskitatorAgent = (() => {
                 const toolCallPart = parts.find(p => p.functionCall);
 
                 if (toolCallPart) {
-                    // Save model call with the tool request into history
                     conversationHistory.push({
                         role: 'model',
                         parts: parts
@@ -502,7 +494,6 @@ window.TaskitatorAgent = (() => {
                     const fnArgs = toolCallPart.functionCall.args || {};
                     const toolResult = executeToolCall(fnName, fnArgs);
 
-                    // Append tool execution response: role MUST be 'user' in Gemini API
                     conversationHistory.push({
                         role: 'user',
                         parts: [{
@@ -513,11 +504,9 @@ window.TaskitatorAgent = (() => {
                         }]
                     });
 
-                    // Loop continues so Gemini can see the tool output and respond
                     continue;
                 }
 
-                // Final text reply from model
                 const replyText = parts.map(p => p.text || '').join('').trim();
                 conversationHistory.push({
                     role: 'model',
@@ -534,12 +523,12 @@ window.TaskitatorAgent = (() => {
     }
 
     // =========================================================================
-    // 9. Distraction Dump Triage Agent (Escrow Gate & Extraction)
+    // 9. Single-Pass Batch Note Extraction & Proofreading Engine
     // =========================================================================
-    async function triageNotes(notesArray) {
+    async function extractNotesBatch(notesPayload, format = 'txt') {
         const apiKey = getApiKey();
         if (!apiKey) {
-            return { success: false, error: 'No Gemini API key configured.' };
+            return { success: false, error: 'No Gemini API key configured in Settings.' };
         }
 
         // Strict Completion Gate: Verify every AI-locked task is 100% finished
@@ -552,103 +541,88 @@ window.TaskitatorAgent = (() => {
         if (hasPendingAiLocks) {
             return {
                 success: false,
-                error: 'Gate Locked: Complete and verify all active AI-locked tasks before triaging ideas.'
+                error: 'Extraction Locked: Complete and verify all active AI-locked tasks before extracting thoughts.'
             };
         }
 
-        if (!notesArray || notesArray.length === 0) {
-            return { success: false, error: 'No notes found to triage.' };
+        if (!Array.isArray(notesPayload) || notesPayload.length === 0) {
+            return { success: false, error: 'No notes selected for extraction.' };
         }
 
-        const notesFormatted = notesArray.map((n, i) => `Note #${i + 1} (${new Date(n.created_at).toLocaleTimeString()}): ${n.text}`).join('\n\n');
+        const formattedInput = notesPayload.map((n, i) => {
+            return `Item #${i + 1} [ID: ${n.id}]:
+Manual Title: ${n.title ? n.title.trim() : 'NONE'}
+Raw Content: ${n.text}`;
+        }).join('\n\n---\n\n');
 
-        const triagePrompt = `You are the Taskitator Triage Agent.
-You are reviewing raw distraction notes that the user jotted down during intense study blocks.
-Categorize each thought into exactly ONE of the following 3 groups:
-1. "tasks": Actionable, concrete items that should be added to Taskitator (e.g. "Buy replacement battery", "Fix CSS layout bug").
-2. "export_notes": Creative thoughts, long-form concepts, or project ideas that are not tasks, but worth preserving.
-3. "discarded": Random stream-of-consciousness, daydreaming, or irrelevant brain chatter that can be pruned.
+        const prompt = `You are the Taskitator Note Extraction and Proofreading Engine.
+Review the following distraction scratchpad items.
+For each item:
+1. "title": If "Manual Title" is provided and not "NONE", use it directly. If "NONE", generate a concise, descriptive title (3-6 words).
+2. "clean_text": Fix spelling mistakes, punctuation, and grammar. Keep the original voice and exact technical content without summarizing away details.
+3. Preserve the exact note "id".
 
-Output strictly valid JSON with this exact schema:
+Output strictly valid JSON with this schema:
 {
-  "tasks": [
-    { "title": "Task title", "due_date": "today" }
-  ],
-  "export_notes": [
-    { "title": "Concept title", "summary": "Detailed concept text" }
-  ],
-  "discarded": [
-    "Short description of discarded thought"
+  "notes": [
+    {
+      "id": "original_id",
+      "title": "Title here",
+      "clean_text": "Corrected and formatted body text"
+    }
   ]
 }
 
-Raw distraction dump:
-${notesFormatted}`;
+Items to process:
+${formattedInput}`;
 
         try {
             const payload = {
                 contents: [{
                     role: 'user',
-                    parts: [{ text: triagePrompt }]
+                    parts: [{ text: prompt }]
                 }],
                 generationConfig: {
-                    temperature: 0.1,
+                    temperature: 0.2,
                     responseMimeType: 'application/json'
                 }
             };
 
             const { data } = await executeModelCall(payload, apiKey);
             const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (!rawJson) throw new Error('Model produced an empty triage response.');
+            if (!rawJson) throw new Error('Model produced an empty response.');
 
             const parsed = JSON.parse(rawJson);
-            let tasksGenerated = false;
+            const processedNotes = parsed.notes || [];
 
-            // Commit generated tasks
-            if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
-                const globalTasks = JSON.parse(localStorage.getItem(STORAGE_KEY_TASKS) || '[]');
-                parsed.tasks.forEach(t => {
-                    if (!t.title) return;
-                    globalTasks.push({
-                        id: 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-                        parent_id: null,
-                        title: t.title.trim(),
-                        description: 'Generated via Distraction Dump triage',
-                        tags: ['idea'],
-                        status: 'active',
-                        due_date: t.due_date || 'today',
-                        ai_locked: false,
-                        proof_criteria: '',
-                        created_at: new Date().toISOString(),
-                        completed_at: null
-                    });
+            // Generate downloadable file
+            const dateStr = new Date().toISOString().split('T')[0];
+            let fileContent = '';
+
+            if (format === 'md') {
+                fileContent = `# Taskitator Scratchpad Notes\n*Exported on ${new Date().toLocaleString()}*\n\n---\n\n`;
+                processedNotes.forEach(n => {
+                    fileContent += `## ${n.title}\n\n${n.clean_text}\n\n---\n\n`;
                 });
-                commitTasks(globalTasks);
-                tasksGenerated = true;
+            } else {
+                fileContent = `TASKITATOR SCRATCHPAD NOTES\nExported on: ${new Date().toLocaleString()}\n${'='.repeat(40)}\n\n`;
+                processedNotes.forEach((n, idx) => {
+                    fileContent += `[NOTE ${idx + 1}] ${n.title.toUpperCase()}\n${'-'.repeat(30)}\n${n.clean_text}\n\n\n`;
+                });
             }
 
-            // Export preserved concepts to a file download if present
-            if (Array.isArray(parsed.export_notes) && parsed.export_notes.length > 0) {
-                let exportText = `TASKITATOR DISTRACTION DUMP - PRESERVED CONCEPTS\nExported: ${new Date().toLocaleString()}\n\n`;
-                parsed.export_notes.forEach(item => {
-                    exportText += `### ${item.title}\n${item.summary}\n\n`;
-                });
+            const mime = format === 'md' ? 'text/markdown' : 'text/plain';
+            const blob = new Blob([fileContent], { type: `${mime};charset=utf-8` });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `taskitator_notes_${dateStr}.${format}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
 
-                const blob = new Blob([exportText], { type: 'text/plain' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `taskitator_ideas_${new Date().toISOString().split('T')[0]}.txt`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            }
-
-            const summaryMessage = `Triage Complete!\n- ${parsed.tasks?.length || 0} task(s) added\n- ${parsed.export_notes?.length || 0} concept(s) exported\n- ${parsed.discarded?.length || 0} idea(s) discarded.`;
-            alert(summaryMessage);
-
-            return { success: true, tasksGenerated };
+            return { success: true, processedNotes };
         } catch (err) {
             return { success: false, error: err.message };
         }
@@ -661,13 +635,11 @@ ${notesFormatted}`;
         const name = getCopilotName();
         const page = getPageContext();
 
-        // 1. Update Drawer Title Header
         const titleSpan = document.querySelector('.copilot-title-group span:first-child');
         if (titleSpan) {
             titleSpan.textContent = `🤖 ${name}`;
         }
 
-        // 2. Update Standby Card Greeting & Subtitle
         const standbyTitle = document.querySelector('.copilot-standby-title');
         if (standbyTitle) {
             standbyTitle.textContent = name;
@@ -688,7 +660,6 @@ ${notesFormatted}`;
             }
         }
 
-        // 3. Update Floating / Top Nav Buttons across pages
         const navLabel = document.getElementById('copilotNavNameLabel');
         const navBtn = document.getElementById('openCopilotNavBtn');
         if (navLabel) {
@@ -702,7 +673,6 @@ ${notesFormatted}`;
             fabBtn.title = `Open ${name}`;
         }
 
-        // 4. Update Input Bar Placeholder per page
         const inputField = document.getElementById('copilotInput');
         if (inputField) {
             if (page === 'stats') {
@@ -753,7 +723,6 @@ ${notesFormatted}`;
                 loadingBubble.remove();
                 appendBubble(res.text, 'bot');
 
-                // Update model chip if fallback latched
                 if (chip && sessionStorage.getItem(SESSION_LATCH_KEY) === 'true') {
                     chip.textContent = '3.1 Flash Lite';
                 }
@@ -764,10 +733,8 @@ ${notesFormatted}`;
         });
     }
 
-    // Refresh UI elements if settings update via background sync
     window.addEventListener('taskitator-synced', refreshSystemNames);
 
-    // Initialize UI when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initUI);
     } else {
@@ -776,13 +743,12 @@ ${notesFormatted}`;
 
     const publicAPI = {
         sendMessage,
-        triageNotes,
+        extractNotesBatch,
         refreshSystemNames,
         getPageContext,
         getHistory: () => conversationHistory
     };
 
-    // Ensure double registration under TaskitatorEngine
     if (!window.TaskitatorEngine) window.TaskitatorEngine = {};
     window.TaskitatorEngine.AgentEngine = publicAPI;
 
