@@ -14,6 +14,7 @@ window.TaskitatorApp = (() => {
     const PROJECTS_KEY = 'taskitator_projects';
     const AUDIT_LEDGER_KEY = 'taskitator_audit_ledger';
     const DISTRACTION_NOTES_KEY = 'taskitator_distraction_notes';
+    const ARCHIVED_NOTES_KEY = 'taskitator_archived_notes';
 
     let currentView = 'today'; // 'today' | 'general'
     let tasks = [];
@@ -201,7 +202,6 @@ window.TaskitatorApp = (() => {
             
             if (!modal || !input) return;
 
-            // Load user preferred duration setting
             let durationSecs = 90;
             try {
                 const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
@@ -296,13 +296,30 @@ window.TaskitatorApp = (() => {
                 notes.forEach((n, idx) => {
                     const card = document.createElement('div');
                     card.className = 'dump-note-item-card';
+                    card.dataset.noteId = n.id;
+                    
                     card.innerHTML = `
-                        <div style="flex: 1; font-size: 0.9rem; line-height: 1.4; color: var(--text-color); white-space: pre-wrap;">${n.text}</div>
-                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
-                            <span style="font-size: 0.7rem; color: #f59e0b; font-weight: 700; white-space: nowrap;">⏳ ${formatRemainingTTL(n.created_at)}</span>
-                            <button type="button" class="icon-btn del-escrow-note" data-idx="${idx}" style="color: var(--danger); border: none; padding: 2px 6px;">✕</button>
+                        <div class="dump-note-header">
+                            <input type="text" class="dump-note-title-input" placeholder="Optional Title..." value="${n.title || ''}" data-idx="${idx}">
+                            <div class="dump-note-actions">
+                                <span style="font-size: 0.7rem; color: #f59e0b; font-weight: 700; white-space: nowrap; margin-right: 6px;">⏳ ${formatRemainingTTL(n.created_at)}</span>
+                                <button type="button" class="icon-btn del-escrow-note" data-idx="${idx}" style="color: var(--danger); border-color: rgba(239,68,68,0.3); padding: 2px 8px; font-size: 0.75rem;">✕</button>
+                            </div>
                         </div>
+                        <div style="font-size: 0.88rem; line-height: 1.45; color: var(--text-color); white-space: pre-wrap; padding-top: 4px;">${n.text}</div>
                     `;
+                    
+                    // Auto-save title on blur
+                    const titleInput = card.querySelector('.dump-note-title-input');
+                    titleInput.addEventListener('blur', (e) => {
+                        const i = parseInt(e.target.getAttribute('data-idx'), 10);
+                        const currentNotes = getNotes();
+                        if (currentNotes[i]) {
+                            currentNotes[i].title = e.target.value.trim();
+                            saveNotes(currentNotes);
+                        }
+                    });
+
                     listEl.appendChild(card);
                 });
 
@@ -316,8 +333,12 @@ window.TaskitatorApp = (() => {
                 });
             }
 
-            // Gate Logic: Are there ANY active AI-locked tasks (parent or child) remaining?
-            const hasPendingAiLocks = tasks.some(t => t.ai_locked && t.status !== 'completed' && t.status !== 'trash');
+            const todayStr = new Date().toISOString().split('T')[0];
+            const hasPendingAiLocks = tasks.some(t => {
+                if (!t.ai_locked || t.status === 'completed' || t.status === 'trash') return false;
+                const due = (t.due_date || '').trim().toLowerCase();
+                return due === 'today' || due <= todayStr;
+            });
             
             if (lockBanner && unlockedBanner) {
                 if (hasPendingAiLocks) {
@@ -2373,7 +2394,8 @@ window.TaskitatorApp = (() => {
         const openDumpEscrowBtn = document.getElementById('openDumpEscrowBtn');
         const closeDumpEscrowModalBtn = document.getElementById('closeDumpEscrowModalBtn');
         const backToDumpInputBtn = document.getElementById('backToDumpInputBtn');
-        const startAiTriageBtn = document.getElementById('startAiTriageBtn');
+        const extractAllEscrowBtn = document.getElementById('extractAllEscrowBtn');
+        const deleteAllEscrowBtn = document.getElementById('deleteAllEscrowBtn');
 
         if (openDistractionDumpBtn) {
             openDistractionDumpBtn.addEventListener('click', () => DistractionDumpEngine.openModal());
@@ -2414,35 +2436,74 @@ window.TaskitatorApp = (() => {
                 DistractionDumpEngine.openModal();
             });
         }
-        if (startAiTriageBtn) {
-            startAiTriageBtn.addEventListener('click', async () => {
-                if (window.TaskitatorEngine?.AgentEngine?.triageNotes) {
-                    const notes = DistractionDumpEngine.getNotes();
-                    if (notes.length === 0) return;
-                    startAiTriageBtn.disabled = true;
-                    startAiTriageBtn.textContent = '🤖 Triaging...';
+        
+        // Single-Pass Batch Extraction Event
+        if (extractAllEscrowBtn) {
+            extractAllEscrowBtn.addEventListener('click', async () => {
+                if (window.TaskitatorEngine?.AgentEngine?.extractNotesBatch) {
+                    const currentNotes = DistractionDumpEngine.getNotes();
+                    if (currentNotes.length === 0) return;
                     
-                    const res = await TaskitatorEngine.AgentEngine.triageNotes(notes);
+                    const formatSelect = document.getElementById('escrowExportFormatSelect');
+                    const format = formatSelect ? formatSelect.value : 'txt';
                     
-                    startAiTriageBtn.disabled = false;
-                    startAiTriageBtn.innerHTML = '🤖 AI Triage Notes';
+                    extractAllEscrowBtn.disabled = true;
+                    extractAllEscrowBtn.textContent = '🤖 Processing...';
+                    if (deleteAllEscrowBtn) deleteAllEscrowBtn.disabled = true;
+                    
+                    const res = await TaskitatorEngine.AgentEngine.extractNotesBatch(currentNotes, format);
+                    
+                    extractAllEscrowBtn.disabled = false;
+                    extractAllEscrowBtn.textContent = '📥 Extract All';
+                    if (deleteAllEscrowBtn) deleteAllEscrowBtn.disabled = false;
                     
                     if (res.success) {
+                        // Move notes to archive
+                        let archive = [];
+                        try { archive = JSON.parse(localStorage.getItem(ARCHIVED_NOTES_KEY) || '[]'); } catch (e) {}
+                        
+                        const polishedSet = res.processedNotes.map(n => ({
+                            id: n.id,
+                            title: n.title,
+                            original_text: (currentNotes.find(c => c.id === n.id) || {}).text || '',
+                            clean_text: n.clean_text,
+                            archived_at: new Date().toISOString()
+                        }));
+                        
+                        localStorage.setItem(ARCHIVED_NOTES_KEY, JSON.stringify([...archive, ...polishedSet]));
+                        
+                        // Clear the scratchpad escrow
                         DistractionDumpEngine.saveNotes([]);
+                        
                         const m = document.getElementById('distractionEscrowModal');
                         if (m) m.classList.remove('open');
                         
-                        // Force refresh if tasks were converted
-                        if (res.tasksGenerated) {
-                            loadStorage();
-                            renderUnifiedView();
-                        }
+                        alert(`Successfully extracted ${polishedSet.length} note(s) to ${format.toUpperCase()} and moved to Archive.`);
                     } else {
-                        alert(`Triage failed: ${res.error}`);
+                        alert(`Extraction failed: ${res.error}`);
                     }
                 } else {
                     alert('Agent Engine not loaded.');
                 }
+            });
+        }
+
+        if (deleteAllEscrowBtn) {
+            deleteAllEscrowBtn.addEventListener('click', () => {
+                const currentNotes = DistractionDumpEngine.getNotes();
+                if (currentNotes.length === 0) return;
+                
+                if (confirm(`Permanently delete all ${currentNotes.length} unextracted notes?`)) {
+                    DistractionDumpEngine.saveNotes([]);
+                    DistractionDumpEngine.openEscrowModal();
+                }
+            });
+        }
+
+        const escrowArchiveInfoBtn = document.getElementById('escrowArchiveInfoBtn');
+        if (escrowArchiveInfoBtn) {
+            escrowArchiveInfoBtn.addEventListener('click', () => {
+                alert("Notes extracted from the Distraction Escrow are permanently saved to your 'Distraction Archive' located at the bottom of the Stats page.");
             });
         }
 
