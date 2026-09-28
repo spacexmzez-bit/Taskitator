@@ -1181,6 +1181,15 @@ body {
     display: flex;
 }
 
+/* Stack Templates Modal on top of active Task Detail / Edit panel */
+#templatesModal {
+    z-index: 3500;
+}
+
+#templatesModal.open {
+    display: flex;
+}
+
 .modal-box {
     background: var(--card-bg);
     border-radius: 16px;
