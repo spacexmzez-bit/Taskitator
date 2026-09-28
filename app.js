@@ -43,10 +43,6 @@ window.TaskitatorApp = (() => {
     let editModalSelectedPriority = null;
     let editModalSelectedProject = 'inbox';
 
-    // Mr. Study Gamification State
-    let activeMrStudyRules = [];
-    let isMrStudyLinked = false;
-
     // Default Registries
     const DEFAULT_TAGS = ['study', 'work', 'personal'];
     const DEFAULT_PRIORITIES = [
@@ -687,32 +683,8 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Gamification Bridge, Grace Timers & Ledger Handling
+    // Grace Timers & Ledger Handling
     // =========================================================================
-    function updateMrStudyRuleDropdown() {
-        const container = document.getElementById('mrstudyRuleContainer');
-        const select = document.getElementById('taskMrstudyRuleSelect');
-        const rewardInputs = document.getElementById('mrstudyRewardInputs');
-        if (!container || !select) return;
-
-        if (!isMrStudyLinked || activeMrStudyRules.length === 0) {
-            container.style.display = 'none';
-            return;
-        }
-
-        container.style.display = 'block';
-        select.innerHTML = '<option value="">None (Standard Task)</option>';
-
-        activeMrStudyRules.forEach(rule => {
-            const opt = document.createElement('option');
-            opt.value = rule.id;
-            opt.textContent = `${rule.title} [${rule.min_xp}-${rule.max_xp} XP]`;
-            select.appendChild(opt);
-        });
-
-        if (rewardInputs) rewardInputs.style.display = 'none';
-    }
-
     async function finalizeTaskCompletion(taskId) {
         const task = tasks.find(t => t.id === taskId);
         if (!task || task.status !== 'completed') return;
@@ -744,10 +716,6 @@ window.TaskitatorApp = (() => {
                 completed_at: targetTask.completed_at || new Date().toISOString(),
                 has_exemplar: hasExemplar && targetTask.id === taskId
             };
-
-            if (targetTask.mrstudy_binding) {
-                payload.mrstudy_binding = targetTask.mrstudy_binding;
-            }
 
             ledger.push(payload);
         }
@@ -1356,9 +1324,11 @@ window.TaskitatorApp = (() => {
         const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
 
         pendingEditExemplarFile = null;
+        
+        // FIX 1: Bypass mode MUST re-validate if criteria or exemplar is modified
         editCriteriaValidationState = {
-            validated: isLocked, // Pre-existing locked tasks are already approved
-            score: isLocked ? 10 : 0,
+            validated: isLocked && !isBypassActive,
+            score: (isLocked && !isBypassActive) ? 10 : 0,
             isTemplate: false
         };
 
@@ -1487,18 +1457,9 @@ window.TaskitatorApp = (() => {
             dueIn.value = (currentView === 'today') ? new Date().toISOString().split('T')[0] : '';
         }
 
-        const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
-        const mrStudyRewardInputs = document.getElementById('mrstudyRewardInputs');
-        const mrstudyXpInput = document.getElementById('mrstudyXpInput');
-        const mrstudyBanchInput = document.getElementById('mrstudyBanchInput');
         const aiLockCheckbox = document.getElementById('aiLockCheckbox');
         const strictPrereqCheckbox = document.getElementById('strictPrereqCheckbox');
-        const mrstudyAiNotice = document.getElementById('mrstudyAiNotice');
 
-        if (mrStudySelect) mrStudySelect.value = '';
-        if (mrStudyRewardInputs) mrStudyRewardInputs.style.display = 'none';
-        if (mrstudyXpInput) mrstudyXpInput.value = '';
-        if (mrstudyBanchInput) mrstudyBanchInput.value = '';
         if (aiLockCheckbox) {
             aiLockCheckbox.checked = false;
             aiLockCheckbox.disabled = false;
@@ -1507,7 +1468,6 @@ window.TaskitatorApp = (() => {
             strictPrereqCheckbox.checked = false;
             strictPrereqCheckbox.disabled = false;
         }
-        if (mrstudyAiNotice) mrstudyAiNotice.style.display = 'none';
         
         const exemplarInput = document.getElementById('createExemplarInput');
         const exemplarChip = document.getElementById('createExemplarChip');
@@ -1544,8 +1504,6 @@ window.TaskitatorApp = (() => {
             feedback.className = 'criteria-feedback-box';
             feedback.innerHTML = '';
         }
-
-        updateMrStudyRuleDropdown();
 
         const modal = document.getElementById('addTaskModal');
         if (modal) {
@@ -2235,14 +2193,6 @@ window.TaskitatorApp = (() => {
         BreakUI.init();
         DistractionDumpEngine.garbageCollect();
 
-        try {
-            const rawRules = localStorage.getItem('taskitator_mrstudy_rules');
-            if (rawRules) {
-                activeMrStudyRules = JSON.parse(rawRules) || [];
-                isMrStudyLinked = activeMrStudyRules.length > 0;
-            }
-        } catch (e) {}
-
         const sidebarDrawer = document.getElementById('sidebarDrawer');
         const drawerBackdrop = document.getElementById('drawerBackdrop');
         const openDrawerBtn = document.getElementById('openDrawerBtn');
@@ -2676,109 +2626,6 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // Gamification Selection Handlers
-        const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
-        const mrStudyRewardInputs = document.getElementById('mrstudyRewardInputs');
-        const mrstudyXpInput = document.getElementById('mrstudyXpInput');
-        const mrstudyBanchInput = document.getElementById('mrstudyBanchInput');
-        const mrstudyXpRangeLabel = document.getElementById('mrstudyXpRangeLabel');
-        const mrstudyBanchRangeLabel = document.getElementById('mrstudyBanchRangeLabel');
-        const mrstudyAiNotice = document.getElementById('mrstudyAiNotice');
-        
-        const mrstudyInfoTriggerBtn = document.getElementById('mrstudyInfoTriggerBtn');
-        const mrstudyInfoModal = document.getElementById('mrstudyInfoModal');
-        const closeMrstudyInfoModalBtn = document.getElementById('closeMrstudyInfoModalBtn');
-        const dismissMrstudyInfoModalBtn = document.getElementById('dismissMrstudyInfoModalBtn');
-
-        if (mrstudyInfoTriggerBtn && mrstudyInfoModal) {
-            mrstudyInfoTriggerBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                mrstudyInfoModal.classList.add('open');
-            });
-            if (closeMrstudyInfoModalBtn) closeMrstudyInfoModalBtn.addEventListener('click', () => mrstudyInfoModal.classList.remove('open'));
-            if (dismissMrstudyInfoModalBtn) dismissMrstudyInfoModalBtn.addEventListener('click', () => mrstudyInfoModal.classList.remove('open'));
-        }
-
-        if (mrStudySelect && mrStudyRewardInputs && aiLockCheckbox) {
-            mrStudySelect.addEventListener('change', () => {
-                const ruleId = mrStudySelect.value;
-                if (!ruleId) {
-                    mrStudyRewardInputs.style.display = 'none';
-                    mrstudyXpInput.removeAttribute('required');
-                    mrstudyBanchInput.removeAttribute('required');
-                    aiLockCheckbox.disabled = false;
-                    mrstudyAiNotice.style.display = 'none';
-                    return;
-                }
-
-                const rule = activeMrStudyRules.find(r => r.id === ruleId);
-                if (rule) {
-                    mrStudyRewardInputs.style.display = 'block';
-                    
-                    mrstudyXpInput.min = rule.min_xp;
-                    mrstudyXpInput.max = rule.max_xp;
-                    mrstudyXpInput.value = rule.max_xp;
-                    mrstudyXpInput.required = true;
-                    if (mrstudyXpRangeLabel) mrstudyXpRangeLabel.textContent = `${rule.min_xp} – ${rule.max_xp}`;
-                    
-                    mrstudyBanchInput.min = rule.min_banch;
-                    mrstudyBanchInput.max = rule.max_banch;
-                    mrstudyBanchInput.value = rule.max_banch;
-                    mrstudyBanchInput.required = true;
-                    if (mrstudyBanchRangeLabel) mrstudyBanchRangeLabel.textContent = `${rule.min_banch} – ${rule.max_banch}`;
-
-                    if (rule.requires_ai) {
-                        aiLockCheckbox.checked = true;
-                        aiLockCheckbox.disabled = true;
-                        mrstudyAiNotice.style.display = 'block';
-                        
-                        const cBox = document.getElementById('criteriaBoxContainer');
-                        if (cBox) cBox.style.display = 'block';
-
-                        const labelEl = aiLockCheckbox.closest('label');
-                        if (labelEl) {
-                            labelEl.style.transition = 'color 0.3s ease';
-                            labelEl.style.color = '#fbbf24';
-                            setTimeout(() => labelEl.style.color = '', 800);
-                        }
-                    } else {
-                        aiLockCheckbox.disabled = false;
-                        mrstudyAiNotice.style.display = 'none';
-                    }
-                }
-            });
-
-            mrstudyXpInput.addEventListener('change', () => {
-                if (!mrstudyXpInput.value) return;
-                const min = parseInt(mrstudyXpInput.min, 10);
-                const max = parseInt(mrstudyXpInput.max, 10);
-                let val = parseInt(mrstudyXpInput.value, 10);
-                if (val < min) val = min;
-                if (val > max) val = max;
-                mrstudyXpInput.value = val;
-            });
-            mrstudyBanchInput.addEventListener('change', () => {
-                if (!mrstudyBanchInput.value) return;
-                const min = parseInt(mrstudyBanchInput.min, 10);
-                const max = parseInt(mrstudyBanchInput.max, 10);
-                let val = parseInt(mrstudyBanchInput.value, 10);
-                if (val < min) val = min;
-                if (val > max) val = max;
-                mrstudyBanchInput.value = val;
-            });
-        }
-
-        window.addEventListener('taskitator-mrstudy-rules-updated', (e) => {
-            if (e.detail) {
-                isMrStudyLinked = e.detail.linked;
-                activeMrStudyRules = e.detail.rules || [];
-                const modal = document.getElementById('addTaskModal');
-                if (modal && modal.classList.contains('open')) {
-                    updateMrStudyRuleDropdown();
-                }
-            }
-        });
-
         // Exemplar Picker in Creation
         const createExemplarInput = document.getElementById('createExemplarInput');
         const createExemplarChip = document.getElementById('createExemplarChip');
@@ -2963,19 +2810,6 @@ window.TaskitatorApp = (() => {
                     completed_at: null
                 };
 
-                const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
-                if (mrStudySelect && mrStudySelect.value && isMrStudyLinked) {
-                    const ruleId = mrStudySelect.value;
-                    const assignedXp = parseInt(document.getElementById('mrstudyXpInput')?.value || 0, 10);
-                    const assignedBanch = parseInt(document.getElementById('mrstudyBanchInput')?.value || 0, 10);
-                    
-                    newTask.mrstudy_binding = {
-                        rule_id: ruleId,
-                        assigned_xp: assignedXp,
-                        assigned_banch: assignedBanch
-                    };
-                }
-
                 tasks.push(newTask);
 
                 if (subtaskBuilderList) {
@@ -3046,14 +2880,17 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // FIX 3: Reset validation on input, paste, and change
         const editTaskCriteriaInput = document.getElementById('editTaskCriteria');
         if (editTaskCriteriaInput) {
-            editTaskCriteriaInput.addEventListener('input', () => {
-                editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
+            ['input', 'paste', 'change'].forEach(evtType => {
+                editTaskCriteriaInput.addEventListener(evtType, () => {
+                    editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
+                });
             });
         }
 
-        // Save Task Details Hook
+        // FIX 2: Save Task Details Hook with strict validation check on changed criteria/exemplars
         const saveTaskDetailsBtn = document.getElementById('saveTaskDetailsBtn');
         if (saveTaskDetailsBtn) {
             saveTaskDetailsBtn.addEventListener('click', async () => {
@@ -3078,11 +2915,15 @@ window.TaskitatorApp = (() => {
                     willBeStrict = true;
                 }
 
-                // If converting from standard to AI-locked or editing criteria under bypass
-                if (willBeAiLocked && (!task.ai_locked || isBypassActive)) {
-                    if (isStrictCriteriaModeEnabled()) {
+                // Strict validation gate: required if converting to AI lock OR criteria/exemplar changed under bypass
+                const criteriaChanged = (task.proof_criteria || '').trim() !== editedCriteria.trim();
+                const exemplarChanged = Boolean(pendingEditExemplarFile);
+
+                if (willBeAiLocked) {
+                    const needsValidation = !task.ai_locked || (isBypassActive && (criteriaChanged || exemplarChanged));
+                    if (needsValidation && isStrictCriteriaModeEnabled()) {
                         if (!editCriteriaValidationState.validated || editCriteriaValidationState.score < 7) {
-                            alert('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before saving an AI-locked task.');
+                            alert('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before saving changes.');
                             return;
                         }
                     }
