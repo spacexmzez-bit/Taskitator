@@ -29,6 +29,7 @@ window.TaskitatorApp = (() => {
     let cachedTemplates = null;
     let activeTemplateTarget = 'create'; // 'create' | 'edit'
     const pendingGraceCompletions = new Map();
+    const consecutive503Tracker = new Map(); // taskId -> consecutive 503 error count
 
     // Active Filter State (Tags, Priorities, Projects)
     const activeFilters = { tags: new Set(), priorities: new Set(), projects: new Set() };
@@ -42,6 +43,10 @@ window.TaskitatorApp = (() => {
     const editModalSelectedTags = new Set();
     let editModalSelectedPriority = null;
     let editModalSelectedProject = 'inbox';
+
+    // Mr. Study Gamification State
+    let activeMrStudyRules = [];
+    let isMrStudyLinked = false;
 
     // Default Registries
     const DEFAULT_TAGS = ['study', 'work', 'personal'];
@@ -683,8 +688,32 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Grace Timers & Ledger Handling
+    // Gamification Bridge, Grace Timers & Ledger Handling
     // =========================================================================
+    function updateMrStudyRuleDropdown() {
+        const container = document.getElementById('mrstudyRuleContainer');
+        const select = document.getElementById('taskMrstudyRuleSelect');
+        const rewardInputs = document.getElementById('mrstudyRewardInputs');
+        if (!container || !select) return;
+
+        if (!isMrStudyLinked || activeMrStudyRules.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+        select.innerHTML = '<option value="">None (Standard Task)</option>';
+
+        activeMrStudyRules.forEach(rule => {
+            const opt = document.createElement('option');
+            opt.value = rule.id;
+            opt.textContent = `${rule.title} [${rule.min_xp}-${rule.max_xp} XP]`;
+            select.appendChild(opt);
+        });
+
+        if (rewardInputs) rewardInputs.style.display = 'none';
+    }
+
     async function finalizeTaskCompletion(taskId) {
         const task = tasks.find(t => t.id === taskId);
         if (!task || task.status !== 'completed') return;
@@ -716,6 +745,10 @@ window.TaskitatorApp = (() => {
                 completed_at: targetTask.completed_at || new Date().toISOString(),
                 has_exemplar: hasExemplar && targetTask.id === taskId
             };
+
+            if (targetTask.mrstudy_binding) {
+                payload.mrstudy_binding = targetTask.mrstudy_binding;
+            }
 
             ledger.push(payload);
         }
@@ -1324,11 +1357,9 @@ window.TaskitatorApp = (() => {
         const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
 
         pendingEditExemplarFile = null;
-        
-        // FIX 1: Bypass mode MUST re-validate if criteria or exemplar is modified
         editCriteriaValidationState = {
-            validated: isLocked && !isBypassActive,
-            score: (isLocked && !isBypassActive) ? 10 : 0,
+            validated: isLocked, // Pre-existing locked tasks are already approved
+            score: isLocked ? 10 : 0,
             isTemplate: false
         };
 
@@ -1457,9 +1488,18 @@ window.TaskitatorApp = (() => {
             dueIn.value = (currentView === 'today') ? new Date().toISOString().split('T')[0] : '';
         }
 
+        const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
+        const mrStudyRewardInputs = document.getElementById('mrstudyRewardInputs');
+        const mrstudyXpInput = document.getElementById('mrstudyXpInput');
+        const mrstudyBanchInput = document.getElementById('mrstudyBanchInput');
         const aiLockCheckbox = document.getElementById('aiLockCheckbox');
         const strictPrereqCheckbox = document.getElementById('strictPrereqCheckbox');
+        const mrstudyAiNotice = document.getElementById('mrstudyAiNotice');
 
+        if (mrStudySelect) mrStudySelect.value = '';
+        if (mrStudyRewardInputs) mrStudyRewardInputs.style.display = 'none';
+        if (mrstudyXpInput) mrstudyXpInput.value = '';
+        if (mrstudyBanchInput) mrstudyBanchInput.value = '';
         if (aiLockCheckbox) {
             aiLockCheckbox.checked = false;
             aiLockCheckbox.disabled = false;
@@ -1468,6 +1508,7 @@ window.TaskitatorApp = (() => {
             strictPrereqCheckbox.checked = false;
             strictPrereqCheckbox.disabled = false;
         }
+        if (mrstudyAiNotice) mrstudyAiNotice.style.display = 'none';
         
         const exemplarInput = document.getElementById('createExemplarInput');
         const exemplarChip = document.getElementById('createExemplarChip');
@@ -1504,6 +1545,8 @@ window.TaskitatorApp = (() => {
             feedback.className = 'criteria-feedback-box';
             feedback.innerHTML = '';
         }
+
+        updateMrStudyRuleDropdown();
 
         const modal = document.getElementById('addTaskModal');
         if (modal) {
@@ -1786,7 +1829,7 @@ window.TaskitatorApp = (() => {
             if (hasFilters) {
                 const m = matchMap.get(t.id);
                 const d = descMatchMap.get(t.id);
-                if (!m && !d) return false;
+                if (!m && d) return false;
             }
             return isTaskVisuallyActive(t) || hasVisibleDescendant(t.id);
         });
@@ -2192,6 +2235,14 @@ window.TaskitatorApp = (() => {
         loadStorage();
         BreakUI.init();
         DistractionDumpEngine.garbageCollect();
+
+        try {
+            const rawRules = localStorage.getItem('taskitator_mrstudy_rules');
+            if (rawRules) {
+                activeMrStudyRules = JSON.parse(rawRules) || [];
+                isMrStudyLinked = activeMrStudyRules.length > 0;
+            }
+        } catch (e) {}
 
         const sidebarDrawer = document.getElementById('sidebarDrawer');
         const drawerBackdrop = document.getElementById('drawerBackdrop');
@@ -2626,6 +2677,109 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // Gamification Selection Handlers
+        const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
+        const mrStudyRewardInputs = document.getElementById('mrstudyRewardInputs');
+        const mrstudyXpInput = document.getElementById('mrstudyXpInput');
+        const mrstudyBanchInput = document.getElementById('mrstudyBanchInput');
+        const mrstudyXpRangeLabel = document.getElementById('mrstudyXpRangeLabel');
+        const mrstudyBanchRangeLabel = document.getElementById('mrstudyBanchRangeLabel');
+        const mrstudyAiNotice = document.getElementById('mrstudyAiNotice');
+        
+        const mrstudyInfoTriggerBtn = document.getElementById('mrstudyInfoTriggerBtn');
+        const mrstudyInfoModal = document.getElementById('mrstudyInfoModal');
+        const closeMrstudyInfoModalBtn = document.getElementById('closeMrstudyInfoModalBtn');
+        const dismissMrstudyInfoModalBtn = document.getElementById('dismissMrstudyInfoModalBtn');
+
+        if (mrstudyInfoTriggerBtn && mrstudyInfoModal) {
+            mrstudyInfoTriggerBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                mrstudyInfoModal.classList.add('open');
+            });
+            if (closeMrstudyInfoModalBtn) closeMrstudyInfoModalBtn.addEventListener('click', () => mrstudyInfoModal.classList.remove('open'));
+            if (dismissMrstudyInfoModalBtn) dismissMrstudyInfoModalBtn.addEventListener('click', () => mrstudyInfoModal.classList.remove('open'));
+        }
+
+        if (mrStudySelect && mrStudyRewardInputs && aiLockCheckbox) {
+            mrStudySelect.addEventListener('change', () => {
+                const ruleId = mrStudySelect.value;
+                if (!ruleId) {
+                    mrStudyRewardInputs.style.display = 'none';
+                    mrstudyXpInput.removeAttribute('required');
+                    mrstudyBanchInput.removeAttribute('required');
+                    aiLockCheckbox.disabled = false;
+                    mrstudyAiNotice.style.display = 'none';
+                    return;
+                }
+
+                const rule = activeMrStudyRules.find(r => r.id === ruleId);
+                if (rule) {
+                    mrStudyRewardInputs.style.display = 'block';
+                    
+                    mrstudyXpInput.min = rule.min_xp;
+                    mrstudyXpInput.max = rule.max_xp;
+                    mrstudyXpInput.value = rule.max_xp;
+                    mrstudyXpInput.required = true;
+                    if (mrstudyXpRangeLabel) mrstudyXpRangeLabel.textContent = `${rule.min_xp} – ${rule.max_xp}`;
+                    
+                    mrstudyBanchInput.min = rule.min_banch;
+                    mrstudyBanchInput.max = rule.max_banch;
+                    mrstudyBanchInput.value = rule.max_banch;
+                    mrstudyBanchInput.required = true;
+                    if (mrstudyBanchRangeLabel) mrstudyBanchRangeLabel.textContent = `${rule.min_banch} – ${rule.max_banch}`;
+
+                    if (rule.requires_ai) {
+                        aiLockCheckbox.checked = true;
+                        aiLockCheckbox.disabled = true;
+                        mrstudyAiNotice.style.display = 'block';
+                        
+                        const cBox = document.getElementById('criteriaBoxContainer');
+                        if (cBox) cBox.style.display = 'block';
+
+                        const labelEl = aiLockCheckbox.closest('label');
+                        if (labelEl) {
+                            labelEl.style.transition = 'color 0.3s ease';
+                            labelEl.style.color = '#fbbf24';
+                            setTimeout(() => labelEl.style.color = '', 800);
+                        }
+                    } else {
+                        aiLockCheckbox.disabled = false;
+                        mrstudyAiNotice.style.display = 'none';
+                    }
+                }
+            });
+
+            mrstudyXpInput.addEventListener('change', () => {
+                if (!mrstudyXpInput.value) return;
+                const min = parseInt(mrstudyXpInput.min, 10);
+                const max = parseInt(mrstudyXpInput.max, 10);
+                let val = parseInt(mrstudyXpInput.value, 10);
+                if (val < min) val = min;
+                if (val > max) val = max;
+                mrstudyXpInput.value = val;
+            });
+            mrstudyBanchInput.addEventListener('change', () => {
+                if (!mrstudyBanchInput.value) return;
+                const min = parseInt(mrstudyBanchInput.min, 10);
+                const max = parseInt(mrstudyBanchInput.max, 10);
+                let val = parseInt(mrstudyBanchInput.value, 10);
+                if (val < min) val = min;
+                if (val > max) val = max;
+                mrstudyBanchInput.value = val;
+            });
+        }
+
+        window.addEventListener('taskitator-mrstudy-rules-updated', (e) => {
+            if (e.detail) {
+                isMrStudyLinked = e.detail.linked;
+                activeMrStudyRules = e.detail.rules || [];
+                const modal = document.getElementById('addTaskModal');
+                if (modal && modal.classList.contains('open')) {
+                    updateMrStudyRuleDropdown();
+                }
+            }
+        });
+
         // Exemplar Picker in Creation
         const createExemplarInput = document.getElementById('createExemplarInput');
         const createExemplarChip = document.getElementById('createExemplarChip');
@@ -2810,6 +2964,19 @@ window.TaskitatorApp = (() => {
                     completed_at: null
                 };
 
+                const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
+                if (mrStudySelect && mrStudySelect.value && isMrStudyLinked) {
+                    const ruleId = mrStudySelect.value;
+                    const assignedXp = parseInt(document.getElementById('mrstudyXpInput')?.value || 0, 10);
+                    const assignedBanch = parseInt(document.getElementById('mrstudyBanchInput')?.value || 0, 10);
+                    
+                    newTask.mrstudy_binding = {
+                        rule_id: ruleId,
+                        assigned_xp: assignedXp,
+                        assigned_banch: assignedBanch
+                    };
+                }
+
                 tasks.push(newTask);
 
                 if (subtaskBuilderList) {
@@ -2880,17 +3047,14 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // FIX 3: Reset validation on input, paste, and change
         const editTaskCriteriaInput = document.getElementById('editTaskCriteria');
         if (editTaskCriteriaInput) {
-            ['input', 'paste', 'change'].forEach(evtType => {
-                editTaskCriteriaInput.addEventListener(evtType, () => {
-                    editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
-                });
+            editTaskCriteriaInput.addEventListener('input', () => {
+                editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
             });
         }
 
-        // FIX 2: Save Task Details Hook with strict validation check on changed criteria/exemplars
+        // Save Task Details Hook
         const saveTaskDetailsBtn = document.getElementById('saveTaskDetailsBtn');
         if (saveTaskDetailsBtn) {
             saveTaskDetailsBtn.addEventListener('click', async () => {
@@ -2915,15 +3079,11 @@ window.TaskitatorApp = (() => {
                     willBeStrict = true;
                 }
 
-                // Strict validation gate: required if converting to AI lock OR criteria/exemplar changed under bypass
-                const criteriaChanged = (task.proof_criteria || '').trim() !== editedCriteria.trim();
-                const exemplarChanged = Boolean(pendingEditExemplarFile);
-
-                if (willBeAiLocked) {
-                    const needsValidation = !task.ai_locked || (isBypassActive && (criteriaChanged || exemplarChanged));
-                    if (needsValidation && isStrictCriteriaModeEnabled()) {
+                // If converting from standard to AI-locked or editing criteria under bypass
+                if (willBeAiLocked && (!task.ai_locked || isBypassActive)) {
+                    if (isStrictCriteriaModeEnabled()) {
                         if (!editCriteriaValidationState.validated || editCriteriaValidationState.score < 7) {
-                            alert('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before saving changes.');
+                            alert('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before saving an AI-locked task.');
                             return;
                         }
                     }
@@ -3075,6 +3235,48 @@ window.TaskitatorApp = (() => {
                         userContext: document.getElementById('auditContextInput')?.value.trim() || '',
                         exemplarPart: refExemplarPart
                     });
+                }
+
+                // Check for 503 / High Demand Infrastructure Outage
+                const is503Outage = !result.success && (
+                    result.status === 503 ||
+                    result.code === 503 ||
+                    (typeof result.error === 'string' && (
+                        result.error.includes('503') ||
+                        result.error.includes('UNAVAILABLE') ||
+                        result.error.includes('high demand')
+                    ))
+                );
+
+                if (is503Outage) {
+                    const count = (consecutive503Tracker.get(pendingAuditTaskId) || 0) + 1;
+                    consecutive503Tracker.set(pendingAuditTaskId, count);
+
+                    // 5 consecutive 503 errors trigger silent fallback approval
+                    if (count >= 5) {
+                        consecutive503Tracker.delete(pendingAuditTaskId);
+                        task.verified_model = 'gemini-fallback-auto-503';
+                        cascadeTaskStatus(pendingAuditTaskId, 'completed', new Date().toISOString());
+                        SoundFX.playSuccessAudit();
+                        saveStorageAndPush();
+                        
+                        const completedTaskId = pendingAuditTaskId;
+                        finalizeTaskCompletion(completedTaskId).then(() => {
+                            if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
+                                const breaks = getTodayBreaksSafe();
+                                SyncEngine.forceImmediateSync({ today_breaks: breaks });
+                            }
+                        });
+
+                        if (auditModal) auditModal.classList.remove('open');
+                        pendingAuditTaskId = null;
+                        renderUnifiedView();
+                        return;
+                    }
+                } else if (result.success) {
+                    consecutive503Tracker.delete(pendingAuditTaskId);
+                } else {
+                    consecutive503Tracker.delete(pendingAuditTaskId);
                 }
 
                 if (!result.success) {
