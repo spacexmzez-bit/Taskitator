@@ -24,7 +24,10 @@ window.TaskitatorApp = (() => {
     let emergencyTimerInterval = null;
 
     let criteriaValidationState = { validated: false, score: 0, isTemplate: false };
+    let editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
+    let pendingEditExemplarFile = null;
     let cachedTemplates = null;
+    let activeTemplateTarget = 'create'; // 'create' | 'edit'
     const pendingGraceCompletions = new Map();
 
     // Active Filter State (Tags, Priorities, Projects)
@@ -309,7 +312,6 @@ window.TaskitatorApp = (() => {
                         <div style="font-size: 0.88rem; line-height: 1.45; color: var(--text-color); white-space: pre-wrap; padding-top: 4px;">${n.text}</div>
                     `;
                     
-                    // Auto-save title on blur
                     const titleInput = card.querySelector('.dump-note-title-input');
                     titleInput.addEventListener('blur', (e) => {
                         const i = parseInt(e.target.getAttribute('data-idx'), 10);
@@ -687,10 +689,6 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     // Gamification Bridge, Grace Timers & Ledger Handling
     // =========================================================================
-    
-    /**
-     * Re-renders the Mr. Study dropdown list in the Task Creation Modal
-     */
     function updateMrStudyRuleDropdown() {
         const container = document.getElementById('mrstudyRuleContainer');
         const select = document.getElementById('taskMrstudyRuleSelect');
@@ -715,10 +713,6 @@ window.TaskitatorApp = (() => {
         if (rewardInputs) rewardInputs.style.display = 'none';
     }
 
-    /**
-     * Appends completed tasks to the unified sync ledger for Mr. Study progression.
-     * Enforces the 200 event sliding window to prevent KV bloat.
-     */
     async function finalizeTaskCompletion(taskId) {
         const task = tasks.find(t => t.id === taskId);
         if (!task || task.status !== 'completed') return;
@@ -751,7 +745,6 @@ window.TaskitatorApp = (() => {
                 has_exemplar: hasExemplar && targetTask.id === taskId
             };
 
-            // Inject Mr. Study custom bindings if the user assigned them at creation
             if (targetTask.mrstudy_binding) {
                 payload.mrstudy_binding = targetTask.mrstudy_binding;
             }
@@ -769,7 +762,6 @@ window.TaskitatorApp = (() => {
             }
         });
 
-        // Sliding compaction window limit
         if (ledger.length > 200) {
             ledger = ledger.slice(ledger.length - 200);
         }
@@ -802,7 +794,6 @@ window.TaskitatorApp = (() => {
             clearInterval(intervalId);
             pendingGraceCompletions.delete(taskId);
             
-            // Commit to the bridge ledger only after grace expires
             finalizeTaskCompletion(taskId);
 
             if (typeof triggerRenderFn === 'function') triggerRenderFn();
@@ -1218,7 +1209,6 @@ window.TaskitatorApp = (() => {
                     }
                 }
                 
-                // Replace with literal text & non-breaking space to prevent re-triggering
                 const textNode = document.createTextNode(raw + '\u00A0');
                 chip.parentNode.replaceChild(textNode, chip);
                 
@@ -1284,7 +1274,6 @@ window.TaskitatorApp = (() => {
         
         let criteriaHtml = `<strong>Required Criteria &lt;PC&gt;:</strong> ${task.proof_criteria || 'General confirmation of task completion.'}`;
         
-        // Append exemplar status
         if (window.ExemplarStore) {
             const hasExemplar = await ExemplarStore.hasExemplar(task.id);
             if (hasExemplar) {
@@ -1360,7 +1349,26 @@ window.TaskitatorApp = (() => {
         const detailLockStatusBadge = document.getElementById('detailLockStatusBadge');
         const deleteFromDetailBtn = document.getElementById('deleteFromDetailBtn');
         const editExemplarChip = document.getElementById('editExemplarChip');
+        const editExemplarName = document.getElementById('editExemplarName');
+        const editExemplarSize = document.getElementById('editExemplarSize');
+        const editExemplarInput = document.getElementById('editExemplarInput');
+        const editFeedback = document.getElementById('editCriteriaFeedbackBox');
         const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
+
+        pendingEditExemplarFile = null;
+        editCriteriaValidationState = {
+            validated: isLocked, // Pre-existing locked tasks are already approved
+            score: isLocked ? 10 : 0,
+            isTemplate: false
+        };
+
+        if (editFeedback) {
+            editFeedback.style.display = 'none';
+            editFeedback.className = 'criteria-feedback-box';
+            editFeedback.innerHTML = '';
+        }
+
+        if (editExemplarInput) editExemplarInput.value = '';
 
         const titleH = document.getElementById('detailTaskTitleHeader');
         if (titleH) titleH.textContent = task.title;
@@ -1383,7 +1391,6 @@ window.TaskitatorApp = (() => {
         renderModalPriorityCloud('editPriorityCloud', true);
         renderModalProjectCloud('editProjectCloud', true);
 
-        // Hide project selection if the task has a parent
         const editProjectGroup = document.getElementById('editProjectCloud')?.closest('.form-group');
         if (editProjectGroup) {
             editProjectGroup.style.display = task.parent_id ? 'none' : 'block';
@@ -1405,9 +1412,20 @@ window.TaskitatorApp = (() => {
         if (editCriteriaBoxContainer) editCriteriaBoxContainer.style.display = isLocked ? 'block' : 'none';
 
         if (editExemplarChip && window.ExemplarStore) {
-            const hasRef = await ExemplarStore.hasExemplar(task.id);
-            editExemplarChip.style.display = (isLocked && hasRef) ? 'flex' : 'none';
+            const exemplarRecord = await ExemplarStore.getExemplar(task.id);
+            if (exemplarRecord && isLocked) {
+                if (editExemplarName) editExemplarName.textContent = exemplarRecord.filename || 'Attached Reference Exemplar';
+                if (editExemplarSize) editExemplarSize.textContent = exemplarRecord.size ? (exemplarRecord.size / (1024 * 1024)).toFixed(2) + ' MB' : '';
+                editExemplarChip.style.display = 'flex';
+            } else {
+                editExemplarChip.style.display = 'none';
+            }
         }
+
+        const editFileWrapper = editCriteriaBoxContainer?.querySelector('.file-picker-wrapper');
+        const editActionsBar = editCriteriaBoxContainer?.querySelector('.criteria-actions-bar');
+        if (editFileWrapper) editFileWrapper.style.display = cannotModifyLocked ? 'none' : 'block';
+        if (editActionsBar) editActionsBar.style.display = cannotModifyLocked ? 'none' : 'flex';
 
         if (editTaskTitle) editTaskTitle.contentEditable = cannotModifyLocked ? 'false' : 'true';
         if (editTaskDueDate) editTaskDueDate.disabled = cannotModifyLocked;
@@ -1469,7 +1487,6 @@ window.TaskitatorApp = (() => {
             dueIn.value = (currentView === 'today') ? new Date().toISOString().split('T')[0] : '';
         }
 
-        // Reset Mr. Study Gamification Inputs
         const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
         const mrStudyRewardInputs = document.getElementById('mrstudyRewardInputs');
         const mrstudyXpInput = document.getElementById('mrstudyXpInput');
@@ -1492,7 +1509,6 @@ window.TaskitatorApp = (() => {
         }
         if (mrstudyAiNotice) mrstudyAiNotice.style.display = 'none';
         
-        // Reset Exemplar File UI
         const exemplarInput = document.getElementById('createExemplarInput');
         const exemplarChip = document.getElementById('createExemplarChip');
         const exemplarGuidance = document.getElementById('exemplarGuidanceNote');
@@ -1502,7 +1518,6 @@ window.TaskitatorApp = (() => {
 
         const pIdFieldVal = parentId || '';
 
-        // Hide project selection if this is a subtask
         const projectGroup = document.getElementById('createProjectCloud')?.closest('.form-group');
         if (projectGroup) {
             projectGroup.style.display = pIdFieldVal ? 'none' : 'block';
@@ -1530,7 +1545,6 @@ window.TaskitatorApp = (() => {
             feedback.innerHTML = '';
         }
 
-        // Re-evaluate available gamification rules
         updateMrStudyRuleDropdown();
 
         const modal = document.getElementById('addTaskModal');
@@ -1784,7 +1798,6 @@ window.TaskitatorApp = (() => {
             return allKids.some(k => hasVisibleDescendant(k.id));
         }
 
-        // Subtractive Filter Engine (Tags, Priorities, Projects)
         const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0 || activeFilters.projects.size > 0;
         const matchMap = new Map();
         const descMatchMap = new Map();
@@ -2028,7 +2041,6 @@ window.TaskitatorApp = (() => {
             rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
         }
 
-        // Overdue Reschedule Trigger Bar Visibility Logic
         const overdueBar = document.getElementById('overdueRescheduleBar');
         const countText = document.getElementById('overdueTasksCountText');
         if (overdueBar && countText) {
@@ -2256,9 +2268,7 @@ window.TaskitatorApp = (() => {
         window.addEventListener('hashchange', handleHashRouting);
         handleHashRouting();
 
-        // =====================================================================
         // Bulk Reschedule Gate Logic
-        // =====================================================================
         const rescheduleModal = document.getElementById('bulkRescheduleModal');
         const openRescheduleBtn = document.getElementById('openRescheduleModalBtn');
         const closeRescheduleBtn = document.getElementById('closeBulkRescheduleModalBtn');
@@ -2333,9 +2343,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // =====================================================================
-        // Sequential Todoist-Style Subtask Entry
-        // =====================================================================
+        // Sequential Subtask Entry
         const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
         if (detailQuickSubtaskInput) {
             detailQuickSubtaskInput.addEventListener('keydown', (e) => {
@@ -2385,9 +2393,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // =====================================================================
         // Distraction Dump UI Bindings
-        // =====================================================================
         const openDistractionDumpBtn = document.getElementById('openDistractionDumpBtn');
         const closeDumpModalBtn = document.getElementById('closeDumpModalBtn');
         const saveDumpNoteBtn = document.getElementById('saveDumpNoteBtn');
@@ -2437,7 +2443,6 @@ window.TaskitatorApp = (() => {
             });
         }
         
-        // Single-Pass Batch Extraction Event
         if (extractAllEscrowBtn) {
             extractAllEscrowBtn.addEventListener('click', async () => {
                 if (window.TaskitatorEngine?.AgentEngine?.extractNotesBatch) {
@@ -2458,7 +2463,6 @@ window.TaskitatorApp = (() => {
                     if (deleteAllEscrowBtn) deleteAllEscrowBtn.disabled = false;
                     
                     if (res.success) {
-                        // Move notes to archive
                         let archive = [];
                         try { archive = JSON.parse(localStorage.getItem(ARCHIVED_NOTES_KEY) || '[]'); } catch (e) {}
                         
@@ -2472,7 +2476,6 @@ window.TaskitatorApp = (() => {
                         
                         localStorage.setItem(ARCHIVED_NOTES_KEY, JSON.stringify([...archive, ...polishedSet]));
                         
-                        // Clear the scratchpad escrow
                         DistractionDumpEngine.saveNotes([]);
                         
                         const m = document.getElementById('distractionEscrowModal');
@@ -2673,9 +2676,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // =====================================================================
-        // Gamification Selection Handlers (Mr. Study UI Logic)
-        // =====================================================================
+        // Gamification Selection Handlers
         const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
         const mrStudyRewardInputs = document.getElementById('mrstudyRewardInputs');
         const mrstudyXpInput = document.getElementById('mrstudyXpInput');
@@ -2731,11 +2732,9 @@ window.TaskitatorApp = (() => {
                         aiLockCheckbox.disabled = true;
                         mrstudyAiNotice.style.display = 'block';
                         
-                        // Force UI to show criteria boxes
                         const cBox = document.getElementById('criteriaBoxContainer');
                         if (cBox) cBox.style.display = 'block';
 
-                        // Brief flash animation to alert user
                         const labelEl = aiLockCheckbox.closest('label');
                         if (labelEl) {
                             labelEl.style.transition = 'color 0.3s ease';
@@ -2749,7 +2748,6 @@ window.TaskitatorApp = (() => {
                 }
             });
 
-            // Strict visual clamping on manual value entry to prevent DOM bypass
             mrstudyXpInput.addEventListener('change', () => {
                 if (!mrstudyXpInput.value) return;
                 const min = parseInt(mrstudyXpInput.min, 10);
@@ -2770,12 +2768,10 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // Listen for background updates to Gamification Rules
         window.addEventListener('taskitator-mrstudy-rules-updated', (e) => {
             if (e.detail) {
                 isMrStudyLinked = e.detail.linked;
                 activeMrStudyRules = e.detail.rules || [];
-                // Only re-render if creation modal is actively open
                 const modal = document.getElementById('addTaskModal');
                 if (modal && modal.classList.contains('open')) {
                     updateMrStudyRuleDropdown();
@@ -2783,9 +2779,7 @@ window.TaskitatorApp = (() => {
             }
         });
 
-        // =====================================================================
-        // UI Handling for Exemplar Picker in Task Creation
-        // =====================================================================
+        // Exemplar Picker in Creation
         const createExemplarInput = document.getElementById('createExemplarInput');
         const createExemplarChip = document.getElementById('createExemplarChip');
         const createExemplarName = document.getElementById('createExemplarName');
@@ -2830,12 +2824,62 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // Exemplar Picker in Edit / Detail Modal
+        const editExemplarInput = document.getElementById('editExemplarInput');
+        const editExemplarChip = document.getElementById('editExemplarChip');
+        const editExemplarName = document.getElementById('editExemplarName');
+        const editExemplarSize = document.getElementById('editExemplarSize');
+        const removeEditExemplarBtn = document.getElementById('removeEditExemplarBtn');
+
+        if (editExemplarInput) {
+            editExemplarInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) {
+                    pendingEditExemplarFile = null;
+                    return;
+                }
+                const maxBytes = 5 * 1024 * 1024;
+                if (file.size > maxBytes) {
+                    alert(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum allowed is 5 MB.`);
+                    editExemplarInput.value = '';
+                    pendingEditExemplarFile = null;
+                    return;
+                }
+                pendingEditExemplarFile = file;
+                if (editExemplarName) editExemplarName.textContent = file.name;
+                if (editExemplarSize) editExemplarSize.textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+                if (editExemplarChip) editExemplarChip.style.display = 'flex';
+
+                editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
+                const fb = document.getElementById('editCriteriaFeedbackBox');
+                if (fb) {
+                    fb.style.display = 'none';
+                    fb.innerHTML = '';
+                }
+            });
+        }
+
+        if (removeEditExemplarBtn) {
+            removeEditExemplarBtn.addEventListener('click', async () => {
+                if (editExemplarInput) editExemplarInput.value = '';
+                pendingEditExemplarFile = null;
+                if (activeDetailTaskId && window.ExemplarStore) {
+                    await window.ExemplarStore.deleteExemplar(activeDetailTaskId);
+                }
+                if (editExemplarChip) editExemplarChip.style.display = 'none';
+                editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
+                const fb = document.getElementById('editCriteriaFeedbackBox');
+                if (fb) {
+                    fb.style.display = 'none';
+                    fb.innerHTML = '';
+                }
+            });
+        }
+
         NLPEngine.upgradeInput('taskTitleInput', 'create');
         NLPEngine.upgradeInput('editTaskTitle', 'edit');
 
-        // =====================================================================
-        // Task Creation Submission hook
-        // =====================================================================
+        // Task Creation Submission Hook
         const taskCreateForm = document.getElementById('taskCreateForm');
         if (taskCreateForm) {
             taskCreateForm.addEventListener('submit', async (e) => {
@@ -2919,7 +2963,6 @@ window.TaskitatorApp = (() => {
                     completed_at: null
                 };
 
-                // Append Mr. Study Rule Bindings (Creation-Time Only)
                 const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
                 if (mrStudySelect && mrStudySelect.value && isMrStudyLinked) {
                     const ruleId = mrStudySelect.value;
@@ -2983,6 +3026,7 @@ window.TaskitatorApp = (() => {
             closeDetailModalBtn.addEventListener('click', () => {
                 taskDetailModal.classList.remove('open');
                 activeDetailTaskId = null;
+                pendingEditExemplarFile = null;
             });
         }
 
@@ -2992,13 +3036,27 @@ window.TaskitatorApp = (() => {
                 const cBox = document.getElementById('editCriteriaBoxContainer');
                 if (!editAiLockCheckbox.disabled && cBox) {
                     cBox.style.display = editAiLockCheckbox.checked ? 'block' : 'none';
+                    if (editAiLockCheckbox.checked) {
+                        const task = tasks.find(t => t.id === activeDetailTaskId);
+                        if (!task || !task.ai_locked) {
+                            editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
+                        }
+                    }
                 }
             });
         }
 
+        const editTaskCriteriaInput = document.getElementById('editTaskCriteria');
+        if (editTaskCriteriaInput) {
+            editTaskCriteriaInput.addEventListener('input', () => {
+                editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
+            });
+        }
+
+        // Save Task Details Hook
         const saveTaskDetailsBtn = document.getElementById('saveTaskDetailsBtn');
         if (saveTaskDetailsBtn) {
-            saveTaskDetailsBtn.addEventListener('click', () => {
+            saveTaskDetailsBtn.addEventListener('click', async () => {
                 if (!activeDetailTaskId) return;
 
                 loadStorage();
@@ -3014,9 +3072,20 @@ window.TaskitatorApp = (() => {
                 const isBypassActive = isBypassActiveSafe();
                 const willBeAiLocked = Boolean(document.getElementById('editAiLockCheckbox')?.checked);
                 let willBeStrict = Boolean(document.getElementById('editStrictPrereqCheckbox')?.checked);
+                const editedCriteria = document.getElementById('editTaskCriteria')?.value.trim() || '';
 
                 if (task.strict_prerequisites && !isBypassActive) {
-                    willBeStrict = true; // Enforce irrevocability
+                    willBeStrict = true;
+                }
+
+                // If converting from standard to AI-locked or editing criteria under bypass
+                if (willBeAiLocked && (!task.ai_locked || isBypassActive)) {
+                    if (isStrictCriteriaModeEnabled()) {
+                        if (!editCriteriaValidationState.validated || editCriteriaValidationState.score < 7) {
+                            alert('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before saving an AI-locked task.');
+                            return;
+                        }
+                    }
                 }
 
                 if (!task.ai_locked && willBeAiLocked) {
@@ -3037,11 +3106,21 @@ window.TaskitatorApp = (() => {
                     if (!confirmed) return;
                 }
 
+                // Save pending exemplar file if selected in edit modal
+                if (pendingEditExemplarFile && willBeAiLocked && window.ExemplarStore) {
+                    try {
+                        await window.ExemplarStore.saveExemplar(task.id, pendingEditExemplarFile);
+                        pendingEditExemplarFile = null;
+                    } catch (err) {
+                        alert(`Failed to save reference exemplar: ${err.message}`);
+                        return;
+                    }
+                }
+
                 task.description = document.getElementById('editTaskDesc')?.value.trim() || '';
                 task.tags = Array.from(editModalSelectedTags);
                 task.priority_id = editModalSelectedPriority;
 
-                // Only allow project mutation if this is a root task
                 if (!task.parent_id) {
                     const oldProjectId = task.project_id;
                     task.project_id = editModalSelectedProject || 'inbox';
@@ -3060,7 +3139,7 @@ window.TaskitatorApp = (() => {
                     task.title = NLPEngine.extractCleanTitle('editTaskTitle') || task.title;
                     task.due_date = document.getElementById('editTaskDueDate')?.value || '';
                     task.ai_locked = willBeAiLocked;
-                    task.proof_criteria = willBeAiLocked ? (document.getElementById('editTaskCriteria')?.value.trim() || '') : '';
+                    task.proof_criteria = willBeAiLocked ? editedCriteria : '';
                 }
                 
                 task.strict_prerequisites = willBeStrict;
@@ -3070,6 +3149,7 @@ window.TaskitatorApp = (() => {
                 
                 const customRender = taskDetailModal?._customRenderFn;
                 activeDetailTaskId = null;
+                pendingEditExemplarFile = null;
 
                 if (typeof customRender === 'function') customRender();
                 else renderUnifiedView();
@@ -3084,6 +3164,7 @@ window.TaskitatorApp = (() => {
                 deleteTask(activeDetailTaskId, customRender);
                 if (taskDetailModal) taskDetailModal.classList.remove('open');
                 activeDetailTaskId = null;
+                pendingEditExemplarFile = null;
             });
         }
 
@@ -3094,6 +3175,7 @@ window.TaskitatorApp = (() => {
                 const parentTask = tasks.find(t => t.id === activeDetailTaskId);
                 if (taskDetailModal) taskDetailModal.classList.remove('open');
                 activeDetailTaskId = null;
+                pendingEditExemplarFile = null;
                 openTaskCreationModal(parentTask.id, `Add Subtask to "${parentTask.title}"`);
             });
         }
@@ -3107,9 +3189,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // =====================================================================
         // Dual-Evidence Audit Submission
-        // =====================================================================
         const submitProofBtn = document.getElementById('submitProofBtn');
         if (submitProofBtn) {
             submitProofBtn.addEventListener('click', async () => {
@@ -3173,7 +3253,6 @@ window.TaskitatorApp = (() => {
                     SoundFX.playSuccessAudit();
                     saveStorageAndPush();
                     
-                    // Finalize instantly and trigger forced sync bypassing debounce timer
                     const completedTaskId = pendingAuditTaskId;
                     finalizeTaskCompletion(completedTaskId).then(() => {
                         if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
@@ -3197,123 +3276,162 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // =====================================================================
-        // Validate Criteria (Pre-flight) with Exemplar Attached
-        // =====================================================================
+        // Validate Criteria (Pre-flight) Engine: Shared Handler
+        async function runCriteriaValidation(criteriaText, taskTitle, exemplarFile, feedbackEl, btnEl, isEditMode) {
+            if (!criteriaText) {
+                if (feedbackEl) {
+                    feedbackEl.style.display = 'block';
+                    feedbackEl.className = 'criteria-feedback-box fail';
+                    feedbackEl.textContent = 'Please enter proof criteria before validating.';
+                }
+                return;
+            }
+
+            btnEl.disabled = true;
+            btnEl.textContent = 'Validating...';
+            if (feedbackEl) {
+                feedbackEl.style.display = 'block';
+                feedbackEl.className = 'criteria-feedback-box loading';
+                feedbackEl.textContent = 'Auditing criteria with forensic model...';
+            }
+
+            let res = { success: false, error: 'Audit engine missing' };
+            if (window.TaskitatorEngine?.AuditEngine?.validateCriteria) {
+                res = await TaskitatorEngine.AuditEngine.validateCriteria(criteriaText, taskTitle, exemplarFile);
+            }
+
+            btnEl.disabled = false;
+            btnEl.textContent = '🔍 Validate Criteria';
+
+            const stateTarget = isEditMode ? editCriteriaValidationState : criteriaValidationState;
+
+            if (!res.success) {
+                if (feedbackEl) {
+                    feedbackEl.className = 'criteria-feedback-box fail';
+                    feedbackEl.innerHTML = `<strong>Audit Halted:</strong> ${res.error || 'Failed to communicate with AI model.'}`;
+                }
+                stateTarget.validated = false;
+                stateTarget.score = 0;
+                stateTarget.isTemplate = false;
+                return;
+            }
+
+            stateTarget.validated = true;
+            stateTarget.score = res.score;
+            stateTarget.isTemplate = false;
+
+            if (feedbackEl) {
+                if (res.passed) {
+                    feedbackEl.className = 'criteria-feedback-box pass';
+                    feedbackEl.innerHTML = `<strong>✓ Verified (${res.score}/10)</strong>: ${res.critique}`;
+                } else {
+                    feedbackEl.className = 'criteria-feedback-box fail';
+                    let feedbackHtml = `<strong>⚠️ Low Quality Rating (${res.score}/10)</strong>: ${res.critique}`;
+                    if (res.suggested_rewrite) {
+                        feedbackHtml += `
+                            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2);">
+                                <strong>Suggested Artifact:</strong> "${res.suggested_rewrite}"
+                                <div style="margin-top: 6px;">
+                                    <button type="button" class="icon-btn apply-suggestion-btn" style="padding: 3px 8px; font-size: 0.75rem; background: var(--card-subtle);">Use Suggestion</button>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    feedbackEl.innerHTML = feedbackHtml;
+
+                    const applyBtn = feedbackEl.querySelector('.apply-suggestion-btn');
+                    if (applyBtn) {
+                        applyBtn.addEventListener('click', () => {
+                            const inputEl = isEditMode 
+                                ? document.getElementById('editTaskCriteria') 
+                                : document.getElementById('taskCriteriaInput');
+                            if (inputEl) inputEl.value = res.suggested_rewrite;
+                            stateTarget.validated = true;
+                            stateTarget.score = 9;
+                            stateTarget.isTemplate = true;
+                            feedbackEl.className = 'criteria-feedback-box pass';
+                            feedbackEl.innerHTML = `<strong>✓ Verified (9/10)</strong>: Applied forensic suggestion.`;
+                        });
+                    }
+                }
+            }
+        }
+
+        // Creation Validation Button
         const validateCriteriaBtn = document.getElementById('validateCriteriaBtn');
         if (validateCriteriaBtn) {
             validateCriteriaBtn.addEventListener('click', async () => {
                 const criteriaText = document.getElementById('taskCriteriaInput')?.value.trim() || '';
                 const taskTitle = NLPEngine.extractCleanTitle('taskTitleInput') || '';
                 const feedback = document.getElementById('criteriaFeedbackBox');
-                
                 const exemplarInput = document.getElementById('createExemplarInput');
                 const exemplarFile = (exemplarInput && exemplarInput.files.length > 0) ? exemplarInput.files[0] : null;
 
-                if (!criteriaText) {
-                    if (feedback) {
-                        feedback.style.display = 'block';
-                        feedback.className = 'criteria-feedback-box fail';
-                        feedback.textContent = 'Please enter proof criteria before validating.';
-                    }
-                    return;
-                }
-
-                validateCriteriaBtn.disabled = true;
-                validateCriteriaBtn.textContent = 'Validating...';
-                if (feedback) {
-                    feedback.style.display = 'block';
-                    feedback.className = 'criteria-feedback-box loading';
-                    feedback.textContent = 'Auditing criteria with forensic model...';
-                }
-
-                let res = { success: false, error: 'Audit engine missing' };
-                if (window.TaskitatorEngine?.AuditEngine?.validateCriteria) {
-                    res = await TaskitatorEngine.AuditEngine.validateCriteria(criteriaText, taskTitle, exemplarFile);
-                }
-
-                validateCriteriaBtn.disabled = false;
-                validateCriteriaBtn.textContent = '🔍 Validate Criteria';
-
-                if (!res.success) {
-                    if (feedback) {
-                        feedback.className = 'criteria-feedback-box fail';
-                        feedback.innerHTML = `<strong>Audit Halted:</strong> ${res.error || 'Failed to communicate with AI model.'}`;
-                    }
-                    criteriaValidationState = { validated: false, score: 0, isTemplate: false };
-                    return;
-                }
-
-                criteriaValidationState = {
-                    validated: true,
-                    score: res.score,
-                    isTemplate: false
-                };
-
-                if (feedback) {
-                    if (res.passed) {
-                        feedback.className = 'criteria-feedback-box pass';
-                        feedback.innerHTML = `<strong>✓ Verified (${res.score}/10)</strong>: ${res.critique}`;
-                    } else {
-                        feedback.className = 'criteria-feedback-box fail';
-                        let feedbackHtml = `<strong>⚠️ Low Quality Rating (${res.score}/10)</strong>: ${res.critique}`;
-                        if (res.suggested_rewrite) {
-                            feedbackHtml += `
-                                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2);">
-                                    <strong>Suggested Artifact:</strong> "${res.suggested_rewrite}"
-                                    <div style="margin-top: 6px;">
-                                        <button type="button" class="icon-btn" id="applySuggestionBtn" style="padding: 3px 8px; font-size: 0.75rem; background: var(--card-subtle);">Use Suggestion</button>
-                                    </div>
-                                </div>
-                            `;
-                        }
-                        feedback.innerHTML = feedbackHtml;
-
-                        const applyBtn = feedback.querySelector('#applySuggestionBtn');
-                        if (applyBtn) {
-                            applyBtn.addEventListener('click', () => {
-                                const tIn = document.getElementById('taskCriteriaInput');
-                                if (tIn) tIn.value = res.suggested_rewrite;
-                                criteriaValidationState = { validated: true, score: 9, isTemplate: true };
-                                feedback.className = 'criteria-feedback-box pass';
-                                feedback.innerHTML = `<strong>✓ Verified (9/10)</strong>: Applied forensic suggestion.`;
-                            });
-                        }
-                    }
-                }
+                await runCriteriaValidation(criteriaText, taskTitle, exemplarFile, feedback, validateCriteriaBtn, false);
             });
         }
 
-        const openTemplatesBtn = document.getElementById('openTemplatesBtn');
+        // Edit Modal Validation Button
+        const editValidateCriteriaBtn = document.getElementById('editValidateCriteriaBtn');
+        if (editValidateCriteriaBtn) {
+            editValidateCriteriaBtn.addEventListener('click', async () => {
+                const criteriaText = document.getElementById('editTaskCriteria')?.value.trim() || '';
+                const taskTitle = NLPEngine.extractCleanTitle('editTaskTitle') || '';
+                const feedback = document.getElementById('editCriteriaFeedbackBox');
+                
+                let exemplarFile = pendingEditExemplarFile;
+                if (!exemplarFile && activeDetailTaskId && window.ExemplarStore) {
+                    const record = await window.ExemplarStore.getExemplar(activeDetailTaskId);
+                    if (record && record.blob) exemplarFile = record.blob;
+                }
+
+                await runCriteriaValidation(criteriaText, taskTitle, exemplarFile, feedback, editValidateCriteriaBtn, true);
+            });
+        }
+
+        // Template Picker Modal
         const templatesModal = document.getElementById('templatesModal');
         const closeTemplatesModalBtn = document.getElementById('closeTemplatesModalBtn');
+        const openTemplatesBtn = document.getElementById('openTemplatesBtn');
+        const editOpenTemplatesBtn = document.getElementById('editOpenTemplatesBtn');
 
-        if (openTemplatesBtn && templatesModal) {
-            openTemplatesBtn.addEventListener('click', async () => {
-                if (!cachedTemplates) {
-                    try {
-                        const resp = await fetch('./CRITERIA_TEMPLATES.json');
-                        if (resp.ok) cachedTemplates = await resp.json();
-                    } catch (e) {}
-                }
-                const container = document.getElementById('templatesListContainer');
-                if (container) {
-                    container.innerHTML = '';
-                    const list = cachedTemplates || [];
-                    if (list.length === 0) {
-                        container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 12px 0;">No templates available.</div>';
-                    } else {
-                        list.forEach(t => {
-                            const card = document.createElement('div');
-                            card.className = 'template-picker-card';
-                            card.innerHTML = `
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                    <strong style="color: var(--text-color); font-size: 0.88rem;">${t.label}</strong>
-                                    <span class="tag-chip" style="font-size: 0.7rem;">${t.category}</span>
-                                </div>
-                                <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.35;">${t.template}</p>
-                            `;
-                            card.addEventListener('click', () => {
+        async function openTemplatesPicker(targetMode) {
+            activeTemplateTarget = targetMode;
+            if (!cachedTemplates) {
+                try {
+                    const resp = await fetch('./CRITERIA_TEMPLATES.json');
+                    if (resp.ok) cachedTemplates = await resp.json();
+                } catch (e) {}
+            }
+            const container = document.getElementById('templatesListContainer');
+            if (container) {
+                container.innerHTML = '';
+                const list = cachedTemplates || [];
+                if (list.length === 0) {
+                    container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 12px 0;">No templates available.</div>';
+                } else {
+                    list.forEach(t => {
+                        const card = document.createElement('div');
+                        card.className = 'template-picker-card';
+                        card.innerHTML = `
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                <strong style="color: var(--text-color); font-size: 0.88rem;">${t.label}</strong>
+                                <span class="tag-chip" style="font-size: 0.7rem;">${t.category}</span>
+                            </div>
+                            <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.35;">${t.template}</p>
+                        `;
+                        card.addEventListener('click', () => {
+                            if (activeTemplateTarget === 'edit') {
+                                const tIn = document.getElementById('editTaskCriteria');
+                                if (tIn) tIn.value = t.template;
+                                editCriteriaValidationState = { validated: true, score: 10, isTemplate: true };
+                                const fb = document.getElementById('editCriteriaFeedbackBox');
+                                if (fb) {
+                                    fb.style.display = 'block';
+                                    fb.className = 'criteria-feedback-box pass';
+                                    fb.innerHTML = `<strong>✓ Verified (10/10)</strong>: Standard verified artifact template selected.`;
+                                }
+                            } else {
                                 const tIn = document.getElementById('taskCriteriaInput');
                                 if (tIn) tIn.value = t.template;
                                 criteriaValidationState = { validated: true, score: 10, isTemplate: true };
@@ -3323,14 +3441,21 @@ window.TaskitatorApp = (() => {
                                     fb.className = 'criteria-feedback-box pass';
                                     fb.innerHTML = `<strong>✓ Verified (10/10)</strong>: Standard verified artifact template selected.`;
                                 }
-                                templatesModal.classList.remove('open');
-                            });
-                            container.appendChild(card);
+                            }
+                            templatesModal.classList.remove('open');
                         });
-                    }
+                        container.appendChild(card);
+                    });
                 }
-                templatesModal.classList.add('open');
-            });
+            }
+            templatesModal.classList.add('open');
+        }
+
+        if (openTemplatesBtn) {
+            openTemplatesBtn.addEventListener('click', () => openTemplatesPicker('create'));
+        }
+        if (editOpenTemplatesBtn) {
+            editOpenTemplatesBtn.addEventListener('click', () => openTemplatesPicker('edit'));
         }
         if (closeTemplatesModalBtn && templatesModal) {
             closeTemplatesModalBtn.addEventListener('click', () => {
@@ -3338,6 +3463,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        // Emergency Bypass Handlers
         const emergencyTriggerBtn = document.getElementById('emergencyTriggerBtn');
         const emergencyConfirmModal = document.getElementById('emergencyConfirmModal');
         const cancelEmergencyBtn = document.getElementById('cancelEmergencyBtn');
