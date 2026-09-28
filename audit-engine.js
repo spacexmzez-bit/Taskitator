@@ -1,4 +1,3 @@
-// audit-engine.js
 /**
  * Taskitator Core Engine
  * Manages BYOK Gemini Verification Cascade, Multimodal Pre-Flight Criteria Validation,
@@ -384,9 +383,9 @@ Return strictly valid JSON with this exact schema:
                 let usedModel = TaskitatorEngine.PRIMARY_MODEL;
                 let res = await this.callGeminiWithParts(usedModel, apiKey, parts);
 
-                // Cascade on 429 rate limit
-                if (res.status === 429) {
-                    console.warn(`[AuditEngine] Model ${usedModel} hit 429 during criteria validation. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
+                // Cascade on 429 rate limit or 503 capacity outage
+                if (res.status === 429 || res.status === 503) {
+                    console.warn(`[AuditEngine] Model ${usedModel} hit ${res.status} during criteria validation. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
                     usedModel = TaskitatorEngine.FALLBACK_MODEL;
                     res = await this.callGeminiWithParts(usedModel, apiKey, parts);
                 }
@@ -395,6 +394,8 @@ Return strictly valid JSON with this exact schema:
                     const errJson = await res.json().catch(() => ({}));
                     return {
                         success: false,
+                        status: res.status,
+                        code: res.status,
                         error: errJson.error?.message || `Gemini API HTTP ${res.status}`
                     };
                 }
@@ -422,6 +423,7 @@ Return strictly valid JSON with this exact schema:
             } catch (err) {
                 return {
                     success: false,
+                    status: 0,
                     error: `Validation parsing error: ${err.message}`
                 };
             }
@@ -430,6 +432,7 @@ Return strictly valid JSON with this exact schema:
         /**
          * Dual-Evidence Verification Audit
          * Supports passing both submitted proof and saved reference exemplar to Gemini.
+         * Explicitly passes HTTP status codes and cascades models on 429/503.
          */
         async verifyProof({ file, taskTitle, criteria, userContext, exemplarPart = null }) {
             let settings = {};
@@ -441,16 +444,21 @@ Return strictly valid JSON with this exact schema:
 
             const apiKey = (settings.gemini_api_key || '').trim();
             if (!apiKey) {
-                return { success: false, error: 'No Gemini API Key configured in Settings.' };
+                return { success: false, status: 401, error: 'No Gemini API Key configured in Settings.' };
             }
 
             // Client-side validation: enforce size cap & supported formats
             const check = this.validateFile(file, TaskitatorEngine.MAX_FILE_SIZE_MB);
             if (!check.valid) {
-                return { success: false, error: check.error };
+                return { success: false, status: 400, error: check.error };
             }
 
-            const proofPart = await this.fileToBase64(file);
+            let proofPart;
+            try {
+                proofPart = await this.fileToBase64(file);
+            } catch (fileErr) {
+                return { success: false, status: 400, error: `Failed to read evidence file: ${fileErr.message}` };
+            }
 
             let systemPrompt = `
 You are the Taskitator Forensic Audit AI. Your job is to strictly evaluate whether evidence (image or PDF document) legitimately proves completion of a task based on provided criteria.
@@ -486,41 +494,46 @@ Return valid JSON matching this schema:
             parts.push(proofPart);
             parts.push({ text: systemPrompt });
 
-            let usedModel = TaskitatorEngine.PRIMARY_MODEL;
-            let res = await this.callGeminiWithParts(usedModel, apiKey, parts);
-
-            // Cascade to secondary model on 429 RPD/RPS limit
-            if (res.status === 429) {
-                console.warn(`[AuditEngine] Model ${usedModel} hit 429. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
-                usedModel = TaskitatorEngine.FALLBACK_MODEL;
-                res = await this.callGeminiWithParts(usedModel, apiKey, parts);
-            }
-
-            if (!res.ok) {
-                const errJson = await res.json().catch(() => ({}));
-                return {
-                    success: false,
-                    error: errJson.error?.message || `Gemini HTTP ${res.status}`
-                };
-            }
-
-            const data = await res.json();
-            let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-            rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-
             try {
+                let usedModel = TaskitatorEngine.PRIMARY_MODEL;
+                let res = await this.callGeminiWithParts(usedModel, apiKey, parts);
+
+                // Cascade to secondary model on 429 RPD/RPS limit or 503 capacity outage
+                if (res.status === 429 || res.status === 503) {
+                    console.warn(`[AuditEngine] Model ${usedModel} returned ${res.status}. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
+                    usedModel = TaskitatorEngine.FALLBACK_MODEL;
+                    res = await this.callGeminiWithParts(usedModel, apiKey, parts);
+                }
+
+                if (!res.ok) {
+                    const errJson = await res.json().catch(() => ({}));
+                    return {
+                        success: false,
+                        status: res.status,
+                        code: res.status,
+                        error: errJson.error?.message || `Gemini HTTP ${res.status}`
+                    };
+                }
+
+                const data = await res.json();
+                let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+                rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
                 const parsed = JSON.parse(rawText);
                 return {
                     success: true,
+                    status: 200,
+                    code: 200,
                     approved: parsed.verdict === 'approved',
                     verdict: parsed.verdict,
                     critique: parsed.critique,
                     model_used: usedModel
                 };
-            } catch (e) {
+            } catch (err) {
                 return {
                     success: false,
-                    error: 'Malformed JSON returned by verification model.'
+                    status: err.status || 0,
+                    error: `Verification error: ${err.message}`
                 };
             }
         }
