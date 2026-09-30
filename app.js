@@ -1,7 +1,8 @@
 /**
  * Taskitator Unified Application Engine (app.js)
  * Manages view routing (#today / #general), unified task trees,
- * projects registry, break UI, proofs, emergency quotas, and persistent filters.
+ * projects registry, break UI, proofs, emergency quotas, persistent filters,
+ * Move Task re-parenting, Sibling Criteria Inheritance, and Multi-Selection Batch Actions.
  */
 
 window.TaskitatorApp = (() => {
@@ -30,6 +31,12 @@ window.TaskitatorApp = (() => {
     let activeTemplateTarget = 'create'; // 'create' | 'edit'
     const pendingGraceCompletions = new Map();
     const consecutive503Tracker = new Map(); // taskId -> consecutive 503 error count
+
+    // Multi-Selection State
+    let isSelectionModeActive = false;
+    const selectedTaskIds = new Set();
+    const batchSelectedTags = new Set();
+    let batchSelectedPriority = null;
 
     // Active Filter State (Tags, Priorities, Projects)
     const activeFilters = { tags: new Set(), priorities: new Set(), projects: new Set() };
@@ -647,6 +654,17 @@ window.TaskitatorApp = (() => {
         return false;
     }
 
+    function getShieldedAncestor(taskId) {
+        let curr = tasks.find(t => t.id === taskId);
+        while (curr && curr.parent_id) {
+            const parent = tasks.find(t => t.id === curr.parent_id);
+            if (!parent) break;
+            if (parent.strict_prerequisites) return parent;
+            curr = parent;
+        }
+        return null;
+    }
+
     function isCompletionBlocked(taskId) {
         if (isBypassActiveSafe()) return false;
         const targetTask = tasks.find(t => t.id === taskId);
@@ -661,6 +679,13 @@ window.TaskitatorApp = (() => {
             }
         }
         return false;
+    }
+
+    function cascadeProject(pId, newProj) {
+        tasks.filter(k => k.parent_id === pId && k.status !== 'trash').forEach(child => {
+            child.project_id = newProj;
+            cascadeProject(child.id, newProj);
+        });
     }
 
     function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
@@ -1044,6 +1069,52 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
+    // Multi-Selection Mode & Batch Editing Controller
+    // =========================================================================
+    function toggleSelectionMode() {
+        isSelectionModeActive = !isSelectionModeActive;
+        selectedTaskIds.clear();
+
+        const btn = document.getElementById('toggleSelectModeBtn');
+        const label = document.getElementById('selectModeBtnLabel');
+
+        if (btn) btn.classList.toggle('active', isSelectionModeActive);
+        if (label) label.textContent = isSelectionModeActive ? 'Exit' : 'Select';
+
+        updateBatchBarUI();
+        renderUnifiedTaskTree();
+    }
+
+    function toggleTaskSelection(taskId) {
+        if (pendingGraceCompletions.has(taskId)) return; // EC.2-B: Grace timer protection
+
+        if (selectedTaskIds.has(taskId)) {
+            selectedTaskIds.delete(taskId);
+        } else {
+            selectedTaskIds.add(taskId);
+        }
+
+        updateBatchBarUI();
+        renderUnifiedTaskTree();
+    }
+
+    function updateBatchBarUI() {
+        const bar = document.getElementById('batchActionBar');
+        const label = document.getElementById('batchSelectedCountLabel');
+        if (!bar) return;
+
+        if (isSelectionModeActive && selectedTaskIds.size > 0) {
+            bar.classList.add('open');
+            if (label) label.textContent = `${selectedTaskIds.size} Selected`;
+        } else if (isSelectionModeActive) {
+            bar.classList.add('open');
+            if (label) label.textContent = `0 Selected`;
+        } else {
+            bar.classList.remove('open');
+        }
+    }
+
+    // =========================================================================
     // Todoist-Style NLP Smart Creation Engine
     // =========================================================================
     const NLPEngine = (() => {
@@ -1295,7 +1366,7 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Task Detail / Edit Modal Engine
+    // Task Detail / Edit Modal Engine (Move Task & Sibling Inheritance)
     // =========================================================================
     function refreshDetailSubtaskList(parentId, triggerRenderFn) {
         const detailSubtasksList = document.getElementById('detailSubtasksList');
@@ -1356,6 +1427,14 @@ window.TaskitatorApp = (() => {
         const editFeedback = document.getElementById('editCriteriaFeedbackBox');
         const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
 
+        // Move Task Elements
+        const editTaskParentSelect = document.getElementById('editTaskParentSelect');
+        const moveShieldWarningBadge = document.getElementById('moveShieldWarningBadge');
+
+        // Sibling Criteria Inheritance Elements
+        const siblingInheritContainer = document.getElementById('siblingInheritContainer');
+        const siblingTaskSelect = document.getElementById('siblingTaskSelect');
+
         pendingEditExemplarFile = null;
         editCriteriaValidationState = {
             validated: isLocked,
@@ -1391,6 +1470,61 @@ window.TaskitatorApp = (() => {
         renderModalTagCloud('editTagCloud', editModalSelectedTags);
         renderModalPriorityCloud('editPriorityCloud', true);
         renderModalProjectCloud('editProjectCloud', true);
+
+        // Move Task: Check Shield Confinement (EC.1-C)
+        const shieldedAncestor = getShieldedAncestor(taskId);
+        if (editTaskParentSelect && moveShieldWarningBadge) {
+            if (shieldedAncestor && !isBypassActive) {
+                moveShieldWarningBadge.style.display = 'inline-block';
+                editTaskParentSelect.disabled = true;
+                editTaskParentSelect.title = "Shielded task cannot be moved out of their parents";
+            } else {
+                moveShieldWarningBadge.style.display = 'none';
+                editTaskParentSelect.disabled = false;
+                editTaskParentSelect.title = "";
+            }
+
+            // Populate eligible parents (EC.1-A: Circular reference blacklist)
+            const descendantIds = new Set(getAllDescendants(taskId).map(d => d.id));
+            descendantIds.add(taskId); // Blacklist self
+
+            editTaskParentSelect.innerHTML = '<option value="">(Root Level - No Parent)</option>';
+            tasks.forEach(candidate => {
+                if (descendantIds.has(candidate.id)) return;
+                if (candidate.status === 'trash' || candidate.status === 'completed') return;
+
+                const opt = document.createElement('option');
+                opt.value = candidate.id;
+                opt.textContent = `${candidate.title} [${candidate.project_id || 'inbox'}]`;
+                if (candidate.id === task.parent_id) opt.selected = true;
+                editTaskParentSelect.appendChild(opt);
+            });
+            if (!task.parent_id) {
+                editTaskParentSelect.value = '';
+            }
+        }
+
+        // Sibling Criteria Inheritance Population (EC.3-A, EC.3-C)
+        if (siblingInheritContainer && siblingTaskSelect) {
+            const isEligibleForInherit = task.parent_id && task.status !== 'completed' && (!task.ai_locked || isBypassActive);
+            if (isEligibleForInherit) {
+                const eligibleSiblings = tasks.filter(t => t.parent_id === task.parent_id && t.id !== task.id && t.status !== 'trash' && t.proof_criteria);
+                if (eligibleSiblings.length > 0) {
+                    siblingInheritContainer.style.display = 'block';
+                    siblingTaskSelect.innerHTML = '<option value="">Select a sibling with verified criteria...</option>';
+                    eligibleSiblings.forEach(sib => {
+                        const opt = document.createElement('option');
+                        opt.value = sib.id;
+                        opt.textContent = `${sib.title} (${sib.proof_criteria.slice(0, 30)}...)`;
+                        siblingTaskSelect.appendChild(opt);
+                    });
+                } else {
+                    siblingInheritContainer.style.display = 'none';
+                }
+            } else {
+                siblingInheritContainer.style.display = 'none';
+            }
+        }
 
         const editProjectGroup = document.getElementById('editProjectCloud')?.closest('.form-group');
         if (editProjectGroup) {
@@ -2088,7 +2222,8 @@ window.TaskitatorApp = (() => {
                                   /^\d{4}-\d{2}-\d{2}$/.test(task.due_date) && 
                                   task.due_date < todayStr;
 
-                li.className = `task-node ${isDone ? 'completed' : ''} ${isOverdue ? 'is-overdue' : ''}`;
+                const isSelected = selectedTaskIds.has(task.id);
+                li.className = `task-node ${isDone ? 'completed' : ''} ${isOverdue ? 'is-overdue' : ''} ${isSelected ? 'row-selected' : ''}`;
 
                 let isBreadcrumb = false;
                 if (hasFilters) {
@@ -2123,7 +2258,7 @@ window.TaskitatorApp = (() => {
                 }
 
                 const row = document.createElement('div');
-                row.className = 'task-row';
+                row.className = `task-row ${isSelected ? 'row-selected' : ''}`;
                 row.style.marginLeft = `${depth * 20}px`;
 
                 if (isBreadcrumb) {
@@ -2174,13 +2309,24 @@ window.TaskitatorApp = (() => {
                     main.appendChild(spacer);
                 }
 
+                // Checkbox / Square Selection Box
                 const checkBtn = document.createElement('button');
-                checkBtn.className = 'check-circle';
-                checkBtn.textContent = isDone ? '✓' : '';
-                checkBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    handleTaskCompletion(task.id);
-                });
+                if (isSelectionModeActive) {
+                    checkBtn.className = `check-square ${isSelected ? 'selected' : ''}`;
+                    checkBtn.textContent = isSelected ? '✓' : '';
+                    checkBtn.title = isSelected ? 'Deselect task' : 'Select task';
+                    checkBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        toggleTaskSelection(task.id);
+                    });
+                } else {
+                    checkBtn.className = 'check-circle';
+                    checkBtn.textContent = isDone ? '✓' : '';
+                    checkBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        handleTaskCompletion(task.id);
+                    });
+                }
                 main.appendChild(checkBtn);
 
                 const titleSpan = document.createElement('span');
@@ -2258,8 +2404,13 @@ window.TaskitatorApp = (() => {
                 }
                 row.appendChild(delBtn);
 
+                // Row Click Handler (Selection vs Detail Modal)
                 row.addEventListener('click', () => {
-                    if (!isBreadcrumb) openTaskDetailModal(task.id);
+                    if (isSelectionModeActive) {
+                        toggleTaskSelection(task.id);
+                    } else if (!isBreadcrumb) {
+                        openTaskDetailModal(task.id);
+                    }
                 });
 
                 li.appendChild(row);
@@ -2405,6 +2556,7 @@ window.TaskitatorApp = (() => {
         renderUnifiedTaskTree();
         renderCompletedModalList();
         BreakUI.updateStatusPill();
+        updateBatchBarUI();
     }
 
     function setView(viewName) {
@@ -2505,6 +2657,225 @@ window.TaskitatorApp = (() => {
 
         window.addEventListener('hashchange', handleHashRouting);
         handleHashRouting();
+
+        // Multi-Selection Mode Navbar Button
+        const toggleSelectModeBtn = document.getElementById('toggleSelectModeBtn');
+        if (toggleSelectModeBtn) {
+            toggleSelectModeBtn.addEventListener('click', toggleSelectionMode);
+        }
+
+        // Batch Action Bar Handlers
+        const batchSelectAllBtn = document.getElementById('batchSelectAllBtn');
+        const batchCancelBtn = document.getElementById('batchCancelBtn');
+        const batchOpenTagsBtn = document.getElementById('batchOpenTagsBtn');
+        const batchOpenPriorityBtn = document.getElementById('batchOpenPriorityBtn');
+        const batchOpenDueDateBtn = document.getElementById('batchOpenDueDateBtn');
+
+        const batchTagsModal = document.getElementById('batchTagsModal');
+        const closeBatchTagsBtn = document.getElementById('closeBatchTagsBtn');
+        const applyBatchTagsBtn = document.getElementById('applyBatchTagsBtn');
+
+        const batchPriorityModal = document.getElementById('batchPriorityModal');
+        const closeBatchPriorityBtn = document.getElementById('closeBatchPriorityBtn');
+        const applyBatchPriorityBtn = document.getElementById('applyBatchPriorityBtn');
+
+        const batchDueDateModal = document.getElementById('batchDueDateModal');
+        const closeBatchDueDateBtn = document.getElementById('closeBatchDueDateBtn');
+        const applyBatchDueDateBtn = document.getElementById('applyBatchDueDateBtn');
+
+        if (batchSelectAllBtn) {
+            batchSelectAllBtn.addEventListener('click', () => {
+                const todayStr = new Date().toISOString().split('T')[0];
+                tasks.forEach(t => {
+                    if (t.status === 'trash' || t.status === 'completed' || pendingGraceCompletions.has(t.id)) return;
+                    if (currentView === 'today') {
+                        const due = String(t.due_date || '').trim().toLowerCase();
+                        if (due !== 'today' && due !== todayStr) return;
+                    }
+                    selectedTaskIds.add(t.id);
+                });
+                updateBatchBarUI();
+                renderUnifiedTaskTree();
+            });
+        }
+
+        if (batchCancelBtn) {
+            batchCancelBtn.addEventListener('click', toggleSelectionMode);
+        }
+
+        // Batch Tags Modal
+        if (batchOpenTagsBtn && batchTagsModal) {
+            batchOpenTagsBtn.addEventListener('click', () => {
+                if (selectedTaskIds.size === 0) {
+                    alert('Please select at least one task first.');
+                    return;
+                }
+                batchSelectedTags.clear();
+                renderModalTagCloud('batchTagCloud', batchSelectedTags);
+                batchTagsModal.classList.add('open');
+            });
+        }
+        if (closeBatchTagsBtn && batchTagsModal) {
+            closeBatchTagsBtn.addEventListener('click', () => batchTagsModal.classList.remove('open'));
+        }
+        if (applyBatchTagsBtn && batchTagsModal) {
+            applyBatchTagsBtn.addEventListener('click', () => {
+                selectedTaskIds.forEach(id => {
+                    const t = tasks.find(x => x.id === id);
+                    if (t) t.tags = Array.from(batchSelectedTags);
+                });
+                saveStorageAndPush();
+                batchTagsModal.classList.remove('open');
+                renderUnifiedView();
+            });
+        }
+
+        // Batch Priority Modal
+        if (batchOpenPriorityBtn && batchPriorityModal) {
+            batchOpenPriorityBtn.addEventListener('click', () => {
+                if (selectedTaskIds.size === 0) {
+                    alert('Please select at least one task first.');
+                    return;
+                }
+                batchSelectedPriority = getLowestPriorityId();
+                const container = document.getElementById('batchPriorityCloud');
+                if (container) {
+                    container.innerHTML = '';
+                    getGlobalPriorities().forEach(p => {
+                        const pill = document.createElement('span');
+                        pill.className = 'priority-select-pill';
+                        if (batchSelectedPriority === p.id) {
+                            pill.classList.add('selected');
+                            pill.style.color = p.color;
+                        }
+                        pill.innerHTML = `<span class="priority-color-dot" style="background-color: ${p.color};"></span> ${p.name}`;
+                        pill.addEventListener('click', () => {
+                            batchSelectedPriority = p.id;
+                            container.querySelectorAll('.priority-select-pill').forEach(el => el.classList.remove('selected'));
+                            pill.classList.add('selected');
+                        });
+                        container.appendChild(pill);
+                    });
+                }
+                batchPriorityModal.classList.add('open');
+            });
+        }
+        if (closeBatchPriorityBtn && batchPriorityModal) {
+            closeBatchPriorityBtn.addEventListener('click', () => batchPriorityModal.classList.remove('open'));
+        }
+        if (applyBatchPriorityBtn && batchPriorityModal) {
+            applyBatchPriorityBtn.addEventListener('click', () => {
+                selectedTaskIds.forEach(id => {
+                    const t = tasks.find(x => x.id === id);
+                    if (t) t.priority_id = batchSelectedPriority;
+                });
+                saveStorageAndPush();
+                batchPriorityModal.classList.remove('open');
+                renderUnifiedView();
+            });
+        }
+
+        // Batch Due Date Modal (with EC.2-A Guard)
+        if (batchOpenDueDateBtn && batchDueDateModal) {
+            batchOpenDueDateBtn.addEventListener('click', () => {
+                if (selectedTaskIds.size === 0) {
+                    alert('Please select at least one task first.');
+                    return;
+                }
+                const dueIn = document.getElementById('batchDueDateInput');
+                if (dueIn) dueIn.value = new Date().toISOString().split('T')[0];
+                batchDueDateModal.classList.add('open');
+            });
+        }
+        if (closeBatchDueDateBtn && batchDueDateModal) {
+            closeBatchDueDateBtn.addEventListener('click', () => batchDueDateModal.classList.remove('open'));
+        }
+        if (applyBatchDueDateBtn && batchDueDateModal) {
+            applyBatchDueDateBtn.addEventListener('click', () => {
+                const targetDate = document.getElementById('batchDueDateInput')?.value || '';
+                const todayStr = new Date().toISOString().split('T')[0];
+                const isBypass = isBypassActiveSafe();
+                let protectedCount = 0;
+
+                selectedTaskIds.forEach(id => {
+                    const t = tasks.find(x => x.id === id);
+                    if (!t) return;
+
+                    // EC.2-A: Protect overdue AI-locked tasks against date postponement
+                    if (t.ai_locked && t.due_date && t.due_date < todayStr && !isBypass) {
+                        protectedCount++;
+                        return;
+                    }
+                    t.due_date = targetDate;
+                });
+
+                saveStorageAndPush();
+                batchDueDateModal.classList.remove('open');
+                renderUnifiedView();
+
+                if (protectedCount > 0) {
+                    alert(`Due dates updated. ${protectedCount} overdue AI-locked task(s) were protected from postponement (requires proof or Emergency Bypass).`);
+                }
+            });
+        }
+
+        // Sibling Criteria & Exemplar Inheritance Hook (EC.3-B, EC.3-D)
+        const applySiblingInheritBtn = document.getElementById('applySiblingInheritBtn');
+        if (applySiblingInheritBtn) {
+            applySiblingInheritBtn.addEventListener('click', async () => {
+                const siblingSelect = document.getElementById('siblingTaskSelect');
+                const sibId = siblingSelect?.value;
+                if (!sibId) {
+                    alert('Please select a sibling task first.');
+                    return;
+                }
+
+                const sibling = tasks.find(t => t.id === sibId);
+                if (!sibling) return;
+
+                const editTaskCriteriaInput = document.getElementById('editTaskCriteria');
+                const editAiLockCheckbox = document.getElementById('editAiLockCheckbox');
+                const editCriteriaBoxContainer = document.getElementById('editCriteriaBoxContainer');
+                const editExemplarChip = document.getElementById('editExemplarChip');
+                const editExemplarName = document.getElementById('editExemplarName');
+                const editExemplarSize = document.getElementById('editExemplarSize');
+                const editFeedback = document.getElementById('editCriteriaFeedbackBox');
+
+                if (editTaskCriteriaInput) editTaskCriteriaInput.value = sibling.proof_criteria || '';
+                if (editAiLockCheckbox) editAiLockCheckbox.checked = true;
+                if (editCriteriaBoxContainer) editCriteriaBoxContainer.style.display = 'block';
+
+                // Deep clone ExemplarStore binary blob
+                if (window.ExemplarStore) {
+                    const sibRecord = await ExemplarStore.getExemplar(sibling.id);
+                    if (sibRecord && sibRecord.inlineData && sibRecord.inlineData.data) {
+                        try {
+                            const byteChars = atob(sibRecord.inlineData.data);
+                            const byteNums = new Array(byteChars.length);
+                            for (let i = 0; i < byteChars.length; i++) {
+                                byteNums[i] = byteChars.charCodeAt(i);
+                            }
+                            const byteArray = new Uint8Array(byteNums);
+                            const clonedBlob = new Blob([byteArray], { type: sibRecord.mimeType || 'application/pdf' });
+                            pendingEditExemplarFile = new File([clonedBlob], sibRecord.fileName || 'cloned_exemplar.pdf', { type: sibRecord.mimeType || 'application/pdf' });
+
+                            if (editExemplarName) editExemplarName.textContent = pendingEditExemplarFile.name;
+                            if (editExemplarSize) editExemplarSize.textContent = (pendingEditExemplarFile.size / (1024 * 1024)).toFixed(2) + ' MB';
+                            if (editExemplarChip) editExemplarChip.style.display = 'flex';
+                        } catch (err) {
+                            console.warn('[Inheritance] Exemplar blob reconstruction error:', err);
+                        }
+                    }
+                }
+
+                editCriteriaValidationState = { validated: true, score: 10, isTemplate: true };
+                if (editFeedback) {
+                    editFeedback.style.display = 'block';
+                    editFeedback.className = 'criteria-feedback-box pass';
+                    editFeedback.innerHTML = `<strong>✓ Inherited (10/10)</strong>: Copied criteria and cloned reference exemplar from "${sibling.title}".`;
+                }
+            });
+        }
 
         // Bulk Reschedule Gate Logic
         const rescheduleModal = document.getElementById('bulkRescheduleModal');
@@ -3291,7 +3662,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // Save Task Details Hook
+        // Save Task Details Hook (Handling Move Task and Exemplar Cloning)
         const saveTaskDetailsBtn = document.getElementById('saveTaskDetailsBtn');
         if (saveTaskDetailsBtn) {
             saveTaskDetailsBtn.addEventListener('click', async () => {
@@ -3312,6 +3683,35 @@ window.TaskitatorApp = (() => {
                 let willBeStrict = Boolean(document.getElementById('editStrictPrereqCheckbox')?.checked);
                 const editedCriteria = document.getElementById('editTaskCriteria')?.value.trim() || '';
 
+                // Handle Move Task: Target Parent / Re-parenting
+                const editTaskParentSelect = document.getElementById('editTaskParentSelect');
+                const targetParentId = editTaskParentSelect ? (editTaskParentSelect.value.trim() || null) : task.parent_id;
+
+                if (targetParentId !== task.parent_id) {
+                    const shieldedAncestor = getShieldedAncestor(task.id);
+                    if (shieldedAncestor && !isBypassActive) {
+                        alert("Shielded task can't be moved out of their parents.");
+                        return;
+                    }
+
+                    const descendants = getAllDescendants(task.id);
+                    if (descendants.some(d => d.id === targetParentId)) {
+                        alert("Circular Reference Error: You cannot move a task into one of its own subtasks.");
+                        return;
+                    }
+
+                    task.parent_id = targetParentId;
+
+                    // EC.1-B: Cascade project_id down the subtree
+                    if (targetParentId) {
+                        const targetParent = tasks.find(t => t.id === targetParentId);
+                        if (targetParent) {
+                            task.project_id = targetParent.project_id || 'inbox';
+                            cascadeProject(task.id, task.project_id);
+                        }
+                    }
+                }
+
                 if (task.strict_prerequisites && !isBypassActive) {
                     willBeStrict = true;
                 }
@@ -3327,7 +3727,7 @@ window.TaskitatorApp = (() => {
 
                 if (!task.ai_locked && willBeAiLocked) {
                     const confirmed = confirm(
-                        "⚠️️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
+                        "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
                         "Enabling AI Proof on this task is permanent.\n" +
                         "Once saved, this task cannot be un-checked, criteria cannot be changed, and it CANNOT be deleted without an Emergency Bypass.\n\n" +
                         "Do you want to permanently lock this task?"
@@ -3361,12 +3761,6 @@ window.TaskitatorApp = (() => {
                     const oldProjectId = task.project_id;
                     task.project_id = editModalSelectedProject || 'inbox';
                     if (oldProjectId !== task.project_id) {
-                        function cascadeProject(pId, newProj) {
-                            tasks.filter(k => k.parent_id === pId && k.status !== 'trash').forEach(child => {
-                                child.project_id = newProj;
-                                cascadeProject(child.id, newProj);
-                            });
-                        }
                         cascadeProject(task.id, task.project_id);
                     }
                 }
@@ -3876,6 +4270,8 @@ window.TaskitatorApp = (() => {
         handleTaskCompletion,
         deleteTask,
         undoTaskCompletion,
+        toggleSelectionMode,
+        toggleTaskSelection,
         PROJECT_ICONS,
         PROJECT_COLORS
     };
