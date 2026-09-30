@@ -194,6 +194,44 @@
             align-items: center;
             gap: 6px;
         }
+
+        /* Selection Mode Button Active Indicator */
+        .select-mode-btn.active {
+            background: var(--primary) !important;
+            color: #ffffff !important;
+            border-color: var(--primary-hover) !important;
+        }
+
+        /* Floating Multi-Select Batch Action Bar */
+        .batch-action-bar {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(120%);
+            width: 92%;
+            max-width: 620px;
+            background: var(--card-bg);
+            border: 2px solid var(--primary);
+            border-radius: 12px;
+            padding: 10px 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+            z-index: 2500;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            box-sizing: border-box;
+        }
+        .batch-action-bar.open {
+            transform: translateX(-50%) translateY(0);
+        }
+        .batch-controls-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
     </style>
 </head>
 <body>
@@ -261,7 +299,7 @@
             </button>
             
             <button id="breakStatusPill" class="break-status-pill" title="Daily Breaks" aria-label="Manage Daily Breaks">
-                <span id="breakPillIcon">⏸️</span>
+                <span id="breakPillIcon">⏸️️</span>
                 <span id="breakPillText">Breaks</span>
             </button>
 
@@ -269,6 +307,12 @@
             <button type="button" class="dump-trigger-btn" id="openDistractionDumpBtn" title="Distraction Dump Scratchpad" aria-label="Distraction Dump Scratchpad">
                 <span class="dump-bulb-icon" id="dumpBulbIcon">💡</span>
                 <span class="dump-active-dot" id="dumpActiveIndicator"></span>
+            </button>
+
+            <!-- Multi-Selection Mode Toggle Button -->
+            <button type="button" class="icon-btn select-mode-btn" id="toggleSelectModeBtn" title="Toggle Multi-Selection Mode" aria-label="Toggle Multi-Selection Mode">
+                <span>☑️</span>
+                <span id="selectModeBtnLabel" style="font-size: 0.78rem;">Select</span>
             </button>
             
             <span class="sync-dot local-only" id="syncStatusDot" title="Click to view Sync Status details"></span>
@@ -318,6 +362,69 @@
 
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
 <button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot">🤖</button>
+
+<!-- Floating Multi-Select Batch Action Bar -->
+<div class="batch-action-bar" id="batchActionBar">
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-weight: 800; font-size: 0.88rem; color: var(--primary);" id="batchSelectedCountLabel">0 Selected</span>
+        <button type="button" class="icon-btn" id="batchSelectAllBtn" style="padding: 3px 8px; font-size: 0.75rem;">All</button>
+    </div>
+
+    <div class="batch-controls-group">
+        <button type="button" class="icon-btn" id="batchOpenTagsBtn" style="padding: 5px 10px; font-size: 0.8rem;">🏷️ Tags</button>
+        <button type="button" class="icon-btn" id="batchOpenPriorityBtn" style="padding: 5px 10px; font-size: 0.8rem;">🎯 Priority</button>
+        <button type="button" class="icon-btn" id="batchOpenDueDateBtn" style="padding: 5px 10px; font-size: 0.8rem;">📅 Due</button>
+        <button type="button" class="icon-btn" id="batchCancelBtn" style="color: var(--danger); border-color: rgba(239,68,68,0.4); padding: 5px 10px; font-size: 0.8rem;">✕</button>
+    </div>
+</div>
+
+<!-- Modal: Batch Tags Editor -->
+<div class="modal-overlay" id="batchTagsModal">
+    <div class="modal-box" style="max-width: 400px;">
+        <h3 style="margin-top: 0; color: var(--primary);">🏷️ Batch Edit Tags</h3>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
+            Choose tags to apply to all selected tasks. (Replaces current tags on selected items).
+        </p>
+        <div id="batchTagCloud" class="tag-select-cloud"></div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+            <button type="button" class="icon-btn" id="closeBatchTagsBtn">Cancel</button>
+            <button type="button" class="icon-btn" id="applyBatchTagsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Apply to Selected</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Batch Priority Editor -->
+<div class="modal-overlay" id="batchPriorityModal">
+    <div class="modal-box" style="max-width: 400px;">
+        <h3 style="margin-top: 0; color: var(--primary);">🎯 Batch Set Priority</h3>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
+            Select a priority rank to assign directly to each selected task.
+        </p>
+        <div id="batchPriorityCloud" class="priority-select-group"></div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+            <button type="button" class="icon-btn" id="closeBatchPriorityBtn">Cancel</button>
+            <button type="button" class="icon-btn" id="applyBatchPriorityBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Apply to Selected</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Batch Due Date Editor -->
+<div class="modal-overlay" id="batchDueDateModal">
+    <div class="modal-box" style="max-width: 400px;">
+        <h3 style="margin-top: 0; color: var(--primary);">📅 Batch Set Due Date</h3>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
+            Select a due date for all selected tasks. Overdue AI-locked tasks are guarded against postponement.
+        </p>
+        <div class="form-group">
+            <label for="batchDueDateInput">Target Date</label>
+            <input type="date" id="batchDueDateInput">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+            <button type="button" class="icon-btn" id="closeBatchDueDateBtn">Cancel</button>
+            <button type="button" class="icon-btn" id="applyBatchDueDateBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Apply to Selected</button>
+        </div>
+    </div>
+</div>
 
 <!-- Modal: Bulk Reschedule Non-AI Overdue Tasks -->
 <div class="modal-overlay" id="bulkRescheduleModal">
@@ -709,9 +816,24 @@
             <textarea id="editTaskDesc" rows="2"></textarea>
         </div>
 
+        <!-- Move Task Architecture: Project Selection -->
         <div class="form-group">
             <label>Project</label>
             <div id="editProjectCloud" class="priority-select-group"></div>
+        </div>
+
+        <!-- Move Task Architecture: Parent / Hierarchy Location -->
+        <div class="form-group" id="editMoveParentContainer">
+            <label for="editTaskParentSelect" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Hierarchy / Parent Task</span>
+                <span id="moveShieldWarningBadge" style="display: none; font-size: 0.72rem; color: #fde68a; background: #451a03; padding: 2px 6px; border-radius: 4px; border: 1px solid #78350f;">🛡️ Shielded Parent</span>
+            </label>
+            <select id="editTaskParentSelect" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1.5px solid var(--border-color); background: var(--card-subtle); color: var(--text-color); font-size: 0.88rem; outline: none;">
+                <option value="">(Root Level - No Parent)</option>
+            </select>
+            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px;">
+                Move this task under another task. Descendants move along with their parent.
+            </small>
         </div>
 
         <div class="form-group">
@@ -753,7 +875,24 @@
         </div>
 
         <div class="form-group" id="editCriteriaBoxContainer" style="display: none;">
-            <label for="editTaskCriteria">Proof Criteria &lt;PC&gt; (Visual Verification Requirements)</label>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label for="editTaskCriteria" style="margin: 0;">Proof Criteria &lt;PC&gt; (Visual Verification Requirements)</label>
+            </div>
+
+            <!-- Sibling Criteria & Exemplar Inheritance Selector -->
+            <div id="siblingInheritContainer" style="display: none; background: rgba(59, 130, 246, 0.1); border: 1.5px dashed var(--primary); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 0.8rem; font-weight: 700; color: #93c5fd;">⚡ Inherit Criteria from Sibling</span>
+                    <button type="button" class="icon-btn" id="applySiblingInheritBtn" style="padding: 2px 8px; font-size: 0.75rem; background: var(--primary); color: #fff; border: none; font-weight: 700;">Copy Criteria</button>
+                </div>
+                <select id="siblingTaskSelect" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.82rem;">
+                    <option value="">Select a sibling with verified criteria...</option>
+                </select>
+                <small style="color: var(--text-muted); font-size: 0.72rem; display: block; margin-top: 4px;">
+                    Copies proof criteria text and clones the attached reference exemplar file directly.
+                </small>
+            </div>
+
             <textarea id="editTaskCriteria" rows="2" placeholder="e.g. Photo clearly showing completed worksheet #4 with current date handwritten."></textarea>
             
             <div class="file-picker-wrapper" style="margin-top: 10px;">
