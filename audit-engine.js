@@ -9,7 +9,6 @@ const TaskitatorEngine = {
     STORAGE_KEY_EMERGENCY: 'taskitator_emergency_state',
     STORAGE_KEY_BREAKS: 'taskitator_daily_breaks',
 
-    // Switched to dedicated standard Flash endpoints to eliminate 503 capacity errors
     PRIMARY_MODEL: 'gemini-3.5-flash-lite',
     FALLBACK_MODEL: 'gemini-3.1-flash-lite',
 
@@ -36,16 +35,11 @@ const TaskitatorEngine = {
             return (!isNaN(val) && val >= 0 && val <= 4) ? val : 0;
         },
 
-        /**
-         * Computes the deterministic logical day boundaries based on day_start_hour (00:00 to 04:00).
-         * Eliminates UTC skew and client timezone rollover drift.
-         */
         getLogicalDayBounds(dayStartHour = null) {
             const h = dayStartHour !== null ? dayStartHour : this.getDayStartHour();
             const now = new Date();
             const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, 0, 0, 0);
             
-            // If before day_start_hour today, this logical cycle started yesterday
             if (now.getTime() < start.getTime()) {
                 start.setDate(start.getDate() - 1);
             }
@@ -80,7 +74,6 @@ const TaskitatorEngine = {
                     breaks: []
                 };
             }
-            // Backward compatibility for legacy arrays
             if (Array.isArray(entry)) {
                 return {
                     date: dateStr,
@@ -108,9 +101,6 @@ const TaskitatorEngine = {
             localStorage.setItem(TaskitatorEngine.STORAGE_KEY_BREAKS, JSON.stringify(allData));
         },
 
-        /**
-         * Evaluates current planning eligibility and returns detailed status and alert reasons.
-         */
         getPlanningStatus() {
             const bounds = this.getLogicalDayBounds();
             let record = this.getBreakRecord(bounds.dateStr);
@@ -225,12 +215,9 @@ const TaskitatorEngine = {
         getTodayBreaks() {
             const bounds = this.getLogicalDayBounds();
             const record = this.getBreakRecord(bounds.dateStr);
-            return record.breaks || [];
+            return Array.isArray(record.breaks) ? record.breaks : [];
         },
 
-        /**
-         * Resolves HH:MM break times to exact epoch timestamps within the active logical cycle.
-         */
         getBreakTimestamps(b, bounds) {
             const [sH, sM] = b.start.split(':').map(Number);
             const [eH, eM] = b.end.split(':').map(Number);
@@ -256,17 +243,18 @@ const TaskitatorEngine = {
         },
 
         saveTodayBreaks(breaksArray, lockImmediately = false) {
-            const status = this.getPlanningStatus();
+            const bounds = this.getLogicalDayBounds();
+            let record = this.getBreakRecord(bounds.dateStr);
 
-            if (!status.canEdit && !lockImmediately) {
-                return { valid: false, error: status.reason || 'Planning window is not currently open.' };
+            // If already locked and not in an active emergency override, reject modifications
+            if (record.locked && !lockImmediately) {
+                return { valid: false, error: 'Breaks for today have already been locked.' };
             }
 
             if (!Array.isArray(breaksArray) || breaksArray.length > 3) {
                 return { valid: false, error: 'Maximum 3 breaks allowed per day.' };
             }
 
-            const bounds = status.bounds;
             let totalMinutes = 0;
             const parsed = [];
 
@@ -278,7 +266,6 @@ const TaskitatorEngine = {
                     return { valid: false, error: 'Break end time must be strictly after start time.' };
                 }
 
-                // Prevent scheduling past the logical day cutoff
                 if (endTime > bounds.end.getTime()) {
                     const cutoffFormatted = `${String(bounds.end.getHours()).padStart(2, '0')}:${String(bounds.end.getMinutes()).padStart(2, '0')}`;
                     return { valid: false, error: `Breaks cannot be scheduled past the end of your day cycle (${cutoffFormatted}).` };
@@ -298,7 +285,6 @@ const TaskitatorEngine = {
                 return { valid: false, error: `Total break time (${totalMinutes}m) exceeds 3 hours (180m) limit.` };
             }
 
-            // Check overlap
             parsed.sort((a, b) => a.startTime - b.startTime);
             for (let i = 0; i < parsed.length - 1; i++) {
                 if (parsed[i].endTime > parsed[i + 1].startTime) {
@@ -306,7 +292,6 @@ const TaskitatorEngine = {
                 }
             }
 
-            const record = status.record;
             record.breaks = breaksArray;
             if (lockImmediately) {
                 record.locked = true;
@@ -489,11 +474,6 @@ const TaskitatorEngine = {
             return await this.callGeminiWithParts(modelName, apiKey, [{ text: promptText }]);
         },
 
-        /**
-         * Pre-flight Criteria Evaluation (Multimodal)
-         * Evaluates whether proposed criteria demand an objective, verifiable artifact.
-         * If an exemplar reference file is supplied, enforces strict cross-referencing in criteria.
-         */
         async validateCriteria(criteriaText, taskTitle = '', exemplarFile = null) {
             const trimmedCriteria = (criteriaText || '').trim();
             const trimmedTitle = (taskTitle || '').trim();
@@ -508,7 +488,6 @@ const TaskitatorEngine = {
                 };
             }
 
-            // Cache key includes file signature if present to prevent false cache collisions
             const fileSignature = exemplarFile ? `${exemplarFile.name}_${exemplarFile.size}` : 'nofile';
             const cacheKey = `${trimmedTitle}:::${trimmedCriteria}:::${fileSignature}`;
             if (TaskitatorEngine._criteriaValidationCache.has(cacheKey)) {
@@ -576,9 +555,8 @@ Return strictly valid JSON with this exact schema:
                 let usedModel = TaskitatorEngine.PRIMARY_MODEL;
                 let res = await this.callGeminiWithParts(usedModel, apiKey, parts);
 
-                // Cascade on 429 rate limit or 503 capacity outage
                 if (res.status === 429 || res.status === 503) {
-                    console.warn(`[AuditEngine] Model ${usedModel} hit ${res.status} during criteria validation. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
+                    console.warn(`[AuditEngine] Model ${usedModel} hit ${res.status}. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
                     usedModel = TaskitatorEngine.FALLBACK_MODEL;
                     res = await this.callGeminiWithParts(usedModel, apiKey, parts);
                 }
@@ -621,11 +599,6 @@ Return strictly valid JSON with this exact schema:
             }
         },
 
-        /**
-         * Dual-Evidence Verification Audit
-         * Supports passing both submitted proof and saved reference exemplar to Gemini.
-         * Explicitly passes HTTP status codes and cascades models on 429/503.
-         */
         async verifyProof({ file, taskTitle, criteria, userContext, exemplarPart = null }) {
             let settings = {};
             try {
@@ -639,7 +612,6 @@ Return strictly valid JSON with this exact schema:
                 return { success: false, status: 401, error: 'No Gemini API Key configured in Settings.' };
             }
 
-            // Client-side validation: enforce size cap & supported formats
             const check = this.validateFile(file, TaskitatorEngine.MAX_FILE_SIZE_MB);
             if (!check.valid) {
                 return { success: false, status: 400, error: check.error };
@@ -690,7 +662,6 @@ Return valid JSON matching this schema:
                 let usedModel = TaskitatorEngine.PRIMARY_MODEL;
                 let res = await this.callGeminiWithParts(usedModel, apiKey, parts);
 
-                // Cascade to secondary model on 429 RPD/RPS limit or 503 capacity outage
                 if (res.status === 429 || res.status === 503) {
                     console.warn(`[AuditEngine] Model ${usedModel} returned ${res.status}. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
                     usedModel = TaskitatorEngine.FALLBACK_MODEL;
