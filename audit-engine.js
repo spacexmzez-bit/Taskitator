@@ -9,8 +9,9 @@ const TaskitatorEngine = {
     STORAGE_KEY_EMERGENCY: 'taskitator_emergency_state',
     STORAGE_KEY_BREAKS: 'taskitator_daily_breaks',
 
-    PRIMARY_MODEL: 'gemini-3.5-flash-lite',
-    FALLBACK_MODEL: 'gemini-3.1-flash-lite',
+    // Switched to dedicated standard Flash endpoints to eliminate 503 capacity errors
+    PRIMARY_MODEL: 'gemini-2.5-flash',
+    FALLBACK_MODEL: 'gemini-1.5-flash',
 
     // Enforced upload limit across files (Photos, Gallery, PDFs)
     MAX_FILE_SIZE_MB: 5,
@@ -19,77 +20,278 @@ const TaskitatorEngine = {
     _criteriaValidationCache: new Map(),
 
     // =========================================================================
-    // 1. Break Engine (3 Breaks, <= 3 Hours Total, Window Enforcement)
+    // 1. Break Engine (10m Floating Window, Day-Start Offset, 6h Cutoff Buffer)
     // =========================================================================
     BreakEngine: {
-        isSelectionWindowOpen() {
+        PLANNING_WINDOW_MS: 10 * 60 * 1000, // 10-Minute Ephemeral Planning Window
+
+        getDayStartHour() {
             let settings = {};
             try {
                 settings = JSON.parse(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_SETTINGS) || '{}');
             } catch (e) {
                 settings = {};
             }
+            const val = parseInt(settings.day_start_hour, 10);
+            return (!isNaN(val) && val >= 0 && val <= 4) ? val : 0;
+        },
 
-            const startStr = (settings.break_selection_start || '').trim();
-            const endStr = (settings.break_selection_end || '').trim();
-
-            // If unset, open for the entire day
-            if (!startStr || !endStr) return true;
-
+        /**
+         * Computes the deterministic logical day boundaries based on day_start_hour (00:00 to 04:00).
+         * Eliminates UTC skew and client timezone rollover drift.
+         */
+        getLogicalDayBounds(dayStartHour = null) {
+            const h = dayStartHour !== null ? dayStartHour : this.getDayStartHour();
             const now = new Date();
-            const currentMins = now.getHours() * 60 + now.getMinutes();
-
-            const [sH, sM] = startStr.split(':').map(Number);
-            const [eH, eM] = endStr.split(':').map(Number);
-
-            const startMins = sH * 60 + sM;
-            const endMins = eH * 60 + eM;
-
-            if (startMins <= endMins) {
-                return currentMins >= startMins && currentMins <= endMins;
-            } else {
-                // Crosses midnight
-                return currentMins >= startMins || currentMins <= endMins;
+            const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, 0, 0, 0);
+            
+            // If before day_start_hour today, this logical cycle started yesterday
+            if (now.getTime() < start.getTime()) {
+                start.setDate(start.getDate() - 1);
             }
+            
+            const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+            const cutoff6h = new Date(end.getTime() - 6 * 60 * 60 * 1000);
+            const dateStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
+            
+            return { start, end, cutoff6h, dateStr, dayStartHour: h };
+        },
+
+        getAllBreakData() {
+            try {
+                const raw = localStorage.getItem(TaskitatorEngine.STORAGE_KEY_BREAKS);
+                if (!raw) return {};
+                const parsed = JSON.parse(raw);
+                if (typeof parsed === 'object' && parsed !== null) return parsed;
+                return {};
+            } catch (e) {
+                return {};
+            }
+        },
+
+        getBreakRecord(dateStr) {
+            const allData = this.getAllBreakData();
+            const entry = allData[dateStr];
+            if (!entry) {
+                return {
+                    date: dateStr,
+                    window_started_at: null,
+                    locked: false,
+                    breaks: []
+                };
+            }
+            // Backward compatibility for legacy arrays
+            if (Array.isArray(entry)) {
+                return {
+                    date: dateStr,
+                    window_started_at: null,
+                    locked: true,
+                    breaks: entry
+                };
+            }
+            return {
+                date: dateStr,
+                window_started_at: entry.window_started_at || null,
+                locked: Boolean(entry.locked),
+                breaks: Array.isArray(entry.breaks) ? entry.breaks : []
+            };
+        },
+
+        saveBreakRecord(dateStr, record) {
+            const allData = this.getAllBreakData();
+            allData[dateStr] = {
+                date: dateStr,
+                window_started_at: record.window_started_at || null,
+                locked: Boolean(record.locked),
+                breaks: Array.isArray(record.breaks) ? record.breaks : []
+            };
+            localStorage.setItem(TaskitatorEngine.STORAGE_KEY_BREAKS, JSON.stringify(allData));
+        },
+
+        /**
+         * Evaluates current planning eligibility and returns detailed status and alert reasons.
+         */
+        getPlanningStatus() {
+            const bounds = this.getLogicalDayBounds();
+            let record = this.getBreakRecord(bounds.dateStr);
+            const nowTime = Date.now();
+
+            const formatHour = (d) => {
+                return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            };
+
+            // Auto-lock on 10-minute expiration
+            if (record.window_started_at && !record.locked) {
+                const elapsed = nowTime - record.window_started_at;
+                if (elapsed >= this.PLANNING_WINDOW_MS) {
+                    record.locked = true;
+                    this.saveBreakRecord(bounds.dateStr, record);
+                }
+            }
+
+            // 1. Cycle already planned and sealed
+            if (record.locked) {
+                return {
+                    canStart: false,
+                    canEdit: false,
+                    isRunning: false,
+                    isLocked: true,
+                    isInBuffer: false,
+                    remainingWindowMs: 0,
+                    reason: `Daily Breaks Locked: You have already planned and locked your breaks for this cycle. The window will reset tomorrow at ${formatHour(bounds.end)}.`,
+                    bounds,
+                    record
+                };
+            }
+
+            // 2. Active 10-minute window running
+            if (record.window_started_at && !record.locked) {
+                const elapsed = nowTime - record.window_started_at;
+                const remaining = this.PLANNING_WINDOW_MS - elapsed;
+                if (remaining > 0) {
+                    const remSec = Math.ceil(remaining / 1000);
+                    const remMin = Math.floor(remSec / 60);
+                    const remSecOnly = remSec % 60;
+                    const remFormatted = `${String(remMin).padStart(2, '0')}:${String(remSecOnly).padStart(2, '0')}`;
+                    return {
+                        canStart: false,
+                        canEdit: true,
+                        isRunning: true,
+                        isLocked: false,
+                        isInBuffer: false,
+                        remainingWindowMs: remaining,
+                        reason: `Planning Active: Your 10-minute window is currently running. You have ${remFormatted} remaining to adjust and lock your breaks.`,
+                        bounds,
+                        record
+                    };
+                }
+            }
+
+            // 3. Final 6-hour buffer before cycle end
+            if (nowTime >= bounds.cutoff6h.getTime()) {
+                return {
+                    canStart: false,
+                    canEdit: false,
+                    isRunning: false,
+                    isLocked: false,
+                    isInBuffer: true,
+                    remainingWindowMs: 0,
+                    reason: `Planning Closed: You are within the final 6 hours of your logical day (cycle ends at ${formatHour(bounds.end)}). Daily breaks cannot be scheduled during this final buffer.`,
+                    bounds,
+                    record
+                };
+            }
+
+            // 4. Eligible to initiate 10-minute session
+            return {
+                canStart: true,
+                canEdit: false,
+                isRunning: false,
+                isLocked: false,
+                isInBuffer: false,
+                remainingWindowMs: 0,
+                reason: '',
+                bounds,
+                record
+            };
+        },
+
+        startPlanningWindow() {
+            const status = this.getPlanningStatus();
+            if (!status.canStart) {
+                return { success: false, error: status.reason };
+            }
+            const bounds = status.bounds;
+            const record = status.record;
+            record.window_started_at = Date.now();
+            record.locked = false;
+            this.saveBreakRecord(bounds.dateStr, record);
+            return { success: true, record, remainingWindowMs: this.PLANNING_WINDOW_MS };
+        },
+
+        lockTodayBreaks() {
+            const bounds = this.getLogicalDayBounds();
+            const record = this.getBreakRecord(bounds.dateStr);
+            record.locked = true;
+            this.saveBreakRecord(bounds.dateStr, record);
+            return { success: true, record };
+        },
+
+        isSelectionWindowOpen() {
+            const status = this.getPlanningStatus();
+            return status.canStart || status.canEdit;
         },
 
         getTodayBreaks() {
-            let allBreaks = {};
-            try {
-                allBreaks = JSON.parse(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_BREAKS) || '{}');
-            } catch (e) {
-                allBreaks = {};
-            }
-            const todayStr = new Date().toISOString().split('T')[0];
-            return allBreaks[todayStr] || [];
+            const bounds = this.getLogicalDayBounds();
+            const record = this.getBreakRecord(bounds.dateStr);
+            return record.breaks || [];
         },
 
-        saveTodayBreaks(breaksArray) {
-            if (!this.isSelectionWindowOpen()) {
-                return { valid: false, error: 'Break selection window is closed for today.' };
+        /**
+         * Resolves HH:MM break times to exact epoch timestamps within the active logical cycle.
+         */
+        getBreakTimestamps(b, bounds) {
+            const [sH, sM] = b.start.split(':').map(Number);
+            const [eH, eM] = b.end.split(':').map(Number);
+            const dayStartH = bounds.start.getHours();
+
+            const startD = new Date(bounds.start);
+            if (sH < dayStartH) {
+                startD.setDate(startD.getDate() + 1);
+            }
+            startD.setHours(sH, sM, 0, 0);
+
+            const endD = new Date(bounds.start);
+            if (eH < dayStartH || (eH === dayStartH && eM <= 0)) {
+                endD.setDate(endD.getDate() + 1);
+            }
+            endD.setHours(eH, eM, 0, 0);
+
+            if (endD.getTime() <= startD.getTime()) {
+                endD.setDate(endD.getDate() + 1);
+            }
+
+            return { startTime: startD.getTime(), endTime: endD.getTime() };
+        },
+
+        saveTodayBreaks(breaksArray, lockImmediately = false) {
+            const status = this.getPlanningStatus();
+
+            if (!status.canEdit && !lockImmediately) {
+                return { valid: false, error: status.reason || 'Planning window is not currently open.' };
             }
 
             if (!Array.isArray(breaksArray) || breaksArray.length > 3) {
                 return { valid: false, error: 'Maximum 3 breaks allowed per day.' };
             }
 
+            const bounds = status.bounds;
             let totalMinutes = 0;
             const parsed = [];
 
             for (const b of breaksArray) {
                 if (!b.start || !b.end) continue;
-                const [sH, sM] = b.start.split(':').map(Number);
-                const [eH, eM] = b.end.split(':').map(Number);
-                const startMins = sH * 60 + sM;
-                const endMins = eH * 60 + eM;
+                const { startTime, endTime } = this.getBreakTimestamps(b, bounds);
 
-                if (endMins <= startMins) {
+                if (endTime <= startTime) {
                     return { valid: false, error: 'Break end time must be strictly after start time.' };
                 }
 
-                const duration = endMins - startMins;
+                // Prevent scheduling past the logical day cutoff
+                if (endTime > bounds.end.getTime()) {
+                    const cutoffFormatted = `${String(bounds.end.getHours()).padStart(2, '0')}:${String(bounds.end.getMinutes()).padStart(2, '0')}`;
+                    return { valid: false, error: `Breaks cannot be scheduled past the end of your day cycle (${cutoffFormatted}).` };
+                }
+
+                if (startTime < bounds.start.getTime()) {
+                    const startFormatted = `${String(bounds.start.getHours()).padStart(2, '0')}:${String(bounds.start.getMinutes()).padStart(2, '0')}`;
+                    return { valid: false, error: `Breaks cannot be scheduled before the start of your day cycle (${startFormatted}).` };
+                }
+
+                const duration = Math.round((endTime - startTime) / (60 * 1000));
                 totalMinutes += duration;
-                parsed.push({ startMins, endMins, start: b.start, end: b.end });
+                parsed.push({ startTime, endTime, start: b.start, end: b.end, duration });
             }
 
             if (totalMinutes > 180) {
@@ -97,40 +299,34 @@ const TaskitatorEngine = {
             }
 
             // Check overlap
-            parsed.sort((a, b) => a.startMins - b.startMins);
+            parsed.sort((a, b) => a.startTime - b.startTime);
             for (let i = 0; i < parsed.length - 1; i++) {
-                if (parsed[i].endMins > parsed[i + 1].startMins) {
+                if (parsed[i].endTime > parsed[i + 1].startTime) {
                     return { valid: false, error: 'Breaks cannot overlap.' };
                 }
             }
 
-            let allBreaks = {};
-            try {
-                allBreaks = JSON.parse(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_BREAKS) || '{}');
-            } catch (e) {
-                allBreaks = {};
+            const record = status.record;
+            record.breaks = breaksArray;
+            if (lockImmediately) {
+                record.locked = true;
             }
+            this.saveBreakRecord(bounds.dateStr, record);
 
-            const todayStr = new Date().toISOString().split('T')[0];
-            allBreaks[todayStr] = breaksArray;
-            localStorage.setItem(TaskitatorEngine.STORAGE_KEY_BREAKS, JSON.stringify(allBreaks));
-
-            return { valid: true };
+            return { valid: true, record };
         },
 
         isCurrentlyOnBreak() {
-            const todayBreaks = this.getTodayBreaks();
-            if (!todayBreaks || todayBreaks.length === 0) return false;
+            const bounds = this.getLogicalDayBounds();
+            const record = this.getBreakRecord(bounds.dateStr);
+            const breaks = record.breaks || [];
+            if (breaks.length === 0) return false;
 
-            const now = new Date();
-            const currentMins = now.getHours() * 60 + now.getMinutes();
-
-            return todayBreaks.some(b => {
-                const [sH, sM] = b.start.split(':').map(Number);
-                const [eH, eM] = b.end.split(':').map(Number);
-                const startMins = sH * 60 + sM;
-                const endMins = eH * 60 + eM;
-                return currentMins >= startMins && currentMins <= endMins;
+            const nowTime = Date.now();
+            return breaks.some(b => {
+                if (!b.start || !b.end) return false;
+                const { startTime, endTime } = this.getBreakTimestamps(b, bounds);
+                return nowTime >= startTime && nowTime <= endTime;
             });
         }
     },
@@ -297,9 +493,6 @@ const TaskitatorEngine = {
          * Pre-flight Criteria Evaluation (Multimodal)
          * Evaluates whether proposed criteria demand an objective, verifiable artifact.
          * If an exemplar reference file is supplied, enforces strict cross-referencing in criteria.
-         * @param {string} criteriaText 
-         * @param {string} taskTitle 
-         * @param {File|Blob|null} exemplarFile 
          */
         async validateCriteria(criteriaText, taskTitle = '', exemplarFile = null) {
             const trimmedCriteria = (criteriaText || '').trim();
@@ -417,7 +610,6 @@ Return strictly valid JSON with this exact schema:
                     model_used: usedModel
                 };
 
-                // Cache successful evaluation
                 TaskitatorEngine._criteriaValidationCache.set(cacheKey, result);
                 return result;
             } catch (err) {
