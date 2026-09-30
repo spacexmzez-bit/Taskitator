@@ -438,7 +438,7 @@ const TaskitatorEngine = {
                     resolve({
                         inline_data: {
                             data: base64Data,
-                            mime_Type: mime_type
+                            mime_type: mimeType
                         }
                     });
                 };
@@ -467,7 +467,7 @@ const TaskitatorEngine = {
         },
 
         async callGemini(modelName, apiKey, inlineDataPart, promptText) {
-            return await this.callGeminiWithParts(modelName, apiKey, [inlineDataPart, { text: promptText }]);
+            return await this.callGeminiWithParts(modelName, apiKey, [{ text: promptText }, inlineDataPart]);
         },
 
         async callGeminiTextOnly(modelName, apiKey, promptText) {
@@ -545,11 +545,12 @@ Return strictly valid JSON with this exact schema:
   "suggested_rewrite": "<a concrete, artifact-based rewrite if score < 7, else empty string>"
 }`;
 
-            const parts = [];
+            const parts = [
+                { text: prompt }
+            ];
             if (inlineExemplarPart) {
                 parts.push(inlineExemplarPart);
             }
-            parts.push({ text: prompt });
 
             try {
                 let usedModel = TaskitatorEngine.PRIMARY_MODEL;
@@ -651,7 +652,7 @@ Return valid JSON matching this schema:
 }
 `;
 
-                        const parts = [
+            const parts = [
                 { text: systemPrompt }
             ];
             if (exemplarPart) {
