@@ -1547,7 +1547,7 @@ window.TaskitatorApp = (() => {
             const exemplarRecord = await ExemplarStore.getExemplar(task.id);
             if (exemplarRecord && isLocked) {
                 if (editExemplarName) editExemplarName.textContent = exemplarRecord.filename || 'Attached Reference Exemplar';
-                if (editExemplarSize) editExemplarSize.textContent = exemplarRecord.size ? (exemplarRecord.size / (1024 * 1024)).toFixed(2) + ' MB' : '';
+                if (editExemplarSize) editExemplarSize.textContent = exemplarRecord.size ? (exemplarRecord.size / (1024 * 1024)).toFixed(2) + ' MB';
                 editExemplarChip.style.display = 'flex';
             } else {
                 editExemplarChip.style.display = 'none';
@@ -1886,7 +1886,7 @@ window.TaskitatorApp = (() => {
                 : { canStart: true, canEdit: false, isRunning: false, isLocked: false, isInBuffer: false, remainingWindowMs: 0, reason: '', bounds: { start: new Date() } };
 
             const breaks = window.TaskitatorEngine?.BreakEngine?.getTodayBreaks 
-                ? TaskitatorEngine.BreakEngine.getTodayBreaks() 
+                ? TaskitatorEngine.BreakEngine.getTodayBreaks 
                 : getTodayBreaksSafe();
 
             let headerBox = document.getElementById('breakPlanningHeaderBox');
@@ -2351,7 +2351,7 @@ window.TaskitatorApp = (() => {
                 if (task.strict_prerequisites) {
                     const shieldBadge = document.createElement('span');
                     shieldBadge.className = 'ai-badge';
-                    shieldBadge.innerHTML = '🛡️️ Shielded';
+                    shieldBadge.innerHTML = '🛡 Shielded';
                     shieldBadge.style.background = '#451a03';
                     shieldBadge.style.color = '#fde68a';
                     shieldBadge.style.borderColor = '#78350f';
@@ -2845,16 +2845,19 @@ window.TaskitatorApp = (() => {
                 // Deep clone ExemplarStore binary blob
                 if (window.ExemplarStore) {
                     const sibRecord = await ExemplarStore.getExemplar(sibling.id);
-                    if (sibRecord && sibRecord.inlineData && sibRecord.inlineData.data) {
+                    const inlineObj = sibRecord?.inline_data || sibRecord?.inlineData;
+                    if (inlineObj && inlineObj.data) {
                         try {
-                            const byteChars = atob(sibRecord.inlineData.data);
+                            const mimeType = inlineObj.mime_type || sibRecord.mime_type || sibRecord.mimeType || 'application/pdf';
+                            const fileName = sibRecord.filename || sibRecord.fileName || 'cloned_exemplar.pdf';
+                            const byteChars = atob(inlineObj.data);
                             const byteNums = new Array(byteChars.length);
                             for (let i = 0; i < byteChars.length; i++) {
                                 byteNums[i] = byteChars.charCodeAt(i);
                             }
                             const byteArray = new Uint8Array(byteNums);
-                            const clonedBlob = new Blob([byteArray], { type: sibRecord.mimeType || 'application/pdf' });
-                            pendingEditExemplarFile = new File([clonedBlob], sibRecord.fileName || 'cloned_exemplar.pdf', { type: sibRecord.mimeType || 'application/pdf' });
+                            const clonedBlob = new Blob([byteArray], { type: mimeType });
+                            pendingEditExemplarFile = new File([clonedBlob], fileName, { type: mimeType });
 
                             if (editExemplarName) editExemplarName.textContent = pendingEditExemplarFile.name;
                             if (editExemplarSize) editExemplarSize.textContent = (pendingEditExemplarFile.size / (1024 * 1024)).toFixed(2) + ' MB';
