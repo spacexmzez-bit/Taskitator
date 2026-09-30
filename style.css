@@ -1011,6 +1011,13 @@ body {
     transform: translateY(-1px);
 }
 
+/* Multi-Selection Mode Active Highlights */
+.task-row.row-selected {
+    border-color: var(--primary) !important;
+    background: rgba(59, 130, 246, 0.12) !important;
+    box-shadow: 0 0 0 1px var(--primary);
+}
+
 /* Overdue Task Highlight */
 .task-node.is-overdue > .task-row .task-title {
     color: #f87171 !important;
@@ -1104,6 +1111,34 @@ body {
 .task-node.completed > .task-row .task-title {
     text-decoration: line-through;
     color: var(--text-muted);
+}
+
+/* Multi-Selection Square Checklist Button */
+.check-square {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 2px solid var(--border-color);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: var(--card-subtle);
+    padding: 0;
+    color: #ffffff;
+    font-size: 0.85rem;
+    font-weight: 800;
+    transition: all 0.15s ease;
+}
+
+.check-square:hover {
+    border-color: var(--primary);
+}
+
+.check-square.selected {
+    background: var(--primary);
+    border-color: var(--primary);
 }
 
 .task-subtree {
@@ -1320,7 +1355,8 @@ body {
 .emergency-icon-btn:active,
 .fab-add:active,
 .copilot-fab-btn:active,
-.check-circle:active {
+.check-circle:active,
+.check-square:active {
     transform: scale(0.92);
     transition: transform 0.08s ease;
 }
@@ -1329,7 +1365,8 @@ body {
     transition: color 0.18s ease, text-decoration 0.18s ease;
 }
 
-.check-circle {
+.check-circle,
+.check-square {
     transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
