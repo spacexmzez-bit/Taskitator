@@ -10,8 +10,8 @@ const TaskitatorEngine = {
     STORAGE_KEY_BREAKS: 'taskitator_daily_breaks',
 
     // Switched to dedicated standard Flash endpoints to eliminate 503 capacity errors
-    PRIMARY_MODEL: 'gemini-2.5-flash',
-    FALLBACK_MODEL: 'gemini-1.5-flash',
+    PRIMARY_MODEL: 'gemini-3.5-flash-lite',
+    FALLBACK_MODEL: 'gemini-3.1-flash-lite',
 
     // Enforced upload limit across files (Photos, Gallery, PDFs)
     MAX_FILE_SIZE_MB: 5,
