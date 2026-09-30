@@ -1358,7 +1358,7 @@ window.TaskitatorApp = (() => {
 
         pendingEditExemplarFile = null;
         editCriteriaValidationState = {
-            validated: isLocked, // Pre-existing locked tasks are already approved
+            validated: isLocked,
             score: isLocked ? 10 : 0,
             isTemplate: false
         };
@@ -1556,7 +1556,7 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Break System UI Controller
+    // Break System UI Controller (Floating 10m Window & Daily Lock)
     // =========================================================================
     const BreakUI = {
         pill: null,
@@ -1568,6 +1568,7 @@ window.TaskitatorApp = (() => {
         saveBtn: null,
         addBtn: null,
         closeBtn: null,
+        planningTimerInterval: null,
 
         init() {
             this.pill = document.getElementById('breakStatusPill');
@@ -1589,7 +1590,7 @@ window.TaskitatorApp = (() => {
                 if (e.target === this.modal) this.closeModal();
             });
             this.updateStatusPill();
-            setInterval(() => this.updateStatusPill(), 30000);
+            setInterval(() => this.updateStatusPill(), 20000);
         },
 
         updateStatusPill() {
@@ -1600,37 +1601,59 @@ window.TaskitatorApp = (() => {
             }
             this.pill.style.display = 'inline-flex';
 
-            const isWindowOpen = isSelectionWindowOpenSafe();
-            const breaks = getTodayBreaksSafe();
-            const now = new Date();
-            const curMins = now.getHours() * 60 + now.getMinutes();
+            const status = window.TaskitatorEngine?.BreakEngine?.getPlanningStatus 
+                ? TaskitatorEngine.BreakEngine.getPlanningStatus() 
+                : { canStart: true, canEdit: false, isRunning: false, isLocked: false, isInBuffer: false, remainingWindowMs: 0, bounds: { start: new Date() } };
+
+            const isCurrentlyOnBreak = window.TaskitatorEngine?.BreakEngine?.isCurrentlyOnBreak 
+                ? TaskitatorEngine.BreakEngine.isCurrentlyOnBreak() 
+                : false;
+
+            const breaks = window.TaskitatorEngine?.BreakEngine?.getTodayBreaks 
+                ? TaskitatorEngine.BreakEngine.getTodayBreaks() 
+                : getTodayBreaksSafe();
 
             this.pill.className = 'break-status-pill';
 
-            const activeBreak = breaks.find(b => {
-                if (!b.start || !b.end) return false;
-                const [sH, sM] = b.start.split(':').map(Number);
-                const [eH, eM] = b.end.split(':').map(Number);
-                return curMins >= (sH * 60 + sM) && curMins <= (eH * 60 + eM);
-            });
+            if (isCurrentlyOnBreak) {
+                const nowTime = Date.now();
+                const activeBreak = breaks.find(b => {
+                    if (!b.start || !b.end || !window.TaskitatorEngine?.BreakEngine?.getBreakTimestamps) return false;
+                    const { startTime, endTime } = TaskitatorEngine.BreakEngine.getBreakTimestamps(b, status.bounds);
+                    return nowTime >= startTime && nowTime <= endTime;
+                });
 
-            if (activeBreak) {
-                const [eH, eM] = activeBreak.end.split(':').map(Number);
-                const minsLeft = (eH * 60 + eM) - curMins;
+                let minsLeft = 0;
+                if (activeBreak && window.TaskitatorEngine?.BreakEngine?.getBreakTimestamps) {
+                    const { endTime } = TaskitatorEngine.BreakEngine.getBreakTimestamps(activeBreak, status.bounds);
+                    minsLeft = Math.max(1, Math.round((endTime - nowTime) / (60 * 1000)));
+                }
+
                 this.pill.classList.add('active-break');
                 if (this.pillIcon) this.pillIcon.textContent = '🟢';
                 if (this.pillText) this.pillText.textContent = `${minsLeft}m left`;
                 return;
             }
 
+            if (status.isRunning) {
+                const remSec = Math.ceil(status.remainingWindowMs / 1000);
+                const remMin = Math.floor(remSec / 60);
+                const remSecOnly = remSec % 60;
+                this.pill.classList.add('window-open');
+                if (this.pillIcon) this.pillIcon.textContent = '⏳';
+                if (this.pillText) this.pillText.textContent = `Plan (${remMin}:${String(remSecOnly).padStart(2, '0')})`;
+                return;
+            }
+
+            const nowTime = Date.now();
             const upcomingBreak = breaks
                 .map(b => {
-                    if (!b.start) return null;
-                    const [sH, sM] = b.start.split(':').map(Number);
-                    return { ...b, startMins: sH * 60 + sM };
+                    if (!b.start || !window.TaskitatorEngine?.BreakEngine?.getBreakTimestamps) return null;
+                    const { startTime } = TaskitatorEngine.BreakEngine.getBreakTimestamps(b, status.bounds);
+                    return { ...b, startTime };
                 })
-                .filter(b => b && b.startMins > curMins)
-                .sort((a, b) => a.startMins - b.startMins)[0];
+                .filter(b => b && b.startTime > nowTime)
+                .sort((a, b) => a.startTime - b.startTime)[0];
 
             if (upcomingBreak) {
                 if (this.pillIcon) this.pillIcon.textContent = '☕';
@@ -1638,44 +1661,247 @@ window.TaskitatorApp = (() => {
                 return;
             }
 
-            if (isWindowOpen) {
+            if (status.canStart) {
                 this.pill.classList.add('window-open');
                 if (this.pillIcon) this.pillIcon.textContent = '⏸️';
-                if (this.pillText) this.pillText.textContent = breaks.length > 0 ? 'Edit Breaks' : 'Breaks';
-            } else {
+                if (this.pillText) this.pillText.textContent = 'Plan Breaks';
+            } else if (status.isLocked) {
                 if (this.pillIcon) this.pillIcon.textContent = '🔒';
                 if (this.pillText) this.pillText.textContent = 'Breaks Locked';
+            } else if (status.isInBuffer) {
+                if (this.pillIcon) this.pillIcon.textContent = '⚠️';
+                if (this.pillText) this.pillText.textContent = 'Planning Closed';
+            } else {
+                if (this.pillIcon) this.pillIcon.textContent = '⏸️';
+                if (this.pillText) this.pillText.textContent = 'Breaks';
             }
         },
 
         openModal() {
-            const isWindowOpen = isSelectionWindowOpenSafe();
-            const breaks = getTodayBreaksSafe();
-
-            if (this.rowsContainer) this.rowsContainer.innerHTML = '';
             this.hideError();
-
-            if (breaks.length > 0) {
-                breaks.forEach(b => this.addBreakRow(b.start, b.end, !isWindowOpen));
-            } else if (isWindowOpen) {
-                this.addBreakRow();
-            }
-
-            if (this.addBtn) this.addBtn.style.display = isWindowOpen ? 'inline-block' : 'none';
-            if (this.saveBtn) this.saveBtn.style.display = isWindowOpen ? 'inline-block' : 'none';
-
-            const desc = document.getElementById('breakModalStatusDesc');
-            if (desc) {
-                desc.textContent = isWindowOpen
-                    ? 'Schedule up to 3 non-overlapping breaks (≤ 3 hours total). The window locks permanently once closed.'
-                    : 'The break scheduling window is now closed for today. Configured breaks are read-only.';
-            }
-
+            this.renderModal();
             if (this.modal) this.modal.classList.add('open');
         },
 
         closeModal() {
+            if (this.planningTimerInterval) {
+                clearInterval(this.planningTimerInterval);
+                this.planningTimerInterval = null;
+            }
             if (this.modal) this.modal.classList.remove('open');
+        },
+
+        startCountdownTimer() {
+            if (this.planningTimerInterval) clearInterval(this.planningTimerInterval);
+            this.planningTimerInterval = setInterval(() => {
+                if (!window.TaskitatorEngine?.BreakEngine?.getPlanningStatus) return;
+                const status = TaskitatorEngine.BreakEngine.getPlanningStatus();
+                
+                if (!status.isRunning) {
+                    clearInterval(this.planningTimerInterval);
+                    this.planningTimerInterval = null;
+                    this.autoCommitAndLock();
+                    return;
+                }
+
+                const remSec = Math.ceil(status.remainingWindowMs / 1000);
+                const remMin = Math.floor(remSec / 60);
+                const remSecOnly = remSec % 60;
+                const formatted = `${String(remMin).padStart(2, '0')}:${String(remSecOnly).padStart(2, '0')}`;
+
+                const cdDisplay = document.getElementById('breakPlanningCountdown');
+                const progBar = document.getElementById('breakPlanningProgress');
+                if (cdDisplay) cdDisplay.textContent = formatted;
+                if (progBar) {
+                    const totalMs = TaskitatorEngine.BreakEngine.PLANNING_WINDOW_MS || (10 * 60 * 1000);
+                    const pct = Math.max(0, Math.min(100, (status.remainingWindowMs / totalMs) * 100));
+                    progBar.style.width = `${pct}%`;
+                }
+                this.updateStatusPill();
+            }, 1000);
+        },
+
+        autoCommitAndLock() {
+            const currentRows = this.getCurrentRowsData();
+            if (window.TaskitatorEngine?.BreakEngine?.saveTodayBreaks) {
+                const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(currentRows, true);
+                if (!res.valid && window.TaskitatorEngine?.BreakEngine?.lockTodayBreaks) {
+                    TaskitatorEngine.BreakEngine.lockTodayBreaks();
+                }
+            }
+            saveStorageAndPush();
+            SoundFX.playTimeoutAlert();
+            alert("Time's up! Your 10-minute planning window has expired. Today's break schedule has been automatically locked.");
+            this.renderModal();
+            this.updateStatusPill();
+        },
+
+        getCurrentRowsData() {
+            if (!this.rowsContainer) return [];
+            const rows = this.rowsContainer.querySelectorAll('.break-row-item');
+            const list = [];
+            rows.forEach(r => {
+                const start = r.querySelector('.b-start')?.value;
+                const end = r.querySelector('.b-end')?.value;
+                if (start && end) list.push({ start, end });
+            });
+            return list;
+        },
+
+        renderModal() {
+            if (!this.modal || !this.rowsContainer) return;
+            const status = window.TaskitatorEngine?.BreakEngine?.getPlanningStatus 
+                ? TaskitatorEngine.BreakEngine.getPlanningStatus() 
+                : { canStart: true, canEdit: false, isRunning: false, isLocked: false, isInBuffer: false, remainingWindowMs: 0, reason: '', bounds: { start: new Date() } };
+
+            const breaks = window.TaskitatorEngine?.BreakEngine?.getTodayBreaks 
+                ? TaskitatorEngine.BreakEngine.getTodayBreaks() 
+                : getTodayBreaksSafe();
+
+            let headerBox = document.getElementById('breakPlanningHeaderBox');
+            if (!headerBox) {
+                headerBox = document.createElement('div');
+                headerBox.id = 'breakPlanningHeaderBox';
+                const desc = document.getElementById('breakModalStatusDesc');
+                if (desc && desc.parentNode) {
+                    desc.parentNode.insertBefore(headerBox, desc.nextSibling);
+                }
+            }
+
+            const desc = document.getElementById('breakModalStatusDesc');
+
+            if (status.isRunning) {
+                if (desc) desc.style.display = 'none';
+                const totalMs = TaskitatorEngine.BreakEngine.PLANNING_WINDOW_MS || (10 * 60 * 1000);
+                const pct = Math.max(0, Math.min(100, (status.remainingWindowMs / totalMs) * 100));
+                const remSec = Math.ceil(status.remainingWindowMs / 1000);
+                const remMin = Math.floor(remSec / 60);
+                const remSecOnly = remSec % 60;
+                const formatted = `${String(remMin).padStart(2, '0')}:${String(remSecOnly).padStart(2, '0')}`;
+
+                headerBox.innerHTML = `
+                    <div style="background: rgba(59, 130, 246, 0.15); border: 1.5px solid var(--primary); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <strong style="color: var(--primary); font-size: 0.88rem; display: flex; align-items: center; gap: 6px;">
+                                <span>⏳</span> Planning Active
+                            </strong>
+                            <span id="breakPlanningCountdown" style="font-family: monospace; font-weight: 800; font-size: 0.95rem; color: #93c5fd; background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border-color);">${formatted}</span>
+                        </div>
+                        <div style="width: 100%; height: 5px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
+                            <div id="breakPlanningProgress" style="height: 100%; width: ${pct}%; background: var(--primary); transition: width 1s linear;"></div>
+                        </div>
+                        <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 8px; line-height: 1.35;">
+                            Adjust up to 3 non-overlapping breaks (≤ 3 hours). The schedule will permanently lock when you save or when the timer reaches 0:00.
+                        </small>
+                    </div>
+                `;
+
+                this.rowsContainer.innerHTML = '';
+                if (breaks.length > 0) {
+                    breaks.forEach(b => this.addBreakRow(b.start, b.end, false));
+                } else {
+                    this.addBreakRow('', '', false);
+                }
+
+                if (this.addBtn) this.addBtn.style.display = 'inline-block';
+                if (this.saveBtn) {
+                    this.saveBtn.style.display = 'inline-block';
+                    this.saveBtn.textContent = 'Confirm & Lock Breaks';
+                }
+
+                this.startCountdownTimer();
+
+            } else if (status.canStart) {
+                if (this.planningTimerInterval) {
+                    clearInterval(this.planningTimerInterval);
+                    this.planningTimerInterval = null;
+                }
+                if (desc) desc.style.display = 'none';
+
+                headerBox.innerHTML = `
+                    <div style="background: rgba(59, 130, 246, 0.08); border: 1.5px dashed var(--primary); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; text-align: center;">
+                        <p style="margin: 0 0 10px 0; font-size: 0.84rem; color: var(--text-color); line-height: 1.45;">
+                            Breaks are open for this cycle. Starting planning initiates a strict <strong>10-minute window</strong> to adjust and lock your daily schedule.
+                        </p>
+                        <button type="button" id="startBreakPlanningBtn" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 9px 18px; font-size: 0.88rem; width: 100%;">
+                            ▶ Start 10m Planning Window
+                        </button>
+                    </div>
+                `;
+
+                const startBtn = document.getElementById('startBreakPlanningBtn');
+                if (startBtn) {
+                    startBtn.addEventListener('click', () => this.handleStartPlanning());
+                }
+
+                this.rowsContainer.innerHTML = '';
+                if (breaks.length > 0) {
+                    breaks.forEach(b => this.addBreakRow(b.start, b.end, true));
+                } else {
+                    this.rowsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.82rem; text-align: center; padding: 14px 0;">No breaks scheduled. Click "Start 10m Planning Window" to configure.</div>';
+                }
+
+                if (this.addBtn) this.addBtn.style.display = 'none';
+                if (this.saveBtn) this.saveBtn.style.display = 'none';
+
+            } else {
+                // Locked or in final 6-hour buffer
+                if (this.planningTimerInterval) {
+                    clearInterval(this.planningTimerInterval);
+                    this.planningTimerInterval = null;
+                }
+                if (desc) desc.style.display = 'none';
+
+                const bannerBg = status.isLocked ? 'rgba(239, 68, 68, 0.12)' : 'rgba(234, 179, 8, 0.12)';
+                const borderC = status.isLocked ? 'rgba(239, 68, 68, 0.4)' : 'rgba(234, 179, 8, 0.4)';
+                const titleC = status.isLocked ? '#fca5a5' : '#fde047';
+
+                headerBox.innerHTML = `
+                    <div style="background: ${bannerBg}; border: 1.5px solid ${borderC}; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+                        <div style="display: flex; align-items: flex-start; gap: 8px;">
+                            <span style="font-size: 1.1rem; line-height: 1;">${status.isLocked ? '🔒' : '⚠️'}</span>
+                            <div style="font-size: 0.82rem; color: ${titleC}; line-height: 1.45;">
+                                <strong>${status.isLocked ? 'Schedule Locked' : 'Planning Buffer Closed'}:</strong> ${status.reason}
+                            </div>
+                        </div>
+                        <button type="button" id="startBreakPlanningDisabledBtn" class="icon-btn" style="width: 100%; margin-top: 10px; opacity: 0.6; cursor: not-allowed; background: var(--card-subtle);">
+                            🔒 Start Planning Window (Unavailable)
+                        </button>
+                    </div>
+                `;
+
+                const disabledBtn = document.getElementById('startBreakPlanningDisabledBtn');
+                if (disabledBtn) {
+                    disabledBtn.addEventListener('click', () => {
+                        const curStatus = window.TaskitatorEngine?.BreakEngine?.getPlanningStatus 
+                            ? TaskitatorEngine.BreakEngine.getPlanningStatus() 
+                            : status;
+                        alert(curStatus.reason || 'Planning window is currently unavailable.');
+                    });
+                }
+
+                this.rowsContainer.innerHTML = '';
+                if (breaks.length > 0) {
+                    breaks.forEach(b => this.addBreakRow(b.start, b.end, true));
+                } else {
+                    this.rowsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.82rem; text-align: center; padding: 14px 0;">No breaks were scheduled for this cycle.</div>';
+                }
+
+                if (this.addBtn) this.addBtn.style.display = 'none';
+                if (this.saveBtn) this.saveBtn.style.display = 'none';
+            }
+        },
+
+        handleStartPlanning() {
+            if (!window.TaskitatorEngine?.BreakEngine?.startPlanningWindow) return;
+            const res = TaskitatorEngine.BreakEngine.startPlanningWindow();
+            if (!res.success) {
+                alert(res.error);
+                this.renderModal();
+                return;
+            }
+            this.renderModal();
+            this.updateStatusPill();
         },
 
         addBreakRow(startVal = '', endVal = '', disabled = false) {
@@ -1688,13 +1914,13 @@ window.TaskitatorApp = (() => {
 
             const row = document.createElement('div');
             row.className = 'break-row-item';
-            row.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+            row.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 6px;';
 
             row.innerHTML = `
-                <input type="time" class="b-start" value="${startVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
-                <span style="color: var(--text-muted); font-size: 0.85rem;">to</span>
-                <input type="time" class="b-end" value="${endVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color);">
-                ${!disabled ? '<button type="button" class="del-break-row-btn" style="background: none; border: none; color: var(--danger); font-size: 1.2rem; cursor: pointer; padding: 0 4px; line-height: 1;">&times;</button>' : ''}
+                <input type="time" class="b-start" value="${startVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 7px 10px; border: 1.5px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color); font-size: 0.9rem;">
+                <span style="color: var(--text-muted); font-size: 0.85rem; font-weight: 700;">to</span>
+                <input type="time" class="b-end" value="${endVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 7px 10px; border: 1.5px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color); font-size: 0.9rem;">
+                ${!disabled ? '<button type="button" class="del-break-row-btn" style="background: none; border: none; color: var(--danger); font-size: 1.3rem; cursor: pointer; padding: 0 4px; line-height: 1;">&times;</button>' : ''}
             `;
 
             if (!disabled) {
@@ -1708,19 +1934,17 @@ window.TaskitatorApp = (() => {
 
         saveBreaks() {
             if (!this.rowsContainer) return;
-            const rows = this.rowsContainer.querySelectorAll('.break-row-item');
-            const breaksArray = [];
+            const breaksArray = this.getCurrentRowsData();
 
-            for (const r of rows) {
-                const start = r.querySelector('.b-start')?.value;
-                const end = r.querySelector('.b-end')?.value;
-                if (start && end) {
-                    breaksArray.push({ start, end });
-                }
-            }
+            const confirmed = confirm(
+                "⚠️ CONFIRM & LOCK DAILY SCHEDULE ⚠️\n\n" +
+                "Once locked, your breaks cannot be edited, added, or cleared for the remainder of this cycle.\n\n" +
+                "Do you want to permanently lock this schedule now?"
+            );
+            if (!confirmed) return;
 
             if (window.TaskitatorEngine?.BreakEngine?.saveTodayBreaks) {
-                const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(breaksArray);
+                const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(breaksArray, true);
                 if (!res.valid) {
                     this.showError(res.error);
                     return;
@@ -1729,9 +1953,22 @@ window.TaskitatorApp = (() => {
                 localStorage.setItem('taskitator_daily_breaks', JSON.stringify(breaksArray));
             }
 
+            if (this.planningTimerInterval) {
+                clearInterval(this.planningTimerInterval);
+                this.planningTimerInterval = null;
+            }
+
             saveStorageAndPush();
-            this.closeModal();
+            this.renderModal();
             this.updateStatusPill();
+
+            if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
+                const breaks = getTodayBreaksSafe();
+                SyncEngine.forceImmediateSync({ today_breaks: breaks });
+            }
+
+            alert("Daily breaks locked successfully.");
+            this.closeModal();
         },
 
         showError(msg) {
@@ -3079,7 +3316,6 @@ window.TaskitatorApp = (() => {
                     willBeStrict = true;
                 }
 
-                // If converting from standard to AI-locked or editing criteria under bypass
                 if (willBeAiLocked && (!task.ai_locked || isBypassActive)) {
                     if (isStrictCriteriaModeEnabled()) {
                         if (!editCriteriaValidationState.validated || editCriteriaValidationState.score < 7) {
@@ -3091,7 +3327,7 @@ window.TaskitatorApp = (() => {
 
                 if (!task.ai_locked && willBeAiLocked) {
                     const confirmed = confirm(
-                        "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
+                        "⚠️️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
                         "Enabling AI Proof on this task is permanent.\n" +
                         "Once saved, this task cannot be un-checked, criteria cannot be changed, and it CANNOT be deleted without an Emergency Bypass.\n\n" +
                         "Do you want to permanently lock this task?"
@@ -3107,7 +3343,6 @@ window.TaskitatorApp = (() => {
                     if (!confirmed) return;
                 }
 
-                // Save pending exemplar file if selected in edit modal
                 if (pendingEditExemplarFile && willBeAiLocked && window.ExemplarStore) {
                     try {
                         await window.ExemplarStore.saveExemplar(task.id, pendingEditExemplarFile);
@@ -3237,7 +3472,6 @@ window.TaskitatorApp = (() => {
                     });
                 }
 
-                // Check for 503 / High Demand Infrastructure Outage
                 const is503Outage = !result.success && (
                     result.status === 503 ||
                     result.code === 503 ||
@@ -3252,7 +3486,6 @@ window.TaskitatorApp = (() => {
                     const count = (consecutive503Tracker.get(pendingAuditTaskId) || 0) + 1;
                     consecutive503Tracker.set(pendingAuditTaskId, count);
 
-                    // 5 consecutive 503 errors trigger silent fallback approval
                     if (count >= 5) {
                         consecutive503Tracker.delete(pendingAuditTaskId);
                         task.verified_model = 'gemini-fallback-auto-503';
