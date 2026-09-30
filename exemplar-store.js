@@ -154,8 +154,8 @@
                             mimeType: record.mimeType,
                             fileName: record.fileName,
                             fileSize: record.fileSize,
-                            inlineData: {
-                                mimeType: record.mimeType,
+                            inline_Data: {
+                                mime_Type: record.mimeType,
                                 data: base64Data
                             }
                         });
