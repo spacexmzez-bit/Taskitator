@@ -1076,10 +1076,7 @@ window.TaskitatorApp = (() => {
         selectedTaskIds.clear();
 
         const btn = document.getElementById('toggleSelectModeBtn');
-        const label = document.getElementById('selectModeBtnLabel');
-
         if (btn) btn.classList.toggle('active', isSelectionModeActive);
-        if (label) label.textContent = isSelectionModeActive ? 'Exit' : 'Select';
 
         updateBatchBarUI();
         renderUnifiedTaskTree();
@@ -2354,7 +2351,7 @@ window.TaskitatorApp = (() => {
                 if (task.strict_prerequisites) {
                     const shieldBadge = document.createElement('span');
                     shieldBadge.className = 'ai-badge';
-                    shieldBadge.innerHTML = '🛡️ Shielded';
+                    shieldBadge.innerHTML = '🛡️️ Shielded';
                     shieldBadge.style.background = '#451a03';
                     shieldBadge.style.color = '#fde68a';
                     shieldBadge.style.borderColor = '#78350f';
@@ -2658,7 +2655,7 @@ window.TaskitatorApp = (() => {
         window.addEventListener('hashchange', handleHashRouting);
         handleHashRouting();
 
-        // Multi-Selection Mode Navbar Button
+        // Multi-Selection Mode Navbar Button (Updated to compact icon button)
         const toggleSelectModeBtn = document.getElementById('toggleSelectModeBtn');
         if (toggleSelectModeBtn) {
             toggleSelectModeBtn.addEventListener('click', toggleSelectionMode);
