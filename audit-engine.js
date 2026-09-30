@@ -651,12 +651,13 @@ Return valid JSON matching this schema:
 }
 `;
 
-            const parts = [];
+                        const parts = [
+                { text: systemPrompt }
+            ];
             if (exemplarPart) {
                 parts.push(exemplarPart);
             }
             parts.push(proofPart);
-            parts.push({ text: systemPrompt });
 
             try {
                 let usedModel = TaskitatorEngine.PRIMARY_MODEL;
