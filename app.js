@@ -3849,8 +3849,8 @@ window.TaskitatorApp = (() => {
                     let refExemplarPart = null;
                     if (window.ExemplarStore) {
                         const exemplarRecord = await ExemplarStore.getExemplar(task.id);
-                        if (exemplarRecord && exemplarRecord.inline_Data) {
-                            refExemplarPart = exemplarRecord.inline_Data;
+                        if (exemplarRecord && exemplarRecord.inline_data) {
+                            refExemplarPart = exemplarRecord.inline_data;
                         }
                     }
 
