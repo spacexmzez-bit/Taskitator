@@ -436,9 +436,9 @@ const TaskitatorEngine = {
                         mimeType = 'application/pdf';
                     }
                     resolve({
-                        inlineData: {
+                        inline_Data: {
                             data: base64Data,
-                            mimeType: mimeType
+                            mime_Type: mimeType
                         }
                     });
                 };
