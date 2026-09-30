@@ -368,7 +368,7 @@
             <div class="settings-card">
                 <h3 style="margin-top: 0; color: var(--primary);">🤖 Gemini AI Engine</h3>
                 <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                    Audits task evidence and drives your personal AI assistant. Dual-model cascade: <strong>gemini-3.5-flash-lite</strong> primary, falling back to <strong>gemini-3.1-flash-lite</strong> on quota exhaustion.
+                    Audits task evidence and drives your personal AI assistant. Dual-model cascade: <strong>gemini-2.5-flash</strong> primary, falling back to <strong>gemini-1.5-flash</strong> on high demand or quota limits.
                 </p>
 
                 <div class="form-group">
@@ -464,7 +464,7 @@
                         <span id="dumpDurationReadout" style="color: var(--primary); font-size: 0.9rem;">90s</span>
                     </label>
                     <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-bottom: 12px; line-height: 1.4;">
-                        Maximum time allowed to jot down a distracting idea in the scratchpad before it force-closes. <strong>Editable only while your daily break window is open.</strong>
+                        Maximum time allowed to jot down a distracting idea in the scratchpad before it force-closes.
                     </small>
                     <input type="range" id="dumpDurationSlider" min="30" max="300" step="15" value="90" style="width: 100%; accent-color: var(--primary); cursor: pointer;">
                 </div>
@@ -506,23 +506,29 @@
                 <div id="workweekCalcNotice" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;"></div>
             </div>
 
-            <!-- Daily Break Scheduling Window -->
+            <!-- Day Start & Break Planning Cycle -->
             <div class="settings-card">
-                <h3 style="margin-top: 0; color: var(--primary);">⏸️ Daily Break Selection Window</h3>
+                <h3 style="margin-top: 0; color: var(--primary);">⏸️ Day Start & Break Planning Cycle</h3>
                 <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                    Defines the only time of day when you are permitted to configure or adjust your breaks. This window is synchronized across all your devices and cannot be bypassed or modified outside the active timeframe.
+                    Configure your day cutoff to accommodate late-night study sessions. Daily breaks use a <strong>10-minute floating planning window</strong> initiated on-demand once per cycle. Planning is strictly locked within the final 6 hours of the cycle.
                 </p>
-                <div class="form-group" style="display: flex; gap: 12px;">
-                    <div style="flex: 1;">
-                        <label for="breakWindowStart">Window Start</label>
-                        <input type="time" id="breakWindowStart">
-                    </div>
-                    <div style="flex: 1;">
-                        <label for="breakWindowEnd">Window End</label>
-                        <input type="time" id="breakWindowEnd">
-                    </div>
+
+                <div class="form-group">
+                    <label for="dayStartHourSelect">Day Start Time (Daily Rollover)</label>
+                    <select id="dayStartHourSelect">
+                        <option value="0">00:00 (Standard Midnight)</option>
+                        <option value="1">01:00 AM</option>
+                        <option value="2">02:00 AM</option>
+                        <option value="3">03:00 AM (Recommended for Night Owls)</option>
+                        <option value="4">04:00 AM</option>
+                    </select>
+                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; line-height: 1.4;">
+                        Tasks, daily streaks, and break schedules roll over at this hour. If set to 03:00, study sessions past midnight count toward today.
+                    </small>
                 </div>
-                <div id="breakWindowStatusBadge" style="margin-top: 8px;"></div>
+
+                <div id="breakCycleNotice" style="margin-top: 10px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;"></div>
+                <div id="breakPlanningStatusBadge" style="margin-top: 8px;"></div>
             </div>
         </div>
 
@@ -635,7 +641,7 @@
     <div class="copilot-header">
         <div class="copilot-title-group">
             <span style="font-weight: 800; font-size: 1.05rem;">🤖 Focus Copilot</span>
-            <span class="copilot-model-chip">3.5 Flash Lite</span>
+            <span class="copilot-model-chip">2.5 Flash</span>
         </div>
         <button type="button" class="icon-btn" id="closeCopilotBtn" style="border: none; font-size: 1.2rem; line-height: 1; padding: 4px 8px;">✕</button>
     </div>
@@ -685,8 +691,9 @@ const strictCriteriaToggle = document.getElementById('strictCriteriaToggle');
 const activeUsernameDisplay = document.getElementById('activeUsernameDisplay');
 const weekendStartSelect = document.getElementById('weekendStartSelect');
 const weekendEndSelect = document.getElementById('weekendEndSelect');
-const breakWindowStart = document.getElementById('breakWindowStart');
-const breakWindowEnd = document.getElementById('breakWindowEnd');
+const dayStartHourSelect = document.getElementById('dayStartHourSelect');
+const breakCycleNotice = document.getElementById('breakCycleNotice');
+const breakPlanningStatusBadge = document.getElementById('breakPlanningStatusBadge');
 const syncWordBadge = document.getElementById('syncWordBadge');
 const logoutConfirmModal = document.getElementById('logoutConfirmModal');
 const unsavedIndicator = document.getElementById('unsavedIndicator');
@@ -835,7 +842,6 @@ function renderPriorities() {
             <button type="button" class="icon-btn del-priority-btn" style="color: var(--danger); border-color: #881337; padding: 4px 8px; font-size: 0.8rem;">✕</button>
         `;
 
-        // Arrow navigation
         row.querySelector('.move-up').addEventListener('click', () => {
             if (idx > 0) {
                 const temp = activePriorities[idx];
@@ -856,7 +862,6 @@ function renderPriorities() {
             }
         });
 
-        // Name and Color change
         const nameInput = row.querySelector('.priority-name-input');
         nameInput.addEventListener('input', () => {
             p.name = nameInput.value.trim() || 'Untitled';
@@ -869,7 +874,6 @@ function renderPriorities() {
             markUnsaved();
         });
 
-        // Delete priority
         row.querySelector('.del-priority-btn').addEventListener('click', () => {
             activePriorities.splice(idx, 1);
             markUnsaved();
@@ -927,8 +931,7 @@ function loadSettings() {
     weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
     weekendEndSelect.value = settings.weekend_end !== undefined ? settings.weekend_end : '6';
 
-    breakWindowStart.value = settings.break_selection_start || '';
-    breakWindowEnd.value = settings.break_selection_end || '';
+    dayStartHourSelect.value = settings.day_start_hour !== undefined ? String(settings.day_start_hour) : '0';
 
     // Load or initialize tags
     if (Array.isArray(settings.custom_tags) && settings.custom_tags.length > 0) {
@@ -948,7 +951,7 @@ function loadSettings() {
     renderPriorities();
 
     updateEmergencyDisplay();
-    updateBreakWindowStatus();
+    updateBreakPlanningStatus();
     updateWorkweekNotice();
     markSaved();
 }
@@ -961,31 +964,8 @@ async function saveSettings(silent = false) {
         settings = {};
     }
 
-    const startStr = breakWindowStart.value.trim();
-    const endStr = breakWindowEnd.value.trim();
-    const savedStart = settings.break_selection_start || '';
-    const savedEnd = settings.break_selection_end || '';
     const currentDumpDur = parseInt(dumpDurationSlider.value, 10);
-    const savedDumpDur = settings.dump_duration !== undefined ? settings.dump_duration : 90;
-
-    const isOpen = window.TaskitatorEngine && TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
-
-    if (!isOpen) {
-        if (savedStart && savedEnd && (savedStart !== startStr || savedEnd !== endStr)) {
-            alert('Cannot modify break selection window while it is closed for the day.');
-            breakWindowStart.value = savedStart;
-            breakWindowEnd.value = savedEnd;
-            updateBreakWindowStatus();
-            return false;
-        }
-
-        if (savedDumpDur !== currentDumpDur) {
-            alert('Cannot modify distraction dump timer while the break selection window is closed for the day.');
-            dumpDurationSlider.value = savedDumpDur;
-            dumpDurationReadout.textContent = formatDumpDuration(savedDumpDur);
-            return false;
-        }
-    }
+    const chosenDayStart = parseInt(dayStartHourSelect.value, 10);
 
     settings.sound_effects_enabled = Boolean(soundEffectsToggle.checked);
     settings.copilot_name = (copilotNameInput.value.trim() || 'Focus Copilot').slice(0, 20);
@@ -995,8 +975,7 @@ async function saveSettings(silent = false) {
     settings.worker_url = HARDCODED_WORKER_URL;
     settings.weekend_start = parseInt(weekendStartSelect.value, 10);
     settings.weekend_end = parseInt(weekendEndSelect.value, 10);
-    settings.break_selection_start = startStr;
-    settings.break_selection_end = endStr;
+    settings.day_start_hour = isNaN(chosenDayStart) ? 0 : chosenDayStart;
 
     // Attach updated registries
     settings.custom_tags = [...activeTags];
@@ -1017,7 +996,7 @@ async function saveSettings(silent = false) {
         await SyncEngine.forceImmediateSync({ today_breaks: todayBreaks });
     }
 
-    updateBreakWindowStatus();
+    updateBreakPlanningStatus();
     updateWorkweekNotice();
     markSaved();
 
@@ -1033,28 +1012,33 @@ function updateEmergencyDisplay() {
     document.getElementById('emergencyTokensDisplay').textContent = `${state.uses_left} / 4 Uses Remaining`;
 }
 
-function updateBreakWindowStatus() {
-    if (!window.TaskitatorEngine) return;
-    const badge = document.getElementById('breakWindowStatusBadge');
-    const startStr = breakWindowStart.value.trim();
-    const endStr = breakWindowEnd.value.trim();
-    const isOpen = TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
+function updateBreakPlanningStatus() {
+    if (!window.TaskitatorEngine || !TaskitatorEngine.BreakEngine) return;
+    const status = TaskitatorEngine.BreakEngine.getPlanningStatus();
+    const bounds = status.bounds;
 
-    if (!startStr || !endStr) {
-        badge.innerHTML = '<span class="tag-chip" style="background: #3f2c06; color: #fde047; font-weight: 700;">⚠️ Not Set (Configure your daily window)</span>';
-        breakWindowStart.disabled = false;
-        breakWindowEnd.disabled = false;
-        dumpDurationSlider.disabled = false;
-    } else if (isOpen) {
-        badge.innerHTML = '<span class="tag-chip" style="background: #052e16; color: #86efac; font-weight: 700;">● Window Currently Open (Editable)</span>';
-        breakWindowStart.disabled = false;
-        breakWindowEnd.disabled = false;
-        dumpDurationSlider.disabled = false;
+    const formatHour = (d) => {
+        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+
+    if (breakCycleNotice) {
+        breakCycleNotice.innerHTML = `Current Cycle: <strong>${formatHour(bounds.start)}</strong> today &rarr; <strong>${formatHour(bounds.end)}</strong> tomorrow. Planning lockout buffer begins at <strong>${formatHour(bounds.cutoff6h)}</strong>.`;
+    }
+
+    if (!breakPlanningStatusBadge) return;
+
+    if (status.isLocked) {
+        breakPlanningStatusBadge.innerHTML = '<span class="tag-chip" style="background: #380d15; color: #fda4af; font-weight: 700;">🔒 Daily Breaks Locked (Cycle Completed)</span>';
+    } else if (status.isInBuffer) {
+        breakPlanningStatusBadge.innerHTML = '<span class="tag-chip" style="background: #3f2c06; color: #fde047; font-weight: 700;">⚠️ Planning Closed (Within Final 6-Hour Buffer)</span>';
+    } else if (status.isRunning) {
+        const remSec = Math.ceil(status.remainingWindowMs / 1000);
+        const remMin = Math.floor(remSec / 60);
+        const remSecOnly = remSec % 60;
+        const remStr = `${String(remMin).padStart(2, '0')}:${String(remSecOnly).padStart(2, '0')}`;
+        breakPlanningStatusBadge.innerHTML = `<span class="tag-chip" style="background: #052e16; color: #86efac; font-weight: 700;">⏳ Planning Active (${remStr} Remaining)</span>`;
     } else {
-        badge.innerHTML = '<span class="tag-chip" style="background: #380d15; color: #fda4af; font-weight: 700;">🔒 Window Closed for Today (Locked across devices)</span>';
-        breakWindowStart.disabled = true;
-        breakWindowEnd.disabled = true;
-        dumpDurationSlider.disabled = true;
+        breakPlanningStatusBadge.innerHTML = '<span class="tag-chip" style="background: #1e3a8a; color: #93c5fd; font-weight: 700;">● Ready to Plan (1-Shot 10m Window Available)</span>';
     }
 }
 
@@ -1067,7 +1051,6 @@ function updateWorkweekNotice() {
         `Weekend: ${days[s]} to ${days[e]}. Emergency tokens reset every ${days[resetDay]} at 00:00.`;
 }
 
-// Live update for duration slider
 dumpDurationSlider.addEventListener('input', (e) => {
     dumpDurationReadout.textContent = formatDumpDuration(parseInt(e.target.value, 10));
     markUnsaved();
@@ -1103,9 +1086,14 @@ toggleTokenVisibilityBtn.addEventListener('click', () => {
     toggleTokenVisibilityBtn.textContent = isPass ? 'Hide' : 'Show';
 });
 
-[soundEffectsToggle, copilotNameInput, geminiApiKeyInput, strictCriteriaToggle, weekendStartSelect, weekendEndSelect, breakWindowStart, breakWindowEnd].forEach(el => {
+[soundEffectsToggle, copilotNameInput, geminiApiKeyInput, strictCriteriaToggle, weekendStartSelect, weekendEndSelect, dayStartHourSelect].forEach(el => {
     el.addEventListener('input', markUnsaved);
     el.addEventListener('change', markUnsaved);
+});
+
+dayStartHourSelect.addEventListener('change', () => {
+    updateBreakPlanningStatus();
+    markUnsaved();
 });
 
 document.getElementById('testGeminiBtn').addEventListener('click', async () => {
@@ -1120,10 +1108,10 @@ document.getElementById('testGeminiBtn').addEventListener('click', async () => {
     }
 
     feedback.className = 'notice-banner notice-info';
-    feedback.textContent = 'Testing connection with primary model (gemini-3.5-flash-lite)...';
+    feedback.textContent = 'Testing connection with primary model (gemini-2.5-flash)...';
 
     try {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${key}`;
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
         const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1134,7 +1122,7 @@ document.getElementById('testGeminiBtn').addEventListener('click', async () => {
 
         if (res.ok) {
             feedback.className = 'notice-banner notice-success';
-            feedback.innerHTML = '<strong>Success!</strong> API key valid and connected to gemini-3.5-flash-lite.';
+            feedback.innerHTML = '<strong>Success!</strong> API key valid and connected to gemini-2.5-flash.';
         } else {
             const errData = await res.json();
             feedback.className = 'notice-banner notice-warning';
@@ -1162,12 +1150,12 @@ document.getElementById('exportDataBtn').addEventListener('click', () => {
     const data = {
         taskitator_tasks: JSON.parse(localStorage.getItem('taskitator_tasks') || '[]'),
         taskitator_projects: JSON.parse(localStorage.getItem('taskitator_projects') || '[]'),
-        taskitator_daily_breaks: JSON.parse(localStorage.getItem('taskitator_daily_breaks') || '[]'),
+        taskitator_daily_breaks: JSON.parse(localStorage.getItem('taskitator_daily_breaks') || '{}'),
         taskitator_audit_ledger: JSON.parse(localStorage.getItem('taskitator_audit_ledger') || '[]'),
         taskitator_settings: JSON.parse(localStorage.getItem('taskitator_settings') || '{}'),
         taskitator_collapsed_nodes: JSON.parse(localStorage.getItem('taskitator_collapsed_nodes') || '[]'),
         export_date: new Date().toISOString(),
-        version: '1.1'
+        version: '1.2'
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1203,7 +1191,6 @@ async function processImport(mode) {
             throw new Error('Invalid backup file format. Missing core Taskitator properties.');
         }
 
-        // Preserve current active worker credentials (never lock the user out)
         const localSettingsRaw = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
         const currentUser = localSettingsRaw.worker_username;
         const currentKey = localSettingsRaw.worker_passkey;
@@ -1218,7 +1205,7 @@ async function processImport(mode) {
             localStorage.setItem('taskitator_settings', JSON.stringify(newSettings));
             localStorage.setItem('taskitator_tasks', JSON.stringify(imported.taskitator_tasks || []));
             localStorage.setItem('taskitator_projects', JSON.stringify(imported.taskitator_projects || []));
-            localStorage.setItem('taskitator_daily_breaks', JSON.stringify(imported.taskitator_daily_breaks || []));
+            localStorage.setItem('taskitator_daily_breaks', JSON.stringify(imported.taskitator_daily_breaks || {}));
             localStorage.setItem('taskitator_collapsed_nodes', JSON.stringify(imported.taskitator_collapsed_nodes || []));
             
             if (Array.isArray(imported.taskitator_audit_ledger)) {
@@ -1226,7 +1213,6 @@ async function processImport(mode) {
             }
             
         } else if (mode === 'merge') {
-            // Smart Merge - Projects
             const localProjects = JSON.parse(localStorage.getItem('taskitator_projects') || '[]');
             const projMap = new Map(localProjects.map(p => [p.id, p]));
             (imported.taskitator_projects || []).forEach(imp => {
@@ -1235,7 +1221,6 @@ async function processImport(mode) {
             });
             localStorage.setItem('taskitator_projects', JSON.stringify(Array.from(projMap.values())));
 
-            // Smart Merge - Tasks (Keep newest based on completion, fallback to importing)
             const localTasks = JSON.parse(localStorage.getItem('taskitator_tasks') || '[]');
             const taskMap = new Map(localTasks.map(t => [t.id, t]));
             (imported.taskitator_tasks || []).forEach(imp => {
@@ -1256,7 +1241,6 @@ async function processImport(mode) {
             });
             localStorage.setItem('taskitator_tasks', JSON.stringify(Array.from(taskMap.values())));
 
-            // Smart Merge - Audit Ledger
             if (Array.isArray(imported.taskitator_audit_ledger)) {
                 let localLedger = [];
                 try { localLedger = JSON.parse(localStorage.getItem('taskitator_audit_ledger') || '[]'); } catch (e) {}
@@ -1270,7 +1254,6 @@ async function processImport(mode) {
                 localStorage.setItem('taskitator_audit_ledger', JSON.stringify(mergedLedger));
             }
 
-            // Smart Merge - Tags
             const impSettings = imported.taskitator_settings || {};
             const localTags = localSettingsRaw.custom_tags || [];
             const impTags = impSettings.custom_tags || [];
