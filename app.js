@@ -2,7 +2,9 @@
  * Taskitator Unified Application Engine (app.js)
  * Manages view routing (#today / #general), unified task trees,
  * projects registry, break UI, proofs, emergency quotas, persistent filters,
- * Move Task re-parenting, Sibling Criteria Inheritance, and Multi-Selection Batch Actions.
+ * Move Task re-parenting, Sibling Criteria Inheritance, Multi-Selection Batch Actions,
+ * Smart Criteria Variable Linker ({key==value} & {key}), Cycle-Safe Tree Traversal,
+ * and Logical Day-Start Offset Synchronization.
  */
 
 window.TaskitatorApp = (() => {
@@ -68,6 +70,82 @@ window.TaskitatorApp = (() => {
 
     const PROJECT_ICONS = ['📥', '📚', '💼', '⚡', '🔬', '🏥', '🎯', '💻', '📝', '🎨', '🚀', '🧠', '🏋️', '💰', '🛠️', '🌐'];
     const PROJECT_COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#f97316'];
+
+    // =========================================================================
+    // Logical Day Date Derivation (Day-Start Offset Aware)
+    // =========================================================================
+    function getAppTodayStr() {
+        if (window.TaskitatorEngine?.BreakEngine?.getLogicalDayBounds) {
+            return TaskitatorEngine.BreakEngine.getLogicalDayBounds().dateStr;
+        }
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // =========================================================================
+    // Smart Criteria Variable Linker Helper Engine
+    // =========================================================================
+    const SmartCriteriaEngine = {
+        /**
+         * Parses {key==value} tokens from a title string.
+         * Returns clean display title and normalized lowercase variable map.
+         */
+        parseTitle(rawInput) {
+            const raw = String(rawInput || '');
+            const varMap = {};
+            const cleanTitle = raw.replace(/\{([^=]+)==([^}]+)\}/g, (match, key, value) => {
+                const cleanKey = key.trim().toLowerCase();
+                const cleanVal = value.trim();
+                varMap[cleanKey] = cleanVal;
+                return cleanVal;
+            }).trim();
+
+            return {
+                cleanTitle: cleanTitle.replace(/\s+/g, ' '),
+                varMap
+            };
+        },
+
+        /**
+         * Interpolates {key} placeholders inside proof criteria using varMap.
+         * Flags any unresolved template brackets.
+         */
+        resolveCriteria(criteriaText, varMap = {}) {
+            let text = String(criteriaText || '');
+            const unresolvedKeys = [];
+
+            text = text.replace(/\{([^=}]+)\}/g, (match, key) => {
+                const cleanKey = key.trim().toLowerCase();
+                if (Object.prototype.hasOwnProperty.call(varMap, cleanKey)) {
+                    return varMap[cleanKey];
+                }
+                unresolvedKeys.push(cleanKey);
+                return match;
+            });
+
+            // Check if any unmatched template brackets remain
+            const hasUnresolved = unresolvedKeys.length > 0 || /\{[^}]+\}/.test(text);
+
+            return {
+                resolvedText: text.trim(),
+                hasUnresolved,
+                unresolvedKeys
+            };
+        },
+
+        /**
+         * Safety gate: rejects submission if template brackets remain unresolved.
+         */
+        validateCriteriaForSubmission(criteriaText, varMap = {}) {
+            const { resolvedText, hasUnresolved, unresolvedKeys } = this.resolveCriteria(criteriaText, varMap);
+            if (hasUnresolved) {
+                const missingList = unresolvedKeys.length > 0 ? unresolvedKeys.join(', ') : 'unknown';
+                alert(`Criteria Error: Unresolved variable placeholder(s) detected: {${missingList}}.\nPlease define all referenced variables in the task title using the format: Task Title {${missingList}==value}.`);
+                return { valid: false, resolvedText: criteriaText };
+            }
+            return { valid: true, resolvedText };
+        }
+    };
 
     // =========================================================================
     // Web Audio API Synthesizer
@@ -343,7 +421,7 @@ window.TaskitatorApp = (() => {
                 });
             }
 
-            const todayStr = new Date().toISOString().split('T')[0];
+            const todayStr = getAppTodayStr();
             const hasPendingAiLocks = tasks.some(t => {
                 if (!t.ai_locked || t.status === 'completed' || t.status === 'trash') return false;
                 const due = (t.due_date || '').trim().toLowerCase();
@@ -535,13 +613,6 @@ window.TaskitatorApp = (() => {
         }
     }
 
-    function isSelectionWindowOpenSafe() {
-        if (window.TaskitatorEngine?.BreakEngine?.isSelectionWindowOpen) {
-            return TaskitatorEngine.BreakEngine.isSelectionWindowOpen();
-        }
-        return true;
-    }
-
     // =========================================================================
     // Storage & Sync Pipeline
     // =========================================================================
@@ -553,6 +624,9 @@ window.TaskitatorApp = (() => {
                 if (!t.project_id) {
                     t.project_id = 'inbox';
                     dirty = true;
+                }
+                if (t.raw_title === undefined) {
+                    t.raw_title = t.title || '';
                 }
             });
             if (dirty) {
@@ -611,7 +685,7 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Hierarchy, Shielding, & Sorting Algorithms
+    // Hierarchy, Shielding, & Sorting Algorithms (Cycle-Safe)
     // =========================================================================
     function sortTasks(tasksArray) {
         const priorities = getGlobalPriorities();
@@ -635,28 +709,37 @@ window.TaskitatorApp = (() => {
         });
     }
 
-    function getAllDescendants(nodeId) {
+    function getAllDescendants(nodeId, visited = new Set()) {
         let descs = [];
+        if (visited.has(nodeId)) return descs;
+        visited.add(nodeId);
+
         const kids = tasks.filter(t => t.parent_id === nodeId && t.status !== 'trash');
         for (const kid of kids) {
             descs.push(kid);
-            descs = descs.concat(getAllDescendants(kid.id));
+            descs = descs.concat(getAllDescendants(kid.id, visited));
         }
         return descs;
     }
 
-    function hasUncompletedDescendant(nodeId) {
+    function hasUncompletedDescendant(nodeId, visited = new Set()) {
+        if (visited.has(nodeId)) return false;
+        visited.add(nodeId);
+
         const kids = tasks.filter(t => t.parent_id === nodeId && t.status !== 'trash');
         for (const kid of kids) {
             if (kid.status !== 'completed') return true;
-            if (hasUncompletedDescendant(kid.id)) return true;
+            if (hasUncompletedDescendant(kid.id, visited)) return true;
         }
         return false;
     }
 
     function getShieldedAncestor(taskId) {
         let curr = tasks.find(t => t.id === taskId);
+        const visited = new Set();
         while (curr && curr.parent_id) {
+            if (visited.has(curr.id)) break;
+            visited.add(curr.id);
             const parent = tasks.find(t => t.id === curr.parent_id);
             if (!parent) break;
             if (parent.strict_prerequisites) return parent;
@@ -681,10 +764,13 @@ window.TaskitatorApp = (() => {
         return false;
     }
 
-    function cascadeProject(pId, newProj) {
+    function cascadeProject(pId, newProj, visited = new Set()) {
+        if (visited.has(pId)) return;
+        visited.add(pId);
+
         tasks.filter(k => k.parent_id === pId && k.status !== 'trash').forEach(child => {
             child.project_id = newProj;
-            cascadeProject(child.id, newProj);
+            cascadeProject(child.id, newProj, visited);
         });
     }
 
@@ -699,8 +785,11 @@ window.TaskitatorApp = (() => {
             window.ExemplarStore.deleteExemplar(target.id);
         }
 
+        const visited = new Set([targetTaskId]);
         function cascadeChildren(parentId) {
             tasks.filter(t => t.parent_id === parentId && t.status !== 'trash').forEach(child => {
+                if (visited.has(child.id)) return;
+                visited.add(child.id);
                 child.status = newStatus;
                 child.completed_at = timestamp;
                 if (newStatus === 'completed' && window.ExemplarStore) {
@@ -896,7 +985,10 @@ window.TaskitatorApp = (() => {
         }
 
         if (confirm(`Delete "${task.title}" and any associated subtasks?`)) {
+            const visited = new Set();
             function markTrash(id) {
+                if (visited.has(id)) return;
+                visited.add(id);
                 const target = tasks.find(t => t.id === id);
                 if (target) {
                     target.status = 'trash';
@@ -1112,7 +1204,7 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Todoist-Style NLP Smart Creation Engine
+    // Todoist-Style NLP Smart Creation Engine (Preserves Raw Markup)
     // =========================================================================
     const NLPEngine = (() => {
         function upgradeInput(inputId, contextType) {
@@ -1363,7 +1455,7 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Task Detail / Edit Modal Engine (Move Task & Sibling Inheritance)
+    // Task Detail / Edit Modal Engine (Move Task, Sibling Inherit & Template Linker)
     // =========================================================================
     function refreshDetailSubtaskList(parentId, triggerRenderFn) {
         const detailSubtasksList = document.getElementById('detailSubtasksList');
@@ -1450,13 +1542,15 @@ window.TaskitatorApp = (() => {
         const titleH = document.getElementById('detailTaskTitleHeader');
         if (titleH) titleH.textContent = task.title;
         
+        // Populate edit title input using raw_title to preserve {key==value} syntax
+        const titleForEdit = task.raw_title !== undefined ? task.raw_title : (task.title || '');
         if (editTaskTitle) {
-            if (editTaskTitle.tagName === 'DIV') editTaskTitle.innerHTML = task.title || '';
-            else editTaskTitle.value = task.title || '';
+            if (editTaskTitle.tagName === 'DIV') editTaskTitle.innerHTML = titleForEdit;
+            else editTaskTitle.value = titleForEdit;
         }
         
         if (editTaskDesc) editTaskDesc.value = task.description || '';
-        if (editTaskDueDate) editTaskDueDate.value = task.due_date === 'today' ? new Date().toISOString().split('T')[0] : (task.due_date || '');
+        if (editTaskDueDate) editTaskDueDate.value = task.due_date === 'today' ? getAppTodayStr() : (task.due_date || '');
         if (detailQuickSubtaskInput) detailQuickSubtaskInput.value = '';
 
         editModalSelectedTags.clear();
@@ -1546,8 +1640,11 @@ window.TaskitatorApp = (() => {
         if (editExemplarChip && window.ExemplarStore) {
             const exemplarRecord = await ExemplarStore.getExemplar(task.id);
             if (exemplarRecord && isLocked) {
-                if (editExemplarName) editExemplarName.textContent = exemplarRecord.filename || 'Attached Reference Exemplar';
-                if (editExemplarSize) editExemplarSize.textContent = exemplarRecord.size ? (exemplarRecord.size / (1024 * 1024)).toFixed(2) + ' MB';
+                if (editExemplarName) editExemplarName.textContent = exemplarRecord.fileName || exemplarRecord.filename || 'Attached Reference Exemplar';
+                if (editExemplarSize) {
+                    const bytes = exemplarRecord.fileSize || exemplarRecord.size || 0;
+                    editExemplarSize.textContent = bytes ? (bytes / (1024 * 1024)).toFixed(2) + ' MB' : '';
+                }
                 editExemplarChip.style.display = 'flex';
             } else {
                 editExemplarChip.style.display = 'none';
@@ -1616,7 +1713,7 @@ window.TaskitatorApp = (() => {
 
         const dueIn = document.getElementById('taskDueDateInput');
         if (dueIn) {
-            dueIn.value = (currentView === 'today') ? new Date().toISOString().split('T')[0] : '';
+            dueIn.value = (currentView === 'today') ? getAppTodayStr() : '';
         }
 
         const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
@@ -1682,7 +1779,7 @@ window.TaskitatorApp = (() => {
         const modal = document.getElementById('addTaskModal');
         if (modal) {
             modal.classList.add('open');
-            setTimeout(() => { if(titleEl) titleEl.focus(); }, 100);
+            setTimeout(() => { if (titleEl) titleEl.focus(); }, 100);
         }
     }
 
@@ -2130,7 +2227,7 @@ window.TaskitatorApp = (() => {
         if (!list) return;
         list.innerHTML = '';
 
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getAppTodayStr();
         const isBypassActive = isBypassActiveSafe();
         const globalPriorities = getGlobalPriorities();
         const globalProjects = getGlobalProjects();
@@ -2151,20 +2248,28 @@ window.TaskitatorApp = (() => {
             }
         });
 
-        function belongsToCurrentView(task) {
+        // Cycle-guarded membership check
+        function belongsToCurrentView(task, visited = new Set()) {
             if (currentView === 'general') return true;
+            if (visited.has(task.id)) return false;
+            visited.add(task.id);
+
             const rawDue = (task.due_date || '').trim().toLowerCase();
             if (rawDue === 'today') return true;
             if (/^\d{4}-\d{2}-\d{2}$/.test(rawDue) && rawDue <= todayStr) return true;
             const kids = allChildrenMap.get(task.id) || [];
-            return kids.some(k => belongsToCurrentView(k));
+            return kids.some(k => belongsToCurrentView(k, visited));
         }
 
-        function hasVisibleDescendant(taskId) {
+        // Cycle-guarded descendant visibility check
+        function hasVisibleDescendant(taskId, visited = new Set()) {
+            if (visited.has(taskId)) return false;
+            visited.add(taskId);
+
             const kids = visibleChildrenMap.get(taskId) || [];
             if (kids.length > 0) return true;
             const allKids = allChildrenMap.get(taskId) || [];
-            return allKids.some(k => hasVisibleDescendant(k.id));
+            return allKids.some(k => hasVisibleDescendant(k.id, visited));
         }
 
         const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0 || activeFilters.projects.size > 0;
@@ -2179,12 +2284,15 @@ window.TaskitatorApp = (() => {
                 matchMap.set(t.id, tagMatch && prioMatch && projMatch);
             });
 
-            function checkDesc(nodeId) {
+            function checkDesc(nodeId, visited = new Set()) {
+                if (visited.has(nodeId)) return false;
+                visited.add(nodeId);
+
                 if (descMatchMap.has(nodeId)) return descMatchMap.get(nodeId);
                 const kids = allChildrenMap.get(nodeId) || [];
                 let has = false;
                 for (let k of kids) {
-                    if (matchMap.get(k.id) || checkDesc(k.id)) has = true;
+                    if (matchMap.get(k.id) || checkDesc(k.id, visited)) has = true;
                 }
                 descMatchMap.set(nodeId, has);
                 return has;
@@ -2197,7 +2305,8 @@ window.TaskitatorApp = (() => {
             if (hasFilters) {
                 const m = matchMap.get(t.id);
                 const d = descMatchMap.get(t.id);
-                if (!m && d) return false;
+                // Retain root parent if it matches or has matching descendants
+                if (!m && !d) return false;
             }
             return isTaskVisuallyActive(t) || hasVisibleDescendant(t.id);
         });
@@ -2351,7 +2460,7 @@ window.TaskitatorApp = (() => {
                 if (task.strict_prerequisites) {
                     const shieldBadge = document.createElement('span');
                     shieldBadge.className = 'ai-badge';
-                    shieldBadge.innerHTML = '🛡 Shielded';
+                    shieldBadge.innerHTML = '🛡️ Shielded';
                     shieldBadge.style.background = '#451a03';
                     shieldBadge.style.color = '#fde68a';
                     shieldBadge.style.borderColor = '#78350f';
@@ -2455,7 +2564,7 @@ window.TaskitatorApp = (() => {
                 : "✓ Workspace Completed Tasks";
         }
 
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getAppTodayStr();
 
         const completedList = tasks.filter(t => {
             if (t.status !== 'completed') return false;
@@ -2487,7 +2596,7 @@ window.TaskitatorApp = (() => {
 
             let badgesHtml = '';
             if (task.ai_locked) badgesHtml += '<span class="ai-badge">🔒 AI</span> ';
-            if (task.strict_prerequisites) badgesHtml += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️ Shielded</span>';
+            if (task.strict_prerequisites) badgesHtml += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️️ Shielded</span>';
 
             info.innerHTML = `
                 <div style="font-weight: 600; text-decoration: line-through; color: var(--text-muted);">
@@ -2655,7 +2764,7 @@ window.TaskitatorApp = (() => {
         window.addEventListener('hashchange', handleHashRouting);
         handleHashRouting();
 
-        // Multi-Selection Mode Navbar Button (Updated to compact icon button)
+        // Multi-Selection Mode Navbar Button
         const toggleSelectModeBtn = document.getElementById('toggleSelectModeBtn');
         if (toggleSelectModeBtn) {
             toggleSelectModeBtn.addEventListener('click', toggleSelectionMode);
@@ -2682,7 +2791,7 @@ window.TaskitatorApp = (() => {
 
         if (batchSelectAllBtn) {
             batchSelectAllBtn.addEventListener('click', () => {
-                const todayStr = new Date().toISOString().split('T')[0];
+                const todayStr = getAppTodayStr();
                 tasks.forEach(t => {
                     if (t.status === 'trash' || t.status === 'completed' || pendingGraceCompletions.has(t.id)) return;
                     if (currentView === 'today') {
@@ -2780,7 +2889,7 @@ window.TaskitatorApp = (() => {
                     return;
                 }
                 const dueIn = document.getElementById('batchDueDateInput');
-                if (dueIn) dueIn.value = new Date().toISOString().split('T')[0];
+                if (dueIn) dueIn.value = getAppTodayStr();
                 batchDueDateModal.classList.add('open');
             });
         }
@@ -2790,7 +2899,7 @@ window.TaskitatorApp = (() => {
         if (applyBatchDueDateBtn && batchDueDateModal) {
             applyBatchDueDateBtn.addEventListener('click', () => {
                 const targetDate = document.getElementById('batchDueDateInput')?.value || '';
-                const todayStr = new Date().toISOString().split('T')[0];
+                const todayStr = getAppTodayStr();
                 const isBypass = isBypassActiveSafe();
                 let protectedCount = 0;
 
@@ -2848,8 +2957,8 @@ window.TaskitatorApp = (() => {
                     const inlineObj = sibRecord?.inline_data || sibRecord?.inlineData;
                     if (inlineObj && inlineObj.data) {
                         try {
-                            const mimeType = inlineObj.mime_type || sibRecord.mime_type || sibRecord.mimeType || 'application/pdf';
-                            const fileName = sibRecord.filename || sibRecord.fileName || 'cloned_exemplar.pdf';
+                            const mimeType = inlineObj.mime_type || sibRecord.mimeType || 'application/pdf';
+                            const fileName = sibRecord.fileName || sibRecord.filename || 'cloned_exemplar.pdf';
                             const byteChars = atob(inlineObj.data);
                             const byteNums = new Array(byteChars.length);
                             for (let i = 0; i < byteChars.length; i++) {
@@ -2887,7 +2996,7 @@ window.TaskitatorApp = (() => {
         let bulkRescheduleMode = 'standard';
 
         function openBulkRescheduleModal() {
-            const todayStr = new Date().toISOString().split('T')[0];
+            const todayStr = getAppTodayStr();
             const overdueAiTasks = tasks.filter(t => t.ai_locked && t.status === 'active' && t.due_date && t.due_date < todayStr);
             
             const gateBanner = document.getElementById('rescheduleAiLockGateBanner');
@@ -2919,7 +3028,7 @@ window.TaskitatorApp = (() => {
 
         if (confirmRescheduleBtn) {
             confirmRescheduleBtn.addEventListener('click', () => {
-                const todayStr = new Date().toISOString().split('T')[0];
+                const todayStr = getAppTodayStr();
                 let dirty = false;
 
                 if (bulkRescheduleMode === 'ai_rollover') {
@@ -2952,7 +3061,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // Sequential Subtask Entry
+        // Sequential Subtask Entry with Criteria Inheritance & Variable Resolution
         const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
         if (detailQuickSubtaskInput) {
             detailQuickSubtaskInput.addEventListener('keydown', (e) => {
@@ -2960,17 +3069,27 @@ window.TaskitatorApp = (() => {
                     e.preventDefault();
                     if (!activeDetailTaskId) return;
                     
-                    const subTitle = detailQuickSubtaskInput.value.trim();
-                    if (!subTitle) return;
+                    const rawSubInput = detailQuickSubtaskInput.value.trim();
+                    if (!rawSubInput) return;
 
                     const parentTask = tasks.find(t => t.id === activeDetailTaskId);
                     if (!parentTask) return;
+
+                    const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(rawSubInput);
+
+                    // Inherit proof criteria template from parent if parent has one
+                    let resolvedCriteria = '';
+                    if (parentTask.proof_criteria) {
+                        const res = SmartCriteriaEngine.resolveCriteria(parentTask.proof_criteria, varMap);
+                        resolvedCriteria = res.resolvedText;
+                    }
 
                     const newTaskId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
                     const newSubtask = {
                         id: newTaskId,
                         parent_id: activeDetailTaskId,
-                        title: subTitle,
+                        title: cleanTitle,
+                        raw_title: rawSubInput,
                         description: '',
                         tags: [],
                         priority_id: getLowestPriorityId(),
@@ -2978,7 +3097,7 @@ window.TaskitatorApp = (() => {
                         status: 'active',
                         due_date: '',
                         ai_locked: false,
-                        proof_criteria: '',
+                        proof_criteria: resolvedCriteria,
                         strict_prerequisites: false,
                         created_at: new Date().toISOString(),
                         completed_at: null
@@ -3488,28 +3607,39 @@ window.TaskitatorApp = (() => {
         NLPEngine.upgradeInput('taskTitleInput', 'create');
         NLPEngine.upgradeInput('editTaskTitle', 'edit');
 
-        // Task Creation Submission Hook
+        // Task Creation Submission Hook (Smart Criteria Variable Linker Integration)
         const taskCreateForm = document.getElementById('taskCreateForm');
         if (taskCreateForm) {
             taskCreateForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const title = NLPEngine.extractCleanTitle('taskTitleInput');
+                const rawTitle = NLPEngine.extractCleanTitle('taskTitleInput');
                 const desc = document.getElementById('taskDescInput')?.value.trim() || '';
                 const dueDate = document.getElementById('taskDueDateInput')?.value || '';
                 const isAi = Boolean(document.getElementById('aiLockCheckbox')?.checked);
                 const isStrictPrereq = Boolean(document.getElementById('strictPrereqCheckbox')?.checked);
-                const criteria = document.getElementById('taskCriteriaInput')?.value.trim() || '';
+                const rawCriteria = document.getElementById('taskCriteriaInput')?.value.trim() || '';
                 const parentId = document.getElementById('creationParentId')?.value || null;
                 
                 const exemplarInput = document.getElementById('createExemplarInput');
                 const exemplarFile = (isAi && exemplarInput && exemplarInput.files.length > 0) ? exemplarInput.files[0] : null;
 
-                if (!title) return;
+                if (!rawTitle) return;
 
-                if (isAi && isStrictCriteriaModeEnabled()) {
-                    if (!criteriaValidationState.validated || criteriaValidationState.score < 7) {
-                        alert('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before creating an AI-locked task.');
-                        return;
+                // Smart Criteria Variable Linker: Parse Title Variables
+                const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(rawTitle);
+
+                // Smart Criteria Variable Linker: Resolve Criteria & Guard Validation
+                let finalCriteria = rawCriteria;
+                if (isAi && rawCriteria) {
+                    const gate = SmartCriteriaEngine.validateCriteriaForSubmission(rawCriteria, varMap);
+                    if (!gate.valid) return;
+                    finalCriteria = gate.resolvedText;
+
+                    if (isStrictCriteriaModeEnabled()) {
+                        if (!criteriaValidationState.validated || criteriaValidationState.score < 7) {
+                            alert('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before creating an AI-locked task.');
+                            return;
+                        }
                     }
                 }
 
@@ -3558,7 +3688,8 @@ window.TaskitatorApp = (() => {
                 const newTask = {
                     id: newTaskId,
                     parent_id: parentId,
-                    title: title,
+                    title: cleanTitle,
+                    raw_title: rawTitle,
                     description: desc,
                     tags: Array.from(createModalSelectedTags),
                     priority_id: createModalSelectedPriority,
@@ -3566,7 +3697,7 @@ window.TaskitatorApp = (() => {
                     status: 'active',
                     due_date: dueDate,
                     ai_locked: isAi,
-                    proof_criteria: isAi ? criteria : '',
+                    proof_criteria: isAi ? finalCriteria : '',
                     strict_prerequisites: isStrictPrereq,
                     created_at: new Date().toISOString(),
                     completed_at: null
@@ -3590,12 +3721,14 @@ window.TaskitatorApp = (() => {
                 if (subtaskBuilderList) {
                     const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-input-title');
                     quickSubtaskInputs.forEach(input => {
-                        const subTitle = input.value.trim();
-                        if (subTitle) {
+                        const rawSubText = input.value.trim();
+                        if (rawSubText) {
+                            const subParsed = SmartCriteriaEngine.parseTitle(rawSubText);
                             tasks.push({
                                 id: 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
                                 parent_id: newTaskId,
-                                title: subTitle,
+                                title: subParsed.cleanTitle,
+                                raw_title: rawSubText,
                                 description: '',
                                 tags: [],
                                 priority_id: getLowestPriorityId(),
@@ -3662,7 +3795,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // Save Task Details Hook (Handling Move Task and Exemplar Cloning)
+        // Save Task Details Hook (Handling Move Task, Sibling Criteria & Smart Variable Linker)
         const saveTaskDetailsBtn = document.getElementById('saveTaskDetailsBtn');
         if (saveTaskDetailsBtn) {
             saveTaskDetailsBtn.addEventListener('click', async () => {
@@ -3681,7 +3814,11 @@ window.TaskitatorApp = (() => {
                 const isBypassActive = isBypassActiveSafe();
                 const willBeAiLocked = Boolean(document.getElementById('editAiLockCheckbox')?.checked);
                 let willBeStrict = Boolean(document.getElementById('editStrictPrereqCheckbox')?.checked);
-                const editedCriteria = document.getElementById('editTaskCriteria')?.value.trim() || '';
+                const editedCriteriaRaw = document.getElementById('editTaskCriteria')?.value.trim() || '';
+                const rawEditedTitle = NLPEngine.extractCleanTitle('editTaskTitle') || task.raw_title || task.title;
+
+                // Smart Criteria Variable Linker: Parse Title Variables
+                const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(rawEditedTitle);
 
                 // Handle Move Task: Target Parent / Re-parenting
                 const editTaskParentSelect = document.getElementById('editTaskParentSelect');
@@ -3702,7 +3839,7 @@ window.TaskitatorApp = (() => {
 
                     task.parent_id = targetParentId;
 
-                    // EC.1-B: Cascade project_id down the subtree
+                    // Cascade project_id down the subtree
                     if (targetParentId) {
                         const targetParent = tasks.find(t => t.id === targetParentId);
                         if (targetParent) {
@@ -3716,7 +3853,14 @@ window.TaskitatorApp = (() => {
                     willBeStrict = true;
                 }
 
+                let finalEditedCriteria = editedCriteriaRaw;
                 if (willBeAiLocked && (!task.ai_locked || isBypassActive)) {
+                    if (editedCriteriaRaw) {
+                        const gate = SmartCriteriaEngine.validateCriteriaForSubmission(editedCriteriaRaw, varMap);
+                        if (!gate.valid) return;
+                        finalEditedCriteria = gate.resolvedText;
+                    }
+
                     if (isStrictCriteriaModeEnabled()) {
                         if (!editCriteriaValidationState.validated || editCriteriaValidationState.score < 7) {
                             alert('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before saving an AI-locked task.');
@@ -3766,10 +3910,11 @@ window.TaskitatorApp = (() => {
                 }
 
                 if (!task.ai_locked || isBypassActive) {
-                    task.title = NLPEngine.extractCleanTitle('editTaskTitle') || task.title;
+                    task.title = cleanTitle;
+                    task.raw_title = rawEditedTitle;
                     task.due_date = document.getElementById('editTaskDueDate')?.value || '';
                     task.ai_locked = willBeAiLocked;
-                    task.proof_criteria = willBeAiLocked ? editedCriteria : '';
+                    task.proof_criteria = willBeAiLocked ? finalEditedCriteria : '';
                 }
                 
                 task.strict_prerequisites = willBeStrict;
@@ -3848,7 +3993,6 @@ window.TaskitatorApp = (() => {
 
                 let result = { success: false, error: 'Audit engine missing' };
                 if (window.TaskitatorEngine?.AuditEngine?.verifyProof) {
-                    
                     let refExemplarPart = null;
                     if (window.ExemplarStore) {
                         const exemplarRecord = await ExemplarStore.getExemplar(task.id);
@@ -3946,13 +4090,28 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // Validate Criteria (Pre-flight) Engine: Shared Handler
+        // Validate Criteria (Pre-flight) Engine: Shared Handler with Smart Criteria Interpolation
         async function runCriteriaValidation(criteriaText, taskTitle, exemplarFile, feedbackEl, btnEl, isEditMode) {
             if (!criteriaText) {
                 if (feedbackEl) {
                     feedbackEl.style.display = 'block';
                     feedbackEl.className = 'criteria-feedback-box fail';
                     feedbackEl.textContent = 'Please enter proof criteria before validating.';
+                }
+                return;
+            }
+
+            // Smart Criteria Variable Linker: Parse Title and Resolve Template Placeholders
+            const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(taskTitle);
+            const { resolvedText, hasUnresolved, unresolvedKeys } = SmartCriteriaEngine.resolveCriteria(criteriaText, varMap);
+
+            if (hasUnresolved) {
+                const missing = unresolvedKeys.length > 0 ? unresolvedKeys.join(', ') : 'unknown';
+                alert(`Criteria Error: Cannot validate criteria with unresolved template variables: {${missing}}.\nPlease define all variables in the task title (e.g. {${missing}==value}).`);
+                if (feedbackEl) {
+                    feedbackEl.style.display = 'block';
+                    feedbackEl.className = 'criteria-feedback-box fail';
+                    feedbackEl.innerHTML = `<strong>Validation Blocked:</strong> Unresolved template variable(s): <code>{${missing}}</code>`;
                 }
                 return;
             }
@@ -3967,7 +4126,7 @@ window.TaskitatorApp = (() => {
 
             let res = { success: false, error: 'Audit engine missing' };
             if (window.TaskitatorEngine?.AuditEngine?.validateCriteria) {
-                res = await TaskitatorEngine.AuditEngine.validateCriteria(criteriaText, taskTitle, exemplarFile);
+                res = await TaskitatorEngine.AuditEngine.validateCriteria(resolvedText, cleanTitle, exemplarFile);
             }
 
             btnEl.disabled = false;
@@ -4032,12 +4191,12 @@ window.TaskitatorApp = (() => {
         if (validateCriteriaBtn) {
             validateCriteriaBtn.addEventListener('click', async () => {
                 const criteriaText = document.getElementById('taskCriteriaInput')?.value.trim() || '';
-                const taskTitle = NLPEngine.extractCleanTitle('taskTitleInput') || '';
+                const rawTitle = NLPEngine.extractCleanTitle('taskTitleInput') || '';
                 const feedback = document.getElementById('criteriaFeedbackBox');
                 const exemplarInput = document.getElementById('createExemplarInput');
                 const exemplarFile = (exemplarInput && exemplarInput.files.length > 0) ? exemplarInput.files[0] : null;
 
-                await runCriteriaValidation(criteriaText, taskTitle, exemplarFile, feedback, validateCriteriaBtn, false);
+                await runCriteriaValidation(criteriaText, rawTitle, exemplarFile, feedback, validateCriteriaBtn, false);
             });
         }
 
@@ -4046,7 +4205,7 @@ window.TaskitatorApp = (() => {
         if (editValidateCriteriaBtn) {
             editValidateCriteriaBtn.addEventListener('click', async () => {
                 const criteriaText = document.getElementById('editTaskCriteria')?.value.trim() || '';
-                const taskTitle = NLPEngine.extractCleanTitle('editTaskTitle') || '';
+                const rawTitle = NLPEngine.extractCleanTitle('editTaskTitle') || '';
                 const feedback = document.getElementById('editCriteriaFeedbackBox');
                 
                 let exemplarFile = pendingEditExemplarFile;
@@ -4055,7 +4214,7 @@ window.TaskitatorApp = (() => {
                     if (record && record.blob) exemplarFile = record.blob;
                 }
 
-                await runCriteriaValidation(criteriaText, taskTitle, exemplarFile, feedback, editValidateCriteriaBtn, true);
+                await runCriteriaValidation(criteriaText, rawTitle, exemplarFile, feedback, editValidateCriteriaBtn, true);
             });
         }
 
