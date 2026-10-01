@@ -38,6 +38,40 @@ const SyncEngine = {
     },
 
     /**
+     * Validates that a password satisfies standard complexity requirements:
+     * - Minimum 8 characters
+     * - At least 1 uppercase letter ([A-Z])
+     * - At least 1 lowercase letter ([a-z])
+     * - At least 1 numeric digit ([0-9])
+     * - At least 1 special character/symbol
+     */
+    validatePasswordComplexity(password) {
+        const pass = String(password || '');
+        const errors = [];
+
+        if (pass.length < 8) {
+            errors.push('Must be at least 8 characters long');
+        }
+        if (!/[A-Z]/.test(pass)) {
+            errors.push('Must include at least 1 uppercase letter');
+        }
+        if (!/[a-z]/.test(pass)) {
+            errors.push('Must include at least 1 lowercase letter');
+        }
+        if (!/[0-9]/.test(pass)) {
+            errors.push('Must include at least 1 numeric digit');
+        }
+        if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pass)) {
+            errors.push('Must include at least 1 special character/symbol');
+        }
+
+        return {
+            valid: errors.length === 0,
+            errors
+        };
+    },
+
+    /**
      * Derives an irreversible 64-character SHA-256 authentication token client-side.
      * Prevents raw secret exposure across the network or in Cloudflare KV.
      */
@@ -108,7 +142,6 @@ const SyncEngine = {
         try { breaks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_BREAKS) || '[]'); } catch (e) {}
         try { ledger = JSON.parse(localStorage.getItem(this.STORAGE_KEY_LEDGER) || '[]'); } catch (e) {}
 
-        // Fallback to active engine snapshot if BreakEngine is loaded
         const todayBreaks = (window.TaskitatorEngine && TaskitatorEngine.BreakEngine)
             ? TaskitatorEngine.BreakEngine.getTodayBreaks()
             : breaks;
@@ -207,8 +240,84 @@ const SyncEngine = {
     },
 
     /**
+     * Executes an atomic credential rotation and cloud partition migration:
+     * 1. Verifies current password against active worker_passkey
+     * 2. Asserts new password complexity rules
+     * 3. Hashes new password into newToken
+     * 4. Pushes the full snapshot under newToken to Cloudflare KV
+     * 5. Commits newToken to localStorage settings
+     */
+    async changePassword(currentPassword, newPassword) {
+        const config = this.getConfig();
+        if (!config.username || !config.secret) {
+            return { success: false, error: 'No active session found.' };
+        }
+
+        const currentHash = await this.hashCredentials(config.username, currentPassword);
+        if (currentHash !== config.secret) {
+            return { success: false, error: 'Current password is incorrect.' };
+        }
+
+        const complexity = this.validatePasswordComplexity(newPassword);
+        if (!complexity.valid) {
+            return { success: false, error: complexity.errors.join('; ') };
+        }
+
+        const newHash = await this.hashCredentials(config.username, newPassword);
+        if (newHash === currentHash) {
+            return { success: false, error: 'New password cannot be the same as the current password.' };
+        }
+
+        if (this.debounceTimer) clearTimeout(this.debounceTimer);
+
+        let settings = {};
+        try {
+            settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
+        } catch (e) {
+            settings = {};
+        }
+
+        // Prepare full payload under the updated credential set
+        settings.worker_passkey = newHash;
+        const payload = this.getPayload(true);
+        payload.settings = settings;
+
+        this.notify('syncing');
+
+        try {
+            const res = await fetch(`${config.url}/sync/push`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${newHash}`,
+                    'X-App-ID': 'taskitator',
+                    'X-Taskitator-User': config.username
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `HTTP ${res.status}`);
+            }
+
+            settings.last_synced = new Date().toISOString();
+            localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+            this.hasUnsavedChanges = false;
+            this.notify('synced', { timestamp: settings.last_synced });
+
+            return { success: true, newToken: newHash };
+        } catch (err) {
+            // Revert local passkey on failure
+            settings.worker_passkey = config.secret;
+            localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+            this.notify('error', err.message);
+            return { success: false, error: `Migration failed: ${err.message}` };
+        }
+    },
+
+    /**
      * Pulls active rules published by Mr. Study from Cloudflare KV.
-     * Caches them in localStorage and dispatches a notification event.
      */
     async fetchMrStudyRules() {
         const config = this.getConfig();
@@ -271,141 +380,22 @@ const SyncEngine = {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${bearerToken}`,
-                    'X-App-ID': 'taskitator',
-                    'X-Taskitator-User': config.username
-                }
-            });
+The primary issue causing the authentication redirect loop is a timing collision between **asynchronous initialization** and the **immediate execution of the authentication gatekeeper IIFE**.
 
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.error || `HTTP ${res.status}`);
-            }
+---
 
-            const data = await res.json();
+### Root Causes
 
-            if (data.empty) {
-                this.notify('synced', { empty: true });
-                this.fetchMrStudyRules();
-                return { success: true, empty: true };
-            }
-
-            if (!Array.isArray(data.tasks)) {
-                throw new Error('Malformed snapshot: tasks array missing.');
-            }
-
-            const localLastMod = localStorage.getItem(this.STORAGE_KEY_LAST_MODIFIED);
-            if (localLastMod && data.updated_at) {
-                const localTime = new Date(localLastMod).getTime();
-                const remoteTime = new Date(data.updated_at).getTime();
-                if (localTime > remoteTime) {
-                    await this.push(true);
-                    this.fetchMrStudyRules();
-                    return { success: true, localWasFresher: true };
-                }
-            }
-
-            const localTasksRaw = localStorage.getItem(this.STORAGE_KEY_TASKS);
-            const remoteTasksRaw = JSON.stringify(data.tasks);
-
-            // Reconcile Tasks
-            localStorage.setItem(this.STORAGE_KEY_TASKS, remoteTasksRaw);
-
-            // Reconcile Projects
-            if (data.projects && Array.isArray(data.projects)) {
-                localStorage.setItem(this.STORAGE_KEY_PROJECTS, JSON.stringify(data.projects));
-            }
-            
-            // Reconcile Settings
-            if (data.settings) {
-                data.settings.last_synced = new Date().toISOString();
-                if (config.secret && !data.settings.worker_passkey) {
-                    data.settings.worker_passkey = config.secret;
-                }
-                if (config.username && !data.settings.worker_username) {
-                    data.settings.worker_username = config.username;
-                }
-                localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(data.settings));
-            }
-
-            // Reconcile Breaks
-            if (data.today_breaks && Array.isArray(data.today_breaks)) {
-                localStorage.setItem(this.STORAGE_KEY_BREAKS, JSON.stringify(data.today_breaks));
-            }
-
-            // Reconcile Audit Ledger
-            if (data.completed_audit_ledger && Array.isArray(data.completed_audit_ledger)) {
-                localStorage.setItem(this.STORAGE_KEY_LEDGER, JSON.stringify(data.completed_audit_ledger));
-            }
-
-            if (data.last_login) {
-                localStorage.setItem(this.STORAGE_KEY_LAST_LOGIN, data.last_login);
-            }
-
-            this.notify('synced', { timestamp: new Date().toISOString() });
-
-            // Fetch latest companion rules in background
-            this.fetchMrStudyRules();
-
-            if (onUpdateCallback && localTasksRaw !== remoteTasksRaw) {
-                onUpdateCallback();
-            }
-
-            return { success: true, data };
-        } catch (err) {
-            this.notify('error', err.message);
-            return { success: false, error: err.message };
-        }
-    },
-
-    /**
-     * Wipes active session credentials and returns the client to an unauthenticated state.
-     */
-    logout() {
-        if (this.debounceTimer) clearTimeout(this.debounceTimer);
-        this.hasUnsavedChanges = false;
-
-        let settings = {};
-        try {
-            settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
-        } catch (e) {
-            settings = {};
-        }
-
-        delete settings.worker_username;
-        delete settings.worker_passkey;
-        delete settings.last_synced;
-
-        localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
-        localStorage.removeItem(this.STORAGE_KEY_LAST_LOGIN);
-        localStorage.removeItem(this.STORAGE_KEY_MRSTUDY_RULES);
-
-        this.notify('unconfigured');
-        return true;
-    }
-};
-
-// Automatically flush pending changes to cloud when user minimizes PWA or switches tabs
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-        SyncEngine.flushIfDirty();
-    }
-});
-
-// Flush on page exit/navigation
-window.addEventListener('beforeunload', () => {
-    SyncEngine.flushIfDirty();
-});
-
-// Centralized Authentication Gatekeeper
-(function enforceAuthenticationGuard() {
-    const isLoginPage = window.location.pathname.endsWith('login.html');
-    const isConfigured = SyncEngine.isConfigured();
-
-    if (!isConfigured && !isLoginPage) {
-        window.location.replace('login.html');
-    } else if (isConfigured && isLoginPage) {
-        window.location.replace('index.html');
-    }
-})();
-
-window.SyncEngine = SyncEngine;
+1. **Race Condition in `pull()` Re-writing Settings:**
+   Inside `login.html`, credentials are saved to `localStorage` under `taskitator_settings` before calling `SyncEngine.pull()`[span_4](start_span)[span_4](end_span). In `sync-engine.js`, `pull()` contains this block:
+   ```javascript
+   if (data.settings) {
+       data.settings.last_synced = new Date().toISOString();
+       if (config.secret && !data.settings.worker_passkey) {
+           data.settings.worker_passkey = config.secret;
+       }
+       if (config.username && !data.settings.worker_username) {
+           data.settings.worker_username = config.username;
+       }
+       localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(data.settings));
+   }
