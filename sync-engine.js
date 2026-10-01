@@ -380,22 +380,141 @@ const SyncEngine = {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${bearerToken}`,
-The primary issue causing the authentication redirect loop is a timing collision between **asynchronous initialization** and the **immediate execution of the authentication gatekeeper IIFE**.
+                    'X-App-ID': 'taskitator',
+                    'X-Taskitator-User': config.username
+                }
+            });
 
----
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `HTTP ${res.status}`);
+            }
 
-### Root Causes
+            const data = await res.json();
 
-1. **Race Condition in `pull()` Re-writing Settings:**
-   Inside `login.html`, credentials are saved to `localStorage` under `taskitator_settings` before calling `SyncEngine.pull()`[span_4](start_span)[span_4](end_span). In `sync-engine.js`, `pull()` contains this block:
-   ```javascript
-   if (data.settings) {
-       data.settings.last_synced = new Date().toISOString();
-       if (config.secret && !data.settings.worker_passkey) {
-           data.settings.worker_passkey = config.secret;
-       }
-       if (config.username && !data.settings.worker_username) {
-           data.settings.worker_username = config.username;
-       }
-       localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(data.settings));
-   }
+            if (data.empty) {
+                this.notify('synced', { empty: true });
+                this.fetchMrStudyRules();
+                return { success: true, empty: true };
+            }
+
+            if (!Array.isArray(data.tasks)) {
+                throw new Error('Malformed snapshot: tasks array missing.');
+            }
+
+            const localLastMod = localStorage.getItem(this.STORAGE_KEY_LAST_MODIFIED);
+            if (localLastMod && data.updated_at) {
+                const localTime = new Date(localLastMod).getTime();
+                const remoteTime = new Date(data.updated_at).getTime();
+                if (localTime > remoteTime) {
+                    await this.push(true);
+                    this.fetchMrStudyRules();
+                    return { success: true, localWasFresher: true };
+                }
+            }
+
+            const localTasksRaw = localStorage.getItem(this.STORAGE_KEY_TASKS);
+            const remoteTasksRaw = JSON.stringify(data.tasks);
+
+            // Reconcile Tasks
+            localStorage.setItem(this.STORAGE_KEY_TASKS, remoteTasksRaw);
+
+            // Reconcile Projects
+            if (data.projects && Array.isArray(data.projects)) {
+                localStorage.setItem(this.STORAGE_KEY_PROJECTS, JSON.stringify(data.projects));
+            }
+            
+            // Reconcile Settings (Guarded against wiping active local session credentials)
+            if (data.settings && typeof data.settings === 'object') {
+                const updatedSettings = {
+                    ...data.settings,
+                    worker_username: config.username,
+                    worker_passkey: config.secret,
+                    last_synced: new Date().toISOString()
+                };
+                localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(updatedSettings));
+            }
+
+            // Reconcile Breaks
+            if (data.today_breaks && Array.isArray(data.today_breaks)) {
+                localStorage.setItem(this.STORAGE_KEY_BREAKS, JSON.stringify(data.today_breaks));
+            }
+
+            // Reconcile Audit Ledger
+            if (data.completed_audit_ledger && Array.isArray(data.completed_audit_ledger)) {
+                localStorage.setItem(this.STORAGE_KEY_LEDGER, JSON.stringify(data.completed_audit_ledger));
+            }
+
+            if (data.last_login) {
+                localStorage.setItem(this.STORAGE_KEY_LAST_LOGIN, data.last_login);
+            }
+
+            this.notify('synced', { timestamp: new Date().toISOString() });
+
+            // Fetch latest companion rules in background
+            this.fetchMrStudyRules();
+
+            if (onUpdateCallback && localTasksRaw !== remoteTasksRaw) {
+                onUpdateCallback();
+            }
+
+            return { success: true, data };
+        } catch (err) {
+            this.notify('error', err.message);
+            return { success: false, error: err.message };
+        }
+    },
+
+    /**
+     * Wipes active session credentials and returns the client to an unauthenticated state.
+     */
+    logout() {
+        if (this.debounceTimer) clearTimeout(this.debounceTimer);
+        this.hasUnsavedChanges = false;
+
+        let settings = {};
+        try {
+            settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
+        } catch (e) {
+            settings = {};
+        }
+
+        delete settings.worker_username;
+        delete settings.worker_passkey;
+        delete settings.last_synced;
+
+        localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+        localStorage.removeItem(this.STORAGE_KEY_LAST_LOGIN);
+        localStorage.removeItem(this.STORAGE_KEY_MRSTUDY_RULES);
+
+        this.notify('unconfigured');
+        return true;
+    }
+};
+
+// Automatically flush pending changes to cloud when user minimizes PWA or switches tabs
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+        SyncEngine.flushIfDirty();
+    }
+});
+
+// Flush on page exit/navigation
+window.addEventListener('beforeunload', () => {
+    SyncEngine.flushIfDirty();
+});
+
+// Centralized Authentication Gatekeeper (Clean Path Guard)
+(function enforceAuthenticationGuard() {
+    const cleanPath = window.location.pathname.split('/').pop().toLowerCase();
+    const isLoginPage = cleanPath === 'login.html';
+    const isConfigured = SyncEngine.isConfigured();
+
+    if (!isConfigured && !isLoginPage) {
+        window.location.replace('login.html');
+    } else if (isConfigured && isLoginPage) {
+        window.location.replace('index.html');
+    }
+})();
+
+window.SyncEngine = SyncEngine;
