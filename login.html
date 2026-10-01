@@ -97,11 +97,6 @@ const passwordInput = document.getElementById('passwordInput');
 const submitBtn = document.getElementById('submitBtn');
 const feedback = document.getElementById('loginFeedback');
 
-// If the device already has valid credentials stored, bounce straight to the dashboard
-if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
-    window.location.replace('index.html');
-}
-
 loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const user = usernameInput.value.trim().toLowerCase();
@@ -129,16 +124,30 @@ loginForm.addEventListener('submit', async (e) => {
         settings.worker_url = SyncEngine.HARDCODED_WORKER_URL;
         localStorage.setItem(SyncEngine.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
 
-        // Immediately pull remote cloud snapshot (tasks, daily breaks, API keys, etc.)
+        // Attempt to pull existing remote cloud snapshot
         const pullRes = await SyncEngine.pull();
 
         if (pullRes.success) {
+            // If this is a newly created account (empty partition), assert complexity rules
+            if (pullRes.empty) {
+                const complexity = SyncEngine.validatePasswordComplexity(pass);
+                if (!complexity.valid) {
+                    SyncEngine.logout();
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Connect & Unlock App';
+                    feedback.className = 'notice-banner notice-warning';
+                    feedback.style.display = 'block';
+                    feedback.innerHTML = `<strong>Password requirement not met for new account:</strong><br>${complexity.errors.join('<br>')}`;
+                    return;
+                }
+            }
+
             feedback.className = 'notice-banner notice-info';
             feedback.style.display = 'block';
             feedback.textContent = 'Account connected! Loading dashboard...';
             setTimeout(() => {
                 window.location.replace('index.html');
-            }, 400);
+            }, 300);
         } else {
             // Revert session keys on network/auth failure to avoid broken local state
             SyncEngine.logout();
