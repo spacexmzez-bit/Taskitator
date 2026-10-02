@@ -336,7 +336,7 @@
         <div class="page-title-actions">
             <!-- Compact Icon-Only Selection Mode Toggle Button -->
             <button type="button" class="icon-only-btn select-mode-btn" id="toggleSelectModeBtn" title="Toggle Multi-Selection Mode" aria-label="Toggle Multi-Selection Mode">
-                <span style="font-size: 0.95rem; line-height: 1;">☑️️</span>
+                <span style="font-size: 0.95rem; line-height: 1;">☑</span>
             </button>
 
             <button class="icon-only-btn" id="openFilterModalBtn" title="Filter Tasks" aria-label="Filter Tasks" style="position: relative;">
@@ -724,6 +724,17 @@
                 </div>
             </div>
 
+            <!-- Bonus Subtask Toggle (Creation) -->
+            <div class="form-group" id="bonusTaskContainer">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="bonusTaskCheckbox">
+                    <span>⭐ Bonus Subtask (Excluded from Shield)</span>
+                </label>
+                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                    Bonus items won't block the parent task from completion if time or energy runs out.
+                </small>
+            </div>
+
             <!-- Independent Subtask Shield Toggle -->
             <div class="form-group" id="prerequisiteBoxContainer">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -861,6 +872,17 @@
             <input type="date" id="editTaskDueDate">
         </div>
 
+        <!-- Bonus Subtask Toggle (Details / Edit) -->
+        <div class="form-group" id="editBonusTaskContainer">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="editBonusTaskCheckbox">
+                <span>⭐ Bonus Subtask (Excluded from Shield)</span>
+            </label>
+            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                Bonus items won't block the parent task from completion if time or energy runs out.
+            </small>
+        </div>
+
         <!-- Independent Subtask Shield in Details -->
         <div class="form-group" id="editPrerequisiteBoxContainer">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -935,7 +957,7 @@
 
             <!-- Inline Sequential Quick-Subtask Field (Todoist Style: Enter commits & keeps focus) -->
             <div style="margin-bottom: 10px;">
-                <input type="text" id="detailQuickSubtaskInput" placeholder="+ Add quick subtask (press Enter)..." style="width: 100%; padding: 8px 12px; border: 1.5px solid var(--border-color); border-radius: 8px; background: var(--card-subtle); color: var(--text-color); font-size: 0.88rem; outline: none;" autocomplete="off">
+                <input type="text" id="detailQuickSubtaskInput" placeholder="+ Add quick subtask (press Enter)... Use $$ for bonus" style="width: 100%; padding: 8px 12px; border: 1.5px solid var(--border-color); border-radius: 8px; background: var(--card-subtle); color: var(--text-color); font-size: 0.88rem; outline: none;" autocomplete="off">
             </div>
 
             <ul id="detailSubtasksList" style="list-style: none; padding: 0; margin: 0;"></ul>
@@ -972,7 +994,7 @@
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
             <button type="button" class="icon-btn" id="closeAuditModalBtn">Cancel</button>
-            <button type="button" class="icon-btn" id="submitProofBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Submit Proof</button>
+            <button type="submit" class="icon-btn" id="submitProofBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Submit Proof</button>
         </div>
     </div>
 </div>
