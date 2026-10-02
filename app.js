@@ -4,7 +4,7 @@
  * projects registry, break UI, proofs, emergency quotas, persistent filters,
  * Move Task re-parenting, Sibling Criteria Inheritance, Multi-Selection Batch Actions,
  * Smart Criteria Variable Linker ({key==value} & {key}), Cycle-Safe Tree Traversal,
- * and Logical Day-Start Offset Synchronization.
+ * Logical Day-Start Offset Synchronization, and Bonus/Optional Subtasks ($$).
  */
 
 window.TaskitatorApp = (() => {
@@ -48,10 +48,12 @@ window.TaskitatorApp = (() => {
     const createModalSelectedTags = new Set();
     let createModalSelectedPriority = null;
     let createModalSelectedProject = 'inbox';
+    let createModalIsBonus = false;
 
     const editModalSelectedTags = new Set();
     let editModalSelectedPriority = null;
     let editModalSelectedProject = 'inbox';
+    let editModalIsBonus = false;
 
     // Mr. Study Gamification State
     let activeMrStudyRules = [];
@@ -68,7 +70,7 @@ window.TaskitatorApp = (() => {
         { id: 'inbox', name: 'Inbox', color: '#94a3b8', icon: '📥', is_default: true }
     ];
 
-    const PROJECT_ICONS = ['📥', '📚', '💼', '⚡', '🔬', '🏥', '🎯', '💻', '📝', '🎨', '🚀', '🧠', '🏋️', '💰', '🛠️', '🌐'];
+    const PROJECT_ICONS = ['📥', '📚', '💼', '⚡', '🔬', '🏥', '🎯', '💻', '📝', '🎨', '🚀', '🧠', '🏋️️', '💰', '🛠️', '🌐'];
     const PROJECT_COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#f97316'];
 
     // =========================================================================
@@ -86,10 +88,6 @@ window.TaskitatorApp = (() => {
     // Smart Criteria Variable Linker Helper Engine
     // =========================================================================
     const SmartCriteriaEngine = {
-        /**
-         * Parses {key==value} tokens from a title string.
-         * Returns clean display title and normalized lowercase variable map.
-         */
         parseTitle(rawInput) {
             const raw = String(rawInput || '');
             const varMap = {};
@@ -106,10 +104,6 @@ window.TaskitatorApp = (() => {
             };
         },
 
-        /**
-         * Interpolates {key} placeholders inside proof criteria using varMap.
-         * Flags any unresolved template brackets.
-         */
         resolveCriteria(criteriaText, varMap = {}) {
             let text = String(criteriaText || '');
             const unresolvedKeys = [];
@@ -123,7 +117,6 @@ window.TaskitatorApp = (() => {
                 return match;
             });
 
-            // Check if any unmatched template brackets remain
             const hasUnresolved = unresolvedKeys.length > 0 || /\{[^}]+\}/.test(text);
 
             return {
@@ -133,9 +126,6 @@ window.TaskitatorApp = (() => {
             };
         },
 
-        /**
-         * Safety gate: rejects submission if template brackets remain unresolved.
-         */
         validateCriteriaForSubmission(criteriaText, varMap = {}) {
             const { resolvedText, hasUnresolved, unresolvedKeys } = this.resolveCriteria(criteriaText, varMap);
             if (hasUnresolved) {
@@ -628,6 +618,9 @@ window.TaskitatorApp = (() => {
                 if (t.raw_title === undefined) {
                     t.raw_title = t.title || '';
                 }
+                if (t.is_bonus === undefined) {
+                    t.is_bonus = false;
+                }
             });
             if (dirty) {
                 localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
@@ -685,7 +678,7 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Hierarchy, Shielding, & Sorting Algorithms (Cycle-Safe)
+    // Hierarchy, Shielding, & Sorting Algorithms (Cycle-Safe & Bonus Aware)
     // =========================================================================
     function sortTasks(tasksArray) {
         const priorities = getGlobalPriorities();
@@ -722,13 +715,14 @@ window.TaskitatorApp = (() => {
         return descs;
     }
 
+    // Bonus Subtasks (is_bonus: true) are excluded from the mandatory shield requirement
     function hasUncompletedDescendant(nodeId, visited = new Set()) {
         if (visited.has(nodeId)) return false;
         visited.add(nodeId);
 
         const kids = tasks.filter(t => t.parent_id === nodeId && t.status !== 'trash');
         for (const kid of kids) {
-            if (kid.status !== 'completed') return true;
+            if (!kid.is_bonus && kid.status !== 'completed') return true;
             if (hasUncompletedDescendant(kid.id, visited)) return true;
         }
         return false;
@@ -949,7 +943,7 @@ window.TaskitatorApp = (() => {
         }
 
         if (isCompletionBlocked(taskId)) {
-            alert("Blocked: A shielded task in this hierarchy requires all its subtasks to be completely finished first.");
+            alert("Blocked: A shielded task in this hierarchy requires all its core subtasks to be completely finished first.");
             return;
         }
 
@@ -1175,7 +1169,7 @@ window.TaskitatorApp = (() => {
     }
 
     function toggleTaskSelection(taskId) {
-        if (pendingGraceCompletions.has(taskId)) return; // EC.2-B: Grace timer protection
+        if (pendingGraceCompletions.has(taskId)) return;
 
         if (selectedTaskIds.has(taskId)) {
             selectedTaskIds.delete(taskId);
@@ -1204,7 +1198,7 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Todoist-Style NLP Smart Creation Engine (Preserves Raw Markup)
+    // Todoist-Style NLP Smart Creation Engine (Supports $$ Bonus Token)
     // =========================================================================
     const NLPEngine = (() => {
         function upgradeInput(inputId, contextType) {
@@ -1239,68 +1233,85 @@ window.TaskitatorApp = (() => {
             const textBeforeCaret = node.textContent.substring(0, range.startOffset);
             if (!textBeforeCaret.endsWith(' ')) return;
             
-            const match = textBeforeCaret.match(/(?:^|\s)([#!@][a-zA-Z0-9_.-]+)\s$/);
+            const match = textBeforeCaret.match(/(?:^|\s)((\$\$|[#!@][a-zA-Z0-9_.-]+))\s$/);
             if (!match) return;
             
             const rawToken = match[1];
-            const prefix = rawToken[0];
-            const value = rawToken.substring(1).toLowerCase();
-            
             let chipData = null;
-            
-            if (prefix === '!') {
-                const prios = getGlobalPriorities();
-                let pId = null;
-                if (['p1', 'high'].includes(value)) pId = prios.find(p => p.rank === 1)?.id;
-                else if (['p2', 'med', 'medium'].includes(value)) pId = prios.find(p => p.rank === 2)?.id;
-                else if (['p3', 'low'].includes(value)) pId = prios.find(p => p.rank === 3)?.id;
-                
-                if (pId) {
-                    const pObj = prios.find(p => p.id === pId);
-                    chipData = {
-                        html: `<span class="nlp-chip nlp-prio" contenteditable="false" data-type="prio" data-id="${pId}" data-raw="${rawToken}"><span class="priority-color-dot" style="background:${pObj.color}; width:8px; height:8px; display:inline-block; border-radius:50%; margin-right:4px;"></span>${pObj.name} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
-                        action: () => {
-                            if (contextType === 'edit') {
-                                editModalSelectedPriority = pId;
-                                renderModalPriorityCloud('editPriorityCloud', true);
-                            } else {
-                                createModalSelectedPriority = pId;
-                                renderModalPriorityCloud('createPriorityCloud', false);
-                            }
-                        }
-                    };
-                }
-            } else if (prefix === '#') {
-                const projs = getGlobalProjects();
-                const pObj = projs.find(p => p.name.replace(/\s+/g, '').toLowerCase() === value);
-                if (pObj && pObj.id !== 'inbox') {
-                    chipData = {
-                        html: `<span class="nlp-chip nlp-proj" contenteditable="false" data-type="proj" data-id="${pObj.id}" data-raw="${rawToken}"><span>${pObj.icon}</span> ${pObj.name} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
-                        action: () => {
-                            if (contextType === 'edit') {
-                                editModalSelectedProject = pObj.id;
-                                renderModalProjectCloud('editProjectCloud', true);
-                            } else {
-                                createModalSelectedProject = pObj.id;
-                                renderModalProjectCloud('createProjectCloud', false);
-                            }
-                        }
-                    };
-                }
-            } else if (prefix === '@') {
+
+            if (rawToken === '$$') {
                 chipData = {
-                    html: `<span class="nlp-chip nlp-tag" contenteditable="false" data-type="tag" data-id="${value}" data-raw="${rawToken}"># ${value} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                    html: `<span class="nlp-chip nlp-bonus" contenteditable="false" data-type="bonus" data-raw="$$">⭐ Bonus <button type="button" class="nlp-chip-remove">&times;</button></span>`,
                     action: () => {
-                        saveGlobalTag(value);
                         if (contextType === 'edit') {
-                            editModalSelectedTags.add(value);
-                            renderModalTagCloud('editTagCloud', editModalSelectedTags);
+                            editModalIsBonus = true;
+                            const cb = document.getElementById('editBonusTaskCheckbox');
+                            if (cb) cb.checked = true;
                         } else {
-                            createModalSelectedTags.add(value);
-                            renderModalTagCloud('createTagCloud', createModalSelectedTags);
+                            createModalIsBonus = true;
+                            const cb = document.getElementById('bonusTaskCheckbox');
+                            if (cb) cb.checked = true;
                         }
                     }
                 };
+            } else {
+                const prefix = rawToken[0];
+                const value = rawToken.substring(1).toLowerCase();
+                
+                if (prefix === '!') {
+                    const prios = getGlobalPriorities();
+                    let pId = null;
+                    if (['p1', 'high'].includes(value)) pId = prios.find(p => p.rank === 1)?.id;
+                    else if (['p2', 'med', 'medium'].includes(value)) pId = prios.find(p => p.rank === 2)?.id;
+                    else if (['p3', 'low'].includes(value)) pId = prios.find(p => p.rank === 3)?.id;
+                    
+                    if (pId) {
+                        const pObj = prios.find(p => p.id === pId);
+                        chipData = {
+                            html: `<span class="nlp-chip nlp-prio" contenteditable="false" data-type="prio" data-id="${pId}" data-raw="${rawToken}"><span class="priority-color-dot" style="background:${pObj.color}; width:8px; height:8px; display:inline-block; border-radius:50%; margin-right:4px;"></span>${pObj.name} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                            action: () => {
+                                if (contextType === 'edit') {
+                                    editModalSelectedPriority = pId;
+                                    renderModalPriorityCloud('editPriorityCloud', true);
+                                } else {
+                                    createModalSelectedPriority = pId;
+                                    renderModalPriorityCloud('createPriorityCloud', false);
+                                }
+                            }
+                        };
+                    }
+                } else if (prefix === '#') {
+                    const projs = getGlobalProjects();
+                    const pObj = projs.find(p => p.name.replace(/\s+/g, '').toLowerCase() === value);
+                    if (pObj && pObj.id !== 'inbox') {
+                        chipData = {
+                            html: `<span class="nlp-chip nlp-proj" contenteditable="false" data-type="proj" data-id="${pObj.id}" data-raw="${rawToken}"><span>${pObj.icon}</span> ${pObj.name} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                            action: () => {
+                                if (contextType === 'edit') {
+                                    editModalSelectedProject = pObj.id;
+                                    renderModalProjectCloud('editProjectCloud', true);
+                                } else {
+                                    createModalSelectedProject = pObj.id;
+                                    renderModalProjectCloud('createProjectCloud', false);
+                                }
+                            }
+                        };
+                    }
+                } else if (prefix === '@') {
+                    chipData = {
+                        html: `<span class="nlp-chip nlp-tag" contenteditable="false" data-type="tag" data-id="${value}" data-raw="${rawToken}"># ${value} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                        action: () => {
+                            saveGlobalTag(value);
+                            if (contextType === 'edit') {
+                                editModalSelectedTags.add(value);
+                                renderModalTagCloud('editTagCloud', editModalSelectedTags);
+                            } else {
+                                createModalSelectedTags.add(value);
+                                renderModalTagCloud('createTagCloud', createModalSelectedTags);
+                            }
+                        }
+                    };
+                }
             }
             
             if (chipData) {
@@ -1344,7 +1355,17 @@ window.TaskitatorApp = (() => {
                 const type = chip.getAttribute('data-type');
                 const id = chip.getAttribute('data-id');
                 
-                if (type === 'prio') {
+                if (type === 'bonus') {
+                    if (contextType === 'edit') {
+                        editModalIsBonus = false;
+                        const cb = document.getElementById('editBonusTaskCheckbox');
+                        if (cb) cb.checked = false;
+                    } else {
+                        createModalIsBonus = false;
+                        const cb = document.getElementById('bonusTaskCheckbox');
+                        if (cb) cb.checked = false;
+                    }
+                } else if (type === 'prio') {
                     if (contextType === 'edit' && editModalSelectedPriority === id) {
                         editModalSelectedPriority = getLowestPriorityId();
                         renderModalPriorityCloud('editPriorityCloud', true);
@@ -1455,7 +1476,7 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Task Detail / Edit Modal Engine (Move Task, Sibling Inherit & Template Linker)
+    // Task Detail / Edit Modal Engine
     // =========================================================================
     function refreshDetailSubtaskList(parentId, triggerRenderFn) {
         const detailSubtasksList = document.getElementById('detailSubtasksList');
@@ -1474,6 +1495,7 @@ window.TaskitatorApp = (() => {
                 sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
 
                 let cBadges = '';
+                if (child.is_bonus) cBadges += '<span class="bonus-badge">⭐ Bonus</span> ';
                 if (child.ai_locked) cBadges += '<span class="ai-badge">🔒 AI</span> ';
                 if (child.strict_prerequisites) cBadges += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️</span>';
 
@@ -1505,6 +1527,7 @@ window.TaskitatorApp = (() => {
         const editTaskDueDate = document.getElementById('editTaskDueDate');
         const editAiLockCheckbox = document.getElementById('editAiLockCheckbox');
         const editStrictPrereqCheckbox = document.getElementById('editStrictPrereqCheckbox');
+        const editBonusTaskCheckbox = document.getElementById('editBonusTaskCheckbox');
         const editCriteriaBoxContainer = document.getElementById('editCriteriaBoxContainer');
         const editTaskCriteria = document.getElementById('editTaskCriteria');
         const detailLockStatusBadge = document.getElementById('detailLockStatusBadge');
@@ -1542,7 +1565,6 @@ window.TaskitatorApp = (() => {
         const titleH = document.getElementById('detailTaskTitleHeader');
         if (titleH) titleH.textContent = task.title;
         
-        // Populate edit title input using raw_title to preserve {key==value} syntax
         const titleForEdit = task.raw_title !== undefined ? task.raw_title : (task.title || '');
         if (editTaskTitle) {
             if (editTaskTitle.tagName === 'DIV') editTaskTitle.innerHTML = titleForEdit;
@@ -1557,12 +1579,17 @@ window.TaskitatorApp = (() => {
         (task.tags || []).forEach(t => editModalSelectedTags.add(t));
         editModalSelectedPriority = task.priority_id || null;
         editModalSelectedProject = task.project_id || 'inbox';
+        editModalIsBonus = Boolean(task.is_bonus);
+
+        if (editBonusTaskCheckbox) {
+            editBonusTaskCheckbox.checked = editModalIsBonus;
+        }
 
         renderModalTagCloud('editTagCloud', editModalSelectedTags);
         renderModalPriorityCloud('editPriorityCloud', true);
         renderModalProjectCloud('editProjectCloud', true);
 
-        // Move Task: Check Shield Confinement (EC.1-C)
+        // Move Task: Check Shield Confinement
         const shieldedAncestor = getShieldedAncestor(taskId);
         if (editTaskParentSelect && moveShieldWarningBadge) {
             if (shieldedAncestor && !isBypassActive) {
@@ -1575,9 +1602,8 @@ window.TaskitatorApp = (() => {
                 editTaskParentSelect.title = "";
             }
 
-            // Populate eligible parents (EC.1-A: Circular reference blacklist)
             const descendantIds = new Set(getAllDescendants(taskId).map(d => d.id));
-            descendantIds.add(taskId); // Blacklist self
+            descendantIds.add(taskId);
 
             editTaskParentSelect.innerHTML = '<option value="">(Root Level - No Parent)</option>';
             tasks.forEach(candidate => {
@@ -1595,7 +1621,7 @@ window.TaskitatorApp = (() => {
             }
         }
 
-        // Sibling Criteria Inheritance Population (EC.3-A, EC.3-C)
+        // Sibling Criteria Inheritance
         if (siblingInheritContainer && siblingTaskSelect) {
             const isEligibleForInherit = task.parent_id && task.status !== 'completed' && (!task.ai_locked || isBypassActive);
             if (isEligibleForInherit) {
@@ -1669,13 +1695,18 @@ window.TaskitatorApp = (() => {
         }
 
         if (detailLockStatusBadge) {
+            let statusHtml = '';
+            if (task.is_bonus) {
+                statusHtml += '<span class="bonus-badge" style="margin-right: 4px;">⭐ Bonus</span>';
+            }
             if (isLocked) {
-                detailLockStatusBadge.innerHTML = isBypassActive
+                statusHtml += isBypassActive
                     ? '<span class="tag-chip" style="background:#451a03;color:#fde68a;">Bypass Active</span>'
                     : '<span class="ai-badge">🔒 Locked</span>';
             } else {
-                detailLockStatusBadge.innerHTML = '<span class="tag-chip">Standard</span>';
+                statusHtml += '<span class="tag-chip">Standard</span>';
             }
+            detailLockStatusBadge.innerHTML = statusHtml;
         }
 
         refreshDetailSubtaskList(taskId, triggerRenderFn);
@@ -1715,6 +1746,10 @@ window.TaskitatorApp = (() => {
         if (dueIn) {
             dueIn.value = (currentView === 'today') ? getAppTodayStr() : '';
         }
+
+        const bonusCheckbox = document.getElementById('bonusTaskCheckbox');
+        createModalIsBonus = false;
+        if (bonusCheckbox) bonusCheckbox.checked = false;
 
         const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
         const mrStudyRewardInputs = document.getElementById('mrstudyRewardInputs');
@@ -1784,7 +1819,7 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Break System UI Controller (Floating 10m Window & Daily Lock)
+    // Break System UI Controller
     // =========================================================================
     const BreakUI = {
         pill: null,
@@ -2073,7 +2108,6 @@ window.TaskitatorApp = (() => {
                 if (this.saveBtn) this.saveBtn.style.display = 'none';
 
             } else {
-                // Locked or in final 6-hour buffer
                 if (this.planningTimerInterval) {
                     clearInterval(this.planningTimerInterval);
                     this.planningTimerInterval = null;
@@ -2213,7 +2247,7 @@ window.TaskitatorApp = (() => {
     };
 
     // =========================================================================
-    // Core Tree Rendering & Subtractive Path-Preserving Filter Engine
+    // Core Tree Rendering
     // =========================================================================
     function isTaskVisuallyActive(task) {
         if (task.status === 'trash') return false;
@@ -2248,7 +2282,6 @@ window.TaskitatorApp = (() => {
             }
         });
 
-        // Cycle-guarded membership check
         function belongsToCurrentView(task, visited = new Set()) {
             if (currentView === 'general') return true;
             if (visited.has(task.id)) return false;
@@ -2261,7 +2294,6 @@ window.TaskitatorApp = (() => {
             return kids.some(k => belongsToCurrentView(k, visited));
         }
 
-        // Cycle-guarded descendant visibility check
         function hasVisibleDescendant(taskId, visited = new Set()) {
             if (visited.has(taskId)) return false;
             visited.add(taskId);
@@ -2305,8 +2337,7 @@ window.TaskitatorApp = (() => {
             if (hasFilters) {
                 const m = matchMap.get(t.id);
                 const d = descMatchMap.get(t.id);
-                // Retain root parent if it matches or has matching descendants
-                if (!m && !d) return false;
+                if (!m && d) return false;
             }
             return isTaskVisuallyActive(t) || hasVisibleDescendant(t.id);
         });
@@ -2329,7 +2360,8 @@ window.TaskitatorApp = (() => {
                                   task.due_date < todayStr;
 
                 const isSelected = selectedTaskIds.has(task.id);
-                li.className = `task-node ${isDone ? 'completed' : ''} ${isOverdue ? 'is-overdue' : ''} ${isSelected ? 'row-selected' : ''}`;
+                const isBonus = Boolean(task.is_bonus);
+                li.className = `task-node ${isDone ? 'completed' : ''} ${isOverdue ? 'is-overdue' : ''} ${isSelected ? 'row-selected' : ''} ${isBonus ? 'is-bonus' : ''}`;
 
                 let isBreadcrumb = false;
                 if (hasFilters) {
@@ -2415,7 +2447,6 @@ window.TaskitatorApp = (() => {
                     main.appendChild(spacer);
                 }
 
-                // Checkbox / Square Selection Box
                 const checkBtn = document.createElement('button');
                 if (isSelectionModeActive) {
                     checkBtn.className = `check-square ${isSelected ? 'selected' : ''}`;
@@ -2439,6 +2470,13 @@ window.TaskitatorApp = (() => {
                 titleSpan.className = 'task-title';
                 titleSpan.textContent = task.title;
                 main.appendChild(titleSpan);
+
+                if (task.is_bonus) {
+                    const bonusBadge = document.createElement('span');
+                    bonusBadge.className = 'bonus-badge';
+                    bonusBadge.innerHTML = '⭐ Bonus';
+                    main.appendChild(bonusBadge);
+                }
 
                 const projObj = globalProjects.find(pr => pr.id === (task.project_id || 'inbox'));
                 if (projObj && projObj.id !== 'inbox') {
@@ -2510,7 +2548,6 @@ window.TaskitatorApp = (() => {
                 }
                 row.appendChild(delBtn);
 
-                // Row Click Handler (Selection vs Detail Modal)
                 row.addEventListener('click', () => {
                     if (isSelectionModeActive) {
                         toggleTaskSelection(task.id);
@@ -2595,8 +2632,9 @@ window.TaskitatorApp = (() => {
             info.style.cssText = 'flex: 1; margin-right: 12px;';
 
             let badgesHtml = '';
+            if (task.is_bonus) badgesHtml += '<span class="bonus-badge">⭐ Bonus</span> ';
             if (task.ai_locked) badgesHtml += '<span class="ai-badge">🔒 AI</span> ';
-            if (task.strict_prerequisites) badgesHtml += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️️ Shielded</span>';
+            if (task.strict_prerequisites) badgesHtml += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡 Shielded</span>';
 
             info.innerHTML = `
                 <div style="font-weight: 600; text-decoration: line-through; color: var(--text-muted);">
@@ -2881,7 +2919,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // Batch Due Date Modal (with EC.2-A Guard)
+        // Batch Due Date Modal
         if (batchOpenDueDateBtn && batchDueDateModal) {
             batchOpenDueDateBtn.addEventListener('click', () => {
                 if (selectedTaskIds.size === 0) {
@@ -2907,7 +2945,6 @@ window.TaskitatorApp = (() => {
                     const t = tasks.find(x => x.id === id);
                     if (!t) return;
 
-                    // EC.2-A: Protect overdue AI-locked tasks against date postponement
                     if (t.ai_locked && t.due_date && t.due_date < todayStr && !isBypass) {
                         protectedCount++;
                         return;
@@ -2925,7 +2962,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // Sibling Criteria & Exemplar Inheritance Hook (EC.3-B, EC.3-D)
+        // Sibling Criteria Inheritance
         const applySiblingInheritBtn = document.getElementById('applySiblingInheritBtn');
         if (applySiblingInheritBtn) {
             applySiblingInheritBtn.addEventListener('click', async () => {
@@ -2951,7 +2988,6 @@ window.TaskitatorApp = (() => {
                 if (editAiLockCheckbox) editAiLockCheckbox.checked = true;
                 if (editCriteriaBoxContainer) editCriteriaBoxContainer.style.display = 'block';
 
-                // Deep clone ExemplarStore binary blob
                 if (window.ExemplarStore) {
                     const sibRecord = await ExemplarStore.getExemplar(sibling.id);
                     const inlineObj = sibRecord?.inline_data || sibRecord?.inlineData;
@@ -3061,7 +3097,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // Sequential Subtask Entry with Criteria Inheritance & Variable Resolution
+        // Sequential Subtask Entry with Criteria Inheritance & Variable Resolution ($$ Bonus Support)
         const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
         if (detailQuickSubtaskInput) {
             detailQuickSubtaskInput.addEventListener('keydown', (e) => {
@@ -3069,15 +3105,17 @@ window.TaskitatorApp = (() => {
                     e.preventDefault();
                     if (!activeDetailTaskId) return;
                     
-                    const rawSubInput = detailQuickSubtaskInput.value.trim();
+                    let rawSubInput = detailQuickSubtaskInput.value.trim();
                     if (!rawSubInput) return;
 
                     const parentTask = tasks.find(t => t.id === activeDetailTaskId);
                     if (!parentTask) return;
 
+                    const isBonusSub = rawSubInput.includes('$$');
+                    rawSubInput = rawSubInput.replace(/\$\$/g, '').trim();
+
                     const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(rawSubInput);
 
-                    // Inherit proof criteria template from parent if parent has one
                     let resolvedCriteria = '';
                     if (parentTask.proof_criteria) {
                         const res = SmartCriteriaEngine.resolveCriteria(parentTask.proof_criteria, varMap);
@@ -3099,6 +3137,7 @@ window.TaskitatorApp = (() => {
                         ai_locked: false,
                         proof_criteria: resolvedCriteria,
                         strict_prerequisites: false,
+                        is_bonus: isBonusSub,
                         created_at: new Date().toISOString(),
                         completed_at: null
                     };
@@ -3382,6 +3421,20 @@ window.TaskitatorApp = (() => {
             });
         }
 
+        const bonusTaskCheckbox = document.getElementById('bonusTaskCheckbox');
+        if (bonusTaskCheckbox) {
+            bonusTaskCheckbox.addEventListener('change', () => {
+                createModalIsBonus = Boolean(bonusTaskCheckbox.checked);
+            });
+        }
+
+        const editBonusTaskCheckbox = document.getElementById('editBonusTaskCheckbox');
+        if (editBonusTaskCheckbox) {
+            editBonusTaskCheckbox.addEventListener('change', () => {
+                editModalIsBonus = Boolean(editBonusTaskCheckbox.checked);
+            });
+        }
+
         const addSubtaskFieldBtn = document.getElementById('addSubtaskFieldBtn');
         const subtaskBuilderList = document.getElementById('subtaskBuilderList');
         if (addSubtaskFieldBtn && subtaskBuilderList) {
@@ -3389,7 +3442,7 @@ window.TaskitatorApp = (() => {
                 const div = document.createElement('div');
                 div.className = 'subtask-builder-item';
                 div.innerHTML = `
-                    <input type="text" class="subtask-input-title" placeholder="Quick subtask title..." style="flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" required>
+                    <input type="text" class="subtask-input-title" placeholder="Quick subtask title... ($$ for bonus)" style="flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" required>
                     <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
                 `;
                 subtaskBuilderList.appendChild(div);
@@ -3607,12 +3660,12 @@ window.TaskitatorApp = (() => {
         NLPEngine.upgradeInput('taskTitleInput', 'create');
         NLPEngine.upgradeInput('editTaskTitle', 'edit');
 
-        // Task Creation Submission Hook (Smart Criteria Variable Linker Integration)
+        // Task Creation Submission Hook
         const taskCreateForm = document.getElementById('taskCreateForm');
         if (taskCreateForm) {
             taskCreateForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const rawTitle = NLPEngine.extractCleanTitle('taskTitleInput');
+                let rawTitle = NLPEngine.extractCleanTitle('taskTitleInput');
                 const desc = document.getElementById('taskDescInput')?.value.trim() || '';
                 const dueDate = document.getElementById('taskDueDateInput')?.value || '';
                 const isAi = Boolean(document.getElementById('aiLockCheckbox')?.checked);
@@ -3625,10 +3678,11 @@ window.TaskitatorApp = (() => {
 
                 if (!rawTitle) return;
 
-                // Smart Criteria Variable Linker: Parse Title Variables
+                let isBonus = createModalIsBonus || rawTitle.includes('$$');
+                rawTitle = rawTitle.replace(/\$\$/g, '').trim();
+
                 const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(rawTitle);
 
-                // Smart Criteria Variable Linker: Resolve Criteria & Guard Validation
                 let finalCriteria = rawCriteria;
                 if (isAi && rawCriteria) {
                     const gate = SmartCriteriaEngine.validateCriteriaForSubmission(rawCriteria, varMap);
@@ -3655,7 +3709,7 @@ window.TaskitatorApp = (() => {
                     const confirmed = confirm(
                         "⚠️ IRREVERSIBLE SHIELD ⚠️\n\n" +
                         "The Shield is permanent.\n" +
-                        "Once created, this task cannot be completed until ALL subtasks are finished, and the Shield cannot be turned off.\n\n" +
+                        "Once created, this task cannot be completed until ALL core subtasks are finished, and the Shield cannot be turned off.\n\n" +
                         "Proceed with creation?"
                     );
                     if (!confirmed) return;
@@ -3699,6 +3753,7 @@ window.TaskitatorApp = (() => {
                     ai_locked: isAi,
                     proof_criteria: isAi ? finalCriteria : '',
                     strict_prerequisites: isStrictPrereq,
+                    is_bonus: isBonus,
                     created_at: new Date().toISOString(),
                     completed_at: null
                 };
@@ -3721,8 +3776,11 @@ window.TaskitatorApp = (() => {
                 if (subtaskBuilderList) {
                     const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-input-title');
                     quickSubtaskInputs.forEach(input => {
-                        const rawSubText = input.value.trim();
+                        let rawSubText = input.value.trim();
                         if (rawSubText) {
+                            const isSubBonus = rawSubText.includes('$$');
+                            rawSubText = rawSubText.replace(/\$\$/g, '').trim();
+
                             const subParsed = SmartCriteriaEngine.parseTitle(rawSubText);
                             tasks.push({
                                 id: 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -3738,6 +3796,7 @@ window.TaskitatorApp = (() => {
                                 ai_locked: false,
                                 proof_criteria: '',
                                 strict_prerequisites: false,
+                                is_bonus: isSubBonus,
                                 created_at: new Date().toISOString(),
                                 completed_at: null
                             });
@@ -3795,7 +3854,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // Save Task Details Hook (Handling Move Task, Sibling Criteria & Smart Variable Linker)
+        // Save Task Details Hook
         const saveTaskDetailsBtn = document.getElementById('saveTaskDetailsBtn');
         if (saveTaskDetailsBtn) {
             saveTaskDetailsBtn.addEventListener('click', async () => {
@@ -3815,12 +3874,16 @@ window.TaskitatorApp = (() => {
                 const willBeAiLocked = Boolean(document.getElementById('editAiLockCheckbox')?.checked);
                 let willBeStrict = Boolean(document.getElementById('editStrictPrereqCheckbox')?.checked);
                 const editedCriteriaRaw = document.getElementById('editTaskCriteria')?.value.trim() || '';
-                const rawEditedTitle = NLPEngine.extractCleanTitle('editTaskTitle') || task.raw_title || task.title;
+                let rawEditedTitle = NLPEngine.extractCleanTitle('editTaskTitle') || task.raw_title || task.title;
 
-                // Smart Criteria Variable Linker: Parse Title Variables
+                let willBeBonus = editModalIsBonus;
+                if (rawEditedTitle.includes('$$')) {
+                    willBeBonus = true;
+                    rawEditedTitle = rawEditedTitle.replace(/\$\$/g, '').trim();
+                }
+
                 const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(rawEditedTitle);
 
-                // Handle Move Task: Target Parent / Re-parenting
                 const editTaskParentSelect = document.getElementById('editTaskParentSelect');
                 const targetParentId = editTaskParentSelect ? (editTaskParentSelect.value.trim() || null) : task.parent_id;
 
@@ -3839,7 +3902,6 @@ window.TaskitatorApp = (() => {
 
                     task.parent_id = targetParentId;
 
-                    // Cascade project_id down the subtree
                     if (targetParentId) {
                         const targetParent = tasks.find(t => t.id === targetParentId);
                         if (targetParent) {
@@ -3881,7 +3943,7 @@ window.TaskitatorApp = (() => {
                     const confirmed = confirm(
                         "⚠️ IRREVERSIBLE SHIELD ⚠️\n\n" +
                         "Enabling the Shield is permanent.\n" +
-                        "Once saved, this task cannot be completed until ALL subtasks are finished, and the Shield cannot be turned off.\n\n" +
+                        "Once saved, this task cannot be completed until ALL core subtasks are finished, and the Shield cannot be turned off.\n\n" +
                         "Proceed?"
                     );
                     if (!confirmed) return;
@@ -3900,6 +3962,7 @@ window.TaskitatorApp = (() => {
                 task.description = document.getElementById('editTaskDesc')?.value.trim() || '';
                 task.tags = Array.from(editModalSelectedTags);
                 task.priority_id = editModalSelectedPriority;
+                task.is_bonus = willBeBonus;
 
                 if (!task.parent_id) {
                     const oldProjectId = task.project_id;
@@ -4090,7 +4153,7 @@ window.TaskitatorApp = (() => {
             });
         }
 
-        // Validate Criteria (Pre-flight) Engine: Shared Handler with Smart Criteria Interpolation
+        // Validate Criteria (Pre-flight) Engine
         async function runCriteriaValidation(criteriaText, taskTitle, exemplarFile, feedbackEl, btnEl, isEditMode) {
             if (!criteriaText) {
                 if (feedbackEl) {
@@ -4101,7 +4164,6 @@ window.TaskitatorApp = (() => {
                 return;
             }
 
-            // Smart Criteria Variable Linker: Parse Title and Resolve Template Placeholders
             const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(taskTitle);
             const { resolvedText, hasUnresolved, unresolvedKeys } = SmartCriteriaEngine.resolveCriteria(criteriaText, varMap);
 
