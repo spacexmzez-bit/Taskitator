@@ -769,6 +769,12 @@ body {
     border-color: rgba(16, 185, 129, 0.4);
 }
 
+.nlp-bonus {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fde68a;
+    border-color: rgba(245, 158, 11, 0.45);
+}
+
 /* Modal Tag & Priority Clouds */
 .tag-select-cloud {
     display: flex;
@@ -927,6 +933,21 @@ body {
     white-space: nowrap;
 }
 
+.bonus-badge {
+    background: rgba(245, 158, 11, 0.18);
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    color: #fde68a;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
 .project-badge-chip {
     font-size: 0.72rem;
     font-weight: 700;
@@ -986,6 +1007,10 @@ body {
     display: flex;
     flex-direction: column;
     margin-bottom: 8px;
+}
+
+.task-node.is-bonus > .task-row {
+    background: rgba(245, 158, 11, 0.04);
 }
 
 .task-row {
