@@ -30,12 +30,14 @@ window.TaskitatorComponents = Object.freeze({
         let initialized = false;
         let pendingAuditTaskId = null;
         let activeDetailTaskId = null;
-        let criteriaValidationState = { validated: false, score: 0, isTemplate: false };
-        let editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
+        let criteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
+        let editCriteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
         let pendingEditExemplarFile = null;
         let cachedTemplates = null;
         let activeTemplateTarget = 'create'; // 'create' | 'edit'
+        let currentTemplatesTab = 'templates'; // 'templates' | 'saved'
         const consecutive503Tracker = new Map(); // taskId -> consecutive 503 error count
+
         // Modal Selection State
         const createModalSelectedTags = new Set();
         let createModalSelectedPriority = null;
@@ -51,6 +53,72 @@ window.TaskitatorComponents = Object.freeze({
         let activeMrStudyRules = [];
         let isMrStudyLinked = false;
 
+        // =========================================================================
+        // Saved Criteria Store & Storage Helpers (Max 6, Max 4 Exemplars <= 4MB)
+        // =========================================================================
+        const SAVED_CRITERIA_KEY = 'taskitator_saved_criteria';
+        const MAX_SAVED_CRITERIA = 6;
+        const MAX_EXEMPLARS = 4;
+        const MAX_EXEMPLAR_SIZE_BYTES = 4 * 1024 * 1024; // 4 MB limit
+
+        function getSavedCriteria() {
+            try {
+                return JSON.parse(localStorage.getItem(SAVED_CRITERIA_KEY) || '[]');
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveSavedCriteriaList(list) {
+            localStorage.setItem(SAVED_CRITERIA_KEY, JSON.stringify(list));
+            if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
+                SyncEngine.markLocalModified();
+                SyncEngine.scheduleAutoPush();
+            }
+            updateSavedCriteriaBadge();
+        }
+
+        function updateSavedCriteriaBadge() {
+            const badge = document.getElementById('savedCriteriaCountBadge');
+            if (badge) {
+                const count = getSavedCriteria().length;
+                badge.textContent = `${count}/${MAX_SAVED_CRITERIA}`;
+            }
+        }
+
+        async function fileToBase64Payload(file) {
+            if (!file) return null;
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    resolve({
+                        fileName: file.name || 'exemplar',
+                        mimeType: file.type || 'application/octet-stream',
+                        fileSize: file.size || 0,
+                        data: String(reader.result).split(',')[1] || ''
+                    });
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function base64PayloadToFile(payload) {
+            if (!payload || !payload.data) return null;
+            try {
+                const byteChars = atob(payload.data);
+                const byteNums = new Array(byteChars.length);
+                for (let i = 0; i < byteChars.length; i++) {
+                    byteNums[i] = byteChars.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNums);
+                const blob = new Blob([byteArray], { type: payload.mimeType || 'application/octet-stream' });
+                return new File([blob], payload.fileName || 'exemplar', { type: payload.mimeType || 'application/octet-stream' });
+            } catch (e) {
+                console.warn('[SavedCriteria] Failed to reconstruct file from base64:', e);
+                return null;
+            }
+        }
 
         // =========================================================================
         // Smart Criteria Variable Linker Helper Engine
@@ -426,11 +494,13 @@ window.TaskitatorComponents = Object.freeze({
                     
                     div.focus();
                     const sel = window.getSelection();
-                    const range = document.createRange();
-                    range.selectNodeContents(div);
-                    range.collapse(false);
-                    sel.removeAllRanges();
-                    sel.addRange(range);
+                    if (sel) {
+                        const range = document.createRange();
+                        range.selectNodeContents(div);
+                        range.collapse(false);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }
                 }
             }
 
@@ -581,7 +651,9 @@ window.TaskitatorComponents = Object.freeze({
             editCriteriaValidationState = {
                 validated: isLocked,
                 score: isLocked ? 10 : 0,
-                isTemplate: false
+                isTemplate: false,
+                isSavedCriteria: false,
+                savedCriteriaText: ''
             };
 
             if (editFeedback) {
@@ -806,7 +878,10 @@ window.TaskitatorComponents = Object.freeze({
             const exemplarInput = document.getElementById('createExemplarInput');
             const exemplarChip = document.getElementById('createExemplarChip');
             const exemplarGuidance = document.getElementById('exemplarGuidanceNote');
-            if (exemplarInput) exemplarInput.value = '';
+            if (exemplarInput) {
+                exemplarInput.value = '';
+                delete exemplarInput._savedCriteriaFile;
+            }
             if (exemplarChip) exemplarChip.style.display = 'none';
             if (exemplarGuidance) exemplarGuidance.style.display = 'none';
 
@@ -831,7 +906,7 @@ window.TaskitatorComponents = Object.freeze({
             renderModalPriorityCloud('createPriorityCloud', false);
             renderModalProjectCloud('createProjectCloud', false);
 
-            criteriaValidationState = { validated: false, score: 0, isTemplate: false };
+            criteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
             const feedback = document.getElementById('criteriaFeedbackBox');
             if (feedback) {
                 feedback.style.display = 'none';
@@ -858,6 +933,8 @@ window.TaskitatorComponents = Object.freeze({
                     isMrStudyLinked = activeMrStudyRules.length > 0;
                 }
             } catch (e) {}
+
+            updateSavedCriteriaBadge();
 
             // Sibling Criteria Inheritance
             const applySiblingInheritBtn = document.getElementById('applySiblingInheritBtn');
@@ -910,7 +987,7 @@ window.TaskitatorComponents = Object.freeze({
                         }
                     }
 
-                    editCriteriaValidationState = { validated: true, score: 10, isTemplate: true };
+                    editCriteriaValidationState = { validated: true, score: 10, isTemplate: true, isSavedCriteria: false, savedCriteriaText: '' };
                     if (editFeedback) {
                         editFeedback.style.display = 'block';
                         editFeedback.className = 'criteria-feedback-box pass';
@@ -1204,9 +1281,10 @@ window.TaskitatorComponents = Object.freeze({
             if (removeCreateExemplarBtn) {
                 removeCreateExemplarBtn.addEventListener('click', () => {
                     createExemplarInput.value = '';
+                    delete createExemplarInput._savedCriteriaFile;
                     createExemplarChip.style.display = 'none';
                     exemplarGuidanceNote.style.display = 'none';
-                    criteriaValidationState = { validated: false, score: 0, isTemplate: false };
+                    criteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
                     const feedback = document.getElementById('criteriaFeedbackBox');
                     if (feedback) {
                         feedback.style.display = 'none';
@@ -1241,7 +1319,7 @@ window.TaskitatorComponents = Object.freeze({
                     if (editExemplarSize) editExemplarSize.textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
                     if (editExemplarChip) editExemplarChip.style.display = 'flex';
 
-                    editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
+                    editCriteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
                     const fb = document.getElementById('editCriteriaFeedbackBox');
                     if (fb) {
                         fb.style.display = 'none';
@@ -1258,11 +1336,60 @@ window.TaskitatorComponents = Object.freeze({
                         await window.ExemplarStore.deleteExemplar(activeDetailTaskId);
                     }
                     if (editExemplarChip) editExemplarChip.style.display = 'none';
-                    editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
+                    editCriteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
                     const fb = document.getElementById('editCriteriaFeedbackBox');
                     if (fb) {
                         fb.style.display = 'none';
                         fb.innerHTML = '';
+                    }
+                });
+            }
+
+            // Criteria text modification listener to drop validation if altered
+            const createCriteriaInputEl = document.getElementById('taskCriteriaInput');
+            if (createCriteriaInputEl) {
+                createCriteriaInputEl.addEventListener('input', () => {
+                    if (criteriaValidationState.isSavedCriteria) {
+                        if (createCriteriaInputEl.value.trim() !== (criteriaValidationState.savedCriteriaText || '').trim()) {
+                            criteriaValidationState.validated = false;
+                            criteriaValidationState.score = 0;
+                            criteriaValidationState.isSavedCriteria = false;
+                            criteriaValidationState.isTemplate = false;
+                            const feedback = document.getElementById('criteriaFeedbackBox');
+                            if (feedback) {
+                                feedback.style.display = 'block';
+                                feedback.className = 'criteria-feedback-box fail';
+                                feedback.innerHTML = '<strong>⚠️ Criteria modified:</strong> Saved verification dropped. Please re-validate (score &ge; 7 required to save task).';
+                            }
+                        }
+                    } else if (criteriaValidationState.validated) {
+                        criteriaValidationState.validated = false;
+                        criteriaValidationState.score = 0;
+                        criteriaValidationState.isTemplate = false;
+                    }
+                });
+            }
+
+            const editTaskCriteriaInput = document.getElementById('editTaskCriteria');
+            if (editTaskCriteriaInput) {
+                editTaskCriteriaInput.addEventListener('input', () => {
+                    if (editCriteriaValidationState.isSavedCriteria) {
+                        if (editTaskCriteriaInput.value.trim() !== (editCriteriaValidationState.savedCriteriaText || '').trim()) {
+                            editCriteriaValidationState.validated = false;
+                            editCriteriaValidationState.score = 0;
+                            editCriteriaValidationState.isSavedCriteria = false;
+                            editCriteriaValidationState.isTemplate = false;
+                            const feedback = document.getElementById('editCriteriaFeedbackBox');
+                            if (feedback) {
+                                feedback.style.display = 'block';
+                                feedback.className = 'criteria-feedback-box fail';
+                                feedback.innerHTML = '<strong>⚠️ Criteria modified:</strong> Saved verification dropped. Please re-validate (score &ge; 7 required to save task).';
+                            }
+                        }
+                    } else if (editCriteriaValidationState.validated) {
+                        editCriteriaValidationState.validated = false;
+                        editCriteriaValidationState.score = 0;
+                        editCriteriaValidationState.isTemplate = false;
                     }
                 });
             }
@@ -1284,7 +1411,9 @@ window.TaskitatorComponents = Object.freeze({
                     const parentId = document.getElementById('creationParentId')?.value || null;
                     
                     const exemplarInput = document.getElementById('createExemplarInput');
-                    const exemplarFile = (isAi && exemplarInput && exemplarInput.files.length > 0) ? exemplarInput.files[0] : null;
+                    const exemplarFile = (isAi && exemplarInput)
+                        ? (exemplarInput._savedCriteriaFile || (exemplarInput.files.length > 0 ? exemplarInput.files[0] : null))
+                        : null;
 
                     if (!rawTitle) return;
 
@@ -1450,17 +1579,10 @@ window.TaskitatorComponents = Object.freeze({
                         if (editAiLockCheckbox.checked) {
                             const task = host.tasks.getAll().find(t => t.id === activeDetailTaskId);
                             if (!task || !task.ai_locked) {
-                                editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
+                                editCriteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
                             }
                         }
                     }
-                });
-            }
-
-            const editTaskCriteriaInput = document.getElementById('editTaskCriteria');
-            if (editTaskCriteriaInput) {
-                editTaskCriteriaInput.addEventListener('input', () => {
-                    editCriteriaValidationState = { validated: false, score: 0, isTemplate: false };
                 });
             }
 
@@ -1551,7 +1673,7 @@ window.TaskitatorComponents = Object.freeze({
                         if (!confirmed) return;
                     } else if (!task.strict_prerequisites && willBeStrict && !willBeAiLocked) {
                         const confirmed = confirm(
-                            "⚠️ IRREVERSIBLE SHIELD ⚠️\n\n" +
+                            "⚠️ IRREVERSIBLE SHIELD ⚠️️\n\n" +
                             "Enabling the Shield is permanent.\n" +
                             "Once saved, this task cannot be completed until ALL core subtasks are finished, and the Shield cannot be turned off.\n\n" +
                             "Proceed?"
@@ -1763,7 +1885,7 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
-            // Validate Criteria (Pre-flight) Engine
+            // Validate Criteria (Pre-flight) Engine with >= 9/10 Saved Criteria Gate
             async function runCriteriaValidation(criteriaText, taskTitle, exemplarFile, feedbackEl, btnEl, isEditMode) {
                 if (!criteriaText) {
                     if (feedbackEl) {
@@ -1814,17 +1936,129 @@ window.TaskitatorComponents = Object.freeze({
                     stateTarget.validated = false;
                     stateTarget.score = 0;
                     stateTarget.isTemplate = false;
+                    stateTarget.isSavedCriteria = false;
                     return;
                 }
 
                 stateTarget.validated = true;
                 stateTarget.score = res.score;
                 stateTarget.isTemplate = false;
+                stateTarget.isSavedCriteria = false;
 
                 if (feedbackEl) {
                     if (res.passed) {
                         feedbackEl.className = 'criteria-feedback-box pass';
-                        feedbackEl.innerHTML = `<strong>✓ Verified (${TaskitatorSafety.escapeHtml(res.score)}/10)</strong>: ${TaskitatorSafety.escapeHtml(res.critique)}`;
+                        let html = `<strong>✓ Verified (${TaskitatorSafety.escapeHtml(res.score)}/10)</strong>: ${TaskitatorSafety.escapeHtml(res.critique)}`;
+
+                        // Strict Score >= 9 gate for saving criteria
+                        if (res.score >= 9) {
+                            html += `
+                                <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: space-between;">
+                                    <span style="font-size: 0.75rem; color: #86efac; font-weight: 600;">Eligible to save (&ge; 9/10)</span>
+                                    <button type="button" class="icon-btn save-as-criteria-btn" style="background: var(--primary); color: #fff; font-size: 0.75rem; padding: 4px 10px; font-weight: 700; border: none;">💾 Save Criteria</button>
+                                </div>
+                                <div class="save-criteria-inline-prompt" style="display: none; margin-top: 8px;">
+                                    <input type="text" class="save-criteria-title-input" placeholder="Enter title for saved criteria..." value="${TaskitatorSafety.escapeHtml(cleanTitle || 'Verified Criteria')}" style="width: 100%; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.8rem; box-sizing: border-box; margin-bottom: 6px;">
+                                    <div style="display: flex; justify-content: flex-end; gap: 6px;">
+                                        <button type="button" class="icon-btn cancel-save-criteria-btn" style="font-size: 0.72rem; padding: 2px 6px;">Cancel</button>
+                                        <button type="button" class="icon-btn confirm-save-criteria-btn" style="font-size: 0.72rem; padding: 2px 8px; background: var(--primary); color: #fff; border: none; font-weight: 600;">Confirm Save</button>
+                                    </div>
+                                    <div class="save-criteria-inline-error" style="color: #fca5a5; font-size: 0.75rem; margin-top: 4px; display: none;"></div>
+                                </div>
+                            `;
+                        } else {
+                            html += `
+                                <div style="margin-top: 6px; font-size: 0.72rem; color: var(--text-muted);">
+                                    ℹ️ Score must be 9/10 or higher to save to your personal Saved Criteria.
+                                </div>
+                            `;
+                        }
+                        feedbackEl.innerHTML = html;
+
+                        const saveBtn = feedbackEl.querySelector('.save-as-criteria-btn');
+                        const promptDiv = feedbackEl.querySelector('.save-criteria-inline-prompt');
+                        const confirmBtn = feedbackEl.querySelector('.confirm-save-criteria-btn');
+                        const cancelBtn = feedbackEl.querySelector('.cancel-save-criteria-btn');
+                        const titleInput = feedbackEl.querySelector('.save-criteria-title-input');
+                        const errDiv = feedbackEl.querySelector('.save-criteria-inline-error');
+
+                        if (saveBtn && promptDiv) {
+                            saveBtn.addEventListener('click', () => {
+                                saveBtn.style.display = 'none';
+                                promptDiv.style.display = 'block';
+                                if (titleInput) titleInput.focus();
+                            });
+                        }
+
+                        if (cancelBtn && promptDiv && saveBtn) {
+                            cancelBtn.addEventListener('click', () => {
+                                promptDiv.style.display = 'none';
+                                saveBtn.style.display = 'inline-block';
+                            });
+                        }
+
+                        if (confirmBtn && titleInput) {
+                            confirmBtn.addEventListener('click', async () => {
+                                const userTitle = titleInput.value.trim();
+                                if (!userTitle) {
+                                    if (errDiv) {
+                                        errDiv.style.display = 'block';
+                                        errDiv.textContent = 'Please enter a title.';
+                                    }
+                                    return;
+                                }
+
+                                const currentSaved = getSavedCriteria();
+                                if (currentSaved.length >= MAX_SAVED_CRITERIA) {
+                                    if (errDiv) {
+                                        errDiv.style.display = 'block';
+                                        errDiv.textContent = `Limit reached: Maximum ${MAX_SAVED_CRITERIA} saved criteria. Delete one first.`;
+                                    }
+                                    return;
+                                }
+
+                                if (exemplarFile) {
+                                    if (exemplarFile.size > MAX_EXEMPLAR_SIZE_BYTES) {
+                                        if (errDiv) {
+                                            errDiv.style.display = 'block';
+                                            errDiv.textContent = `Exemplar exceeds 4 MB limit (${(exemplarFile.size / (1024 * 1024)).toFixed(2)} MB).`;
+                                        }
+                                        return;
+                                    }
+                                    const withExCount = currentSaved.filter(c => c.has_exemplar).length;
+                                    if (withExCount >= MAX_EXEMPLARS) {
+                                        if (errDiv) {
+                                            errDiv.style.display = 'block';
+                                            errDiv.textContent = `Exemplar limit reached: Maximum ${MAX_EXEMPLARS} saved criteria can have attached files.`;
+                                        }
+                                        return;
+                                    }
+                                }
+
+                                confirmBtn.disabled = true;
+                                confirmBtn.textContent = 'Saving...';
+
+                                let exemplarPayload = null;
+                                if (exemplarFile) {
+                                    exemplarPayload = await fileToBase64Payload(exemplarFile);
+                                }
+
+                                const newSavedItem = {
+                                    id: 'sc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                                    title: userTitle.slice(0, 40),
+                                    criteria: criteriaText,
+                                    score: res.score,
+                                    has_exemplar: Boolean(exemplarPayload),
+                                    exemplar: exemplarPayload,
+                                    created_at: new Date().toISOString()
+                                };
+
+                                currentSaved.push(newSavedItem);
+                                saveSavedCriteriaList(currentSaved);
+
+                                promptDiv.innerHTML = `<span style="font-size: 0.78rem; color: #86efac; font-weight: 700;">✓ Saved to "Saved Criteria" tab!</span>`;
+                            });
+                        }
                     } else {
                         feedbackEl.className = 'criteria-feedback-box fail';
                         let feedbackHtml = `<strong>⚠️ Low Quality Rating (${TaskitatorSafety.escapeHtml(res.score)}/10)</strong>: ${TaskitatorSafety.escapeHtml(res.critique)}`;
@@ -1850,6 +2084,7 @@ window.TaskitatorComponents = Object.freeze({
                                 stateTarget.validated = true;
                                 stateTarget.score = 9;
                                 stateTarget.isTemplate = true;
+                                stateTarget.isSavedCriteria = false;
                                 feedbackEl.className = 'criteria-feedback-box pass';
                                 feedbackEl.innerHTML = `<strong>✓ Verified (9/10)</strong>: Applied forensic suggestion.`;
                             });
@@ -1866,7 +2101,7 @@ window.TaskitatorComponents = Object.freeze({
                     const rawTitle = NLPEngine.extractCleanTitle('taskTitleInput') || '';
                     const feedback = document.getElementById('criteriaFeedbackBox');
                     const exemplarInput = document.getElementById('createExemplarInput');
-                    const exemplarFile = (exemplarInput && exemplarInput.files.length > 0) ? exemplarInput.files[0] : null;
+                    const exemplarFile = (exemplarInput && (exemplarInput._savedCriteriaFile || (exemplarInput.files.length > 0 ? exemplarInput.files[0] : null)));
 
                     await runCriteriaValidation(criteriaText, rawTitle, exemplarFile, feedback, validateCriteriaBtn, false);
                 });
@@ -1890,14 +2125,155 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
-            // Template Picker Modal
+            // Template & Saved Criteria Picker Modal
             const templatesModal = document.getElementById('templatesModal');
             const closeTemplatesModalBtn = document.getElementById('closeTemplatesModalBtn');
             const openTemplatesBtn = document.getElementById('openTemplatesBtn');
             const editOpenTemplatesBtn = document.getElementById('editOpenTemplatesBtn');
+            const tabTemplatesBtn = document.getElementById('tabTemplatesBtn');
+            const tabSavedCriteriaBtn = document.getElementById('tabSavedCriteriaBtn');
+            const paneTemplates = document.getElementById('paneTemplates');
+            const paneSavedCriteria = document.getElementById('paneSavedCriteria');
+
+            function switchTemplatesModalTab(targetTab) {
+                currentTemplatesTab = targetTab;
+                if (targetTab === 'saved') {
+                    if (tabTemplatesBtn) tabTemplatesBtn.classList.remove('active');
+                    if (tabSavedCriteriaBtn) tabSavedCriteriaBtn.classList.add('active');
+                    if (paneTemplates) paneTemplates.classList.remove('active');
+                    if (paneSavedCriteria) paneSavedCriteria.classList.add('active');
+                    renderSavedCriteriaList();
+                } else {
+                    if (tabTemplatesBtn) tabTemplatesBtn.classList.add('active');
+                    if (tabSavedCriteriaBtn) tabSavedCriteriaBtn.classList.remove('active');
+                    if (paneTemplates) paneTemplates.classList.add('active');
+                    if (paneSavedCriteria) paneSavedCriteria.classList.remove('active');
+                }
+            }
+
+            if (tabTemplatesBtn) {
+                tabTemplatesBtn.addEventListener('click', () => switchTemplatesModalTab('templates'));
+            }
+            if (tabSavedCriteriaBtn) {
+                tabSavedCriteriaBtn.addEventListener('click', () => switchTemplatesModalTab('saved'));
+            }
+
+            function renderSavedCriteriaList() {
+                const container = document.getElementById('savedCriteriaListContainer');
+                if (!container) return;
+                container.innerHTML = '';
+                const savedList = getSavedCriteria();
+                updateSavedCriteriaBadge();
+
+                if (savedList.length === 0) {
+                    container.innerHTML = `
+                        <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 24px 0;">
+                            No saved criteria yet.<br>
+                            Validate criteria with a score of <strong>9/10 or higher</strong> to save your own reusable versions.
+                        </div>
+                    `;
+                    return;
+                }
+
+                savedList.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'template-picker-card';
+                    card.style.cssText = 'position: relative; padding: 12px 14px; border: 1.5px solid var(--border-color); border-radius: 8px; margin-bottom: 8px; cursor: pointer; background: var(--card-subtle);';
+
+                    let exemplarBadge = '';
+                    if (item.has_exemplar) {
+                        exemplarBadge = `<span class="tag-chip" style="background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); font-size: 0.7rem;">📎 Exemplar Attached</span>`;
+                    }
+
+                    card.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <strong style="color: var(--text-color); font-size: 0.9rem;">${TaskitatorSafety.escapeHtml(item.title)}</strong>
+                                <span class="tag-chip" style="font-size: 0.7rem; background: #052e16; color: #86efac;">${item.score}/10</span>
+                                ${exemplarBadge}
+                            </div>
+                            <button type="button" class="action-del-btn delete-saved-crit-btn" title="Delete Saved Criteria" style="font-size: 0.85rem; padding: 2px 6px;">✕</button>
+                        </div>
+                        <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; white-space: pre-wrap;">${TaskitatorSafety.escapeHtml(item.criteria)}</p>
+                    `;
+
+                    const delBtn = card.querySelector('.delete-saved-crit-btn');
+                    if (delBtn) {
+                        delBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            const updated = getSavedCriteria().filter(c => c.id !== item.id);
+                            saveSavedCriteriaList(updated);
+                            renderSavedCriteriaList();
+                        });
+                    }
+
+                    card.addEventListener('click', () => {
+                        applySavedCriteria(item);
+                    });
+
+                    container.appendChild(card);
+                });
+            }
+
+            function applySavedCriteria(savedItem) {
+                const isEdit = activeTemplateTarget === 'edit';
+                const inputEl = isEdit ? document.getElementById('editTaskCriteria') : document.getElementById('taskCriteriaInput');
+                const feedbackEl = isEdit ? document.getElementById('editCriteriaFeedbackBox') : document.getElementById('criteriaFeedbackBox');
+                const stateTarget = isEdit ? editCriteriaValidationState : criteriaValidationState;
+
+                if (inputEl) {
+                    inputEl.value = savedItem.criteria;
+                }
+
+                if (savedItem.has_exemplar && savedItem.exemplar) {
+                    const restoredFile = base64PayloadToFile(savedItem.exemplar);
+                    if (restoredFile) {
+                        if (isEdit) {
+                            pendingEditExemplarFile = restoredFile;
+                            const chip = document.getElementById('editExemplarChip');
+                            const nameEl = document.getElementById('editExemplarName');
+                            const sizeEl = document.getElementById('editExemplarSize');
+                            if (nameEl) nameEl.textContent = restoredFile.name;
+                            if (sizeEl) sizeEl.textContent = (restoredFile.size / (1024 * 1024)).toFixed(2) + ' MB';
+                            if (chip) chip.style.display = 'flex';
+                        } else {
+                            const chip = document.getElementById('createExemplarChip');
+                            const nameEl = document.getElementById('createExemplarName');
+                            const sizeEl = document.getElementById('createExemplarSize');
+                            const noteEl = document.getElementById('exemplarGuidanceNote');
+                            if (nameEl) nameEl.textContent = restoredFile.name;
+                            if (sizeEl) sizeEl.textContent = (restoredFile.size / (1024 * 1024)).toFixed(2) + ' MB';
+                            if (chip) chip.style.display = 'flex';
+                            if (noteEl) noteEl.style.display = 'block';
+
+                            const input = document.getElementById('createExemplarInput');
+                            if (input) {
+                                input._savedCriteriaFile = restoredFile;
+                            }
+                        }
+                    }
+                }
+
+                stateTarget.validated = true;
+                stateTarget.score = savedItem.score || 10;
+                stateTarget.isTemplate = false;
+                stateTarget.isSavedCriteria = true;
+                stateTarget.savedCriteriaText = savedItem.criteria;
+
+                if (feedbackEl) {
+                    feedbackEl.style.display = 'block';
+                    feedbackEl.className = 'criteria-feedback-box pass';
+                    feedbackEl.innerHTML = `<strong>✓ Applied Saved Criteria (${stateTarget.score}/10)</strong>: "${TaskitatorSafety.escapeHtml(savedItem.title)}"<br><small style="color:var(--text-muted);">Modifying this criteria will automatically drop its verification.</small>`;
+                }
+
+                if (templatesModal) templatesModal.classList.remove('open');
+            }
 
             async function openTemplatesPicker(targetMode) {
                 activeTemplateTarget = targetMode;
+                switchTemplatesModalTab('templates');
+                updateSavedCriteriaBadge();
+
                 if (!cachedTemplates) {
                     try {
                         const resp = await fetch('./CRITERIA_TEMPLATES.json');
@@ -1916,16 +2292,16 @@ window.TaskitatorComponents = Object.freeze({
                             card.className = 'template-picker-card';
                             card.innerHTML = `
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                    <strong style="color: var(--text-color); font-size: 0.88rem;">${t.label}</strong>
-                                    <span class="tag-chip" style="font-size: 0.7rem;">${t.category}</span>
+                                    <strong style="color: var(--text-color); font-size: 0.88rem;">${TaskitatorSafety.escapeHtml(t.label)}</strong>
+                                    <span class="tag-chip" style="font-size: 0.7rem;">${TaskitatorSafety.escapeHtml(t.category)}</span>
                                 </div>
-                                <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.35;">${t.template}</p>
+                                <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.35;">${TaskitatorSafety.escapeHtml(t.template)}</p>
                             `;
                             card.addEventListener('click', () => {
                                 if (activeTemplateTarget === 'edit') {
                                     const tIn = document.getElementById('editTaskCriteria');
                                     if (tIn) tIn.value = t.template;
-                                    editCriteriaValidationState = { validated: true, score: 10, isTemplate: true };
+                                    editCriteriaValidationState = { validated: true, score: 10, isTemplate: true, isSavedCriteria: false, savedCriteriaText: '' };
                                     const fb = document.getElementById('editCriteriaFeedbackBox');
                                     if (fb) {
                                         fb.style.display = 'block';
@@ -1935,7 +2311,7 @@ window.TaskitatorComponents = Object.freeze({
                                 } else {
                                     const tIn = document.getElementById('taskCriteriaInput');
                                     if (tIn) tIn.value = t.template;
-                                    criteriaValidationState = { validated: true, score: 10, isTemplate: true };
+                                    criteriaValidationState = { validated: true, score: 10, isTemplate: true, isSavedCriteria: false, savedCriteriaText: '' };
                                     const fb = document.getElementById('criteriaFeedbackBox');
                                     if (fb) {
                                         fb.style.display = 'block';
