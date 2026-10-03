@@ -406,6 +406,7 @@
     <ul class="task-list-tree" id="taskListContainer"></ul>
 </div>
 
+<!-- Floating Action Buttons -->
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
 <button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot">🤖</button>
 
@@ -723,6 +724,12 @@
                 </div>
             </div>
 
+            <!-- Due Date Picker in Create Mode -->
+            <div class="form-group" id="createDueDateContainer">
+                <label for="taskDueDateInput">Due Date</label>
+                <input type="date" id="taskDueDateInput">
+            </div>
+
             <div class="form-group" id="mrstudyRuleContainer" style="display: none;">
                 <div class="mrstudy-rule-box">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
@@ -822,6 +829,7 @@
                 <div id="criteriaFeedbackBox" class="criteria-feedback-box"></div>
             </div>
 
+            <!-- Subtask Creation with Enter-Commit & Auto-Increment -->
             <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                     <label style="margin: 0;">Quick Subtasks</label>
