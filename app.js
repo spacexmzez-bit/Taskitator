@@ -1038,14 +1038,13 @@ window.TaskitatorApp = (() => {
         const label = document.getElementById('batchSelectedCountLabel');
         if (!bar) return;
 
+        // Clean gate: only show the floating bar if multi-select is active AND at least 1 item is checked
         if (isSelectionModeActive && selectedTaskIds.size > 0) {
             bar.classList.add('open');
             if (label) label.textContent = `${selectedTaskIds.size} Selected`;
-        } else if (isSelectionModeActive) {
-            bar.classList.add('open');
-            if (label) label.textContent = `0 Selected`;
         } else {
             bar.classList.remove('open');
+            if (label) label.textContent = `0 Selected`;
         }
     }
 
@@ -1246,7 +1245,7 @@ window.TaskitatorApp = (() => {
             if (!this.modal || !this.rowsContainer) return;
             const status = window.TaskitatorEngine?.BreakEngine?.getPlanningStatus 
                 ? TaskitatorEngine.BreakEngine.getPlanningStatus() 
-                : { canStart: true, canEdit: false, isRunning: false, isLocked: false, isInBuffer: false, remainingWindowMs: 0, reason: '', bounds: { start: new Date() } };
+                : { canStart: true, canEdit: false, isRunning: false, isLocked: false, isInBuffer: false, remainingWindowMs: 0, bounds: { start: new Date() } };
 
             const breaks = window.TaskitatorEngine?.BreakEngine?.getTodayBreaks 
                 ? TaskitatorEngine.BreakEngine.getTodayBreaks() 
@@ -1430,7 +1429,7 @@ window.TaskitatorApp = (() => {
             const breaksArray = this.getCurrentRowsData();
 
             const confirmed = confirm(
-                "⚠️ CONFIRM & LOCK DAILY SCHEDULE ⚠️\n\n" +
+                "⚠️️ CONFIRM & LOCK DAILY SCHEDULE ⚠️\n\n" +
                 "Once locked, your breaks cannot be edited, added, or cleared for the remainder of this cycle.\n\n" +
                 "Do you want to permanently lock this schedule now?"
             );
@@ -1472,7 +1471,6 @@ window.TaskitatorApp = (() => {
 
         hideError() {
             if (!this.errorBox) return;
-            this.errorBox.style.display = 'none';
             this.errorBox.textContent = '';
         }
     };
@@ -1729,7 +1727,7 @@ window.TaskitatorApp = (() => {
                 if (task.strict_prerequisites) {
                     const shieldBadge = document.createElement('span');
                     shieldBadge.className = 'ai-badge';
-                    shieldBadge.innerHTML = '🛡️️ Shielded';
+                    shieldBadge.innerHTML = '🛡️ Shielded';
                     shieldBadge.style.background = '#451a03';
                     shieldBadge.style.color = '#fde68a';
                     shieldBadge.style.borderColor = '#78350f';
