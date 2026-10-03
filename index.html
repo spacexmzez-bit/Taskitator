@@ -212,7 +212,7 @@
             position: fixed;
             bottom: 20px;
             left: 50%;
-            transform: translateX(-50%) translateY(120%);
+            transform: translateX(-50%) translateY(140%);
             width: 92%;
             max-width: 620px;
             background: var(--card-bg);
@@ -225,11 +225,17 @@
             align-items: center;
             justify-content: space-between;
             gap: 10px;
-            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease, visibility 0.2s ease;
             box-sizing: border-box;
         }
         .batch-action-bar.open {
             transform: translateX(-50%) translateY(0);
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
         }
         .batch-controls-group {
             display: flex;
@@ -285,7 +291,7 @@
         <a href="calendar.html">🗓️ Calendar</a>
         <a href="projects.html">📁 Projects</a>
         <a href="stats.html">📊 Stats</a>
-        <a href="trash.html">🗑️️ Trash</a>
+        <a href="trash.html">🗑️ Trash</a>
         <a href="settings.html">⚙️ Settings</a>
     </nav>
 </aside>
@@ -717,11 +723,6 @@
                 </div>
             </div>
 
-            <div class="form-group">
-                <label for="taskDueDateInput">Due Date</label>
-                <input type="date" id="taskDueDateInput">
-            </div>
-
             <div class="form-group" id="mrstudyRuleContainer" style="display: none;">
                 <div class="mrstudy-rule-box">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
@@ -753,7 +754,7 @@
                                 <input type="number" id="mrstudyBanchInput" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.85rem;">
                             </div>
                         </div>
-                        <small id="mrstudyAiNotice" style="display: none; color: #fbbf24; font-size: 0.73rem;">⚠️️ This rule enforces AI Proof Verification.</small>
+                        <small id="mrstudyAiNotice" style="display: none; color: #fbbf24; font-size: 0.73rem;">⚠️ This rule enforces AI Proof Verification.</small>
                     </div>
                 </div>
             </div>
