@@ -86,7 +86,7 @@ window.TaskitatorApp = (() => {
         { id: 'inbox', name: 'Inbox', color: '#94a3b8', icon: '📥', is_default: true }
     ];
 
-    const PROJECT_ICONS = ['📥', '📚', '💼', '⚡', '🔬', '🏥', '🎯', '💻', '📝', '🎨', '🚀', '🧠', '🏋️️', '💰', '🛠️', '🌐'];
+    const PROJECT_ICONS = ['📥', '📚', '💼', '⚡', '🔬', '🏥', '🎯', '💻', '📝', '🎨', '🚀', '🧠', '🏋', '💰', '🛠️', '🌐'];
     const PROJECT_COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#f97316'];
 
     // =========================================================================
@@ -547,7 +547,7 @@ window.TaskitatorApp = (() => {
     }
 
     // =========================================================================
-    // Safe Engine Wrappers
+    // Safe Engine Wrappers & Break Normalization
     // =========================================================================
     function isBypassActiveSafe() {
         if (window.TaskitatorEngine?.EmergencyManager?.isBypassActive) {
@@ -565,10 +565,21 @@ window.TaskitatorApp = (() => {
 
     function getTodayBreaksSafe() {
         if (window.TaskitatorEngine?.BreakEngine?.getTodayBreaks) {
-            return TaskitatorEngine.BreakEngine.getTodayBreaks();
+            const b = TaskitatorEngine.BreakEngine.getTodayBreaks();
+            return Array.isArray(b) ? b : [];
         }
         try {
-            return JSON.parse(localStorage.getItem('taskitator_daily_breaks') || '[]');
+            const raw = localStorage.getItem('taskitator_daily_breaks');
+            if (!raw) return [];
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) return parsed;
+            if (typeof parsed === 'object' && parsed !== null) {
+                const todayStr = getAppTodayStr();
+                const entry = parsed[todayStr];
+                if (Array.isArray(entry)) return entry;
+                if (Array.isArray(entry?.breaks)) return entry.breaks;
+            }
+            return [];
         } catch (e) {
             return [];
         }
@@ -1238,7 +1249,7 @@ window.TaskitatorApp = (() => {
                 : { canStart: true, canEdit: false, isRunning: false, isLocked: false, isInBuffer: false, remainingWindowMs: 0, reason: '', bounds: { start: new Date() } };
 
             const breaks = window.TaskitatorEngine?.BreakEngine?.getTodayBreaks 
-                ? TaskitatorEngine.BreakEngine.getTodayBreaks 
+                ? TaskitatorEngine.BreakEngine.getTodayBreaks() 
                 : getTodayBreaksSafe();
 
             let headerBox = document.getElementById('breakPlanningHeaderBox');
@@ -1280,7 +1291,7 @@ window.TaskitatorApp = (() => {
                 `;
 
                 this.rowsContainer.innerHTML = '';
-                if (breaks.length > 0) {
+                if (Array.isArray(breaks) && breaks.length > 0) {
                     breaks.forEach(b => this.addBreakRow(b.start, b.end, false));
                 } else {
                     this.addBreakRow('', '', false);
@@ -1318,7 +1329,7 @@ window.TaskitatorApp = (() => {
                 }
 
                 this.rowsContainer.innerHTML = '';
-                if (breaks.length > 0) {
+                if (Array.isArray(breaks) && breaks.length > 0) {
                     breaks.forEach(b => this.addBreakRow(b.start, b.end, true));
                 } else {
                     this.rowsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.82rem; text-align: center; padding: 14px 0;">No breaks scheduled. Click "Start 10m Planning Window" to configure.</div>';
@@ -1363,7 +1374,7 @@ window.TaskitatorApp = (() => {
                 }
 
                 this.rowsContainer.innerHTML = '';
-                if (breaks.length > 0) {
+                if (Array.isArray(breaks) && breaks.length > 0) {
                     breaks.forEach(b => this.addBreakRow(b.start, b.end, true));
                 } else {
                     this.rowsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.82rem; text-align: center; padding: 14px 0;">No breaks were scheduled for this cycle.</div>';
@@ -1718,7 +1729,7 @@ window.TaskitatorApp = (() => {
                 if (task.strict_prerequisites) {
                     const shieldBadge = document.createElement('span');
                     shieldBadge.className = 'ai-badge';
-                    shieldBadge.innerHTML = '🛡️ Shielded';
+                    shieldBadge.innerHTML = '🛡️️ Shielded';
                     shieldBadge.style.background = '#451a03';
                     shieldBadge.style.color = '#fde68a';
                     shieldBadge.style.borderColor = '#78350f';
