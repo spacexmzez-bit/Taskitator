@@ -372,12 +372,15 @@ const SyncEngine = {
     },
 
     /**
-     * Executes an atomic credential rotation and cloud partition migration:
-     * 1. Verifies current password against active worker_passkey
+     * Executes an atomic credential rotation via dedicated worker endpoint:
+     * POST /sync/password-change
+     * 
+     * 1. Verifies current password matches active token
      * 2. Asserts new password complexity rules
      * 3. Hashes new password into newToken
-     * 4. Pushes the full snapshot under newToken to Cloudflare KV
-     * 5. Commits newToken to localStorage settings
+     * 4. Authenticates with current token in Authorization header
+     * 5. Sends username, new_token, and full payload to worker
+     * 6. Updates local state ONLY after worker confirms registration update
      */
     changePassword(currentPassword, newPassword) {
         const config = this.getConfig();
@@ -396,10 +399,15 @@ const SyncEngine = {
             return { success: false, error: 'No active session found.' };
         }
 
-        if (this.needsInitialPull()) return { success: false, error: 'Complete sign-in before changing passwords.' };
+        if (this.needsInitialPull()) {
+            return { success: false, error: 'Complete initial synchronization before changing passwords.' };
+        }
+
         const sessionId = this.sessionId;
         const currentHash = await this.hashCredentials(config.username, currentPassword);
-        if (currentHash !== config.secret) {
+        const activeToken = await this.ensureSha256(config.secret);
+
+        if (currentHash !== activeToken) {
             return { success: false, error: 'Current password is incorrect.' };
         }
 
@@ -409,63 +417,90 @@ const SyncEngine = {
         }
 
         const newHash = await this.hashCredentials(config.username, newPassword);
-        if (newHash === currentHash) {
+        if (newHash === activeToken) {
             return { success: false, error: 'New password cannot be the same as the current password.' };
         }
 
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
 
-        let settings = {};
-        try {
-            settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
-        } catch (e) {
-            settings = {};
+        if (!this.sessionMatches(config, sessionId)) {
+            return { success: false, error: 'Session changed.' };
         }
 
-        if (!this.sessionMatches(config, sessionId)) return { success: false, error: 'Session changed.' };
         const revision = localStorage.getItem(this.STORAGE_KEY_REVISION);
-        // Prepare full payload under the updated credential set
-        settings.worker_passkey = newHash;
-        const payload = this.getPayload(true);
-        payload.settings = settings;
+
+        // Prepare current payload snapshot to migrate to the new partition
+        let currentSettings = {};
+        try {
+            currentSettings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
+        } catch (e) {
+            currentSettings = {};
+        }
+
+        // Construct settings mirror for the new account partition
+        const updatedSettingsSnapshot = {
+            ...currentSettings,
+            worker_passkey: newHash,
+            last_synced: new Date().toISOString()
+        };
+
+        const snapshot = this.getPayload(true);
+        snapshot.settings = updatedSettingsSnapshot;
+
+        const requestBody = {
+            username: config.username,
+            new_token: newHash,
+            updated_at: snapshot.updated_at,
+            snapshot: snapshot
+        };
 
         this.notify('syncing');
 
         try {
-            const res = await fetch(`${config.url}/sync/push`, {
+            const res = await fetch(`${config.url}/sync/password-change`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${newHash}`,
+                    'Authorization': `Bearer ${activeToken}`,
                     'X-App-ID': 'taskitator',
                     'X-Taskitator-User': config.username
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(requestBody)
             });
 
             if (!res.ok) {
                 const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.error || `HTTP ${res.status}`);
+                throw new Error(errData.error || `Server rejected rotation (HTTP ${res.status})`);
             }
 
-            if (!this.sessionMatches(config, sessionId)) return { success: false, error: 'Session changed.' };
-            // Preserve settings edited while the password request was pending.
-            settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
-            settings.worker_passkey = newHash;
-            settings.last_synced = new Date().toISOString();
-            localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+            if (!this.sessionMatches(config, sessionId)) {
+                return { success: false, error: 'Session changed.' };
+            }
+
+            // Migration acknowledged by KV: atomically commit new credential locally
+            const liveSettings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
+            liveSettings.worker_passkey = newHash;
+            liveSettings.last_synced = snapshot.updated_at;
+            localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(liveSettings));
+
+            // Check if user edited tasks/settings while the network call was in flight
             const pending = revision !== localStorage.getItem(this.STORAGE_KEY_REVISION);
             this.hasUnsavedChanges = pending;
             localStorage.setItem(this.STORAGE_KEY_DIRTY, String(pending));
-            this.notify(pending ? 'pending' : 'synced', { timestamp: settings.last_synced });
-            if (pending) this.queueAutoPush();
+            this.notify(pending ? 'pending' : 'synced', { timestamp: liveSettings.last_synced });
+            
+            if (pending) {
+                this.queueAutoPush();
+            }
 
             return { success: true, newToken: newHash };
         } catch (err) {
-            // The active credential was never changed before server success.
-            if (!this.sessionMatches(config, sessionId)) return { success: false, error: 'Session changed.' };
+            // Rollback guarantee: do not modify local token or dirty states on failure
+            if (!this.sessionMatches(config, sessionId)) {
+                return { success: false, error: 'Session changed.' };
+            }
             this.notify('error', err.message);
-            return { success: false, error: `Migration failed: ${err.message}` };
+            return { success: false, error: `Password migration failed: ${err.message}` };
         }
     },
 
