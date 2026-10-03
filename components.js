@@ -170,6 +170,26 @@ window.TaskitatorComponents = Object.freeze({
                     return { valid: false, resolvedText: criteriaText };
                 }
                 return { valid: true, resolvedText };
+            },
+
+            reverseSubstitute(resolvedText, varMap = {}) {
+                let text = String(resolvedText || '');
+                for (const [key, val] of Object.entries(varMap)) {
+                    if (val && String(val).trim()) {
+                        const escapedVal = String(val).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const regex = new RegExp(escapedVal, 'g');
+                        text = text.replace(regex, `{${key}}`);
+                    }
+                }
+                return text;
+            },
+
+            incrementConsecutiveNum(text) {
+                if (!text) return text;
+                return text.replace(/\{num==(\d+)\}/i, (match, digits) => {
+                    const nextVal = parseInt(digits, 10) + 1;
+                    return `{num==${nextVal}}`;
+                });
             }
         };
 
@@ -734,7 +754,8 @@ window.TaskitatorComponents = Object.freeze({
                         eligibleSiblings.forEach(sib => {
                             const opt = document.createElement('option');
                             opt.value = sib.id;
-                            opt.textContent = `${sib.title} (${sib.proof_criteria.slice(0, 30)}...)`;
+                            const dispCrit = (sib.raw_proof_criteria || sib.proof_criteria).slice(0, 30);
+                            opt.textContent = `${sib.title} (${dispCrit}...)`;
                             siblingTaskSelect.appendChild(opt);
                         });
                     } else {
@@ -788,7 +809,7 @@ window.TaskitatorComponents = Object.freeze({
             if (editTaskDueDate) editTaskDueDate.disabled = cannotModifyLocked;
             if (editTaskCriteria) {
                 editTaskCriteria.disabled = cannotModifyLocked;
-                editTaskCriteria.value = task.proof_criteria || '';
+                editTaskCriteria.value = task.raw_proof_criteria || task.proof_criteria || '';
             }
 
             if (deleteFromDetailBtn) {
@@ -843,6 +864,9 @@ window.TaskitatorComponents = Object.freeze({
 
             const subtaskList = document.getElementById('subtaskBuilderList');
             if (subtaskList) subtaskList.innerHTML = '';
+
+            const createQuickSubInput = document.getElementById('createQuickSubtaskInput');
+            if (createQuickSubInput) createQuickSubInput.value = '';
 
             const dueIn = document.getElementById('taskDueDateInput');
             if (dueIn) {
@@ -958,7 +982,13 @@ window.TaskitatorComponents = Object.freeze({
                     const editExemplarSize = document.getElementById('editExemplarSize');
                     const editFeedback = document.getElementById('editCriteriaFeedbackBox');
 
-                    if (editTaskCriteriaInput) editTaskCriteriaInput.value = sibling.proof_criteria || '';
+                    let inheritedTemplateText = sibling.raw_proof_criteria || '';
+                    if (!inheritedTemplateText && sibling.proof_criteria) {
+                        const { varMap } = SmartCriteriaEngine.parseTitle(sibling.raw_title || sibling.title);
+                        inheritedTemplateText = SmartCriteriaEngine.reverseSubstitute(sibling.proof_criteria, varMap);
+                    }
+
+                    if (editTaskCriteriaInput) editTaskCriteriaInput.value = inheritedTemplateText;
                     if (editAiLockCheckbox) editAiLockCheckbox.checked = true;
                     if (editCriteriaBoxContainer) editCriteriaBoxContainer.style.display = 'block';
 
@@ -991,12 +1021,12 @@ window.TaskitatorComponents = Object.freeze({
                     if (editFeedback) {
                         editFeedback.style.display = 'block';
                         editFeedback.className = 'criteria-feedback-box pass';
-                        editFeedback.innerHTML = `<strong>✓ Inherited (10/10)</strong>: Copied criteria and cloned reference exemplar from "${TaskitatorSafety.escapeHtml(sibling.title)}".`;
+                        editFeedback.innerHTML = `<strong>✓ Inherited (10/10)</strong>: Copied raw template criteria and reference exemplar from "${TaskitatorSafety.escapeHtml(sibling.title)}".`;
                     }
                 });
             }
 
-            // Sequential Subtask Entry with Criteria Inheritance & Variable Resolution ($$ Bonus Support)
+            // Dual-Panel Sequential Quick-Subtask Inputs (Enter commits, maintains focus, consecutive auto-increment)
             const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
             if (detailQuickSubtaskInput) {
                 detailQuickSubtaskInput.addEventListener('keydown', (e) => {
@@ -1011,13 +1041,14 @@ window.TaskitatorComponents = Object.freeze({
                         if (!parentTask) return;
 
                         const isBonusSub = rawSubInput.includes('$$');
-                        rawSubInput = rawSubInput.replace(/\$\$/g, '').trim();
+                        const cleanedBonusInput = rawSubInput.replace(/\$\$/g, '').trim();
 
-                        const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(rawSubInput);
+                        const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(cleanedBonusInput);
 
+                        const templateCriteria = parentTask.raw_proof_criteria || parentTask.proof_criteria || '';
                         let resolvedCriteria = '';
-                        if (parentTask.proof_criteria) {
-                            const res = SmartCriteriaEngine.resolveCriteria(parentTask.proof_criteria, varMap);
+                        if (templateCriteria) {
+                            const res = SmartCriteriaEngine.resolveCriteria(templateCriteria, varMap);
                             resolvedCriteria = res.resolvedText;
                         }
 
@@ -1035,6 +1066,7 @@ window.TaskitatorComponents = Object.freeze({
                             due_date: '',
                             ai_locked: false,
                             proof_criteria: resolvedCriteria,
+                            raw_proof_criteria: templateCriteria,
                             strict_prerequisites: false,
                             is_bonus: isBonusSub,
                             created_at: new Date().toISOString(),
@@ -1053,8 +1085,43 @@ window.TaskitatorComponents = Object.freeze({
                             host.view.refresh();
                         }
 
-                        detailQuickSubtaskInput.value = '';
+                        const consecutiveCb = document.getElementById('detailConsecutiveToggle');
+                        if (consecutiveCb && consecutiveCb.checked && /\{num==\d+\}/i.test(rawSubInput)) {
+                            detailQuickSubtaskInput.value = SmartCriteriaEngine.incrementConsecutiveNum(rawSubInput);
+                        } else {
+                            detailQuickSubtaskInput.value = '';
+                        }
                         detailQuickSubtaskInput.focus();
+                    }
+                });
+            }
+
+            const createQuickSubtaskInput = document.getElementById('createQuickSubtaskInput');
+            if (createQuickSubtaskInput) {
+                createQuickSubtaskInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const rawText = createQuickSubtaskInput.value.trim();
+                        if (!rawText) return;
+
+                        const subtaskBuilderList = document.getElementById('subtaskBuilderList');
+                        if (subtaskBuilderList) {
+                            const div = document.createElement('div');
+                            div.className = 'subtask-builder-item';
+                            div.innerHTML = `
+                                <input type="text" class="subtask-input-title" value="${TaskitatorSafety.escapeHtml(rawText)}" style="flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" required>
+                                <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
+                            `;
+                            subtaskBuilderList.appendChild(div);
+                        }
+
+                        const consecutiveCb = document.getElementById('createConsecutiveToggle');
+                        if (consecutiveCb && consecutiveCb.checked && /\{num==\d+\}/i.test(rawText)) {
+                            createQuickSubtaskInput.value = SmartCriteriaEngine.incrementConsecutiveNum(rawText);
+                        } else {
+                            createQuickSubtaskInput.value = '';
+                        }
+                        createQuickSubtaskInput.focus();
                     }
                 });
             }
@@ -1345,7 +1412,7 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
-            // Criteria text modification listener to drop validation if altered
+            // Criteria text modification listeners to drop validation if altered
             const createCriteriaInputEl = document.getElementById('taskCriteriaInput');
             if (createCriteriaInputEl) {
                 createCriteriaInputEl.addEventListener('input', () => {
@@ -1438,7 +1505,7 @@ window.TaskitatorComponents = Object.freeze({
 
                     if (isAi) {
                         const confirmed = confirm(
-                            "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
+                            "⚠️️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
                             "Once created, AI-Checked tasks CANNOT be edited (except description/tags) and CANNOT be deleted.\n\n" +
                             "If phone lock is active, your device stays locked until verified by AI proof.\n\n" +
                             "Proceed with creation?"
@@ -1491,6 +1558,7 @@ window.TaskitatorComponents = Object.freeze({
                         due_date: dueDate,
                         ai_locked: isAi,
                         proof_criteria: isAi ? finalCriteria : '',
+                        raw_proof_criteria: isAi ? rawCriteria : '',
                         strict_prerequisites: isStrictPrereq,
                         is_bonus: isBonus,
                         created_at: new Date().toISOString(),
@@ -1534,6 +1602,7 @@ window.TaskitatorComponents = Object.freeze({
                                     due_date: '',
                                     ai_locked: false,
                                     proof_criteria: '',
+                                    raw_proof_criteria: '',
                                     strict_prerequisites: false,
                                     is_bonus: isSubBonus,
                                     created_at: new Date().toISOString(),
@@ -1673,7 +1742,7 @@ window.TaskitatorComponents = Object.freeze({
                         if (!confirmed) return;
                     } else if (!task.strict_prerequisites && willBeStrict && !willBeAiLocked) {
                         const confirmed = confirm(
-                            "⚠️ IRREVERSIBLE SHIELD ⚠️️\n\n" +
+                            "⚠️ IRREVERSIBLE SHIELD ⚠️\n\n" +
                             "Enabling the Shield is permanent.\n" +
                             "Once saved, this task cannot be completed until ALL core subtasks are finished, and the Shield cannot be turned off.\n\n" +
                             "Proceed?"
@@ -1710,6 +1779,7 @@ window.TaskitatorComponents = Object.freeze({
                         task.due_date = document.getElementById('editTaskDueDate')?.value || '';
                         task.ai_locked = willBeAiLocked;
                         task.proof_criteria = willBeAiLocked ? finalEditedCriteria : '';
+                        task.raw_proof_criteria = willBeAiLocked ? editedCriteriaRaw : '';
                     }
                     
                     task.strict_prerequisites = willBeStrict;
