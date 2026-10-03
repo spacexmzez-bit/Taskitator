@@ -305,6 +305,7 @@
     </form>
 </aside>
 
+<script src="safety.js"></script>
 <script src="sync-engine.js"></script>
 <script src="agent-engine.js"></script>
 <script>
@@ -527,7 +528,7 @@ function buildAgendaNode(task, depth, allChildrenMap, matchMap, descMatchMap) {
         pBadge.className = 'project-badge-chip';
         pBadge.style.borderColor = proj.color;
         pBadge.style.color = proj.color;
-        pBadge.innerHTML = `<span>${proj.icon}</span> <span>${proj.name}</span>`;
+        TaskitatorSafety.setProjectLabel(pBadge, proj);
         main.appendChild(pBadge);
     }
 

@@ -88,6 +88,7 @@
     <div id="loginFeedback" class="notice-banner"></div>
 </div>
 
+<script src="safety.js"></script>
 <script src="audit-engine.js"></script>
 <script src="sync-engine.js"></script>
 <script>
@@ -111,18 +112,7 @@ loginForm.addEventListener('submit', async (e) => {
     try {
         const token = await SyncEngine.hashCredentials(user, pass);
 
-        // Seed initial connection configuration
-        let settings = {};
-        try {
-            settings = JSON.parse(localStorage.getItem(SyncEngine.STORAGE_KEY_SETTINGS) || '{}');
-        } catch (err) {
-            settings = {};
-        }
-
-        settings.worker_username = user;
-        settings.worker_passkey = token;
-        settings.worker_url = SyncEngine.HARDCODED_WORKER_URL;
-        localStorage.setItem(SyncEngine.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+        SyncEngine.beginLogin(user, token);
 
         // Attempt to pull existing remote cloud snapshot
         const pullRes = await SyncEngine.pull();

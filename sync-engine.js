@@ -17,6 +17,20 @@ const SyncEngine = {
     STORAGE_KEY_LAST_MODIFIED: 'taskitator_tasks_last_modified',
     HARDCODED_WORKER_URL: 'https://taskitator-sync.spacexmzez.workers.dev',
 
+    STORAGE_KEY_OWNER: 'taskitator_local_owner',
+    STORAGE_KEY_SESSION: 'taskitator_session_id',
+    STORAGE_KEY_INITIAL_PULL: 'taskitator_initial_pull_required',
+    STORAGE_KEY_REVISION: 'taskitator_local_revision',
+    STORAGE_KEY_DIRTY: 'taskitator_sync_dirty',
+    ACCOUNT_KEYS: [
+        'taskitator_settings', 'taskitator_tasks', 'taskitator_projects',
+        'taskitator_daily_breaks', 'taskitator_audit_ledger', 'taskitator_mrstudy_rules',
+        'taskitator_last_login', 'taskitator_tasks_last_modified', 'taskitator_collapsed_nodes',
+        'taskitator_distraction_notes', 'taskitator_archived_notes', 'taskitator_emergency_state',
+        'taskitator_local_revision', 'taskitator_sync_dirty'
+    ],
+    sessionId: null,
+    pushQueue: Promise.resolve(),
     debounceTimer: null,
     hasUnsavedChanges: false,
     listeners: [],
@@ -124,8 +138,98 @@ const SyncEngine = {
         return Boolean(config.secret && config.username);
     },
 
+    // Local backups are keyed by the authenticated credential, never by username alone.
+    accountCacheKey(config) {
+        return `taskitator_account_cache:${config.username}:${config.secret}`;
+    },
+
+    archiveLocalAccount() {
+        const config = this.getConfig();
+        const snapshot = {};
+        this.ACCOUNT_KEYS.forEach(key => {
+            const value = localStorage.getItem(key);
+            if (value !== null) snapshot[key] = value;
+        });
+        if (!Object.keys(snapshot).length) return;
+        // Credentials are supplied again at login, not restored from the backup.
+        if (snapshot[this.STORAGE_KEY_SETTINGS]) {
+            const settings = JSON.parse(snapshot[this.STORAGE_KEY_SETTINGS]);
+            delete settings.worker_username;
+            delete settings.worker_passkey;
+            snapshot[this.STORAGE_KEY_SETTINGS] = JSON.stringify(settings);
+        }
+        const owned = config.username && config.secret &&
+            localStorage.getItem(this.STORAGE_KEY_OWNER) === config.username;
+        const key = owned ? this.accountCacheKey(config) : 'taskitator_unclaimed_backup';
+        // Do not erase working data if the backup fails (e.g. quota exceeded).
+        localStorage.setItem(key, JSON.stringify(snapshot));
+    },
+
+    clearLocalAccount() {
+        this.ACCOUNT_KEYS.forEach(key => localStorage.removeItem(key));
+        localStorage.removeItem(this.STORAGE_KEY_OWNER);
+        localStorage.removeItem(this.STORAGE_KEY_INITIAL_PULL);
+        sessionStorage.removeItem('gemini_fallback_active');
+    },
+
+    beginLogin(username, secret) {
+        if (this.debounceTimer) clearTimeout(this.debounceTimer);
+        this.archiveLocalAccount();
+        const config = { username: username.trim().toLowerCase(), secret };
+        const raw = localStorage.getItem(this.accountCacheKey(config));
+        const snapshot = raw ? JSON.parse(raw) : {};
+        this.clearLocalAccount();
+        this.ACCOUNT_KEYS.forEach(key => {
+            if (typeof snapshot[key] === 'string') localStorage.setItem(key, snapshot[key]);
+        });
+        const settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
+        settings.worker_username = config.username;
+        settings.worker_passkey = secret;
+        settings.worker_url = this.HARDCODED_WORKER_URL;
+        localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+        localStorage.setItem(this.STORAGE_KEY_OWNER, config.username);
+        localStorage.setItem(this.STORAGE_KEY_INITIAL_PULL, 'true');
+        this.sessionId = crypto.randomUUID();
+        localStorage.setItem(this.STORAGE_KEY_SESSION, this.sessionId);
+        this.hasUnsavedChanges = localStorage.getItem(this.STORAGE_KEY_DIRTY) === 'true';
+    },
+
+    initializeSession() {
+        const config = this.getConfig();
+        const owner = localStorage.getItem(this.STORAGE_KEY_OWNER);
+        if (!localStorage.getItem('taskitator_exemplar_legacy_owner')) {
+            localStorage.setItem('taskitator_exemplar_legacy_owner', config.username || '__unclaimed__');
+        }
+        // One-time migration for an already signed-in installation.
+        if (config.username && config.secret && !owner) {
+            localStorage.setItem(this.STORAGE_KEY_OWNER, config.username);
+        }
+        if (!localStorage.getItem(this.STORAGE_KEY_SESSION)) {
+            localStorage.setItem(this.STORAGE_KEY_SESSION, crypto.randomUUID());
+        }
+        this.sessionId = localStorage.getItem(this.STORAGE_KEY_SESSION);
+        this.hasUnsavedChanges = localStorage.getItem(this.STORAGE_KEY_DIRTY) === 'true';
+    },
+
+    sessionMatches(config, sessionId = this.sessionId) {
+        const current = this.getConfig();
+        return sessionId === localStorage.getItem(this.STORAGE_KEY_SESSION) &&
+            current.username === config.username && current.secret === config.secret &&
+            localStorage.getItem(this.STORAGE_KEY_OWNER) === config.username;
+    },
+
+    needsInitialPull() {
+        return localStorage.getItem(this.STORAGE_KEY_INITIAL_PULL) === 'true';
+    },
+
+    isDirty() {
+        return this.hasUnsavedChanges || localStorage.getItem(this.STORAGE_KEY_DIRTY) === 'true';
+    },
+
     markLocalModified() {
         localStorage.setItem(this.STORAGE_KEY_LAST_MODIFIED, new Date().toISOString());
+        localStorage.setItem(this.STORAGE_KEY_REVISION, crypto.randomUUID());
+        localStorage.setItem(this.STORAGE_KEY_DIRTY, 'true');
         this.hasUnsavedChanges = true;
     },
 
@@ -164,18 +268,36 @@ const SyncEngine = {
         };
     },
 
-    async push(force = false, extraData = {}) {
+    push(force = false, extraData = {}) {
+        const sessionId = this.sessionId;
+        const config = this.getConfig();
+        // Serialize uploads so an older snapshot cannot arrive after a newer one.
+        const run = () => this.sessionMatches(config, sessionId)
+            ? this.performPush(force, extraData)
+            : { success: false, reason: 'session_changed' };
+        const result = this.pushQueue.then(run, run);
+        this.pushQueue = result.catch(() => {});
+        return result;
+    },
+
+    async performPush(force = false, extraData = {}) {
         const config = this.getConfig();
         if (!config.secret || !config.username) {
             this.notify('unconfigured');
             return { success: false, reason: 'unconfigured' };
         }
 
+        if (this.needsInitialPull()) return { success: false, reason: 'initial_pull_required' };
+        const sessionId = this.sessionId;
+        const revision = localStorage.getItem(this.STORAGE_KEY_REVISION);
         this.notify('syncing');
-        const payload = this.getPayload(force, extraData);
-        const bearerToken = await this.ensureSha256(config.secret);
+        // Read breaks at upload time, not from a stale debounce closure.
+        const { today_breaks: ignoredBreaks, ...currentExtras } = extraData;
+        const payload = this.getPayload(force, currentExtras);
 
         try {
+            const bearerToken = await this.ensureSha256(config.secret);
+            if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
             const res = await fetch(`${config.url}/sync/push`, {
                 method: 'POST',
                 headers: {
@@ -187,6 +309,7 @@ const SyncEngine = {
                 body: JSON.stringify(payload)
             });
 
+            if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
             if (res.status === 409) {
                 const conflictData = await res.json();
                 this.notify('conflict', conflictData);
@@ -199,15 +322,20 @@ const SyncEngine = {
             }
 
             const data = await res.json().catch(() => ({}));
-            
+            if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
+
             const settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
             settings.last_synced = new Date().toISOString();
             localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
 
-            this.hasUnsavedChanges = false;
-            this.notify('synced', { timestamp: settings.last_synced });
-            return { success: true, data };
+            const pending = revision !== localStorage.getItem(this.STORAGE_KEY_REVISION);
+            this.hasUnsavedChanges = pending;
+            localStorage.setItem(this.STORAGE_KEY_DIRTY, String(pending));
+            this.notify(pending ? 'pending' : 'synced', { timestamp: settings.last_synced });
+            if (pending && !this.debounceTimer) this.queueAutoPush();
+            return { success: true, pending, data };
         } catch (err) {
+            if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
             this.notify('error', err.message);
             return { success: false, error: err.message };
         }
@@ -216,17 +344,21 @@ const SyncEngine = {
     scheduleAutoPush(delayMs = 45000, extraData = {}) {
         if (!this.isConfigured()) return;
         this.markLocalModified();
+        this.queueAutoPush(delayMs, extraData);
+    },
+
+    queueAutoPush(delayMs = 45000, extraData = {}) {
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
         this.debounceTimer = setTimeout(() => {
-            if (this.hasUnsavedChanges) {
-                this.push(false, extraData);
-            }
+            this.debounceTimer = null;
+            if (this.isDirty()) this.push(false, extraData);
         }, delayMs);
     },
 
     flushIfDirty() {
-        if (this.hasUnsavedChanges && this.isConfigured()) {
+        if (this.isDirty() && this.isConfigured() && !this.needsInitialPull()) {
             if (this.debounceTimer) clearTimeout(this.debounceTimer);
+            this.debounceTimer = null;
             this.push(false);
         }
     },
@@ -234,7 +366,7 @@ const SyncEngine = {
     async forceImmediateSync(extraData = {}) {
         if (!this.isConfigured()) return false;
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
-        
+        this.debounceTimer = null;
         const res = await this.push(true, extraData);
         return res.success;
     },
@@ -247,12 +379,25 @@ const SyncEngine = {
      * 4. Pushes the full snapshot under newToken to Cloudflare KV
      * 5. Commits newToken to localStorage settings
      */
-    async changePassword(currentPassword, newPassword) {
+    changePassword(currentPassword, newPassword) {
+        const config = this.getConfig();
+        const sessionId = this.sessionId;
+        const run = () => this.sessionMatches(config, sessionId)
+            ? this.performPasswordChange(currentPassword, newPassword)
+            : { success: false, error: 'Session changed. Please sign in again.' };
+        const result = this.pushQueue.then(run, run);
+        this.pushQueue = result.catch(() => {});
+        return result;
+    },
+
+    async performPasswordChange(currentPassword, newPassword) {
         const config = this.getConfig();
         if (!config.username || !config.secret) {
             return { success: false, error: 'No active session found.' };
         }
 
+        if (this.needsInitialPull()) return { success: false, error: 'Complete sign-in before changing passwords.' };
+        const sessionId = this.sessionId;
         const currentHash = await this.hashCredentials(config.username, currentPassword);
         if (currentHash !== config.secret) {
             return { success: false, error: 'Current password is incorrect.' };
@@ -277,6 +422,8 @@ const SyncEngine = {
             settings = {};
         }
 
+        if (!this.sessionMatches(config, sessionId)) return { success: false, error: 'Session changed.' };
+        const revision = localStorage.getItem(this.STORAGE_KEY_REVISION);
         // Prepare full payload under the updated credential set
         settings.worker_passkey = newHash;
         const payload = this.getPayload(true);
@@ -301,16 +448,22 @@ const SyncEngine = {
                 throw new Error(errData.error || `HTTP ${res.status}`);
             }
 
+            if (!this.sessionMatches(config, sessionId)) return { success: false, error: 'Session changed.' };
+            // Preserve settings edited while the password request was pending.
+            settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
+            settings.worker_passkey = newHash;
             settings.last_synced = new Date().toISOString();
             localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
-            this.hasUnsavedChanges = false;
-            this.notify('synced', { timestamp: settings.last_synced });
+            const pending = revision !== localStorage.getItem(this.STORAGE_KEY_REVISION);
+            this.hasUnsavedChanges = pending;
+            localStorage.setItem(this.STORAGE_KEY_DIRTY, String(pending));
+            this.notify(pending ? 'pending' : 'synced', { timestamp: settings.last_synced });
+            if (pending) this.queueAutoPush();
 
             return { success: true, newToken: newHash };
         } catch (err) {
-            // Revert local passkey on failure
-            settings.worker_passkey = config.secret;
-            localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+            // The active credential was never changed before server success.
+            if (!this.sessionMatches(config, sessionId)) return { success: false, error: 'Session changed.' };
             this.notify('error', err.message);
             return { success: false, error: `Migration failed: ${err.message}` };
         }
@@ -321,6 +474,7 @@ const SyncEngine = {
      */
     async fetchMrStudyRules() {
         const config = this.getConfig();
+        const sessionId = this.sessionId;
         if (!config.secret || !config.username) {
             localStorage.removeItem(this.STORAGE_KEY_MRSTUDY_RULES);
             window.dispatchEvent(new CustomEvent('taskitator-mrstudy-rules-updated', { detail: { rules: [], linked: false } }));
@@ -343,6 +497,7 @@ const SyncEngine = {
             }
 
             const data = await res.json();
+            if (!this.sessionMatches(config, sessionId)) return { linked: false, rules: [] };
             const rules = Array.isArray(data.rules) ? data.rules : [];
             const isLinked = Boolean(data.linked && rules.length > 0);
 
@@ -367,9 +522,13 @@ const SyncEngine = {
             return { success: false, reason: 'unconfigured' };
         }
 
-        if (this.hasUnsavedChanges) {
-            await this.push(false);
-            return { success: true, localPushed: true };
+        const initial = this.needsInitialPull();
+        const sessionId = this.sessionId;
+        const revision = localStorage.getItem(this.STORAGE_KEY_REVISION);
+        if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
+        if (!initial && this.isDirty()) {
+            const result = await this.push(false);
+            return result.success ? { ...result, localPushed: true } : result;
         }
 
         this.notify('syncing');
@@ -391,8 +550,13 @@ const SyncEngine = {
             }
 
             const data = await res.json();
+            if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
+            if (revision !== localStorage.getItem(this.STORAGE_KEY_REVISION)) {
+                return { success: false, reason: 'local_changed', error: 'Local edits occurred during download. Please sync again.' };
+            }
 
             if (data.empty) {
+                localStorage.removeItem(this.STORAGE_KEY_INITIAL_PULL);
                 this.notify('synced', { empty: true });
                 this.fetchMrStudyRules();
                 return { success: true, empty: true };
@@ -402,14 +566,22 @@ const SyncEngine = {
                 throw new Error('Malformed snapshot: tasks array missing.');
             }
 
+            localStorage.removeItem(this.STORAGE_KEY_INITIAL_PULL);
             const localLastMod = localStorage.getItem(this.STORAGE_KEY_LAST_MODIFIED);
             if (localLastMod && data.updated_at) {
                 const localTime = new Date(localLastMod).getTime();
                 const remoteTime = new Date(data.updated_at).getTime();
                 if (localTime > remoteTime) {
-                    await this.push(true);
-                    this.fetchMrStudyRules();
-                    return { success: true, localWasFresher: true };
+                    // The login request must never upload. The dashboard resumes
+                    // pending same-account edits after authentication completes.
+                    if (initial) {
+                        this.hasUnsavedChanges = true;
+                        localStorage.setItem(this.STORAGE_KEY_DIRTY, 'true');
+                        return { success: true, localWasFresher: true, pending: true };
+                    }
+                    const result = await this.push(true);
+                    if (result.success) this.fetchMrStudyRules();
+                    return result.success ? { ...result, localWasFresher: true } : result;
                 }
             }
 
@@ -449,6 +621,8 @@ const SyncEngine = {
                 localStorage.setItem(this.STORAGE_KEY_LAST_LOGIN, data.last_login);
             }
 
+            this.hasUnsavedChanges = false;
+            localStorage.setItem(this.STORAGE_KEY_DIRTY, 'false');
             this.notify('synced', { timestamp: new Date().toISOString() });
 
             // Fetch latest companion rules in background
@@ -460,6 +634,7 @@ const SyncEngine = {
 
             return { success: true, data };
         } catch (err) {
+            if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
             this.notify('error', err.message);
             return { success: false, error: err.message };
         }
@@ -470,27 +645,24 @@ const SyncEngine = {
      */
     logout() {
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
-        this.hasUnsavedChanges = false;
-
-        let settings = {};
+        this.debounceTimer = null;
         try {
-            settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
-        } catch (e) {
-            settings = {};
+            this.archiveLocalAccount();
+        } catch (err) {
+            this.notify('error', 'Could not preserve local data. Export a backup before logging out.');
+            return false;
         }
-
-        delete settings.worker_username;
-        delete settings.worker_passkey;
-        delete settings.last_synced;
-
-        localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
-        localStorage.removeItem(this.STORAGE_KEY_LAST_LOGIN);
-        localStorage.removeItem(this.STORAGE_KEY_MRSTUDY_RULES);
-
+        this.clearLocalAccount();
+        this.hasUnsavedChanges = false;
+        this.sessionId = crypto.randomUUID();
+        localStorage.setItem(this.STORAGE_KEY_SESSION, this.sessionId);
         this.notify('unconfigured');
         return true;
     }
+
 };
+
+SyncEngine.initializeSession();
 
 // Automatically flush pending changes to cloud when user minimizes PWA or switches tabs
 document.addEventListener('visibilitychange', () => {
@@ -508,7 +680,7 @@ window.addEventListener('beforeunload', () => {
 (function enforceAuthenticationGuard() {
     const cleanPath = window.location.pathname.split('/').pop().toLowerCase();
     const isLoginPage = cleanPath === 'login.html';
-    const isConfigured = SyncEngine.isConfigured();
+    const isConfigured = SyncEngine.isConfigured() && !SyncEngine.needsInitialPull();
 
     if (!isConfigured && !isLoginPage) {
         window.location.replace('login.html');
@@ -518,3 +690,11 @@ window.addEventListener('beforeunload', () => {
 })();
 
 window.SyncEngine = SyncEngine;
+
+// Another tab changed accounts: discard this page's in-memory task state.
+window.addEventListener('storage', event => {
+    if (event.key === SyncEngine.STORAGE_KEY_SESSION && event.newValue !== SyncEngine.sessionId) {
+        if (SyncEngine.debounceTimer) clearTimeout(SyncEngine.debounceTimer);
+        window.location.reload();
+    }
+});

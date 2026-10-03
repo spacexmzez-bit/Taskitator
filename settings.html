@@ -764,6 +764,7 @@
     </form>
 </aside>
 
+<script src="safety.js"></script>
 <script src="exemplar-store.js"></script>
 <script src="audit-engine.js"></script>
 <script src="sync-engine.js"></script>
@@ -964,8 +965,8 @@ function renderPriorities() {
                 <button type="button" class="reorder-btn move-down" ${idx === activePriorities.length - 1 ? 'disabled' : ''} title="Move Down">▼</button>
             </div>
             <span class="priority-rank-badge">#${p.rank}</span>
-            <input type="text" class="priority-name-input" value="${p.name}" placeholder="Priority Name">
-            <input type="color" class="priority-color-picker" value="${p.color}" title="Choose color">
+            <input type="text" class="priority-name-input" value="${TaskitatorSafety.escapeHtml(p.name)}" placeholder="Priority Name">
+            <input type="color" class="priority-color-picker" value="${TaskitatorSafety.escapeHtml(p.color)}" title="Choose color">
             <button type="button" class="icon-btn del-priority-btn" style="color: var(--danger); border-color: #881337; padding: 4px 8px; font-size: 0.8rem;">✕</button>
         `;
 
@@ -1606,15 +1607,10 @@ document.getElementById('cancelLogoutBtn').addEventListener('click', () => {
 
 document.getElementById('confirmLogoutBtn').addEventListener('click', async () => {
     markSaved();
-    SyncEngine.logout();
-    if (window.ExemplarStore) {
-        try {
-            await ExemplarStore.clearAll();
-        } catch (e) {}
+    if (!SyncEngine.logout()) {
+        alert('Could not preserve local data. Export a backup before logging out.');
+        return;
     }
-    localStorage.removeItem('taskitator_tasks');
-    localStorage.removeItem('taskitator_daily_breaks');
-    localStorage.removeItem('taskitator_audit_ledger');
     logoutConfirmModal.classList.remove('open');
     window.location.replace('login.html');
 });

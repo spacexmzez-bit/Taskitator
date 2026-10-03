@@ -448,9 +448,11 @@
     </div>
 </div>
 
+<script src="safety.js"></script>
 <script src="audit-engine.js"></script>
 <script src="sync-engine.js"></script>
 <script src="agent-engine.js"></script>
+<script src="components.js"></script>
 <script src="app.js"></script>
 <script>
 (() => {
@@ -477,7 +479,7 @@
             if (p.id === activeProjectId) {
                 pill.style.color = p.color;
             }
-            pill.innerHTML = `<span>${p.icon}</span> <span>${p.name}</span>`;
+            TaskitatorSafety.setProjectLabel(pill, p);
             pill.addEventListener('click', () => {
                 activeProjectId = p.id;
                 renderProjectStrip();
@@ -533,7 +535,10 @@
         rootTasks = TaskitatorApp.sortTasks(rootTasks);
 
         if (rootTasks.length === 0) {
-            list.innerHTML = `<li style="text-align: center; color: var(--text-muted); padding: 32px;">No active tasks in ${activeProj.name}.</li>`;
+            const empty = document.createElement('li');
+            empty.style.cssText = 'text-align: center; color: var(--text-muted); padding: 32px;';
+            empty.textContent = `No active tasks in ${activeProj.name}.`;
+            list.replaceChildren(empty);
             return;
         }
 
@@ -811,7 +816,11 @@
                 const choice = document.querySelector('input[name="cascadeChoice"]:checked')?.value || 'inbox';
                 const targetProj = document.getElementById('reassignTargetProjectSelect')?.value || 'inbox';
 
-                TaskitatorApp.deleteProjectWithCascade(activeProjectId, choice, targetProj);
+                const result = TaskitatorApp.deleteProjectWithCascade(activeProjectId, choice, targetProj);
+                if (!result.success) {
+                    alert(result.error);
+                    return;
+                }
                 activeProjectId = 'inbox';
                 projectModal.classList.remove('open');
                 renderProjectStrip();

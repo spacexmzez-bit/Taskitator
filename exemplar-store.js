@@ -14,16 +14,32 @@
     const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB ceiling
 
     let dbInstance = null;
+    let dbInstanceName = null;
+    const LEGACY_OWNER_KEY = 'taskitator_exemplar_legacy_owner';
+    function currentUser() {
+        try {
+            return String(JSON.parse(localStorage.getItem('taskitator_settings') || '{}').worker_username || '').trim().toLowerCase();
+        } catch (e) { return ''; }
+    }
+    // An unowned old database must never be assigned to the next person logging in.
+    if (!localStorage.getItem(LEGACY_OWNER_KEY)) {
+        localStorage.setItem(LEGACY_OWNER_KEY, currentUser() || '__unclaimed__');
+    }
 
     /**
      * Initializes or retrieves the singleton IndexedDB connection.
      * @returns {Promise<IDBDatabase>}
      */
     function getDB() {
-        if (dbInstance) return Promise.resolve(dbInstance);
+        const username = currentUser();
+        if (!username) return Promise.reject(new Error('Sign in to access reference exemplars.'));
+        const name = localStorage.getItem(LEGACY_OWNER_KEY) === username
+            ? DB_NAME : `${DB_NAME}:${encodeURIComponent(username)}`;
+        if (dbInstance && dbInstanceName === name) return Promise.resolve(dbInstance);
+        if (dbInstance) dbInstance.close();
 
         return new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            const request = indexedDB.open(name, DB_VERSION);
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
@@ -34,6 +50,7 @@
 
             request.onsuccess = (event) => {
                 dbInstance = event.target.result;
+                dbInstanceName = name;
                 resolve(dbInstance);
             };
 

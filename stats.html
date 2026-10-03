@@ -360,6 +360,7 @@
     </form>
 </aside>
 
+<script src="safety.js"></script>
 <script src="sync-engine.js"></script>
 <script src="agent-engine.js"></script>
 <script>
@@ -533,14 +534,15 @@ function renderStats() {
         const row = document.createElement('div');
         row.className = 'bar-container';
         row.innerHTML = `
-            <span class="bar-label" title="${p.name}">
-                <span>${p.icon}</span> <span>${p.name}</span>
-            </span>
+            <span class="bar-label"></span>
             <div class="bar-outer">
-                <div class="bar-fill" style="width: ${pct}%; background: ${p.color};"></div>
+                <div class="bar-fill" style="width: ${pct}%; background: ${TaskitatorSafety.escapeHtml(p.color)};"></div>
             </div>
             <span class="bar-count">${count}</span>
         `;
+        const label = row.querySelector('.bar-label');
+        label.title = p.name;
+        TaskitatorSafety.setProjectLabel(label, p);
         projectAllocationList.appendChild(row);
     });
 

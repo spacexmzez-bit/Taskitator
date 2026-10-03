@@ -383,20 +383,13 @@ window.TaskitatorAgent = (() => {
                 return { status: 'error', error: `Task ID "${args.task_id}" not found.` };
             }
 
-            // Lock Guardrail
-            if (task.ai_locked && !isBypassActive) {
-                return {
-                    status: 'error',
-                    error: `Task "${task.title}" is AI-Locked. It cannot be deleted without an active Emergency Bypass.`
-                };
-            }
+            const error = TaskitatorSafety.deletionError(tasks, task.id, isBypassActive);
+            if (error) return { status: 'error', error };
 
-            function markTrash(id) {
-                const target = tasks.find(t => t.id === id);
-                if (target) target.status = 'trash';
-                tasks.filter(t => t.parent_id === id).forEach(k => markTrash(k.id));
-            }
-            markTrash(task.id);
+            TaskitatorSafety.collectSubtree(tasks, task.id).forEach(target => {
+                target.status = 'trash';
+                if (window.ExemplarStore) window.ExemplarStore.deleteExemplar(target.id);
+            });
 
             commitTasks(tasks);
             return { status: 'success', trashed_task_id: task.id, title: task.title };

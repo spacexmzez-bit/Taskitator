@@ -1,10 +1,9 @@
 // sw.js - Taskitator Service Worker
-const CACHE_NAME = 'taskitator-v38';
+const CACHE_NAME = 'taskitator-v40';
 
 const STATIC_ASSETS = [
     './',
     './index.html',
-    './general.html',
     './calendar.html',
     './projects.html',
     './stats.html',
@@ -17,6 +16,9 @@ const STATIC_ASSETS = [
     './SYSTEM_PROMPT.md',
     './CRITERIA_TEMPLATES.json',
     './app.js',
+    './components.js',
+    './safety.js',
+    './pomodoro.js',
     './exemplar-store.js',
     './agent-engine.js',
     './audit-engine.js',
@@ -67,6 +69,8 @@ self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
 
+    const cacheKey = new Request(url.origin + url.pathname);
+
     // Only intercept standard GET requests
     if (request.method !== 'GET') {
         return;
@@ -83,22 +87,22 @@ self.addEventListener('fetch', (event) => {
             fetch(request).then((response) => {
                 if (response && response.status === 200) {
                     const responseClone = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
+                    caches.open(CACHE_NAME).then((cache) => cache.put(cacheKey, responseClone));
                 }
                 return response;
-            }).catch(() => caches.match(request, { ignoreSearch: true }))
+            }).catch(() => caches.match(cacheKey))
         );
         return;
     }
 
     // Cache-first falling back to network with ignoreSearch: true
     event.respondWith(
-        caches.match(request, { ignoreSearch: true }).then((cachedResponse) => {
+        caches.match(cacheKey).then((cachedResponse) => {
             if (cachedResponse) {
                 // Background refresh for stale assets
                 fetch(request).then((networkResponse) => {
                     if (networkResponse && networkResponse.status === 200) {
-                        caches.open(CACHE_NAME).then((cache) => cache.put(request, networkResponse));
+                        caches.open(CACHE_NAME).then((cache) => cache.put(cacheKey, networkResponse));
                     }
                 }).catch(() => {});
                 return cachedResponse;
@@ -109,7 +113,7 @@ self.addEventListener('fetch', (event) => {
                     return networkResponse;
                 }
                 const responseToCache = networkResponse.clone();
-                caches.open(CACHE_NAME).then((cache) => cache.put(request, responseToCache));
+                caches.open(CACHE_NAME).then((cache) => cache.put(cacheKey, responseToCache));
                 return networkResponse;
             });
         })
