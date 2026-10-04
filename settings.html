@@ -324,7 +324,7 @@
     <nav class="drawer-links" id="drawerNavLinks">
         <a href="index.html#today">📅 Today</a>
         <a href="index.html#general">📋 General Tasks</a>
-        <a href="calendar.html">🗓️️ Calendar</a>
+        <a href="calendar.html">🗓 Calendar</a>
         <a href="projects.html">📁 Projects</a>
         <a href="stats.html">📊 Stats</a>
         <a href="trash.html">🗑️ Trash</a>
@@ -345,8 +345,8 @@
         </div>
     </header>
 
-    <!-- Master Authenticated Container -->
-    <div id="authenticatedSettingsContainer" style="display: none;">
+    <!-- Master Authenticated Container (Default: visible to ensure settings always render) -->
+    <div id="authenticatedSettingsContainer">
         
         <!-- Persistent Sticky Save Header (Visible Across All Tabs) -->
         <div class="sticky-save-bar">
@@ -380,7 +380,7 @@
                 <div class="account-session-box">
                     <div>
                         <div style="font-size: 0.8rem; color: var(--text-muted);">Signed in as:</div>
-                        <strong id="activeUsernameDisplay" style="color: var(--primary); font-size: 0.95rem;"></strong>
+                        <strong id="activeUsernameDisplay" style="color: var(--primary); font-size: 0.95rem;">@local_user</strong>
                     </div>
                     <div style="display: flex; gap: 8px; align-items: center;">
                         <button type="button" class="icon-btn" id="openChangePasswordModalBtn" style="color: var(--primary); border-color: var(--primary);">Change Password</button>
@@ -906,6 +906,7 @@ function formatDumpDuration(seconds) {
 // Tag & Priority Registry Handlers
 // =========================================================================
 function renderTags() {
+    if (!tagsContainer) return;
     tagsContainer.innerHTML = '';
     if (activeTags.length === 0) {
         tagsContainer.innerHTML = '<span style="font-size: 0.8rem; color: var(--text-muted);">No custom tags created yet.</span>';
@@ -932,7 +933,6 @@ function handleAddTag() {
     const val = newTagInput.value.trim().toLowerCase().replace(/,/g, '');
     if (!val) return;
     if (activeTags.includes(val)) {
-        alert('This tag already exists in your registry.');
         return;
     }
     activeTags.push(val);
@@ -941,15 +941,18 @@ function handleAddTag() {
     renderTags();
 }
 
-addNewTagBtn.addEventListener('click', handleAddTag);
-newTagInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        handleAddTag();
-    }
-});
+if (addNewTagBtn && newTagInput) {
+    addNewTagBtn.addEventListener('click', handleAddTag);
+    newTagInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleAddTag();
+        }
+    });
+}
 
 function renderPriorities() {
+    if (!prioritiesListContainer) return;
     prioritiesListContainer.innerHTML = '';
     if (activePriorities.length === 0) {
         prioritiesListContainer.innerHTML = '<span style="font-size: 0.8rem; color: var(--text-muted);">No priorities configured. Click "+ Add Level" to create one.</span>';
@@ -1013,29 +1016,24 @@ function renderPriorities() {
     });
 }
 
-addNewPriorityBtn.addEventListener('click', () => {
-    const nextRank = activePriorities.length + 1;
-    activePriorities.push({
-        id: 'prio_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-        name: `Priority ${nextRank}`,
-        color: '#64748b',
-        rank: nextRank
+if (addNewPriorityBtn) {
+    addNewPriorityBtn.addEventListener('click', () => {
+        const nextRank = activePriorities.length + 1;
+        activePriorities.push({
+            id: 'prio_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+            name: `Priority ${nextRank}`,
+            color: '#64748b',
+            rank: nextRank
+        });
+        markUnsaved();
+        renderPriorities();
     });
-    markUnsaved();
-    renderPriorities();
-});
+}
 
 // =========================================================================
-// Settings Loading & Saving
+// Settings Loading & Saving (Resilient Initialization)
 // =========================================================================
 function loadSettings() {
-    if (!window.SyncEngine || !SyncEngine.isConfigured()) {
-        authenticatedSettingsContainer.style.display = 'none';
-        return;
-    }
-
-    authenticatedSettingsContainer.style.display = 'block';
-
     let settings = {};
     try {
         settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
@@ -1043,24 +1041,32 @@ function loadSettings() {
         settings = {};
     }
 
-    const config = SyncEngine.getConfig();
-    activeUsernameDisplay.textContent = `@${config.username}`;
-    macroBearerToken.value = config.secret || '';
+    const hasSync = Boolean(window.SyncEngine && typeof SyncEngine.getConfig === 'function');
+    const config = hasSync ? SyncEngine.getConfig() : {
+        username: (settings.worker_username || '').trim().toLowerCase(),
+        secret: (settings.worker_passkey || '').trim()
+    };
 
-    soundEffectsToggle.checked = settings.sound_effects_enabled !== false;
-    copilotNameInput.value = settings.copilot_name || 'Focus Copilot';
-    geminiApiKeyInput.value = settings.gemini_api_key || '';
-    strictCriteriaToggle.checked = settings.strict_criteria_validation !== false;
+    if (activeUsernameDisplay) {
+        activeUsernameDisplay.textContent = config.username ? `@${config.username}` : '@local_mode';
+    }
+    if (macroBearerToken) {
+        macroBearerToken.value = config.secret || '';
+    }
+
+    if (soundEffectsToggle) soundEffectsToggle.checked = settings.sound_effects_enabled !== false;
+    if (copilotNameInput) copilotNameInput.value = settings.copilot_name || 'Focus Copilot';
+    if (geminiApiKeyInput) geminiApiKeyInput.value = settings.gemini_api_key || '';
+    if (strictCriteriaToggle) strictCriteriaToggle.checked = settings.strict_criteria_validation !== false;
 
     // Distraction Dump UI Load
     const dumpDur = settings.dump_duration !== undefined ? settings.dump_duration : 90;
-    dumpDurationSlider.value = dumpDur;
-    dumpDurationReadout.textContent = formatDumpDuration(dumpDur);
+    if (dumpDurationSlider) dumpDurationSlider.value = dumpDur;
+    if (dumpDurationReadout) dumpDurationReadout.textContent = formatDumpDuration(dumpDur);
 
-    weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
-    weekendEndSelect.value = settings.weekend_end !== undefined ? settings.weekend_end : '6';
-
-    dayStartHourSelect.value = settings.day_start_hour !== undefined ? String(settings.day_start_hour) : '0';
+    if (weekendStartSelect) weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
+    if (weekendEndSelect) weekendEndSelect.value = settings.weekend_end !== undefined ? settings.weekend_end : '6';
+    if (dayStartHourSelect) dayStartHourSelect.value = settings.day_start_hour !== undefined ? String(settings.day_start_hour) : '0';
 
     // Load or initialize tags
     if (Array.isArray(settings.custom_tags) && settings.custom_tags.length > 0) {
@@ -1093,17 +1099,17 @@ async function saveSettings(silent = false) {
         settings = {};
     }
 
-    const currentDumpDur = parseInt(dumpDurationSlider.value, 10);
-    const chosenDayStart = parseInt(dayStartHourSelect.value, 10);
+    const currentDumpDur = dumpDurationSlider ? parseInt(dumpDurationSlider.value, 10) : 90;
+    const chosenDayStart = dayStartHourSelect ? parseInt(dayStartHourSelect.value, 10) : 0;
 
-    settings.sound_effects_enabled = Boolean(soundEffectsToggle.checked);
-    settings.copilot_name = (copilotNameInput.value.trim() || 'Focus Copilot').slice(0, 20);
-    settings.gemini_api_key = geminiApiKeyInput.value.trim();
-    settings.strict_criteria_validation = Boolean(strictCriteriaToggle.checked);
+    settings.sound_effects_enabled = soundEffectsToggle ? Boolean(soundEffectsToggle.checked) : true;
+    settings.copilot_name = copilotNameInput ? (copilotNameInput.value.trim() || 'Focus Copilot').slice(0, 20) : 'Focus Copilot';
+    settings.gemini_api_key = geminiApiKeyInput ? geminiApiKeyInput.value.trim() : '';
+    settings.strict_criteria_validation = strictCriteriaToggle ? Boolean(strictCriteriaToggle.checked) : true;
     settings.dump_duration = currentDumpDur;
     settings.worker_url = HARDCODED_WORKER_URL;
-    settings.weekend_start = parseInt(weekendStartSelect.value, 10);
-    settings.weekend_end = parseInt(weekendEndSelect.value, 10);
+    settings.weekend_start = weekendStartSelect ? parseInt(weekendStartSelect.value, 10) : 5;
+    settings.weekend_end = weekendEndSelect ? parseInt(weekendEndSelect.value, 10) : 6;
     settings.day_start_hour = isNaN(chosenDayStart) ? 0 : chosenDayStart;
 
     // Attach updated registries
@@ -1117,7 +1123,7 @@ async function saveSettings(silent = false) {
 
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     
-    if (window.SyncEngine) {
+    if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
         SyncEngine.markLocalModified();
         const todayBreaks = window.TaskitatorEngine && TaskitatorEngine.BreakEngine 
             ? TaskitatorEngine.BreakEngine.getTodayBreaks() 
@@ -1129,16 +1135,24 @@ async function saveSettings(silent = false) {
     updateWorkweekNotice();
     markSaved();
 
-    if (!silent) {
-        alert('Settings, tags, and priorities saved successfully.');
+    const saveBtn = document.getElementById('saveAllSettingsBtn');
+    if (saveBtn) {
+        const originalText = saveBtn.textContent;
+        saveBtn.textContent = '✓ Saved!';
+        saveBtn.style.background = 'var(--success)';
+        setTimeout(() => {
+            saveBtn.textContent = originalText;
+            saveBtn.style.background = 'var(--primary)';
+        }, 1500);
     }
     return true;
 }
 
 function updateEmergencyDisplay() {
-    if (!window.TaskitatorEngine) return;
+    if (!window.TaskitatorEngine || !TaskitatorEngine.EmergencyManager) return;
     const state = TaskitatorEngine.EmergencyManager.getState();
-    document.getElementById('emergencyTokensDisplay').textContent = `${state.uses_left} / 4 Uses Remaining`;
+    const display = document.getElementById('emergencyTokensDisplay');
+    if (display) display.textContent = `${state.uses_left} / 4 Uses Remaining`;
 }
 
 function updateBreakPlanningStatus() {
@@ -1172,99 +1186,122 @@ function updateBreakPlanningStatus() {
 }
 
 function updateWorkweekNotice() {
+    if (!weekendStartSelect || !weekendEndSelect) return;
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const s = parseInt(weekendStartSelect.value, 10);
     const e = parseInt(weekendEndSelect.value, 10);
     const resetDay = (e + 1) % 7;
-    document.getElementById('workweekCalcNotice').textContent =
-        `Weekend: ${days[s]} to ${days[e]}. Emergency tokens reset every ${days[resetDay]} at 00:00.`;
+    const notice = document.getElementById('workweekCalcNotice');
+    if (notice) {
+        notice.textContent = `Weekend: ${days[s]} to ${days[e]}. Emergency tokens reset every ${days[resetDay]} at 00:00.`;
+    }
 }
 
-dumpDurationSlider.addEventListener('input', (e) => {
-    dumpDurationReadout.textContent = formatDumpDuration(parseInt(e.target.value, 10));
-    markUnsaved();
-});
-
-document.getElementById('toggleKeyVisibilityBtn').addEventListener('click', () => {
-    const isPassword = geminiApiKeyInput.type === 'password';
-    geminiApiKeyInput.type = isPassword ? 'text' : 'password';
-    document.getElementById('toggleKeyVisibilityBtn').textContent = isPassword ? 'Hide Key' : 'Show Key';
-});
-
-copyUrlBtn.addEventListener('click', () => {
-    const urlInput = document.getElementById('macroEndpointUrl');
-    navigator.clipboard.writeText(urlInput.value).then(() => {
-        const prev = copyUrlBtn.textContent;
-        copyUrlBtn.textContent = 'Copied!';
-        setTimeout(() => copyUrlBtn.textContent = prev, 1500);
+if (dumpDurationSlider && dumpDurationReadout) {
+    dumpDurationSlider.addEventListener('input', (e) => {
+        dumpDurationReadout.textContent = formatDumpDuration(parseInt(e.target.value, 10));
+        markUnsaved();
     });
-});
+}
 
-copyTokenBtn.addEventListener('click', () => {
-    if (!macroBearerToken.value) return;
-    navigator.clipboard.writeText(macroBearerToken.value).then(() => {
-        const prev = copyTokenBtn.textContent;
-        copyTokenBtn.textContent = 'Copied!';
-        setTimeout(() => copyTokenBtn.textContent = prev, 1500);
+const toggleKeyBtn = document.getElementById('toggleKeyVisibilityBtn');
+if (toggleKeyBtn && geminiApiKeyInput) {
+    toggleKeyBtn.addEventListener('click', () => {
+        const isPassword = geminiApiKeyInput.type === 'password';
+        geminiApiKeyInput.type = isPassword ? 'text' : 'password';
+        toggleKeyBtn.textContent = isPassword ? 'Hide Key' : 'Show Key';
     });
-});
+}
 
-toggleTokenVisibilityBtn.addEventListener('click', () => {
-    const isPass = macroBearerToken.type === 'password';
-    macroBearerToken.type = isPass ? 'text' : 'password';
-    toggleTokenVisibilityBtn.textContent = isPass ? 'Hide' : 'Show';
-});
+if (copyUrlBtn) {
+    copyUrlBtn.addEventListener('click', () => {
+        const urlInput = document.getElementById('macroEndpointUrl');
+        if (!urlInput) return;
+        navigator.clipboard.writeText(urlInput.value).then(() => {
+            const prev = copyUrlBtn.textContent;
+            copyUrlBtn.textContent = 'Copied!';
+            setTimeout(() => copyUrlBtn.textContent = prev, 1500);
+        });
+    });
+}
+
+if (copyTokenBtn && macroBearerToken) {
+    copyTokenBtn.addEventListener('click', () => {
+        if (!macroBearerToken.value) return;
+        navigator.clipboard.writeText(macroBearerToken.value).then(() => {
+            const prev = copyTokenBtn.textContent;
+            copyTokenBtn.textContent = 'Copied!';
+            setTimeout(() => copyTokenBtn.textContent = prev, 1500);
+        });
+    });
+}
+
+if (toggleTokenVisibilityBtn && macroBearerToken) {
+    toggleTokenVisibilityBtn.addEventListener('click', () => {
+        const isPass = macroBearerToken.type === 'password';
+        macroBearerToken.type = isPass ? 'text' : 'password';
+        toggleTokenVisibilityBtn.textContent = isPass ? 'Hide' : 'Show';
+    });
+}
 
 [soundEffectsToggle, copilotNameInput, geminiApiKeyInput, strictCriteriaToggle, weekendStartSelect, weekendEndSelect, dayStartHourSelect].forEach(el => {
-    el.addEventListener('input', markUnsaved);
-    el.addEventListener('change', markUnsaved);
-});
-
-dayStartHourSelect.addEventListener('change', () => {
-    updateBreakPlanningStatus();
-    markUnsaved();
-});
-
-document.getElementById('testGeminiBtn').addEventListener('click', async () => {
-    const key = geminiApiKeyInput.value.trim();
-    const feedback = document.getElementById('geminiTestFeedback');
-    feedback.style.display = 'block';
-
-    if (!key) {
-        feedback.className = 'notice-banner notice-warning';
-        feedback.textContent = 'Please enter an API key first.';
-        return;
+    if (el) {
+        el.addEventListener('input', markUnsaved);
+        el.addEventListener('change', markUnsaved);
     }
+});
 
-    feedback.className = 'notice-banner notice-info';
-    feedback.textContent = 'Testing connection with primary model (gemini-3.5-flash-lite)...';
+if (dayStartHourSelect) {
+    dayStartHourSelect.addEventListener('change', () => {
+        updateBreakPlanningStatus();
+        markUnsaved();
+    });
+}
 
-    try {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${key}`;
-        const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: 'Ping test. Respond with OK.' }] }]
-            })
-        });
+const testGeminiBtn = document.getElementById('testGeminiBtn');
+if (testGeminiBtn && geminiApiKeyInput) {
+    testGeminiBtn.addEventListener('click', async () => {
+        const key = geminiApiKeyInput.value.trim();
+        const feedback = document.getElementById('geminiTestFeedback');
+        if (!feedback) return;
+        feedback.style.display = 'block';
 
-        if (res.ok) {
-            feedback.className = 'notice-banner notice-success';
-            feedback.innerHTML = '<strong>Success!</strong> API key valid and connected to gemini-3.5-flash-lite.';
-        } else {
-            const errData = await res.json();
+        if (!key) {
             feedback.className = 'notice-banner notice-warning';
-            feedback.textContent = `API Error (${res.status}): ${errData.error?.message || 'Check key validity'}`;
+            feedback.textContent = 'Please enter an API key first.';
+            return;
         }
-    } catch (err) {
-        feedback.className = 'notice-banner notice-warning';
-        feedback.textContent = `Network Error: ${err.message}`;
-    }
-});
+
+        feedback.className = 'notice-banner notice-info';
+        feedback.textContent = 'Testing connection with primary model (gemini-3.5-flash-lite)...';
+
+        try {
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${key}`;
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: 'Ping test. Respond with OK.' }] }]
+                })
+            });
+
+            if (res.ok) {
+                feedback.className = 'notice-banner notice-success';
+                feedback.innerHTML = '<strong>Success!</strong> API key valid and connected to gemini-3.5-flash-lite.';
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                feedback.className = 'notice-banner notice-warning';
+                feedback.textContent = `API Error (${res.status}): ${errData.error?.message || 'Check key validity'}`;
+            }
+        } catch (err) {
+            feedback.className = 'notice-banner notice-warning';
+            feedback.textContent = `Network Error: ${err.message}`;
+        }
+    });
+}
 
 // =========================================================================
-// In-App Password Rotation & Hard Anti-Lockout Gate
+// In-App Password Rotation & Anti-Lockout Gate
 // =========================================================================
 function evaluatePasswordChecklist(newPass, confirmPass) {
     const pass = String(newPass || '');
@@ -1294,43 +1331,54 @@ function evaluatePasswordChecklist(newPass, confirmPass) {
     return rLength && rUpper && rLower && rNumber && rSpecial && isMatch;
 }
 
-function openChangePasswordDialog() {
+const PASSWORD_GATE_MESSAGE =
+    "\uD83D\uDD12 ACTION BLOCKED: ANTI-LOCKOUT GATE ACTIVE\n\n" +
+    "You have pending tasks scheduled for today and are not on a scheduled break or emergency bypass.\n\n" +
+    "Changing your password now invalidates your phone's background token and may immediately lock your device.\n\n" +
+    "Complete today's tasks or wait for your next scheduled break before changing credentials.";
+
+// True when a password change must be refused: unfinished tasks are due today
+// (or overdue) and the user is neither on a scheduled break nor on an emergency bypass.
+function isPasswordChangeBlocked() {
     let tasks = [];
     try {
         tasks = JSON.parse(localStorage.getItem('taskitator_tasks') || '[]');
     } catch (e) {
         tasks = [];
     }
+    if (!Array.isArray(tasks)) tasks = [];
 
     const isBreak = window.TaskitatorEngine?.BreakEngine?.isCurrentlyOnBreak?.() || false;
     const isBypass = window.TaskitatorEngine?.EmergencyManager?.isBypassActive?.() || false;
     const todayStr = getAppTodayStr();
 
-    // Check for unfinished active tasks due today or overdue
     const hasPendingToday = tasks.some(t => {
-        if (t.status !== 'active') return false;
-        const due = (t.due_date || '').trim().toLowerCase();
+        if (!t || t.status !== 'active') return false;
+        const due = String(t.due_date || '').trim().toLowerCase();
         return due === 'today' || (due && due <= todayStr);
     });
 
-    // Hard Anti-Lockout Pre-Flight Gate
-    if (hasPendingToday && !isBreak && !isBypass) {
-        alert(
-            "🔒 ACTION BLOCKED: ANTI-LOCKOUT GATE ACTIVE\n\n" +
-            "You have pending tasks scheduled for today and are not on a scheduled break or emergency bypass.\n\n" +
-            "Changing your password now invalidates your phone's background token and may immediately lock your device.\n\n" +
-            "Complete today's tasks or wait for your next scheduled break before changing credentials."
-        );
+    return hasPendingToday && !isBreak && !isBypass;
+}
+
+function openChangePasswordDialog() {
+    // Hard gate: the modal must not open while the gate is active.
+    if (isPasswordChangeBlocked()) {
+        alert(PASSWORD_GATE_MESSAGE);
         return;
     }
 
-    changePasswordForm.reset();
-    changePasswordFeedback.style.display = 'none';
+    if (changePasswordForm) changePasswordForm.reset();
+    if (changePasswordFeedback) changePasswordFeedback.style.display = 'none';
     evaluatePasswordChecklist('', '');
-    submitChangePasswordBtn.disabled = false;
-    submitChangePasswordBtn.textContent = 'Update & Migrate';
-    changePasswordModal.classList.add('open');
-    setTimeout(() => currentPasswordInput.focus(), 150);
+    if (submitChangePasswordBtn) {
+        submitChangePasswordBtn.disabled = false;
+        submitChangePasswordBtn.textContent = 'Update & Migrate';
+    }
+    if (changePasswordModal) {
+        changePasswordModal.classList.add('open');
+        setTimeout(() => { if (currentPasswordInput) currentPasswordInput.focus(); }, 150);
+    }
 }
 
 if (openChangePasswordModalBtn) {
@@ -1355,48 +1403,71 @@ if (cancelChangePasswordBtn) cancelChangePasswordBtn.addEventListener('click', c
 if (changePasswordForm) {
     changePasswordForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const currentPass = currentPasswordInput.value;
-        const newPass = newPasswordInput.value;
-        const confirmPass = confirmNewPasswordInput.value;
 
-        changePasswordFeedback.style.display = 'none';
-
-        if (!evaluatePasswordChecklist(newPass, confirmPass)) {
-            changePasswordFeedback.className = 'notice-banner notice-warning';
-            changePasswordFeedback.style.display = 'block';
-            changePasswordFeedback.textContent = 'Please satisfy all password complexity and matching requirements.';
+        // Re-check at submit time in case the modal was opened before the gate became active.
+        if (isPasswordChangeBlocked()) {
+            if (changePasswordFeedback) {
+                changePasswordFeedback.className = 'notice-banner notice-warning';
+                changePasswordFeedback.style.display = 'block';
+                changePasswordFeedback.textContent = "Action blocked: complete today's pending tasks or wait for your scheduled break before changing credentials.";
+            }
             return;
         }
 
-        submitChangePasswordBtn.disabled = true;
-        submitChangePasswordBtn.textContent = 'Migrating Credentials...';
+        const currentPass = currentPasswordInput ? currentPasswordInput.value : '';
+        const newPass = newPasswordInput ? newPasswordInput.value : '';
+        const confirmPass = confirmNewPasswordInput ? confirmNewPasswordInput.value : '';
+
+        if (changePasswordFeedback) changePasswordFeedback.style.display = 'none';
+
+        if (!evaluatePasswordChecklist(newPass, confirmPass)) {
+            if (changePasswordFeedback) {
+                changePasswordFeedback.className = 'notice-banner notice-warning';
+                changePasswordFeedback.style.display = 'block';
+                changePasswordFeedback.textContent = 'Please satisfy all password complexity and matching requirements.';
+            }
+            return;
+        }
+
+        if (submitChangePasswordBtn) {
+            submitChangePasswordBtn.disabled = true;
+            submitChangePasswordBtn.textContent = 'Migrating Credentials...';
+        }
 
         try {
             const res = await SyncEngine.changePassword(currentPass, newPass);
 
             if (res.success) {
                 closeChangePassword();
-                macroBearerToken.value = res.newToken;
-                migratedBearerToken.value = res.newToken;
+                if (macroBearerToken) macroBearerToken.value = res.newToken;
+                if (migratedBearerToken) migratedBearerToken.value = res.newToken;
                 if (passwordMigratedModal) passwordMigratedModal.classList.add('open');
             } else {
-                submitChangePasswordBtn.disabled = false;
-                submitChangePasswordBtn.textContent = 'Update & Migrate';
-                changePasswordFeedback.className = 'notice-banner notice-warning';
-                changePasswordFeedback.style.display = 'block';
-                changePasswordFeedback.textContent = res.error || 'Failed to rotate credentials.';
+                if (submitChangePasswordBtn) {
+                    submitChangePasswordBtn.disabled = false;
+                    submitChangePasswordBtn.textContent = 'Update & Migrate';
+                }
+                if (changePasswordFeedback) {
+                    changePasswordFeedback.className = 'notice-banner notice-warning';
+                    changePasswordFeedback.style.display = 'block';
+                    changePasswordFeedback.textContent = res.error || 'Failed to rotate credentials.';
+                }
             }
         } catch (err) {
-            submitChangePasswordBtn.disabled = false;
-            submitChangePasswordBtn.textContent = 'Update & Migrate';
-            changePasswordFeedback.className = 'notice-banner notice-warning';
-            changePasswordFeedback.style.display = 'block';
-            changePasswordFeedback.textContent = `System Error: ${err.message}`;
+            if (submitChangePasswordBtn) {
+                submitChangePasswordBtn.disabled = false;
+                submitChangePasswordBtn.textContent = 'Update & Migrate';
+            }
+            if (changePasswordFeedback) {
+                changePasswordFeedback.className = 'notice-banner notice-warning';
+                changePasswordFeedback.style.display = 'block';
+                changePasswordFeedback.textContent = `System Error: ${err.message}`;
+            }
         }
     });
 }
 
-if (copyMigratedTokenBtn) {
+if (copyMigratedTokenBtn && migratedBearerToken) {
     copyMigratedTokenBtn.addEventListener('click', () => {
         if (!migratedBearerToken.value) return;
         navigator.clipboard.writeText(migratedBearerToken.value).then(() => {
@@ -1407,9 +1478,9 @@ if (copyMigratedTokenBtn) {
     });
 }
 
-if (dismissMigratedModalBtn) {
+if (dismissMigratedModalBtn && passwordMigratedModal) {
     dismissMigratedModalBtn.addEventListener('click', () => {
-        if (passwordMigratedModal) passwordMigratedModal.classList.remove('open');
+        passwordMigratedModal.classList.remove('open');
     });
 }
 
@@ -1420,49 +1491,53 @@ const importFileInput = document.getElementById('importFileInput');
 const importFeedback = document.getElementById('importFeedback');
 
 function showImportFeedback(msg, isError = false) {
+    if (!importFeedback) return;
     importFeedback.style.display = 'block';
     importFeedback.className = `notice-banner ${isError ? 'notice-warning' : 'notice-success'}`;
     importFeedback.innerHTML = msg;
 }
 
-document.getElementById('exportDataBtn').addEventListener('click', () => {
-    let savedCriteria = [];
-    try {
-        savedCriteria = JSON.parse(localStorage.getItem(SAVED_CRITERIA_KEY) || '[]');
-    } catch (e) {}
+const exportBtn = document.getElementById('exportDataBtn');
+if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+        let savedCriteria = [];
+        try {
+            savedCriteria = JSON.parse(localStorage.getItem(SAVED_CRITERIA_KEY) || '[]');
+        } catch (e) {}
 
-    const data = {
-        taskitator_tasks: JSON.parse(localStorage.getItem('taskitator_tasks') || '[]'),
-        taskitator_projects: JSON.parse(localStorage.getItem('taskitator_projects') || '[]'),
-        taskitator_daily_breaks: JSON.parse(localStorage.getItem('taskitator_daily_breaks') || '{}'),
-        taskitator_audit_ledger: JSON.parse(localStorage.getItem('taskitator_audit_ledger') || '[]'),
-        taskitator_saved_criteria: savedCriteria,
-        taskitator_settings: JSON.parse(localStorage.getItem('taskitator_settings') || '{}'),
-        taskitator_collapsed_nodes: JSON.parse(localStorage.getItem('taskitator_collapsed_nodes') || '[]'),
-        export_date: new Date().toISOString(),
-        version: '1.3'
-    };
+        const data = {
+            taskitator_tasks: JSON.parse(localStorage.getItem('taskitator_tasks') || '[]'),
+            taskitator_projects: JSON.parse(localStorage.getItem('taskitator_projects') || '[]'),
+            taskitator_daily_breaks: JSON.parse(localStorage.getItem('taskitator_daily_breaks') || '{}'),
+            taskitator_audit_ledger: JSON.parse(localStorage.getItem('taskitator_audit_ledger') || '[]'),
+            taskitator_saved_criteria: savedCriteria,
+            taskitator_settings: JSON.parse(localStorage.getItem('taskitator_settings') || '{}'),
+            taskitator_collapsed_nodes: JSON.parse(localStorage.getItem('taskitator_collapsed_nodes') || '[]'),
+            export_date: new Date().toISOString(),
+            version: '1.3'
+        };
 
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const dateStr = data.export_date.split('T')[0];
-    
-    a.href = url;
-    a.download = `taskitator_backup_${dateStr}.json`;
-    document.body.appendChild(a);
-    a.click();
-    
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-});
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const dateStr = data.export_date.split('T')[0];
+        
+        a.href = url;
+        a.download = `taskitator_backup_${dateStr}.json`;
+        document.body.appendChild(a);
+        a.click();
+        
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+}
 
 async function processImport(mode) {
-    const file = importFileInput.files[0];
-    if (!file) {
+    if (!importFileInput || !importFileInput.files.length) {
         showImportFeedback('Please select a JSON backup file first.', true);
         return;
     }
+    const file = importFileInput.files[0];
 
     if (!confirm(`Are you sure you want to perform a ${mode.toUpperCase()} using this file?`)) {
         return;
@@ -1564,7 +1639,7 @@ async function processImport(mode) {
             localStorage.setItem('taskitator_settings', JSON.stringify(localSettingsRaw));
         }
 
-        if (window.SyncEngine) {
+        if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
             SyncEngine.markLocalModified();
             await SyncEngine.forceImmediateSync();
         }
@@ -1578,36 +1653,43 @@ async function processImport(mode) {
     }
 }
 
-document.getElementById('importReplaceBtn').addEventListener('click', () => processImport('replace'));
-document.getElementById('importMergeBtn').addEventListener('click', () => processImport('merge'));
+const importReplaceBtn = document.getElementById('importReplaceBtn');
+if (importReplaceBtn) importReplaceBtn.addEventListener('click', () => processImport('replace'));
 
-document.getElementById('clearCompletedTrashBtn').addEventListener('click', async () => {
-    if (!confirm('Permanently delete all completed and trashed tasks? This clears historical task data and reference exemplars.')) return;
-    
-    let tasks = JSON.parse(localStorage.getItem('taskitator_tasks') || '[]');
-    const originalLength = tasks.length;
-    const removedTasks = tasks.filter(t => t.status !== 'active');
-    tasks = tasks.filter(t => t.status === 'active');
+const importMergeBtn = document.getElementById('importMergeBtn');
+if (importMergeBtn) importMergeBtn.addEventListener('click', () => processImport('merge'));
 
-    if (window.ExemplarStore) {
-        for (const t of removedTasks) {
-            try {
-                await ExemplarStore.deleteExemplar(t.id);
-            } catch (e) {}
+const clearCompletedTrashBtn = document.getElementById('clearCompletedTrashBtn');
+if (clearCompletedTrashBtn) {
+    clearCompletedTrashBtn.addEventListener('click', async () => {
+        if (!confirm('Permanently delete all completed and trashed tasks? This clears historical task data and reference exemplars.')) return;
+        let tasks = JSON.parse(localStorage.getItem('taskitator_tasks') || '[]');
+        const originalLength = tasks.length;
+        const removedTasks = tasks.filter(t => t.status !== 'active');
+        tasks = tasks.filter(t => t.status === 'active');
+
+        if (window.ExemplarStore) {
+            for (const t of removedTasks) {
+                try {
+                    await ExemplarStore.deleteExemplar(t.id);
+                } catch (e) {}
+            }
         }
-    }
-    
-    localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
-    if (window.SyncEngine) {
-        SyncEngine.markLocalModified();
-        await SyncEngine.forceImmediateSync();
-    }
-    alert(`Cleanup complete. Removed ${originalLength - tasks.length} tasks and associated exemplar files.`);
-});
+        
+        localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
+        if (window.SyncEngine) {
+            SyncEngine.markLocalModified();
+            await SyncEngine.forceImmediateSync();
+        }
+        showImportFeedback(`Cleanup complete. Removed ${originalLength - tasks.length} historical tasks.`);
+    });
+}
 
-document.getElementById('factoryResetBtn').addEventListener('click', async () => {
-    const confirmation = prompt('DANGER: Type "RESET" to confirm total wipe of this account (logs you out and clears all tasks, projects, breaks, and exemplars).');
-    if (confirmation === 'RESET') {
+const factoryResetBtn = document.getElementById('factoryResetBtn');
+if (factoryResetBtn) {
+    factoryResetBtn.addEventListener('click', async () => {
+        const confirmation = prompt('DANGER: Type "RESET" to confirm total wipe of this account (logs you out and clears all tasks, projects, breaks, and exemplars).');
+        if (confirmation !== 'RESET') return;
         if (window.ExemplarStore) {
             try {
                 await ExemplarStore.clearAll();
@@ -1615,45 +1697,54 @@ document.getElementById('factoryResetBtn').addEventListener('click', async () =>
         }
         localStorage.clear();
         window.location.replace('login.html');
-    }
-});
+    });
+}
 
 // =========================================================================
-// End Backup Engine
+// Session Controls & UI Wiring
 // =========================================================================
+const openLogoutBtn = document.getElementById('openLogoutModalBtn');
+if (openLogoutBtn && logoutConfirmModal) {
+    openLogoutBtn.addEventListener('click', () => {
+        logoutConfirmModal.classList.add('open');
+    });
+}
 
-document.getElementById('openLogoutModalBtn').addEventListener('click', () => {
-    logoutConfirmModal.classList.add('open');
-});
+const cancelLogoutBtn = document.getElementById('cancelLogoutBtn');
+if (cancelLogoutBtn && logoutConfirmModal) {
+    cancelLogoutBtn.addEventListener('click', () => {
+        logoutConfirmModal.classList.remove('open');
+    });
+}
 
-document.getElementById('cancelLogoutBtn').addEventListener('click', () => {
-    logoutConfirmModal.classList.remove('open');
-});
-
-document.getElementById('confirmLogoutBtn').addEventListener('click', async () => {
-    markSaved();
-    if (!SyncEngine.logout()) {
-        alert('Could not preserve local data. Export a backup before logging out.');
-        return;
-    }
-    logoutConfirmModal.classList.remove('open');
-    window.location.replace('login.html');
-});
+const confirmLogoutBtn = document.getElementById('confirmLogoutBtn');
+if (confirmLogoutBtn && logoutConfirmModal) {
+    confirmLogoutBtn.addEventListener('click', async () => {
+        markSaved();
+        if (window.SyncEngine && typeof SyncEngine.logout === 'function') {
+            SyncEngine.logout();
+        }
+        logoutConfirmModal.classList.remove('open');
+        window.location.replace('login.html');
+    });
+}
 
 window.addEventListener('taskitator-synced', loadSettings);
 
 const sidebarDrawer = document.getElementById('sidebarDrawer');
 const drawerBackdrop = document.getElementById('drawerBackdrop');
+const openDrawerBtn = document.getElementById('openDrawerBtn');
 
-document.getElementById('openDrawerBtn').addEventListener('click', () => {
-    sidebarDrawer.classList.add('open');
-    drawerBackdrop.classList.add('open');
-});
-
-drawerBackdrop.addEventListener('click', () => {
-    sidebarDrawer.classList.remove('open');
-    drawerBackdrop.classList.remove('open');
-});
+if (openDrawerBtn && sidebarDrawer && drawerBackdrop) {
+    openDrawerBtn.addEventListener('click', () => {
+        sidebarDrawer.classList.add('open');
+        drawerBackdrop.classList.add('open');
+    });
+    drawerBackdrop.addEventListener('click', () => {
+        sidebarDrawer.classList.remove('open');
+        drawerBackdrop.classList.remove('open');
+    });
+}
 
 const copilotDrawer = document.getElementById('copilotDrawer');
 const copilotBackdrop = document.getElementById('copilotBackdrop');
@@ -1680,14 +1771,17 @@ if (closeCopilotBtn && copilotDrawer && copilotBackdrop) {
     });
 }
 
-document.getElementById('saveAllSettingsBtn').addEventListener('click', () => saveSettings(false));
+const saveAllBtn = document.getElementById('saveAllSettingsBtn');
+if (saveAllBtn) {
+    saveAllBtn.addEventListener('click', () => saveSettings(false));
+}
 
-weekendStartSelect.addEventListener('change', updateWorkweekNotice);
-weekendEndSelect.addEventListener('change', updateWorkweekNotice);
+if (weekendStartSelect) weekendStartSelect.addEventListener('change', updateWorkweekNotice);
+if (weekendEndSelect) weekendEndSelect.addEventListener('change', updateWorkweekNotice);
 
 document.addEventListener('DOMContentLoaded', async () => {
     loadSettings();
-    if (window.SyncEngine && SyncEngine.isConfigured()) {
+    if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
         await SyncEngine.pull(loadSettings);
     }
 });
