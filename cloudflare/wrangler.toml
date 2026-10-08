@@ -6,7 +6,7 @@ compatibility_date = "2026-10-04"
 
 [[kv_namespaces]]
 binding = "TASKITATOR_KV"
-id = "TASKITATOR_KV"
+id = "f20716f5213a4da6bae75182728c1117"
 
 [[durable_objects.bindings]]
 name = "TASKITATOR_SYNC"
