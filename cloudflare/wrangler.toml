@@ -1,0 +1,17 @@
+# Use your existing Worker project when possible. Preserve any existing routes,
+# environments, bindings and migration history; append these new DO entries.
+name = "taskitator-sync"
+main = "worker.js"
+compatibility_date = "2026-10-04"
+
+[[kv_namespaces]]
+binding = "TASKITATOR_KV"
+id = "TASKITATOR_KV"
+
+[[durable_objects.bindings]]
+name = "TASKITATOR_SYNC"
+class_name = "TaskitatorSync"
+
+[[migrations]]
+tag = "taskitator-sync-v1"
+new_sqlite_classes = ["TaskitatorSync"]
