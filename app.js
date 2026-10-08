@@ -635,8 +635,7 @@ window.TaskitatorApp = (() => {
         }
 
         if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
-            const breaks = getTodayBreaksSafe();
-            SyncEngine.scheduleAutoPush(45000, { today_breaks: breaks });
+            SyncEngine.scheduleAutoPush();
         }
     }
 
@@ -1454,10 +1453,6 @@ window.TaskitatorApp = (() => {
             this.renderModal();
             this.updateStatusPill();
 
-            if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
-                const breaks = getTodayBreaksSafe();
-                SyncEngine.forceImmediateSync({ today_breaks: breaks });
-            }
 
             alert("Daily breaks locked successfully.");
             this.closeModal();
@@ -2583,14 +2578,7 @@ window.TaskitatorApp = (() => {
             updateSyncDot('error');
         });
 
-        if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
-            SyncEngine.pull(() => {
-                if (!components?.isEditing()) {
-                    loadStorage();
-                    renderUnifiedView();
-                }
-            });
-        }
+        // Cloud downloads happen through Sync Now or a completed edit batch.
     }
 
     return {

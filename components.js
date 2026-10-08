@@ -1898,9 +1898,9 @@ window.TaskitatorComponents = Object.freeze({
                             
                             const completedTaskId = pendingAuditTaskId;
                             host.tasks.finalize(completedTaskId).then(() => {
-                                if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
+                                if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
                                     const breaks = host.breaks.today();
-                                    SyncEngine.forceImmediateSync({ today_breaks: breaks });
+                                    SyncEngine.scheduleAutoPush();
                                 }
                             });
 
@@ -1934,9 +1934,9 @@ window.TaskitatorComponents = Object.freeze({
                         
                         const completedTaskId = pendingAuditTaskId;
                         host.tasks.finalize(completedTaskId).then(() => {
-                            if (window.SyncEngine && typeof SyncEngine.forceImmediateSync === 'function') {
+                            if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
                                 const breaks = host.breaks.today();
-                                SyncEngine.forceImmediateSync({ today_breaks: breaks });
+                                SyncEngine.scheduleAutoPush();
                             }
                         });
 

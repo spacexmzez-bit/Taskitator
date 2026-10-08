@@ -474,6 +474,18 @@
 
                 <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
                     <div style="flex: 1;">
+                        <label for="autoPageRefreshToggle" style="margin-bottom: 2px; font-weight: 700;">Auto Page Refresh</label>
+                        <small style="color: var(--text-muted); font-size: 0.75rem; display: block; line-height: 1.4;">Reload the page after a successful automatic sync. Turning this off keeps cloud syncing enabled.</small>
+                    </div>
+                    <input type="checkbox" id="autoPageRefreshToggle" style="width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer;" checked>
+                </div>
+                <div class="form-group" style="margin-top: 14px;">
+                    <button type="button" class="icon-btn" id="settingsSyncNowBtn">Sync Now</button>
+                    <span id="settingsSyncFeedback" role="status" style="font-size: 0.8rem; margin-left: 8px;"></span>
+                </div>
+
+                <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
+                    <div style="flex: 1;">
                         <label for="strictCriteriaToggle" style="margin-bottom: 2px; font-weight: 700;">Strict Criteria Validation</label>
                         <small style="color: var(--text-muted); font-size: 0.75rem; display: block; line-height: 1.4;">
                             Enforces an objective pre-flight rating (&ge; 7/10) to lock tasks. Disable only if you prefer entering manual criteria without automated gating.
@@ -792,6 +804,7 @@ const soundEffectsToggle = document.getElementById('soundEffectsToggle');
 const copilotNameInput = document.getElementById('copilotNameInput');
 const geminiApiKeyInput = document.getElementById('geminiApiKey');
 const strictCriteriaToggle = document.getElementById('strictCriteriaToggle');
+const autoPageRefreshToggle = document.getElementById('autoPageRefreshToggle');
 const activeUsernameDisplay = document.getElementById('activeUsernameDisplay');
 const weekendStartSelect = document.getElementById('weekendStartSelect');
 const weekendEndSelect = document.getElementById('weekendEndSelect');
@@ -848,6 +861,7 @@ function markSaved() {
     if (unsavedIndicator) {
         unsavedIndicator.style.display = 'none';
     }
+    window.dispatchEvent(new CustomEvent('taskitator-refresh-safe'));
 }
 
 function getAppTodayStr() {
@@ -1058,6 +1072,7 @@ function loadSettings() {
     if (copilotNameInput) copilotNameInput.value = settings.copilot_name || 'Focus Copilot';
     if (geminiApiKeyInput) geminiApiKeyInput.value = settings.gemini_api_key || '';
     if (strictCriteriaToggle) strictCriteriaToggle.checked = settings.strict_criteria_validation !== false;
+    if (autoPageRefreshToggle) autoPageRefreshToggle.checked = settings.auto_page_refresh !== false;
 
     // Distraction Dump UI Load
     const dumpDur = settings.dump_duration !== undefined ? settings.dump_duration : 90;
@@ -1106,6 +1121,7 @@ async function saveSettings(silent = false) {
     settings.copilot_name = copilotNameInput ? (copilotNameInput.value.trim() || 'Focus Copilot').slice(0, 20) : 'Focus Copilot';
     settings.gemini_api_key = geminiApiKeyInput ? geminiApiKeyInput.value.trim() : '';
     settings.strict_criteria_validation = strictCriteriaToggle ? Boolean(strictCriteriaToggle.checked) : true;
+    settings.auto_page_refresh = autoPageRefreshToggle ? Boolean(autoPageRefreshToggle.checked) : true;
     settings.dump_duration = currentDumpDur;
     settings.worker_url = HARDCODED_WORKER_URL;
     settings.weekend_start = weekendStartSelect ? parseInt(weekendStartSelect.value, 10) : 5;
@@ -1125,10 +1141,7 @@ async function saveSettings(silent = false) {
     
     if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
         SyncEngine.markLocalModified();
-        const todayBreaks = window.TaskitatorEngine && TaskitatorEngine.BreakEngine 
-            ? TaskitatorEngine.BreakEngine.getTodayBreaks() 
-            : [];
-        await SyncEngine.forceImmediateSync({ today_breaks: todayBreaks });
+        SyncEngine.scheduleAutoPush();
     }
 
     updateBreakPlanningStatus();
@@ -1244,7 +1257,7 @@ if (toggleTokenVisibilityBtn && macroBearerToken) {
     });
 }
 
-[soundEffectsToggle, copilotNameInput, geminiApiKeyInput, strictCriteriaToggle, weekendStartSelect, weekendEndSelect, dayStartHourSelect].forEach(el => {
+[soundEffectsToggle, copilotNameInput, geminiApiKeyInput, strictCriteriaToggle, autoPageRefreshToggle, weekendStartSelect, weekendEndSelect, dayStartHourSelect].forEach(el => {
     if (el) {
         el.addEventListener('input', markUnsaved);
         el.addEventListener('change', markUnsaved);
@@ -1641,7 +1654,7 @@ async function processImport(mode) {
 
         if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
             SyncEngine.markLocalModified();
-            await SyncEngine.forceImmediateSync();
+            SyncEngine.scheduleAutoPush();
         }
 
         showImportFeedback(`<strong>Success!</strong> Data successfully ${mode === 'replace' ? 'restored' : 'merged'}. Reloading...`);
@@ -1679,7 +1692,7 @@ if (clearCompletedTrashBtn) {
         localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
         if (window.SyncEngine) {
             SyncEngine.markLocalModified();
-            await SyncEngine.forceImmediateSync();
+            SyncEngine.scheduleAutoPush();
         }
         showImportFeedback(`Cleanup complete. Removed ${originalLength - tasks.length} historical tasks.`);
     });
@@ -1722,14 +1735,15 @@ if (confirmLogoutBtn && logoutConfirmModal) {
     confirmLogoutBtn.addEventListener('click', async () => {
         markSaved();
         if (window.SyncEngine && typeof SyncEngine.logout === 'function') {
-            SyncEngine.logout();
+            if (!SyncEngine.logout()) return;
         }
         logoutConfirmModal.classList.remove('open');
         window.location.replace('login.html');
     });
 }
 
-window.addEventListener('taskitator-synced', loadSettings);
+window.addEventListener('taskitator-synced', () => { if (!hasUnsavedChanges) loadSettings(); });
+if (window.SyncEngine) SyncEngine.registerRefreshGuard(() => !hasUnsavedChanges);
 
 const sidebarDrawer = document.getElementById('sidebarDrawer');
 const drawerBackdrop = document.getElementById('drawerBackdrop');
@@ -1771,6 +1785,22 @@ if (closeCopilotBtn && copilotDrawer && copilotBackdrop) {
     });
 }
 
+const settingsSyncNowBtn = document.getElementById('settingsSyncNowBtn');
+if (settingsSyncNowBtn) {
+    settingsSyncNowBtn.addEventListener('click', async () => {
+        const feedback = document.getElementById('settingsSyncFeedback');
+        settingsSyncNowBtn.disabled = true;
+        try {
+            const result = await SyncEngine.syncNow({ origin: 'manual' });
+            if (feedback) feedback.textContent = result.success
+                ? (result.deferred ? 'Saved changes synced. Finish editing before the page updates.' : 'Synced.')
+                : (result.error || 'Sync could not finish. Local changes were kept.');
+        } catch (err) {
+            if (feedback) feedback.textContent = err.message;
+        } finally { settingsSyncNowBtn.disabled = false; }
+    });
+}
+
 const saveAllBtn = document.getElementById('saveAllSettingsBtn');
 if (saveAllBtn) {
     saveAllBtn.addEventListener('click', () => saveSettings(false));
@@ -1781,9 +1811,7 @@ if (weekendEndSelect) weekendEndSelect.addEventListener('change', updateWorkweek
 
 document.addEventListener('DOMContentLoaded', async () => {
     loadSettings();
-    if (window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured()) {
-        await SyncEngine.pull(loadSettings);
-    }
+    // Opening Settings does not start a cloud request.
 });
 
 if ('serviceWorker' in navigator) {

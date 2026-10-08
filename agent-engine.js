@@ -407,7 +407,7 @@ window.TaskitatorAgent = (() => {
             }
             if (typeof SyncEngine.scheduleAutoPush === 'function') {
                 const breaks = window.TaskitatorEngine?.BreakEngine?.getTodayBreaks?.() || [];
-                SyncEngine.scheduleAutoPush(45000, { today_breaks: breaks });
+                SyncEngine.scheduleAutoPush();
             }
         }
 
