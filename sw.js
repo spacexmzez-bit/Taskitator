@@ -1,5 +1,5 @@
 // sw.js - Taskitator Service Worker
-const CACHE_NAME = 'taskitator-v16-update-1';
+const CACHE_NAME = 'taskitator-v16-prompt-fix-1';
 
 const STATIC_ASSETS = [
     './',
@@ -33,7 +33,7 @@ self.addEventListener('install', (event) => {
         caches.open(CACHE_NAME).then(async (cache) => {
             const cachePromises = STATIC_ASSETS.map(async (url) => {
                 try {
-                    const response = await fetch(url);
+                    const response = await fetch(url, { cache: 'reload' });
                     if (response && response.status === 200) {
                         await cache.put(url, response);
                     } else {
@@ -78,6 +78,24 @@ self.addEventListener('fetch', (event) => {
 
     // Bypass caching for cross-origin API calls (Gemini API, external CDNs & Cloudflare Worker)
     if (url.origin !== self.location.origin) {
+        return;
+    }
+
+    // The copilot prompt must refresh before use; keep a cached copy for offline use.
+    if (url.pathname.endsWith('/SYSTEM_PROMPT.md')) {
+        event.respondWith((async () => {
+            try {
+                const response = await fetch(request, { cache: 'no-cache' });
+                if (response.ok) {
+                    const copy = response.clone();
+                    event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put(cacheKey, copy)));
+                    return response;
+                }
+                return (await caches.match(cacheKey)) || response;
+            } catch (_) {
+                return (await caches.match(cacheKey)) || new Response('Prompt unavailable.', { status: 503 });
+            }
+        })());
         return;
     }
 
