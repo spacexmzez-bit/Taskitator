@@ -1,3 +1,4 @@
+<!-- File: settings.html -->
 <!-- settings.html -->
 <!DOCTYPE html>
 <html lang="en">
@@ -779,6 +780,8 @@
 <script src="safety.js"></script>
 <script src="exemplar-store.js"></script>
 <script src="audit-engine.js"></script>
+<script src="recurrence-core.js"></script>
+<script src="recurrence-ui.js"></script>
 <script src="sync-engine.js"></script>
 <script src="agent-engine.js"></script>
 <script>
@@ -1519,6 +1522,7 @@ if (exportBtn) {
         } catch (e) {}
 
         const data = {
+            taskitator_recurrence_state: TaskitatorRecurrenceUI.state(),
             taskitator_tasks: JSON.parse(localStorage.getItem('taskitator_tasks') || '[]'),
             taskitator_projects: JSON.parse(localStorage.getItem('taskitator_projects') || '[]'),
             taskitator_daily_breaks: JSON.parse(localStorage.getItem('taskitator_daily_breaks') || '{}'),
@@ -1564,12 +1568,18 @@ async function processImport(mode) {
             throw new Error('Invalid backup file format. Missing core Taskitator properties.');
         }
 
+        const importedRecurrence = imported.taskitator_recurrence_state || {series:[],history:[]};
+        TaskitatorRecurrence.validateState(importedRecurrence, imported.taskitator_tasks);
+        if (mode === 'merge' && (importedRecurrence.series.length || TaskitatorRecurrenceUI.state().series.length)) {
+            throw new Error('Use Replace all data for backups containing recurring tasks. Smart Merge cannot safely combine separate occurrence versions. Export the current account first.');
+        }
         const localSettingsRaw = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
         const currentUser = localSettingsRaw.worker_username;
         const currentKey = localSettingsRaw.worker_passkey;
         const currentUrl = localSettingsRaw.worker_url;
 
         if (mode === 'replace') {
+            localStorage.setItem('taskitator_recurrence_state',JSON.stringify(importedRecurrence));
             const newSettings = imported.taskitator_settings || {};
             if (currentUser) newSettings.worker_username = currentUser;
             if (currentKey) newSettings.worker_passkey = currentKey;

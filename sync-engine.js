@@ -1,3 +1,4 @@
+// File: sync-engine.js
 // sync-engine.js
 /**
  * Taskitator Unified Cloud Sync Engine
@@ -37,7 +38,7 @@ const SyncEngine = {
         'taskitator_collapsed_nodes', 'taskitator_distraction_notes', 'taskitator_archived_notes',
         'taskitator_emergency_state', 'taskitator_local_revision', 'taskitator_sync_dirty',
         'taskitator_remote_version', 'taskitator_version_pending', 'taskitator_pending_rotation', 'taskitator_auto_sync_deadline',
-        'taskitator_pending_sync_download'
+        'taskitator_pending_sync_download', 'taskitator_recurrence_state'
     ],
     sessionId: null,
     pushQueue: Promise.resolve(),
@@ -265,6 +266,8 @@ const SyncEngine = {
             username: settings.worker_username || null,
             updated_at: nowIso,
             force: force,
+            recurrence_state: JSON.parse(localStorage.getItem('taskitator_recurrence_state') || '{"series":[],"history":[]}'),
+            recurrence_schema: 1,
             tasks: tasks,
             projects: projects,
             settings: settings,
@@ -681,6 +684,7 @@ const SyncEngine = {
             }
             const currentSettings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
             const updates = {
+                taskitator_recurrence_state: JSON.stringify(data.recurrence_state || {series:[],history:[]}),
                 [this.STORAGE_KEY_TASKS]: JSON.stringify(data.tasks || []),
                 [this.STORAGE_KEY_PROJECTS]: JSON.stringify(data.projects || []),
                 [this.STORAGE_KEY_SETTINGS]: JSON.stringify({ ...(data.settings || currentSettings),
@@ -773,6 +777,7 @@ const SyncEngine = {
                 delete settings.gemini_api_key;
                 const backup = {
                     export_date: new Date().toISOString(),
+                    taskitator_recurrence_state: snapshot.recurrence_state || {series:[],history:[]},
                     taskitator_tasks: snapshot.tasks || [],
                     taskitator_projects: snapshot.projects || [],
                     taskitator_settings: settings,

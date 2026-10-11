@@ -1,3 +1,4 @@
+// File: components.js
 /**
  * Taskitator task-editor components. Classic script; no imports or build step.
  * Owns editor/audit state and UI wiring. The core is supplied through Host API v1.
@@ -636,6 +637,7 @@ window.TaskitatorComponents = Object.freeze({
             const task = host.tasks.getAll().find(t => t.id === taskId);
             if (!task) return;
             activeDetailTaskId = taskId;
+            window.TaskitatorRecurrenceUI?.bindTask(taskId);
 
             const isBypassActive = host.rules.bypassActive();
             const isLocked = Boolean(task.ai_locked);
@@ -853,6 +855,7 @@ window.TaskitatorComponents = Object.freeze({
                 else titleEl.value = '';
             }
 
+            window.TaskitatorRecurrenceUI?.resetCreate();
             const pIdField = document.getElementById('creationParentId');
             if (pIdField) pIdField.value = parentId || '';
 
@@ -1483,6 +1486,8 @@ window.TaskitatorComponents = Object.freeze({
                         : null;
 
                     if (!rawTitle) return;
+                    try { window.TaskitatorRecurrenceUI?.validCreate(parentId); }
+                    catch (err) { alert(err.message); return; }
 
                     let isBonus = createModalIsBonus || rawTitle.includes('$$');
                     rawTitle = rawTitle.replace(/\$\$/g, '').trim();
@@ -1612,6 +1617,17 @@ window.TaskitatorComponents = Object.freeze({
                         });
                     }
 
+                    if (exemplarFile && host.tasks.getAll().find(t=>t.id===parentId)?.recurrence_series_id) {
+                        newTask.reference_inline_data = await TaskitatorEngine.AuditEngine.fileToBase64(exemplarFile);
+                    }
+                    try { await window.TaskitatorRecurrenceUI?.attachCreated(newTaskId, host.tasks.getAll()); }
+                    catch (err) {
+                        const list = host.tasks.getAll();
+                        const ids = new Set(TaskitatorRecurrence.subtree(list, newTaskId).map(t => t.id));
+                        for (let i=list.length-1;i>=0;i--) if(ids.has(list[i].id)) list.splice(i,1);
+                        if(window.ExemplarStore) await ExemplarStore.deleteExemplar(newTaskId).catch(()=>{});
+                        alert(err.message); if(submitBtn){submitBtn.disabled=false;submitBtn.textContent='Save Task';} return;
+                    }
                     host.tasks.save();
                     if (submitBtn) {
                         submitBtn.disabled = false;
@@ -1689,6 +1705,31 @@ window.TaskitatorComponents = Object.freeze({
                     const targetParentId = editTaskParentSelect ? (editTaskParentSelect.value.trim() || null) : task.parent_id;
 
                     if (targetParentId !== task.parent_id) {
+                        const movingIds = new Set(TaskitatorRecurrence.subtree(host.tasks.getAll(),task.id).map(t=>t.id));
+                        const containsSeries = host.tasks.getAll().some(t=>movingIds.has(t.id) && t.recurrence_series_id);
+                        let parent = host.tasks.getAll().find(t=>t.id===targetParentId); const seen=new Set();
+                        while(parent && !seen.has(parent.id)) {
+                            seen.add(parent.id);
+                            if(containsSeries && parent.recurrence_series_id && parent.recurrence_series_id !== task.recurrence_series_id){alert('Recurring branches cannot be nested.');return;}
+                            parent=host.tasks.getAll().find(t=>t.id===parent.parent_id);
+                        }
+                    }
+                    if (task.recurrence_series_id && targetParentId !== task.parent_id) {
+                        const data = TaskitatorRecurrenceUI.state();
+                        let parent = host.tasks.getAll().find(t=>t.id===targetParentId);
+                        const seen = new Set();
+                        while(parent && !seen.has(parent.id)) {
+                            seen.add(parent.id);
+                            if(parent.recurrence_series_id && parent.recurrence_series_id !== task.recurrence_series_id) { alert('Recurring branches cannot be nested.'); return; }
+                            parent=host.tasks.getAll().find(t=>t.id===parent.parent_id);
+                        }
+                        const series=TaskitatorRecurrence.seriesFor(data,task);
+                        if(series?.current_root_id !== task.id) { alert('A child must stay inside its recurring branch.'); return; }
+                    }
+                    if (task.recurrence_series_id && task.ai_locked && editedCriteriaRaw !== (task.raw_proof_criteria || task.proof_criteria || '')) {
+                        alert('Change recurring proof criteria through Recurrence & future criteria. The current occurrence keeps its original requirements.'); return;
+                    }
+                    if (targetParentId !== task.parent_id) {
                         const shieldedAncestor = host.tasks.shieldedAncestor(task.id);
                         if (shieldedAncestor && !isBypassActive) {
                             alert("Shielded task can't be moved out of their parents.");
@@ -1696,7 +1737,7 @@ window.TaskitatorComponents = Object.freeze({
                         }
 
                         const descendants = host.tasks.descendants(task.id);
-                        if (descendants.some(d => d.id === targetParentId)) {
+                        if (targetParentId === task.id || descendants.some(d => d.id === targetParentId)) {
                             alert("Circular Reference Error: You cannot move a task into one of its own subtasks.");
                             return;
                         }
@@ -1750,6 +1791,9 @@ window.TaskitatorComponents = Object.freeze({
                         if (!confirmed) return;
                     }
 
+                    if (task.recurrence_series_id && task.ai_locked && pendingEditExemplarFile) {
+                        alert('Replace recurring reference files through Recurrence & future criteria so the current requirements stay unchanged.'); return;
+                    }
                     if (pendingEditExemplarFile && willBeAiLocked && window.ExemplarStore) {
                         try {
                             await window.ExemplarStore.saveExemplar(task.id, pendingEditExemplarFile);
@@ -1783,6 +1827,7 @@ window.TaskitatorComponents = Object.freeze({
                     }
                     
                     task.strict_prerequisites = willBeStrict;
+                    await window.TaskitatorRecurrenceUI?.applyEdit(task);
 
                     host.tasks.save();
                     if (taskDetailModal) taskDetailModal.classList.remove('open');
@@ -1837,6 +1882,8 @@ window.TaskitatorComponents = Object.freeze({
                     const task = host.tasks.getAll().find(t => t.id === pendingAuditTaskId);
                     if (!task) return;
 
+                    const auditSession = localStorage.getItem('taskitator_session_id');
+                    const auditedId = task.id;
                     const file = document.getElementById('auditImageInput')?.files[0];
                     if (!file) {
                         alert('Please attach an evidence photo or PDF document.');
@@ -1858,11 +1905,11 @@ window.TaskitatorComponents = Object.freeze({
 
                     let result = { success: false, error: 'Audit engine missing' };
                     if (window.TaskitatorEngine?.AuditEngine?.verifyProof) {
-                        let refExemplarPart = null;
+                        let refExemplarPart = task.reference_inline_data || TaskitatorRecurrenceUI.state().reference_files?.[task.reference_id] || null;
                         if (window.ExemplarStore) {
                             const exemplarRecord = await ExemplarStore.getExemplar(task.id);
                             if (exemplarRecord && exemplarRecord.inline_data) {
-                                refExemplarPart = exemplarRecord.inline_data;
+                                refExemplarPart = { inline_data: exemplarRecord.inline_data };
                             }
                         }
 
@@ -1875,6 +1922,12 @@ window.TaskitatorComponents = Object.freeze({
                         });
                     }
 
+                    if (task.recurrence_series_id && (auditSession !== localStorage.getItem('taskitator_session_id') || pendingAuditTaskId !== auditedId || !host.tasks.getAll().some(t=>t.id===auditedId && t.status==='active'))) {
+                        submitProofBtn.disabled=false;submitProofBtn.textContent='Submit Proof';return;
+                    }
+                    if (result.approved && TaskitatorRecurrence.subtree(host.tasks.getAll(),task.id).some(t=>t.id!==task.id && t.status==='active' && t.ai_locked)) {
+                        result={success:false,error:'Submit proof for unfinished AI-audited children before completing this parent.'};
+                    }
                     const is503Outage = !result.success && (
                         result.status === 503 ||
                         result.code === 503 ||
@@ -1889,7 +1942,7 @@ window.TaskitatorComponents = Object.freeze({
                         const count = (consecutive503Tracker.get(pendingAuditTaskId) || 0) + 1;
                         consecutive503Tracker.set(pendingAuditTaskId, count);
 
-                        if (count >= 5) {
+                        if (count >= 5 && !task.recurrence_series_id) {
                             consecutive503Tracker.delete(pendingAuditTaskId);
                             task.verified_model = 'gemini-fallback-auto-503';
                             host.tasks.setStatus(pendingAuditTaskId, 'completed', new Date().toISOString());

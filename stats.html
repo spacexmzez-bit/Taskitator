@@ -1,3 +1,4 @@
+<!-- File: stats.html -->
 <!-- stats.html -->
 <!DOCTYPE html>
 <html lang="en">
@@ -361,6 +362,9 @@
 </aside>
 
 <script src="safety.js"></script>
+<script src="audit-engine.js"></script>
+<script src="recurrence-core.js"></script>
+<script src="recurrence-ui.js"></script>
 <script src="sync-engine.js"></script>
 <script src="agent-engine.js"></script>
 <script>
@@ -445,6 +449,13 @@ function renderStats() {
     let breaks = [];
 
     try { tasks = JSON.parse(localStorage.getItem(TASKS_KEY) || '[]'); } catch (e) { tasks = []; }
+    const history = TaskitatorRecurrenceUI.state().history;
+    for (const event of history) {
+        if(event.outcome!=='completed') continue;
+        for (const [i,t] of event.tasks.entries()) if(t.status==='completed') {
+            tasks.push({...t,id:event.id+':'+i,status:'completed',due_date:event.due_date,completed_at:t.completed_at||event.ended_at});
+        }
+    }
     try { projects = JSON.parse(localStorage.getItem(PROJECTS_KEY) || '[]'); } catch (e) { projects = []; }
     try { breaks = JSON.parse(localStorage.getItem(BREAKS_KEY) || '[]'); } catch (e) { breaks = []; }
 

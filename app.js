@@ -1,3 +1,4 @@
+// File: app.js
 /**
  * Taskitator Unified Application Engine (app.js)
  * Owns task data, tree rendering, routing, projects, sync, completion rules,
@@ -616,7 +617,11 @@ window.TaskitatorApp = (() => {
     }
 
     function saveStorageAndPush() {
-        localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+        const snapshot = { tasks, settings: JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'),
+            recurrence_state: TaskitatorRecurrenceUI.state() };
+        TaskitatorRecurrence.reconcile(snapshot);
+        tasks = snapshot.tasks;
+        TaskitatorRecurrenceUI.persist(snapshot);
         localStorage.setItem(COLLAPSED_STATE_KEY, JSON.stringify([...collapsedNodes]));
 
         if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
@@ -724,8 +729,10 @@ window.TaskitatorApp = (() => {
     }
 
     function isCompletionBlocked(taskId) {
-        if (isBypassActiveSafe()) return false;
         const targetTask = tasks.find(t => t.id === taskId);
+        // A parent must never silently complete an unfinished AI-audited descendant.
+        if (getAllDescendants(taskId).some(t => t.status === 'active' && t.ai_locked)) return true;
+        if (isBypassActiveSafe()) return false;
         if (!targetTask) return false;
 
         const nodesToCheck = [targetTask, ...getAllDescendants(taskId)];
@@ -755,6 +762,8 @@ window.TaskitatorApp = (() => {
 
         target.status = newStatus;
         target.completed_at = timestamp;
+        if (newStatus === 'completed' && target.recurrence_series_id) target.recurrence_hold_until = Date.now() + 10000;
+        else delete target.recurrence_hold_until;
 
         if (newStatus === 'completed' && window.ExemplarStore) {
             window.ExemplarStore.deleteExemplar(target.id);
@@ -833,6 +842,10 @@ window.TaskitatorApp = (() => {
         }
 
         localStorage.setItem(AUDIT_LEDGER_KEY, JSON.stringify(ledger));
+        if (task.recurrence_series_id) {
+            delete task.recurrence_hold_until;
+            saveStorageAndPush();
+        }
         
         if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
             SyncEngine.markLocalModified();
@@ -900,7 +913,7 @@ window.TaskitatorApp = (() => {
         }
 
         if (isCompletionBlocked(taskId)) {
-            alert("Blocked: A shielded task in this hierarchy requires all its core subtasks to be completely finished first.");
+            alert('Complete protected core subtasks and submit proof for unfinished AI-audited descendants before completing this branch.');
             return;
         }
 
@@ -1712,7 +1725,13 @@ window.TaskitatorApp = (() => {
                     main.appendChild(projBadge);
                 }
 
-                if (task.ai_locked) {
+                    if (task.recurrence_series_id) {
+                        const repeatBadge = document.createElement('span'); repeatBadge.className = 'ai-badge';
+                        const series = TaskitatorRecurrence.seriesFor(TaskitatorRecurrenceUI.state(), task);
+                        repeatBadge.textContent = series?.enabled ? '↻ Repeats' : '↻ Stopped';
+                        main.appendChild(repeatBadge);
+                    }
+                    if (task.ai_locked) {
                     const badge = document.createElement('span');
                     badge.className = 'ai-badge';
                     badge.innerHTML = '🔒 AI';

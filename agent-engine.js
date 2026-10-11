@@ -1,3 +1,4 @@
+// File: agent-engine.js
 // agent-engine.js
 /**
  * Taskitator Focus Copilot - Complete Context-Aware Engine
@@ -412,6 +413,11 @@ window.TaskitatorAgent = (() => {
     }
 
     function commitTasks(updatedTasks) {
+        if (window.TaskitatorRecurrence && window.TaskitatorRecurrenceUI) {
+            const snapshot={tasks:updatedTasks,recurrence_state:TaskitatorRecurrenceUI.state(),settings:JSON.parse(localStorage.getItem(STORAGE_KEY_SETTINGS)||'{}')};
+            TaskitatorRecurrence.reconcile(snapshot);updatedTasks=snapshot.tasks;
+            localStorage.setItem('taskitator_recurrence_state',JSON.stringify(snapshot.recurrence_state));
+        }
         localStorage.setItem(STORAGE_KEY_TASKS, JSON.stringify(updatedTasks));
 
         if (window.SyncEngine) {

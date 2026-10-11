@@ -1,3 +1,4 @@
+<!-- File: calendar.html -->
 <!-- calendar.html -->
 <!DOCTYPE html>
 <html lang="en">
@@ -306,6 +307,9 @@
 </aside>
 
 <script src="safety.js"></script>
+<script src="audit-engine.js"></script>
+<script src="recurrence-core.js"></script>
+<script src="recurrence-ui.js"></script>
 <script src="sync-engine.js"></script>
 <script src="agent-engine.js"></script>
 <script>
@@ -508,6 +512,11 @@ function buildAgendaNode(task, depth, allChildrenMap, matchMap, descMatchMap) {
     checkBtn.className = 'check-circle';
     checkBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        const branch = TaskitatorRecurrence.subtree(tasks, task.id);
+        if (branch.some(t=>t.ai_locked || t.strict_prerequisites || t.recurrence_series_id)) {
+            alert('Complete this protected or recurring task from Today / General Tasks so proof, prerequisites, and recurrence are handled safely.');
+            window.location.href = 'index.html#general'; return;
+        }
         task.status = 'completed';
         task.completed_at = new Date().toISOString();
         saveDataAndSync();
