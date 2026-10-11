@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-recurrence-v1';
+const CACHE_NAME = 'taskitator-recurrence-audit-fix-v1';
 
 const STATIC_ASSETS = [
     './',

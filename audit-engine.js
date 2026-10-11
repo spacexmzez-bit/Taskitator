@@ -1,3 +1,4 @@
+// File: audit-engine.js
 /**
  * audit-engine.js
  * Taskitator Core Engine
@@ -465,7 +466,15 @@ const TaskitatorEngine = {
             const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
             const payload = {
                 contents: [{
-                    parts: partsArray
+                    // Older saved exemplars contain the blob fields directly.
+                    // Gemini requires those fields inside an inline_data Part.
+                    parts: partsArray.map(part => {
+                        if (part && !part.inline_data && !part.inlineData &&
+                            typeof part.mime_type === 'string' && typeof part.data === 'string') {
+                            return { inline_data: { mime_type: part.mime_type, data: part.data } };
+                        }
+                        return part;
+                    })
                 }],
                 generationConfig: {
                     temperature: 0.1,
