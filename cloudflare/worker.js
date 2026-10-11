@@ -1,3 +1,6 @@
+// File: cloudflare/worker.js
+import '../recurrence-core.js';
+const Recurrence = globalThis.TaskitatorRecurrence;
 // Taskitator transactional sync. Required: TASKITATOR_SYNC (Durable Object).
 // Keep TASKITATOR_KV bound for one-time migration of existing accounts.
 // New reads and writes use Durable Object storage exclusively.
@@ -167,6 +170,10 @@ function validateSnapshot(body, user) {
     if (typeof body.mutation_id !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(body.mutation_id)) {
         throw new HTTPError(428, 'Update the sync engine: mutation_id is required.');
     }
+    if (body.recurrence_state !== undefined) {
+        try { Recurrence.validateState(body.recurrence_state, body.tasks); }
+        catch (err) { throw new HTTPError(400, err.message); }
+    }
     return publicRecord({ ...body, username: user });
 }
 
@@ -319,7 +326,16 @@ export class TaskitatorSync {
                 if (!meta || meta.digest !== digest) throw new HTTPError(401, 'Incorrect or revoked credentials.');
                 if (bridge) return json({ linked: false, rules: [] });
                 if (status || pull) {
-                    const record = await loadSnapshot(tx, user, meta);
+                    let record = await loadSnapshot(tx, user, meta);
+                    if (record?.recurrence_state) {
+                        const normalized=Recurrence.reconcile(record);
+                        if(normalized.changed){
+                            if(meta.version>=Number.MAX_SAFE_INTEGER)throw new HTTPError(503,'Account revision limit reached.');
+                            meta.version++;meta.saved_at=new Date().toISOString();record.updated_at=meta.saved_at;
+                            await saveSnapshot(tx,user,meta,record);await tx.put(accountKey(user),meta);
+                            record={...record,version:meta.version,saved_at:meta.saved_at};
+                        }
+                    }
                     if (pull) return json(record || { empty: true, version: meta.version });
                     const state = evaluateStatus(record);
                     return url.searchParams.get('format') === 'text'
@@ -328,12 +344,18 @@ export class TaskitatorSync {
                 }
                 if (push && meta.last_write?.mutation_id === body.mutation_id &&
                     meta.last_write.hash === snapshotHash && meta.last_write.base_version === body.base_version) {
-                    return json({ success: true, version: meta.version, updated_at: meta.saved_at });
+                    return json({ success: true, version: meta.last_write.version ?? meta.version, updated_at: meta.last_write.saved_at || meta.saved_at });
                 }
                 if (body.base_version !== meta.version) return conflict(meta.version);
                 if (meta.version >= Number.MAX_SAFE_INTEGER) throw new HTTPError(503, 'Account revision limit reached.');
                 const now = new Date().toISOString();
                 if (push) {
+                    const previous = await loadSnapshot(tx, user, meta);
+                    if (previous?.recurrence_state?.series?.length && body.recurrence_schema !== 1) {
+                        throw new HTTPError(428, 'Refresh Taskitator on this device before syncing recurring tasks.');
+                    }
+                    try { Recurrence.reconcile(snapshot); }
+                    catch (err) { throw new HTTPError(400, err.message); }
                     // Preserve array dates before replacing the client timestamp.
                     if (Array.isArray(snapshot.today_breaks)) {
                         const edited = timestamp(body.updated_at);
@@ -344,7 +366,7 @@ export class TaskitatorSync {
                     await saveSnapshot(tx, user, meta, snapshot);
                     meta.version++;
                     meta.saved_at = now;
-                    meta.last_write = { mutation_id: body.mutation_id, hash: snapshotHash, base_version: body.base_version };
+                    meta.last_write = { mutation_id: body.mutation_id, hash: snapshotHash, base_version: body.base_version, version:meta.version, saved_at:now };
                     await tx.put(accountKey(user), meta);
                     return json({ success: true, version: meta.version, updated_at: now });
                 }
