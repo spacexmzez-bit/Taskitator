@@ -71,7 +71,9 @@ test('HTML inline scripts have matching CSP hashes and no inline event handlers 
             const hash="'sha256-"+createHash('sha256').update(match[2]).digest('base64')+"'";
             assert.ok(csp.includes(hash),filename+' CSP does not match inline code');
         }
-        assert.ok(html.includes('auth-bootstrap.js'));
+        if (['account-deletion.html','welcome.html','privacy.html','terms.html','PHASE-1-SETUP.html'].includes(filename)) {
+            assert.equal(/<script\b[^>]*\bsrc=["']auth-bootstrap\.js["']/.test(html),false);
+        } else assert.ok(html.includes('auth-bootstrap.js'));
     }
 });
 
@@ -83,7 +85,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-security-clerk-v2'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase-1-deletion-v1'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -218,4 +220,68 @@ test('recovered copies are downloadable before first sync and exports omit all c
     assert.deepEqual(exported.taskitator_settings,{day_start_hour:2});
     await f.element('continueBtn').onclick();
     assert.deepEqual(f.redirects,['index.html']);
+});
+
+function deletionClient() {
+    const f=client(), elements=new Map(),events=new Map(),calls=[];
+    const element=id=>{
+        if(!elements.has(id))elements.set(id,{value:'',checked:false,hidden:false,disabled:false,
+            listeners:new Map(),addEventListener(name,fn){this.listeners.set(name,fn)},showModal(){this.open=true},close(){this.open=false}});
+        return elements.get(id);
+    };
+    f.context.document.getElementById=element;
+    f.window.addEventListener=(name,fn)=>events.set(name,fn);
+    f.context.location.hash='';f.context.history={replaceState(){}};
+    f.window.TASKITATOR_AUTH_CONFIG={workerUrl:'https://worker.test'};
+    f.window.Clerk.user.passwordEnabled=true;
+    f.window.Clerk.session.startVerification=async()=>{calls.push('clerk-start')};
+    f.window.Clerk.session.attemptFirstFactorVerification=async body=>{calls.push(['clerk-password',body.password]);return {status:'complete'}};
+    f.auth.account={user:'rd'};
+    f.auth.api=async(path,options)=>{
+        calls.push([path,JSON.parse(options.body)]);
+        if(path.endsWith('/start'))return {verification_id:'a'.repeat(64)};
+        if(path.endsWith('/password'))return {verified:true};
+        return {verified:true};
+    };
+    vm.runInContext(fs.readFileSync(new URL('deletion-client.js',root),'utf8'),f.context);
+    return {...f,element,events,calls};
+}
+test('deletion confirmation blocks paste/drop and requires verification, checkbox, and exact manually entered phrase',async()=>{
+    const f=deletionClient();await f.events.get('taskitator-auth-ready')();
+    f.element('openAccountDeletionBtn').listeners.get('click')();
+    assert.equal(f.element('confirmAccountDeletionBtn').disabled,true);
+    let prevented=0;
+    for(const name of ['paste','drop'])f.element('deletionPhrase').listeners.get(name)({preventDefault(){prevented++}});
+    f.element('deletionPhrase').listeners.get('beforeinput')({inputType:'insertFromPaste',preventDefault(){prevented++}});
+    assert.equal(prevented,3);
+    f.element('deletionPassword').value='private-password';
+    await f.element('verifyDeletionPasswordBtn').listeners.get('click')();
+    assert.equal(f.element('deletionPassword').value,'');
+    assert.equal(f.calls.filter(Array.isArray).some(call=>call[0].startsWith('/auth/') && JSON.stringify(call[1]).includes('private-password')),false);
+    assert.equal(f.element('confirmAccountDeletionBtn').disabled,true);
+    f.element('deletionBlockerDisabled').checked=true;f.element('deletionPhrase').value='Macrodroid disabled';
+    f.element('deletionPhrase').listeners.get('input')();
+    assert.equal(f.element('confirmAccountDeletionBtn').disabled,false);
+    f.element('deletionPhrase').value='Macrodroid disabled ';f.element('deletionPhrase').listeners.get('input')();
+    assert.equal(f.element('confirmAccountDeletionBtn').disabled,true);
+});
+test('accepted account local cleanup removes only that owner and preserves other account archives',async()=>{
+    const f=deletionClient();let removedFiles;
+    f.window.ExemplarStore={async deleteAccountFiles(user){removedFiles=user;return true}};
+    f.window.SyncEngine={clearLocalAccount(){f.storage.removeItem('taskitator_tasks');f.storage.removeItem('taskitator_settings');f.storage.removeItem('taskitator_local_owner')}};
+    f.storage.setItem('taskitator_local_owner','rd');f.storage.setItem('taskitator_tasks','private');f.storage.setItem('taskitator_settings','{"gemini_api_key":"private-key"}');
+    f.storage.setItem('taskitator_account_cache_v2:rd','private-copy');
+    f.storage.setItem('taskitator_account_recovery_v1:rd','private-copy');
+    f.storage.setItem('taskitator_account_cache:rd:old-token','private-copy');
+    f.storage.setItem('taskitator_account_cache_v2:other','keep');
+    assert.equal(await f.window.TaskitatorAccountDeletion.cleanLocal('rd'),true);
+    assert.equal(removedFiles,'rd');assert.equal(JSON.stringify(f.storage).includes('private'),false);
+    assert.equal(f.storage.getItem('taskitator_account_cache_v2:other'),'keep');
+});
+test('Settings initially activates Tags & Priority and keeps local reset distinct from cloud deletion',()=>{
+    const html=fs.readFileSync(new URL('settings.html',root),'utf8');
+    assert.match(html,/<button[^>]*class="tab-btn active"[^>]*data-tab="tab-tasks"/);
+    assert.match(html,/<div class="tab-pane active" id="tab-tasks">/);
+    assert.doesNotMatch(html,/<div class="tab-pane active" id="tab-account">/);
+    assert.ok(html.includes('This does NOT delete your cloud account or cloud data.'));
 });
