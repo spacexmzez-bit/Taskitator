@@ -1,4 +1,4 @@
-// File: cloudflare/worker.js
+// File: cloudflare/worker.js 
 import '../recurrence-core.js';
 import { SecurityError, allowedOrigins, verifySession, verifiedEmail, sha256 as authHash, randomPhoneToken } from './auth.js';
 const Recurrence = globalThis.TaskitatorRecurrence;
