@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-security-clerk-v2';
+const CACHE_NAME = 'taskitator-phase-1-deletion-v1';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -29,6 +29,9 @@ const STATIC_ASSETS = [
     './auth-bootstrap.js',
     './auth-config.js',
     './login-page.js',
+    './deletion-client.js',
+    './deletion-status.js',
+    './account-deletion.html',
     './pomodoro.js',
     './exemplar-store.js',
     './agent-engine.js',
@@ -95,7 +98,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    if (/\/(?:auth-config|auth-client|auth-bootstrap|sync-engine)\.js$/.test(url.pathname)) {
+    if (/\/(?:auth-config|auth-client|auth-bootstrap|sync-engine|deletion-client|deletion-status)\.js$/.test(url.pathname)) {
         event.respondWith(fetch(request, { cache: 'no-cache' }));
         return;
     }

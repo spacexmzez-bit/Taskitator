@@ -109,20 +109,21 @@
         recoveryCopies,
         get userId() { return window.Clerk?.user?.id || null; },
         get signedIn() { return Boolean(window.Clerk?.session && this.account); },
-        async token() {
+        async token(fresh = false) {
             if (!window.Clerk?.session) throw new Error('Your session ended. Sign in again.');
-            const token = await window.Clerk.session.getToken();
+            const token = await window.Clerk.session.getToken({skipCache:fresh});
             if (!token) throw new Error('Your session ended. Sign in again.');
             return token;
         },
         async api(path, options = {}) {
+            const { freshToken = false, ...requestOptions } = options;
             const headers = new Headers(options.headers);
-            headers.set('Authorization', 'Bearer ' + await this.token());
+            headers.set('Authorization', 'Bearer ' + await this.token(freshToken));
             if (options.body) headers.set('Content-Type', 'application/json');
             const res = await fetch(config.workerUrl.replace(/\/$/, '') + path,
-                { ...options, headers, cache: 'no-store', signal: AbortSignal.timeout(30000) });
+                { ...requestOptions, headers, cache: 'no-store', signal: AbortSignal.timeout(30000) });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Account request failed.');
+            if (!res.ok) { const error = new Error(data.error || 'Account request failed.'); error.status = res.status; throw error; }
             return data;
         },
         async connect(body) {
@@ -150,7 +151,11 @@
                 signInUrl: location.origin + '/login.html', signUpUrl: location.origin + '/login.html',
                 signInForceRedirectUrl: location.origin + '/login.html',
                 signUpForceRedirectUrl: location.origin + '/login.html' });
-            if (window.Clerk.session) this.account = (await this.api('/auth/me')).account;
+            if (window.Clerk.session) {
+                const data = await this.api('/auth/me');
+                this.account = data.account;
+                this.deletion = data.deletion || null;
+            }
         }
     };
     window.TaskitatorAuth = auth;

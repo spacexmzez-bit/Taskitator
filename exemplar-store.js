@@ -85,6 +85,17 @@
 
     const ExemplarStore = {
         MAX_FILE_SIZE_BYTES,
+        async deleteAccountFiles(username) {
+            const name = localStorage.getItem(LEGACY_OWNER_KEY) === username
+                ? DB_NAME : `${DB_NAME}:${encodeURIComponent(username)}`;
+            if (dbInstance && dbInstanceName === name) { dbInstance.close(); dbInstance = null; dbInstanceName = null; }
+            return new Promise(resolve => {
+                const request = indexedDB.deleteDatabase(name);
+                const timer = setTimeout(() => resolve(false), 3000);
+                request.onsuccess = () => { clearTimeout(timer); resolve(true); };
+                request.onerror = request.onblocked = () => { clearTimeout(timer); resolve(false); };
+            });
+        },
 
         /**
          * Persists an exemplar document/image for an active task.

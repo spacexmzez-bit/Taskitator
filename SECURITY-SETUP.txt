@@ -1,6 +1,10 @@
 TASKITATOR SECURITY UPDATE — STEP-BY-STEP SETUP
 ============================================
 
+PHASE 1 ADDENDUM: If you are installing the cloud-deletion update, also follow
+PHASE-1-SETUP.html (or PHASE-1-SETUP.txt). This older guide remains the base login
+setup. The Phase 1 guide takes precedence for deletion, verification, and upload.
+
 This update uses your existing Taskitator website, Cloudflare Worker,
 TASKITATOR_SYNC Durable Object, and TASKITATOR_KV database. Clerk handles
 passwords, email verification, sign-in, sessions, and password recovery.

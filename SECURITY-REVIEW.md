@@ -1,5 +1,10 @@
 # Authentication changes and validation
 
+Phase 1 adds coordinated deletion and Settings changes on top of this security
+build. See PHASE-1-REVIEW.md and PHASE-1-SETUP.html for the current behavior and
+required configuration. The current suite has 37 passing tests; the counts below
+describe the earlier security-update preparation.
+
 The frontend now uses Clerk's vanilla JavaScript SDK (ClerkJS 6 and its UI bundle). It obtains short-lived tokens for requests without storing credentials in Taskitator settings, localStorage, or exports. The static website hosting and transactional Cloudflare coordinator are preserved.
 
 The Worker uses Clerk's documented manual JWT verification flow with Cloudflare Web Crypto: RS256, a configured public key, expected issuer, numeric token times, authorized origin, subject and session identifiers, and active session status. It then checks the session through Clerk's Backend API for every browser request. A provider outage fails closed. Keys and legacy migration ownership settings must be supplied by the app owner.

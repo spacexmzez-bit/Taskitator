@@ -1,0 +1,198 @@
+TASKITATOR PHASE 1 — CLOUD DELETION AND SETTINGS DEFAULT
+======================================================
+
+This update adds permanent account/cloud deletion with confirmations,
+password or connected-Google identity verification, seven days of phone-unlock
+recovery, and Tags & Prio as the default Settings tab.
+
+It keeps the existing Worker, KV namespace, Durable Object, Clerk login,
+Gemini integration, and model behavior. Encrypted key storage and Claude
+selection are later phases, not included here.
+
+The UPDATE ZIP contains only changed/new files. Upload its CONTENTS to your
+existing GitHub repository root. Your configured auth-config.js is not included
+in that ZIP, so your production publishable key is preserved.
+The FULL ZIP contains the complete project, but its auth-config.js still has
+the original placeholder. If using the FULL ZIP, preserve your LIVE configured
+auth-config.js and any live wrangler routes/bindings rather than overwriting them.
+
+A. BACK UP AND PAUSE BLOCKING
+-----------------------------
+1. Export your Taskitator data and save a copy of your current GitHub repository.
+2. Pause Taskitator blocking macros in MacroDroid on every connected device.
+3. Keep your working phone token. This update does not normally rotate it.
+4. Never test deletion on an account whose data you want to keep: final
+   confirmation is irreversible. Use a separate disposable test account.
+
+B. PREVENT CLERK-ONLY SELF-DELETION
+----------------------------------
+1. Open Clerk Dashboard and select Taskitator's PRODUCTION instance.
+2. Open Configure, then the User & authentication / User model settings.
+3. Find User permissions and disable "Allow users to delete their accounts".
+4. Save. Depending on dashboard navigation, search its settings for "delete".
+5. This removes the separate Clerk profile deletion path. Taskitator's Worker
+   still deletes users using its server-side Clerk secret after coordinated
+   cloud cleanup. Do NOT disable email/password or Google sign-in.
+6. Do not delete Taskitator users directly in Clerk's admin dashboard as a normal
+   account-deletion method. That admin action does not invoke this cleanup job.
+   Use the in-app deletion flow or coordinate manual cleanup if needed.
+
+C. ENABLE SERVER-CHECKED PASSWORD CONFIRMATION
+---------------------------------------------
+1. In the same Clerk production instance, open Configure > Sessions.
+2. Find "Customize session token" (the session JWT customization settings).
+3. Add this property to your custom claims JSON:
+   "taskitator_reverification_id": "{{session.reverification_id}}"
+4. If the claims object is currently empty, use this complete object:
+   {"taskitator_reverification_id":"{{session.reverification_id}}"}
+5. If it already has properties, KEEP them and add this property with valid JSON
+   comma placement. Do not replace your existing claims with an unrelated template.
+6. Save. The normal fva claim supplies factor-verification age automatically.
+7. The app uses ClerkJS to verify the password. Taskitator's Worker receives
+   a signed token, NOT the password, and also checks the completed reverification
+   through Clerk's Backend API. Missing claims/configuration fail closed.
+
+D. CONFIGURE GOOGLE CONFIRMATION
+--------------------------------
+This is separate from ordinary Google login. It uses the same connected Google
+identity but requires the Worker to verify a one-use OAuth response itself.
+Google decides whether to ask for credentials or reuse the user's Google session.
+
+1. Open your Google Cloud Taskitator project.
+2. Go to Google Auth Platform > Clients.
+3. Open the WEB OAuth client you configured for Clerk Google sign-in.
+4. Under Authorized redirect URIs, ADD this exact URI:
+   https://taskitator-sync.spacexmzez.workers.dev/auth/verification/google/callback
+5. KEEP Clerk's existing redirect URI. Do not replace it, and do not change
+   Taskitator's JavaScript origin. Save the Google client changes.
+6. Copy that client's Google Client ID and Google Client Secret.
+7. Open Cloudflare > Workers & Pages > your existing taskitator-sync Worker
+   > Settings > Variables and Secrets.
+8. Add GOOGLE_OAUTH_CLIENT_ID as Text, with the complete Google Client ID.
+9. Add GOOGLE_OAUTH_CLIENT_SECRET as Secret, with the Google Client Secret.
+10. Add GOOGLE_VERIFICATION_REDIRECT_URI as Text, with the exact callback URI
+    from step 4. These are GOOGLE values, not Clerk pk_live_/sk_live_ values.
+11. Save/deploy settings when Cloudflare asks. Never commit the Google secret
+    to GitHub or put it in auth-config.js.
+12. If Google requires an owned-domain callback and will not accept workers.dev,
+    add a Cloudflare custom domain to this existing Worker, such as
+    api.taskitator.mazendev.com, without moving the existing website or storage.
+    Add https://api.taskitator.mazendev.com/auth/verification/google/callback
+    as a Google redirect URI and use that exact value for
+    GOOGLE_VERIFICATION_REDIRECT_URI. The normal workerUrl can remain unchanged.
+13. Users need to CONNECT Google to their existing Clerk account in
+    Settings > Manage account & password before using this confirmation.
+    Choosing an unrelated Google account is rejected. Google-only users need
+    this configuration or must add a password through Clerk before deletion.
+
+E. REVIEW LEGACY MIGRATION SETTINGS
+-----------------------------------
+1. If every existing user has already migrated, set LEGACY_MIGRATION_OWNERS to
+   {} and LEGACY_MIGRATION_UNTIL to a past timestamp in Cloudflare now.
+2. If migration must remain open, keep only the users still needing migration.
+3. The app can delete its KV/DO records, but it cannot rewrite its own Cloudflare
+   environment secrets. After a migrated user deletes an account, remove their
+   username/email entry from LEGACY_MIGRATION_OWNERS manually if still present.
+4. Do not delete the entire KV namespace or Durable Object: other users' data
+   must remain. Unreadable legacy records of unknown ownership require manual
+   review; the deletion status page reports that limitation when encountered.
+
+F. UPLOAD AND DEPLOY PHASE 1
+----------------------------
+1. Extract Taskitator-phase-1-update.zip.
+2. Open your GitHub Taskitator repository, on your usual hosting branch.
+3. Select Add file > Upload files and upload the extracted CONTENTS to the ROOT.
+4. Include the updated cloudflare folder with worker.js, auth.js, deletion.js,
+   and verification.js. Do not upload an enclosing folder or the ZIP itself.
+5. Commit the upload. Your existing production auth-config.js stays unchanged.
+6. Confirm settings.html, deletion-client.js, deletion-status.js,
+   account-deletion.html, auth-client.js, auth-bootstrap.js, exemplar-store.js,
+   sw.js, the updated tests/CSP tool, and updated public policies are present.
+7. Open Actions > Deploy Taskitator security Worker > Run workflow.
+8. Select your hosting branch and run it. Tests must pass before deployment.
+9. Wait for a green deployment result and the GitHub Pages publish job to finish.
+10. Keep existing CLOUDFLARE_API_TOKEN/CLOUDFLARE_ACCOUNT_ID repository secrets,
+    Worker name, TASKITATOR_SYNC binding, TASKITATOR_KV binding, and migration
+    history. No new database or Durable Object migration is needed.
+11. Close other app tabs and reload Taskitator. Its service worker updates the
+    cached Settings code before initialization.
+
+G. ENABLE THE DELETION FEATURE
+------------------------------
+1. Once sections B-F are complete, open Cloudflare > taskitator-sync > Settings
+   > Variables and Secrets.
+2. Add ACCOUNT_DELETION_ENABLED as Text with the exact value true.
+3. Save/deploy settings. Without this flag, verification/deletion refuse to run
+   and display setup instructions. Existing tasks/login/AI still work.
+4. No encryption-vault secret is needed in Phase 1. Do not invent one yet.
+
+H. VERIFY WITHOUT DELETING YOUR REAL ACCOUNT
+-------------------------------------------
+1. Open Settings. Confirm Tags & Prio is selected automatically.
+2. Go to Data & Backup > Delete account & cloud data.
+3. Try password verification using your CURRENT Clerk password, not your old
+   pre-migration Taskitator password. Confirm "Identity verified", then CANCEL.
+4. Reopen the dialog and try Sign in with Google. Select your connected account.
+5. After return, confirm the dialog reports Google identity confirmed, then CANCEL.
+6. Verify final deletion stays disabled until verification, checkbox, and exact
+   typed phrase are all present. Confirm paste/drop into the phrase is blocked.
+7. Check Manage account & password no longer offers Clerk-only account deletion.
+8. Test normal task editing, sync, AI audit, and your normal phone-status request.
+
+I. TEST DELETION WITH A DISPOSABLE ACCOUNT
+-----------------------------------------
+1. Create a separate test account. Do not migrate your real account into it.
+2. Add a test task and sync it. Optionally generate its own test phone token.
+3. Keep any test MacroDroid blocker disabled; test only the HTTP request itself.
+4. Open Settings > Data & Backup > Delete account & cloud data.
+5. Verify password or connected Google, check the blocker-disabled checkbox,
+   and manually type Macrodroid disabled exactly, including the capital M.
+6. Press Permanently delete account. Once accepted, this cannot be cancelled.
+7. Keep the status tab open. Access is blocked immediately; cleanup proceeds
+   in background alarm batches, often around a minute for a small account.
+8. The status page should eventually report completion. Provider/storage failures
+   show retrying; cleanup retries without reopening access. Do not submit again.
+9. Confirm the disposable Clerk user is removed and other accounts still work.
+10. For the test phone token, expect HTTP 200 and device_unlocked = true (text
+    format) for seven days from acceptance. The token cannot read task data.
+11. After that window the token is invalid. Keep macros disabled permanently for
+    the deleted account. Do not rely on the recovery window indefinitely.
+12. If a request timed out, use Check deletion status in the dialog. A random
+    saved receipt alone is not proof of acceptance; the server checks it.
+13. If local files were blocked by another open tab, close other tabs and clear
+    site data as instructed. Other devices/backups require separate cleanup.
+
+J. TROUBLESHOOTING AND PRACTICAL LIMITS
+--------------------------------------
+1. "Account deletion needs one-time setup": check ACCOUNT_DELETION_ENABLED=true
+   on the exact Worker the website calls.
+2. "Complete a new password verification": confirm the session-token custom
+   claim, refresh/sign in again, and start a new verification. Do not weaken
+   the server check or use the old Taskitator password.
+3. "Google confirmation needs one-time setup": check the three GOOGLE_ values.
+4. redirect_uri_mismatch: match Google's registered callback, the Worker variable,
+   and the actual callback host/path exactly. Preserve Clerk's separate callback.
+5. Wrong Google identity: sign into the Google account linked to this Clerk user.
+   The app checks Google's permanent subject ID, not merely a matching email.
+6. Verification expired: restart verification, then type the confirmations again.
+7. Cleanup stays retrying: check Clerk secret/permissions and KV/DO bindings.
+   Do not erase databases as a shortcut. Contact Mazendev if necessary.
+8. The seven-day phone grace interval is measured from acceptance, not completion.
+   Password/Google verification expires after five minutes and authorizes only
+   this session's deletion action. Google may use its existing signed-in session.
+9. This flow cannot remotely erase another device, an exported backup, provider
+   operational logs, or provider-managed storage backups. It deletes active app
+   records and identifiable legacy copies; ambiguous corrupted records require
+   review. Minimal recovery/status/prevention records expire as stated above.
+10. A deleted user's static migration approval entry may still require manual
+    removal (section E). The status page reports that condition.
+11. The included automated tests use real RSA signatures with substituted Clerk,
+    Google, KV, and DO storage. No live secrets or physical phone were available.
+    Browser execution is unavailable here: complete the live checks above.
+
+Official references:
+https://clerk.com/docs/guides/secure/reverification
+https://clerk.com/docs/js-frontend/reference/objects/session
+https://clerk.com/docs/reference/backend-api
+https://clerk.com/docs/guides/configure/auth-strategies/sign-up-sign-in-options
+https://developers.google.com/identity/openid-connect/openid-connect

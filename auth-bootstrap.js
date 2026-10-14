@@ -17,7 +17,7 @@
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-security-clerk-v2');
+                    resolve(event.data?.version === 'taskitator-phase-1-deletion-v1');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
@@ -45,6 +45,10 @@
                 .catch(() => {});
         }
         await TaskitatorAuth.init();
+        if (TaskitatorAuth.deletion) {
+            if (TaskitatorAuth.deletion.receipt) sessionStorage.setItem('taskitator_deletion_receipt', TaskitatorAuth.deletion.receipt);
+            location.replace('account-deletion.html'); return;
+        }
         if (!loginPage && !TaskitatorAuth.signedIn) { location.replace('login.html'); return; }
         if (!loginPage && localStorage.getItem('taskitator_local_owner') !== TaskitatorAuth.account?.user) {
             location.replace('login.html'); return;
@@ -69,6 +73,7 @@
             const initialSession = window.Clerk.session?.id;
             window.Clerk.addListener(({ session }) => {
                 if (initialSession && session?.id !== initialSession) {
+                    if (window.TaskitatorDeletionAccepted) return;
                     window.SyncEngine?.archiveLocalAccount();
                     window.SyncEngine?.clearLocalAccount();
                     location.replace('login.html');
@@ -76,6 +81,9 @@
             });
         }
     } catch (err) {
+        if (err.status === 401 && sessionStorage.getItem('taskitator_deletion_receipt')) {
+            location.replace('account-deletion.html'); return;
+        }
         status.textContent = err.message || 'Secure sign-in is unavailable. Reload to try again.';
         const reload = document.createElement('button'); reload.textContent = 'Try again';
         reload.onclick = () => location.reload(); status.append(reload);
