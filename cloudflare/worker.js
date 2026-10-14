@@ -1,6 +1,8 @@
-// File: cloudflare/worker.js 
+// File: cloudflare/worker.js
 import '../recurrence-core.js';
 import { SecurityError, allowedOrigins, verifySession, verifiedEmail, sha256 as authHash, randomPhoneToken } from './auth.js';
+import { ActionVerification } from './verification.js';
+import { AccountDeletion } from './deletion.js';
 const Recurrence = globalThis.TaskitatorRecurrence;
 // Taskitator transactional sync. Required: TASKITATOR_SYNC (Durable Object).
 // Keep TASKITATOR_KV bound for one-time migration of existing accounts.
@@ -238,9 +240,14 @@ export class TaskitatorSync {
         this.state = state;
         this.storage = state.storage;
         this.env = env;
+        this.verification = new ActionVerification(this);
+        this.deletion = new AccountDeletion(this);
     }
 
     async importAccount(user, token, digest) {
+        const deletedLegacyKey = 'deleted-legacy:' + await authHash(user);
+        const deletedLegacy = await this.storage.get(deletedLegacyKey);
+        if (deletedLegacy?.expires > Date.now()) throw new HTTPError(410, 'This legacy account has been deleted.');
         if (await this.storage.get(accountKey(user))) return;
         if (!this.env.TASKITATOR_KV) throw new HTTPError(503, 'Keep TASKITATOR_KV bound for account migration.');
         // Read legacy KV only when this account has never been imported.
@@ -263,6 +270,7 @@ export class TaskitatorSync {
             throw new HTTPError(503, 'Legacy snapshot is malformed; restore a backup before migration.');
         }
         await this.storage.transaction(async tx => {
+            if ((await tx.get(deletedLegacyKey))?.expires > Date.now()) throw new HTTPError(410, 'This legacy account has been deleted.');
             if (await tx.get(accountKey(user))) return;
             const occupied = await tx.get(tokenKey(digest));
             if (occupied) throw new HTTPError(401, 'Credential already belongs to an account.');
@@ -292,10 +300,17 @@ export class TaskitatorSync {
             entry.count++;
             await tx.put(storageKey, entry);
         });
-        if (this.storage.getAlarm && !(await this.storage.getAlarm())) await this.storage.setAlarm(Date.now() + 3600000);
+        await this.ensureAlarm();
+    }
+
+    async ensureAlarm(delay = 3600000) {
+        if (!this.storage.getAlarm) return;
+        const at = Date.now() + delay, existing = await this.storage.getAlarm();
+        if (!existing || existing > at) await this.storage.setAlarm(at);
     }
 
     async alarm() {
+        await this.deletion.run();
         let after;
         while (true) {
             const entries = await this.storage.list({ prefix: 'rate:', limit: 1000, ...(after ? {startAfter: after} : {}) });
@@ -305,14 +320,26 @@ export class TaskitatorSync {
             after = [...entries.keys()].pop();
             if (entries.size < 1000) break;
         }
-        await this.storage.setAlarm(Date.now() + 3600000);
+        for (const prefix of ['action-proof:', 'verification-used:', 'deleted-identity:', 'deleted-legacy:', 'deletion-status:', 'phone:']) {
+            let cursor;
+            while (true) {
+                const entries = await this.storage.list({prefix,limit:1000,...(cursor?{startAfter:cursor}:{})});
+                const expired = [...entries].filter(([,value]) => value?.expires && value.expires <= Date.now()).map(([key]) => key);
+                if (expired.length) await this.storage.delete(expired);
+                if (entries.size < 1000) break;
+                cursor = [...entries.keys()].pop();
+            }
+        }
+        const pending = await this.storage.list({prefix:'deletion-job:',limit:1});
+        await this.storage.setAlarm(Date.now() + (pending.size ? 15000 : 3600000));
     }
 
     async accountFor(identity) {
+        if (await this.deletion.marker(identity)) throw new HTTPError(410, 'Account deletion has been accepted.');
         const link = await this.storage.get('identity:' + identity.userId);
         if (!link) return null;
         const meta = await this.storage.get(accountKey(link.user));
-        if (!meta || meta.owner_id !== identity.userId) throw new HTTPError(403, 'Account ownership could not be verified.');
+        if (!meta || meta.deleting || meta.owner_id !== identity.userId) throw new HTTPError(403, 'Account ownership could not be verified.');
         return link;
     }
 
@@ -401,6 +428,10 @@ export class TaskitatorSync {
         try {
             const url = new URL(request.url), path = url.pathname.replace(/\/+$/, '') || '/';
             const method = request.method;
+            if (method === 'GET' && path === '/auth/verification/google/callback') {
+                await this.rateLimit(request, 'google-callback', 30);
+                return await this.verification.callback(request);
+            }
             if (!['GET', 'POST', 'DELETE'].includes(method)) return json({ error: 'Method not allowed.' }, 405);
             if (request.headers.get('Origin') && !allowedOrigins(this.env).includes(request.headers.get('Origin'))) {
                 throw new HTTPError(403, 'Origin is not allowed.');
@@ -413,20 +444,45 @@ export class TaskitatorSync {
             const me = method === 'GET' && path === '/auth/me';
             const connect = method === 'POST' && path === '/auth/account';
             const phoneAdmin = ['GET', 'POST', 'DELETE'].includes(method) && path === '/auth/phone';
-            if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin) {
+            const proofStart = method === 'POST' && path === '/auth/verification/start';
+            const proofPassword = method === 'POST' && path === '/auth/verification/password';
+            const proofStatus = method === 'POST' && path === '/auth/verification/status';
+            const deletion = method === 'DELETE' && path === '/auth/account';
+            const deletionStatus = method === 'POST' && path === '/auth/deletion/status';
+            if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
+                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus) {
                 return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
             }
             await this.rateLimit(request);
+            if (deletionStatus) return json(await this.deletion.status((await readJson(request,8192)).receipt));
             const token = /^Bearer\s+(\S+)\s*$/i.exec(request.headers.get('Authorization') || '')?.[1];
             if (!token) throw new HTTPError(401, 'Sign in to continue.');
             let user, identity;
             if (/^tkp_[a-f0-9]{64}$/.test(token)) {
                 if (!status) throw new HTTPError(403, 'Phone tokens can only read unlock status.');
                 const access = await this.storage.get('phone:' + await authHash(token));
+                if (access?.scope === 'deleted-unlock' && access.expires > Date.now()) {
+                    return url.searchParams.get('format') === 'text'
+                        ? new Response('device_unlocked = true', {headers:{...CORS,'Content-Type':'text/plain; charset=utf-8'}})
+                        : json({status:'ok',device_unlocked:true,finished:true,in_break:false,account_deleted:true,
+                            recovery_until:access.expires});
+                }
                 if (!access || access.scope !== 'status') throw new HTTPError(401, 'Phone access was revoked or is invalid.');
                 user = access.user;
             } else {
                 identity = await verifySession(request, this.env, token);
+                if (deletion) return json(await this.deletion.accept(request, identity, await readJson(request,8192)));
+                const deleting = await this.deletion.marker(identity);
+                if (deleting) {
+                    if (me) return json({account:null,deletion:deleting});
+                    throw new HTTPError(410, 'Account deletion has been accepted.');
+                }
+                if (proofStart) return json(await this.verification.start(request,identity,(await readJson(request,8192)).method));
+                if (proofPassword) return json(await this.verification.password((await readJson(request,8192)).verification_id,identity));
+                if (proofStatus) {
+                    const record = await this.verification.get((await readJson(request,8192)).verification_id,identity);
+                    return json({verified:record.status==='verified',status:record.status});
+                }
                 if (connect) return await this.connectAccount(request, identity);
                 const account = await this.accountFor(identity);
                 if (me) return json({ account });
@@ -444,7 +500,7 @@ export class TaskitatorSync {
 
             return await this.storage.transaction(async tx => {
                 const meta = await tx.get(accountKey(user));
-                if (!meta || (identity && meta.owner_id !== identity.userId)) throw new HTTPError(403, 'Account access denied.');
+                if (!meta || meta.deleting || (identity && meta.owner_id !== identity.userId)) throw new HTTPError(403, 'Account access denied.');
                 if (bridge) return json({ linked: false, rules: [] });
                 if (status || pull) {
                     let record = await loadSnapshot(tx, user, meta);

@@ -67,7 +67,8 @@ export async function verifySession(request, env, token) {
     if (session.status !== 'active' || session.user_id !== claims.sub) {
         throw new SecurityError(401, 'Session is no longer active. Sign in again.');
     }
-    return { userId: claims.sub, sessionId: claims.sid };
+    return { userId: claims.sub, sessionId: claims.sid, factorAge: claims.fva,
+        reverificationId: claims.taskitator_reverification_id, actor: claims.act };
 }
 export async function verifiedEmail(env, userId) {
     const user = await clerkAPI(env, 'users/' + encodeURIComponent(userId));
