@@ -3,6 +3,12 @@
 name = "taskitator-sync"
 main = "worker.js"
 compatibility_date = "2026-10-04"
+keep_vars = true
+
+[vars]
+ALLOWED_ORIGINS = "https://taskitator.mazendev.com"
+# Add Clerk secret/public key, issuer, and migration settings in the Cloudflare
+# dashboard as described in SECURITY-SETUP.txt. Do not commit secret keys.
 
 [[kv_namespaces]]
 binding = "TASKITATOR_KV"

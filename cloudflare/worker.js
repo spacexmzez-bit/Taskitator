@@ -1,13 +1,13 @@
 // File: cloudflare/worker.js
 import '../recurrence-core.js';
+import { SecurityError, allowedOrigins, verifySession, verifiedEmail, sha256 as authHash, randomPhoneToken } from './auth.js';
 const Recurrence = globalThis.TaskitatorRecurrence;
 // Taskitator transactional sync. Required: TASKITATOR_SYNC (Durable Object).
 // Keep TASKITATOR_KV bound for one-time migration of existing accounts.
 // New reads and writes use Durable Object storage exclusively.
 const CORS = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Taskitator-User, X-App-ID',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-App-ID',
     'Access-Control-Max-Age': '86400',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff'
@@ -97,7 +97,7 @@ function publicRecord(record) {
     // The client already has its bearer credential; do not echo it in snapshots.
     if (object(result.settings)) {
         result.settings = { ...result.settings };
-        delete result.settings.worker_passkey;
+        for (const key of ['worker_passkey', 'session_token', 'phone_token', 'macro_token', 'auth_user_id']) delete result.settings[key];
     }
     delete result.force;
     delete result.base_version;
@@ -109,7 +109,6 @@ function publicRecord(record) {
 }
 
 const CHUNK_CHARS = 24576; // Safely below the 128 KiB storage-value limit.
-const RECEIPT_LIFETIME = DAY;
 const accountKey = user => `account:${encodeURIComponent(user)}`;
 const tokenKey = digest => `credential:${digest}`;
 const chunkKey = (user, index) => `snapshot:${encodeURIComponent(user)}:${index}`;
@@ -118,9 +117,9 @@ const sha256 = async value => Array.from(new Uint8Array(await crypto.subtle.dige
 )), byte => byte.toString(16).padStart(2, '0')).join('');
 const cleanToken = token => /^[a-fA-F0-9]{64}$/.test(token) ? token.toLowerCase() : token;
 
-async function readJson(request) {
-    if (Number(request.headers.get('Content-Length')) > MAX_BODY_BYTES) {
-        throw new HTTPError(413, 'Payload exceeds 20 MiB.');
+async function readJson(request, maxBytes = MAX_BODY_BYTES) {
+    if (Number(request.headers.get('Content-Length')) > maxBytes) {
+        throw new HTTPError(413, 'Request payload is too large.');
     }
     if (!request.body) throw new HTTPError(400, 'JSON body required.');
     const reader = request.body.getReader(), decoder = new TextDecoder();
@@ -130,9 +129,9 @@ async function readJson(request) {
             const { value, done } = await reader.read();
             if (done) break;
             size += value.byteLength;
-            if (size > MAX_BODY_BYTES) {
+            if (size > maxBytes) {
                 await reader.cancel();
-                throw new HTTPError(413, 'Payload exceeds 20 MiB.');
+                throw new HTTPError(413, 'Request payload is too large.');
             }
             text += decoder.decode(value, { stream: true });
         }
@@ -215,20 +214,28 @@ function conflict(version) {
 
 export default {
     async fetch(request, env) {
-        if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
-        if (!env.TASKITATOR_SYNC) {
-            return json({ error: 'TASKITATOR_SYNC Durable Object binding is required. See deployment instructions.' }, 503);
+        const origin = request.headers.get('Origin');
+        if (origin && !allowedOrigins(env).includes(origin)) return json({ error: 'Origin is not allowed.' }, 403);
+        let response;
+        if (request.method === 'OPTIONS') response = new Response(null, { status: 204, headers: CORS });
+        else if (!env.TASKITATOR_SYNC) response = json({ error: 'TASKITATOR_SYNC Durable Object binding is required.' }, 503);
+        else {
+            const id = env.TASKITATOR_SYNC.idFromName('taskitator-v1');
+            try { response = await env.TASKITATOR_SYNC.get(id).fetch(request); }
+            catch { response = json({ error: 'Sync service unavailable. Local edits were retained; retry shortly.' }, 503); }
         }
-        // A single transactional coordinator also resolves bearer-only MacroDroid
-        // requests without an eventually-consistent token lookup in KV.
-        const id = env.TASKITATOR_SYNC.idFromName('taskitator-v1');
-        try { return await env.TASKITATOR_SYNC.get(id).fetch(request); }
-        catch { return json({ error: 'Sync service unavailable. Local edits should be retained; retry shortly.' }, 503); }
+        const headers = new Headers(response.headers);
+        if (origin) headers.set('Access-Control-Allow-Origin', origin);
+        headers.set('Vary', 'Origin');
+        headers.set('Referrer-Policy', 'no-referrer');
+        headers.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+        return new Response(response.body, { status: response.status, headers });
     }
 };
 
 export class TaskitatorSync {
     constructor(state, env) {
+        this.state = state;
         this.storage = state.storage;
         this.env = env;
     }
@@ -246,6 +253,7 @@ export class TaskitatorSync {
             ]);
         }
         const legacyToken = typeof registration === 'string' ? registration : registration?.token_hash;
+        if (!registration && !record) throw new HTTPError(401, 'Existing account could not be verified.');
         if (registration && cleanToken(String(legacyToken || '')) !== token) throw new HTTPError(401, 'Incorrect credentials.');
         const owner = record?.username || record?.settings?.worker_username;
         if (record && (typeof owner !== 'string' || owner.trim().toLowerCase() !== user)) {
@@ -270,60 +278,173 @@ export class TaskitatorSync {
         });
     }
 
+    async rateLimit(request, scope = 'api', max = 240) {
+        const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+        await this.rateBucket(scope + ':' + await authHash(ip), max);
+    }
+
+    async rateBucket(key, max) {
+        await this.storage.transaction(async tx => {
+            const now = Date.now(), storageKey = 'rate:' + key;
+            let entry = await tx.get(storageKey);
+            if (!entry || entry.expires <= now) entry = { count: 0, expires: now + 60000 };
+            if (entry.count >= max) throw new HTTPError(429, 'Too many attempts. Wait one minute and try again.');
+            entry.count++;
+            await tx.put(storageKey, entry);
+        });
+        if (this.storage.getAlarm && !(await this.storage.getAlarm())) await this.storage.setAlarm(Date.now() + 3600000);
+    }
+
+    async alarm() {
+        let after;
+        while (true) {
+            const entries = await this.storage.list({ prefix: 'rate:', limit: 1000, ...(after ? {startAfter: after} : {}) });
+            if (!entries.size) break;
+            const expired = [...entries].filter(([, value]) => value.expires <= Date.now()).map(([key]) => key);
+            if (expired.length) await this.storage.delete(expired);
+            after = [...entries.keys()].pop();
+            if (entries.size < 1000) break;
+        }
+        await this.storage.setAlarm(Date.now() + 3600000);
+    }
+
+    async accountFor(identity) {
+        const link = await this.storage.get('identity:' + identity.userId);
+        if (!link) return null;
+        const meta = await this.storage.get(accountKey(link.user));
+        if (!meta || meta.owner_id !== identity.userId) throw new HTTPError(403, 'Account ownership could not be verified.');
+        return link;
+    }
+
+    async connectAccount(request, identity) {
+        await this.rateLimit(request, 'connect', 8);
+        await this.rateBucket('connect-user:' + identity.userId, 8);
+        const body = await readJson(request, 8192);
+        const existing = await this.accountFor(identity);
+        if (existing) return json({ success: true, account: existing });
+        const email = await verifiedEmail(this.env, identity.userId);
+        if (body.mode === 'create') {
+            const user = 'clerk:' + await authHash(identity.userId);
+            const link = { user, display_name: email, user_id: identity.userId };
+            await this.storage.transaction(async tx => {
+                if (await tx.get('identity:' + identity.userId)) return;
+                if (await tx.get(accountKey(user))) throw new HTTPError(409, 'Account identifier is already occupied. Contact the app owner.');
+                await tx.put(accountKey(user), { user, owner_id: identity.userId, version: 0,
+                    created_at: new Date().toISOString(), saved_at: new Date().toISOString(), has_snapshot: false, chunks: 0 });
+                await tx.put('identity:' + identity.userId, link);
+            });
+            return json({ success: true, account: await this.accountFor(identity) });
+        }
+        if (body.mode !== 'migrate') throw new HTTPError(400, 'Choose an existing or a new account.');
+        const user = String(body.username || '').trim().toLowerCase();
+        validateUser(user);
+        if (typeof body.password !== 'string' || !body.password || body.password.length > 1024) {
+            throw new HTTPError(401, 'Existing account could not be verified.');
+        }
+        // Administrator-prepared email ownership map stops a stolen legacy bearer
+        // credential from being enough to claim an account during migration.
+        let owners;
+        try { owners = JSON.parse(this.env.LEGACY_MIGRATION_OWNERS || '{}'); }
+        catch { throw new HTTPError(503, 'Legacy migration ownership settings are invalid.'); }
+        if (!object(owners) || !Object.hasOwn(owners, user) || String(owners[user]).trim().toLowerCase() !== email) {
+            throw new HTTPError(403, 'This account is not approved for migration to your verified email. Ask the app owner to check migration settings.');
+        }
+        const deadline = Date.parse(this.env.LEGACY_MIGRATION_UNTIL || '');
+        if (!Number.isFinite(deadline) || Date.now() >= deadline) throw new HTTPError(403, 'Legacy migration is closed. Ask the app owner for assistance.');
+        const token = await authHash(user + ':' + body.password.trim() + ':taskitator-client-v1');
+        const digest = await authHash(token);
+        await this.importAccount(user, token, digest);
+        await this.storage.transaction(async tx => {
+            const linked = await tx.get('identity:' + identity.userId);
+            if (linked) {
+                if (linked.user !== user) throw new HTTPError(409, 'This login is already connected to another account.');
+                return;
+            }
+            const meta = await tx.get(accountKey(user));
+            if (!meta || meta.digest !== digest || (meta.owner_id && meta.owner_id !== identity.userId)) {
+                throw new HTTPError(401, 'Existing account could not be verified.');
+            }
+            meta.owner_id = identity.userId;
+            meta.legacy_disabled = true;
+            delete meta.digest;
+            delete meta.rotation;
+            await tx.put(tokenKey(digest), { user, revoked: true });
+            await tx.put(accountKey(user), meta);
+            await tx.put('identity:' + identity.userId, { user, display_name: user, user_id: identity.userId });
+        });
+        return json({ success: true, account: await this.accountFor(identity) });
+    }
+
+    async phoneAccess(request, user) {
+        const key = 'phone-owner:' + encodeURIComponent(user);
+        if (request.method === 'GET') {
+            const current = await this.storage.get(key);
+            return json({ active: Boolean(current), created_at: current?.created_at || null });
+        }
+        await this.rateLimit(request, 'phone-admin', 10);
+        const token = request.method === 'POST' ? randomPhoneToken() : null;
+        const digest = token ? await authHash(token) : null;
+        const created_at = new Date().toISOString();
+        await this.storage.transaction(async tx => {
+            const previous = await tx.get(key);
+            if (previous) await tx.delete('phone:' + previous.digest);
+            await tx.delete(key);
+            if (token) {
+                await tx.put('phone:' + digest, { user, scope: 'status' });
+                await tx.put(key, { digest, created_at });
+            }
+        });
+        return json({ success: true, ...(token ? { token, created_at } : {}) });
+    }
+
     async fetch(request) {
         try {
             const url = new URL(request.url), path = url.pathname.replace(/\/+$/, '') || '/';
             const method = request.method;
-            if (!['GET', 'POST'].includes(method)) return json({ error: 'Method not allowed.' }, 405);
-            const status = method === 'GET' && url.searchParams.get('action') === 'status' && ['/', '/sync/pull', '/status'].includes(path);
+            if (!['GET', 'POST', 'DELETE'].includes(method)) return json({ error: 'Method not allowed.' }, 405);
+            if (request.headers.get('Origin') && !allowedOrigins(this.env).includes(request.headers.get('Origin'))) {
+                throw new HTTPError(403, 'Origin is not allowed.');
+            }
+            const status = method === 'GET' && (path === '/status' ||
+                (url.searchParams.get('action') === 'status' && ['/', '/sync/pull'].includes(path)));
             const pull = method === 'GET' && ['/', '/sync/pull'].includes(path) && !status;
             const push = method === 'POST' && ['/', '/sync/push'].includes(path);
-            const rotate = method === 'POST' && path === '/sync/password-change';
             const bridge = method === 'GET' && path === '/sync/bridge/mrstudy-rules';
-            if (!status && !pull && !push && !rotate && !bridge) return json({ error: 'Endpoint not found.' }, 404);
-            const supplied = /^Bearer\s+(\S+)\s*$/i.exec(request.headers.get('Authorization') || '')?.[1];
-            if (!supplied || new TextEncoder().encode(supplied).length > 240) throw new HTTPError(401, 'Missing or invalid Bearer token.');
-            const token = cleanToken(supplied), digest = await sha256(token);
-            let user = (request.headers.get('X-Taskitator-User') || '').trim().toLowerCase();
-            if (!user && status) {
-                const locator = await this.storage.get(tokenKey(digest));
-                if (locator) user = locator.user;
-                else if (this.env.TASKITATOR_KV) {
-                    const legacy = await this.env.TASKITATOR_KV.get(`user_data:${token}`, { type: 'json' });
-                    user = String(legacy?.username || legacy?.settings?.worker_username || '').trim().toLowerCase();
-                }
-                if (!user) throw new HTTPError(401, 'Unknown or revoked credential.');
+            const me = method === 'GET' && path === '/auth/me';
+            const connect = method === 'POST' && path === '/auth/account';
+            const phoneAdmin = ['GET', 'POST', 'DELETE'].includes(method) && path === '/auth/phone';
+            if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin) {
+                return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
             }
-            validateUser(user);
-            const body = (push || rotate) ? await readJson(request) : null;
+            await this.rateLimit(request);
+            const token = /^Bearer\s+(\S+)\s*$/i.exec(request.headers.get('Authorization') || '')?.[1];
+            if (!token) throw new HTTPError(401, 'Sign in to continue.');
+            let user, identity;
+            if (/^tkp_[a-f0-9]{64}$/.test(token)) {
+                if (!status) throw new HTTPError(403, 'Phone tokens can only read unlock status.');
+                const access = await this.storage.get('phone:' + await authHash(token));
+                if (!access || access.scope !== 'status') throw new HTTPError(401, 'Phone access was revoked or is invalid.');
+                user = access.user;
+            } else {
+                identity = await verifySession(request, this.env, token);
+                if (connect) return await this.connectAccount(request, identity);
+                const account = await this.accountFor(identity);
+                if (me) return json({ account });
+                if (!account) throw new HTTPError(403, 'Connect your Taskitator account on the login page first.');
+                user = account.user;
+                if (phoneAdmin) return await this.phoneAccess(request, user);
+            }
+            const body = push ? await readJson(request) : null;
             if (body) validateVersion(body);
-            let snapshot = null, snapshotHash = null, newDigest = null;
+            let snapshot = null, snapshotHash = null;
             if (push) {
                 snapshot = validateSnapshot(body, user);
                 snapshotHash = await sha256(JSON.stringify(snapshot));
             }
-            if (rotate) {
-                if (body.username !== user || !/^[a-f0-9]{64}$/.test(body.new_token || '') || body.new_token === token) {
-                    throw new HTTPError(400, 'Invalid username or new credential.');
-                }
-                if (typeof body.rotation_id !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(body.rotation_id)) {
-                    throw new HTTPError(428, 'rotation_id is required for recoverable password changes.');
-                }
-                newDigest = await sha256(body.new_token);
-            }
-            await this.importAccount(user, token, digest);
 
             return await this.storage.transaction(async tx => {
                 const meta = await tx.get(accountKey(user));
-                const receipt = meta?.rotation;
-                // Old credentials can only replay the exact completed rotation.
-                if (rotate && receipt && receipt.expires_at > Date.now() &&
-                    receipt.old_digest === digest && receipt.new_digest === newDigest &&
-                    receipt.rotation_id === body.rotation_id && receipt.base_version === body.base_version &&
-                    meta.digest === newDigest) {
-                    return json(receipt.response);
-                }
-                if (!meta || meta.digest !== digest) throw new HTTPError(401, 'Incorrect or revoked credentials.');
+                if (!meta || (identity && meta.owner_id !== identity.userId)) throw new HTTPError(403, 'Account access denied.');
                 if (bridge) return json({ linked: false, rules: [] });
                 if (status || pull) {
                     let record = await loadSnapshot(tx, user, meta);
@@ -370,25 +491,11 @@ export class TaskitatorSync {
                     await tx.put(accountKey(user), meta);
                     return json({ success: true, version: meta.version, updated_at: now });
                 }
-                const occupied = await tx.get(tokenKey(newDigest));
-                if (occupied && occupied.user !== user) throw new HTTPError(409, 'New credential belongs to another account.');
-                meta.version++;
-                meta.saved_at = now;
-                meta.digest = newDigest;
-                delete meta.last_write;
-                const response = { success: true, version: meta.version, username: user,
-                    rotation_id: body.rotation_id, updated_at: now };
-                meta.rotation = { old_digest: digest, new_digest: newDigest,
-                    rotation_id: body.rotation_id, base_version: body.base_version,
-                    expires_at: Date.now() + RECEIPT_LIFETIME, response };
-                await tx.put(tokenKey(digest), { user, revoked: true });
-                await tx.put(tokenKey(newDigest), { user, revoked: false });
-                await tx.put(accountKey(user), meta);
-                return json(response);
+                throw new HTTPError(405, 'Method not allowed.');
             });
         } catch (err) {
-            return json({ error: err instanceof HTTPError ? err.message : 'Cloud storage request failed. Retry with the same operation ID.' },
-                err instanceof HTTPError ? err.status : 503);
+            return json({ error: (err instanceof HTTPError || err instanceof SecurityError) ? err.message : 'Cloud storage request failed. Retry with the same operation ID.' },
+                (err instanceof HTTPError || err instanceof SecurityError) ? err.status : 503);
         }
     }
 }
