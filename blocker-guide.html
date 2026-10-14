@@ -1,7 +1,11 @@
 <!-- blocker-guide.html -->
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="auth-pending">
 <head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-8ySzI2BfP9/AV/VNxQhGOzt7fgbqdAn3b5nvU+DwCbc=' 'sha256-7uHeM9V7KbidgmF1LXR1HdNKoaOzEjJkLmmUsG1SdzI=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://generativelanguage.googleapis.com https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<script src="auth-config.js"></script>
+<script src="auth-client.js"></script>
+<style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Taskitator - Device Lockdown Guide</title>
@@ -309,7 +313,7 @@
             <span>Progress: <strong id="p1-step-count" style="color: var(--text-color);">0 / 6</strong> sub-steps completed</span>
             <div style="display: flex; gap: 12px; align-items: center;">
                 <span id="p1-percent-text" style="font-weight: 600;">0%</span>
-                <button class="reset-link" onclick="resetPhase1Progress()">Reset</button>
+                <button class="reset-link" data-static-action-0="">Reset</button>
             </div>
         </div>
         <div class="progress-bar-bg">
@@ -318,7 +322,7 @@
 
         <!-- ==================== PHASE 1 MAJOR STEP 1 ==================== -->
         <div class="major-block" id="p1-major-1">
-            <div class="major-header" onclick="toggleP1Major(1)">
+            <div class="major-header" data-static-action-1="">
                 <span class="major-title"><span class="major-badge">Step 1</span> Macro Setup & Triggers</span>
                 <span class="major-status" id="p1-status-major-1">0/3</span>
             </div>
@@ -326,7 +330,7 @@
 
                 <!-- Minor S1 -->
                 <div class="minor-block" id="p1-minor-1">
-                    <div class="minor-header" onclick="toggleP1Minor(1)">
+                    <div class="minor-header" data-static-action-2="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.1 Open the Macros Tab</span>
                         <span class="minor-status" id="p1-status-minor-1">0/1</span>
                     </div>
@@ -338,7 +342,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="p1-item-sub-1">
-                                <input type="checkbox" id="p1-sub-1" onchange="toggleP1Sub('p1-sub-1')">
+                                <input type="checkbox" id="p1-sub-1" data-static-action-3="">
                                 <label class="sub-label" for="p1-sub-1"><span class="hash-tag">#1</span> Tap Macros tab and open a new macro creation screen.</label>
                             </li>
                         </ul>
@@ -347,7 +351,7 @@
 
                 <!-- Minor S2 -->
                 <div class="minor-block" id="p1-minor-2">
-                    <div class="minor-header" onclick="toggleP1Minor(2)">
+                    <div class="minor-header" data-static-action-4="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.2 Name Macro & Add Trigger</span>
                         <span class="minor-status" id="p1-status-minor-2">0/1</span>
                     </div>
@@ -359,7 +363,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="p1-item-sub-2">
-                                <input type="checkbox" id="p1-sub-2" onchange="toggleP1Sub('p1-sub-2')">
+                                <input type="checkbox" id="p1-sub-2" data-static-action-5="">
                                 <label class="sub-label" for="p1-sub-2"><span class="hash-tag">#2</span> Name macro "App Blocker" and open the Triggers menu.</label>
                             </li>
                         </ul>
@@ -368,7 +372,7 @@
 
                 <!-- Minor S3 -->
                 <div class="minor-block" id="p1-minor-3">
-                    <div class="minor-header" onclick="toggleP1Minor(3)">
+                    <div class="minor-header" data-static-action-6="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.3 Choose Application Launched</span>
                         <span class="minor-status" id="p1-status-minor-3">0/1</span>
                     </div>
@@ -383,7 +387,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="p1-item-sub-3">
-                                <input type="checkbox" id="p1-sub-3" onchange="toggleP1Sub('p1-sub-3')">
+                                <input type="checkbox" id="p1-sub-3" data-static-action-7="">
                                 <label class="sub-label" for="p1-sub-3"><span class="hash-tag">#3</span> Select restricted distracting apps under Application Launched.</label>
                             </li>
                         </ul>
@@ -395,7 +399,7 @@
 
         <!-- ==================== PHASE 1 MAJOR STEP 2 ==================== -->
         <div class="major-block" id="p1-major-2">
-            <div class="major-header" onclick="toggleP1Major(2)">
+            <div class="major-header" data-static-action-8="">
                 <span class="major-title"><span class="major-badge">Step 2</span> Lockdown Actions & Home Screen Exit</span>
                 <span class="major-status" id="p1-status-major-2">0/3</span>
             </div>
@@ -403,7 +407,7 @@
 
                 <!-- Minor S4 -->
                 <div class="minor-block" id="p1-minor-4">
-                    <div class="minor-header" onclick="toggleP1Minor(4)">
+                    <div class="minor-header" data-static-action-9="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.1 Add Lockdown Actions</span>
                         <span class="minor-status" id="p1-status-minor-4">0/1</span>
                     </div>
@@ -415,7 +419,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="p1-item-sub-4">
-                                <input type="checkbox" id="p1-sub-4" onchange="toggleP1Sub('p1-sub-4')">
+                                <input type="checkbox" id="p1-sub-4" data-static-action-10="">
                                 <label class="sub-label" for="p1-sub-4"><span class="hash-tag">#4</span> Tap the blue Actions plus button to add response behavior.</label>
                             </li>
                         </ul>
@@ -424,7 +428,7 @@
 
                 <!-- Minor S5 -->
                 <div class="minor-block" id="p1-minor-5">
-                    <div class="minor-header" onclick="toggleP1Minor(5)">
+                    <div class="minor-header" data-static-action-11="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.2 Select Launch Home Screen</span>
                         <span class="minor-status" id="p1-status-minor-5">0/1</span>
                     </div>
@@ -436,7 +440,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="p1-item-sub-5">
-                                <input type="checkbox" id="p1-sub-5" onchange="toggleP1Sub('p1-sub-5')">
+                                <input type="checkbox" id="p1-sub-5" data-static-action-12="">
                                 <label class="sub-label" for="p1-sub-5"><span class="hash-tag">#5</span> Locate and configure Device Actions &rarr; Launch Home Screen.</label>
                             </li>
                         </ul>
@@ -445,7 +449,7 @@
 
                 <!-- Minor S6 -->
                 <div class="minor-block" id="p1-minor-6">
-                    <div class="minor-header" onclick="toggleP1Minor(6)">
+                    <div class="minor-header" data-static-action-13="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.3 Save App Blocker Macro</span>
                         <span class="minor-status" id="p1-status-minor-6">0/1</span>
                     </div>
@@ -458,7 +462,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="p1-item-sub-6">
-                                <input type="checkbox" id="p1-sub-6" onchange="toggleP1Sub('p1-sub-6')">
+                                <input type="checkbox" id="p1-sub-6" data-static-action-14="">
                                 <label class="sub-label" for="p1-sub-6"><span class="hash-tag">#6</span> Tap the checkmark in the bottom-right corner to save your App Blocker macro.</label>
                             </li>
                         </ul>
@@ -483,7 +487,7 @@
             <span>Progress: <strong id="p2-step-count" style="color: var(--text-color);">0 / 26</strong> sub-steps completed</span>
             <div style="display: flex; gap: 12px; align-items: center;">
                 <span id="p2-percent-text" style="font-weight: 600;">0%</span>
-                <button class="reset-link" onclick="resetPhase2Progress()">Reset</button>
+                <button class="reset-link" data-static-action-15="">Reset</button>
             </div>
         </div>
         <div class="progress-bar-bg">
@@ -492,7 +496,7 @@
 
         <!-- ==================== MAJOR STEP 1 ==================== -->
         <div class="major-block" id="major-1">
-            <div class="major-header" onclick="toggleMajor(1)">
+            <div class="major-header" data-static-action-16="">
                 <span class="major-title"><span class="major-badge">Step 1</span> Global Variable Setup</span>
                 <span class="major-status" id="status-major-1">0/3</span>
             </div>
@@ -500,7 +504,7 @@
 
                 <!-- Minor S1 -->
                 <div class="minor-block" id="minor-1">
-                    <div class="minor-header" onclick="toggleMinor(1)">
+                    <div class="minor-header" data-static-action-17="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.1 Open Global Variables</span>
                         <span class="minor-status" id="status-minor-1">0/1</span>
                     </div>
@@ -512,7 +516,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-1">
-                                <input type="checkbox" id="sub-1" onchange="toggleSub('sub-1')">
+                                <input type="checkbox" id="sub-1" data-static-action-18="">
                                 <label class="sub-label" for="sub-1"><span class="hash-tag">#1</span> Tap the <strong>Global Variables</strong> tile on the MacroDroid main dashboard.</label>
                             </li>
                         </ul>
@@ -521,7 +525,7 @@
 
                 <!-- Minor S2 -->
                 <div class="minor-block" id="minor-2">
-                    <div class="minor-header" onclick="toggleMinor(2)">
+                    <div class="minor-header" data-static-action-19="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.2 Define http_response Variable</span>
                         <span class="minor-status" id="status-minor-2">0/2</span>
                     </div>
@@ -533,11 +537,11 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-2">
-                                <input type="checkbox" id="sub-2" onchange="toggleSub('sub-2')">
+                                <input type="checkbox" id="sub-2" data-static-action-20="">
                                 <label class="sub-label" for="sub-2"><span class="hash-tag">#2</span> In the variable name field, type exactly <code>http_response</code>.</label>
                             </li>
                             <li class="sub-item" id="item-sub-3">
-                                <input type="checkbox" id="sub-3" onchange="toggleSub('sub-3')">
+                                <input type="checkbox" id="sub-3" data-static-action-21="">
                                 <label class="sub-label" for="sub-3"><span class="hash-tag">#3</span> Tap Variable Type, select <strong>String</strong>, and tap <strong>OK</strong>.</label>
                             </li>
                         </ul>
@@ -549,7 +553,7 @@
 
         <!-- ==================== MAJOR STEP 2 ==================== -->
         <div class="major-block" id="major-2">
-            <div class="major-header" onclick="toggleMajor(2)">
+            <div class="major-header" data-static-action-22="">
                 <span class="major-title"><span class="major-badge">Step 2</span> Cloud Bridge Triggers</span>
                 <span class="major-status" id="status-major-2">0/3</span>
             </div>
@@ -557,7 +561,7 @@
 
                 <!-- Minor S3 -->
                 <div class="minor-block" id="minor-3">
-                    <div class="minor-header" onclick="toggleMinor(3)">
+                    <div class="minor-header" data-static-action-23="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.1 Set 5-Minute Regular Interval</span>
                         <span class="minor-status" id="status-minor-3">0/1</span>
                     </div>
@@ -569,7 +573,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-4">
-                                <input type="checkbox" id="sub-4" onchange="toggleSub('sub-4')">
+                                <input type="checkbox" id="sub-4" data-static-action-24="">
                                 <label class="sub-label" for="sub-4"><span class="hash-tag">#4</span> Under Date/Time &rarr; Regular Interval, set <strong>Minutes</strong> to <code>5</code> (Hours 0, Seconds 0) and tap OK.</label>
                             </li>
                         </ul>
@@ -578,7 +582,7 @@
 
                 <!-- Minor S4 -->
                 <div class="minor-block" id="minor-4">
-                    <div class="minor-header" onclick="toggleMinor(4)">
+                    <div class="minor-header" data-static-action-25="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.2 Verify Triggers & Add Actions</span>
                         <span class="minor-status" id="status-minor-4">0/2</span>
                     </div>
@@ -590,11 +594,11 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-5">
-                                <input type="checkbox" id="sub-5" onchange="toggleSub('sub-5')">
+                                <input type="checkbox" id="sub-5" data-static-action-26="">
                                 <label class="sub-label" for="sub-5"><span class="hash-tag">#5</span> Verify both <code>Regular Interval (00:05:00)</code> and <code>Screen On</code> appear on the red card.</label>
                             </li>
                             <li class="sub-item" id="item-sub-6">
-                                <input type="checkbox" id="sub-6" onchange="toggleSub('sub-6')">
+                                <input type="checkbox" id="sub-6" data-static-action-27="">
                                 <label class="sub-label" for="sub-6"><span class="hash-tag">#6</span> Tap the <strong>+</strong> button on the blue <strong>Actions</strong> card.</label>
                             </li>
                         </ul>
@@ -606,7 +610,7 @@
 
         <!-- ==================== MAJOR STEP 3 ==================== -->
         <div class="major-block" id="major-3">
-            <div class="major-header" onclick="toggleMajor(3)">
+            <div class="major-header" data-static-action-28="">
                 <span class="major-title"><span class="major-badge">Step 3</span> Configure HTTP Request</span>
                 <span class="major-status" id="status-major-3">0/4</span>
             </div>
@@ -614,7 +618,7 @@
 
                 <!-- Minor S5 -->
                 <div class="minor-block" id="minor-5">
-                    <div class="minor-header" onclick="toggleMinor(5)">
+                    <div class="minor-header" data-static-action-29="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 3.1 Select HTTP Request Action</span>
                         <span class="minor-status" id="status-minor-5">0/1</span>
                     </div>
@@ -626,7 +630,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-7">
-                                <input type="checkbox" id="sub-7" onchange="toggleSub('sub-7')">
+                                <input type="checkbox" id="sub-7" data-static-action-30="">
                                 <label class="sub-label" for="sub-7"><span class="hash-tag">#7</span> Search <code>http</code> and select <strong>HTTP Request</strong> (avoid HTTP Server Response).</label>
                             </li>
                         </ul>
@@ -635,7 +639,7 @@
 
                 <!-- Minor S6 -->
                 <div class="minor-block" id="minor-6">
-                    <div class="minor-header" onclick="toggleMinor(6)">
+                    <div class="minor-header" data-static-action-31="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 3.2 Request Method, URL, & Blocking</span>
                         <span class="minor-status" id="status-minor-6">0/3</span>
                     </div>
@@ -647,15 +651,15 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-8">
-                                <input type="checkbox" id="sub-8" onchange="toggleSub('sub-8')">
+                                <input type="checkbox" id="sub-8" data-static-action-32="">
                                 <label class="sub-label" for="sub-8"><span class="hash-tag">#8</span> Set Request method to <strong>GET</strong>.</label>
                             </li>
                             <li class="sub-item" id="item-sub-9">
-                                <input type="checkbox" id="sub-9" onchange="toggleSub('sub-9')">
+                                <input type="checkbox" id="sub-9" data-static-action-33="">
                                 <label class="sub-label" for="sub-9"><span class="hash-tag">#9</span> In Enter url, paste your Status URL from the Settings page.</label>
                             </li>
                             <li class="sub-item" id="item-sub-10">
-                                <input type="checkbox" id="sub-10" onchange="toggleSub('sub-10')">
+                                <input type="checkbox" id="sub-10" data-static-action-34="">
                                 <label class="sub-label" for="sub-10"><span class="hash-tag">#10</span> Check the box <strong>Block next actions until complete</strong>.</label>
                             </li>
                         </ul>
@@ -667,7 +671,7 @@
 
         <!-- ==================== MAJOR STEP 4 ==================== -->
         <div class="major-block" id="major-4">
-            <div class="major-header" onclick="toggleMajor(4)">
+            <div class="major-header" data-static-action-35="">
                 <span class="major-title"><span class="major-badge">Step 4</span> Auth Headers & Variable Binding</span>
                 <span class="major-status" id="status-major-4">0/5</span>
             </div>
@@ -675,7 +679,7 @@
 
                 <!-- Minor S7 -->
                 <div class="minor-block" id="minor-7">
-                    <div class="minor-header" onclick="toggleMinor(7)">
+                    <div class="minor-header" data-static-action-36="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 4.1 Switch to Header Params</span>
                         <span class="minor-status" id="status-minor-7">0/1</span>
                     </div>
@@ -687,7 +691,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-11">
-                                <input type="checkbox" id="sub-11" onchange="toggleSub('sub-11')">
+                                <input type="checkbox" id="sub-11" data-static-action-37="">
                                 <label class="sub-label" for="sub-11"><span class="hash-tag">#11</span> Tap the <strong>Header Params</strong> tab at the top right, then tap the floating <strong>+</strong> button.</label>
                             </li>
                         </ul>
@@ -696,7 +700,7 @@
 
                 <!-- Minor S8 -->
                 <div class="minor-block" id="minor-8">
-                    <div class="minor-header" onclick="toggleMinor(8)">
+                    <div class="minor-header" data-static-action-38="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 4.2 Enter Authorization Header</span>
                         <span class="minor-status" id="status-minor-8">0/2</span>
                     </div>
@@ -708,11 +712,11 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-12">
-                                <input type="checkbox" id="sub-12" onchange="toggleSub('sub-12')">
+                                <input type="checkbox" id="sub-12" data-static-action-39="">
                                 <label class="sub-label" for="sub-12"><span class="hash-tag">#12</span> Parameter Name: type exactly <code>Authorization</code>.</label>
                             </li>
                             <li class="sub-item" id="item-sub-13">
-                                <input type="checkbox" id="sub-13" onchange="toggleSub('sub-13')">
+                                <input type="checkbox" id="sub-13" data-static-action-40="">
                                 <label class="sub-label" for="sub-13"><span class="hash-tag">#13</span> Value: enter <code>Bearer &lt;your_token&gt;</code> (copied from Settings), then tap OK.</label>
                             </li>
                         </ul>
@@ -721,7 +725,7 @@
 
                 <!-- Minor S9 -->
                 <div class="minor-block" id="minor-9">
-                    <div class="minor-header" onclick="toggleMinor(9)">
+                    <div class="minor-header" data-static-action-41="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 4.3 Save Response to Variable</span>
                         <span class="minor-status" id="status-minor-9">0/2</span>
                     </div>
@@ -733,11 +737,11 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-14">
-                                <input type="checkbox" id="sub-14" onchange="toggleSub('sub-14')">
+                                <input type="checkbox" id="sub-14" data-static-action-42="">
                                 <label class="sub-label" for="sub-14"><span class="hash-tag">#14</span> Return to the <em>Settings</em> tab, scroll down to Response, and select <strong>Save HTTP response in string variable</strong>.</label>
                             </li>
                             <li class="sub-item" id="item-sub-15">
-                                <input type="checkbox" id="sub-15" onchange="toggleSub('sub-15')">
+                                <input type="checkbox" id="sub-15" data-static-action-43="">
                                 <label class="sub-label" for="sub-15"><span class="hash-tag">#15</span> Select <code>http_response</code> from the dropdown, then tap the top-right checkmark to save.</label>
                             </li>
                         </ul>
@@ -749,7 +753,7 @@
 
         <!-- ==================== MAJOR STEP 5 ==================== -->
         <div class="major-block" id="major-5">
-            <div class="major-header" onclick="toggleMajor(5)">
+            <div class="major-header" data-static-action-44="">
                 <span class="major-title"><span class="major-badge">Step 5</span> If Condition Branching</span>
                 <span class="major-status" id="status-major-5">0/5</span>
             </div>
@@ -757,7 +761,7 @@
 
                 <!-- Minor S10 -->
                 <div class="minor-block" id="minor-10">
-                    <div class="minor-header" onclick="toggleMinor(10)">
+                    <div class="minor-header" data-static-action-45="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 5.1 Add If Clause Action</span>
                         <span class="minor-status" id="status-minor-10">0/1</span>
                     </div>
@@ -769,7 +773,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-16">
-                                <input type="checkbox" id="sub-16" onchange="toggleSub('sub-16')">
+                                <input type="checkbox" id="sub-16" data-static-action-46="">
                                 <label class="sub-label" for="sub-16"><span class="hash-tag">#16</span> Tap <strong>+</strong> on Actions &rarr; Conditions/Loops &rarr; select <strong>If clause</strong>.</label>
                             </li>
                         </ul>
@@ -778,7 +782,7 @@
 
                 <!-- Minor S11 -->
                 <div class="minor-block" id="minor-11">
-                    <div class="minor-header" onclick="toggleMinor(11)">
+                    <div class="minor-header" data-static-action-47="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 5.2 Add Condition Requirement</span>
                         <span class="minor-status" id="status-minor-11">0/1</span>
                     </div>
@@ -790,7 +794,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-17">
-                                <input type="checkbox" id="sub-17" onchange="toggleSub('sub-17')">
+                                <input type="checkbox" id="sub-17" data-static-action-48="">
                                 <label class="sub-label" for="sub-17"><span class="hash-tag">#17</span> In the If clause dialog, tap the <strong>+</strong> button inside the purple Conditions box.</label>
                             </li>
                         </ul>
@@ -799,7 +803,7 @@
 
                 <!-- Minor S12 -->
                 <div class="minor-block" id="minor-12">
-                    <div class="minor-header" onclick="toggleMinor(12)">
+                    <div class="minor-header" data-static-action-49="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 5.3 Select MacroDroid Variable</span>
                         <span class="minor-status" id="status-minor-12">0/1</span>
                     </div>
@@ -811,7 +815,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-18">
-                                <input type="checkbox" id="sub-18" onchange="toggleSub('sub-18')">
+                                <input type="checkbox" id="sub-18" data-static-action-50="">
                                 <label class="sub-label" for="sub-18"><span class="hash-tag">#18</span> Choose <strong>MacroDroid Specific</strong> &rarr; <strong>MacroDroid Variable</strong>.</label>
                             </li>
                         </ul>
@@ -820,7 +824,7 @@
 
                 <!-- Minor S13 -->
                 <div class="minor-block" id="minor-13">
-                    <div class="minor-header" onclick="toggleMinor(13)">
+                    <div class="minor-header" data-static-action-51="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 5.4 Evaluate Unlock Condition</span>
                         <span class="minor-status" id="status-minor-13">0/2</span>
                     </div>
@@ -832,11 +836,11 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-19">
-                                <input type="checkbox" id="sub-19" onchange="toggleSub('sub-19')">
+                                <input type="checkbox" id="sub-19" data-static-action-52="">
                                 <label class="sub-label" for="sub-19"><span class="hash-tag">#19</span> Select <code>http_response</code> and set condition rule to <strong>Contains</strong>.</label>
                             </li>
                             <li class="sub-item" id="item-sub-20">
-                                <input type="checkbox" id="sub-20" onchange="toggleSub('sub-20')">
+                                <input type="checkbox" id="sub-20" data-static-action-53="">
                                 <label class="sub-label" for="sub-20"><span class="hash-tag">#20</span> Enter exact text: <code>device_unlocked = true</code> and tap OK.</label>
                             </li>
                         </ul>
@@ -848,7 +852,7 @@
 
         <!-- ==================== MAJOR STEP 6 ==================== -->
         <div class="major-block" id="major-6">
-            <div class="major-header" onclick="toggleMajor(6)">
+            <div class="major-header" data-static-action-54="">
                 <span class="major-title"><span class="major-badge">Step 6</span> Macro Toggling & Action Tree</span>
                 <span class="major-status" id="status-major-6">0/6</span>
             </div>
@@ -856,7 +860,7 @@
 
                 <!-- Minor S14 -->
                 <div class="minor-block" id="minor-14">
-                    <div class="minor-header" onclick="toggleMinor(14)">
+                    <div class="minor-header" data-static-action-55="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 6.1 Add Else Clause</span>
                         <span class="minor-status" id="status-minor-14">0/1</span>
                     </div>
@@ -868,7 +872,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-21">
-                                <input type="checkbox" id="sub-21" onchange="toggleSub('sub-21')">
+                                <input type="checkbox" id="sub-21" data-static-action-56="">
                                 <label class="sub-label" for="sub-21"><span class="hash-tag">#21</span> Tap your <code>If</code> condition on the main screen and select <strong>Add else clause</strong>.</label>
                             </li>
                         </ul>
@@ -877,7 +881,7 @@
 
                 <!-- Minor S15 -->
                 <div class="minor-block" id="minor-15">
-                    <div class="minor-header" onclick="toggleMinor(15)">
+                    <div class="minor-header" data-static-action-57="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 6.2 Create Enable & Disable Actions</span>
                         <span class="minor-status" id="status-minor-15">0/1</span>
                     </div>
@@ -889,7 +893,7 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-22">
-                                <input type="checkbox" id="sub-22" onchange="toggleSub('sub-22')">
+                                <input type="checkbox" id="sub-22" data-static-action-58="">
                                 <label class="sub-label" for="sub-22"><span class="hash-tag">#22</span> Tap Actions <strong>+</strong> &rarr; Macros &rarr; <strong>Enable/Disable Macro</strong>. Create two actions: <code>Disable [App Blocker]</code> and <code>Enable [App Blocker]</code>.</label>
                             </li>
                         </ul>
@@ -898,7 +902,7 @@
 
                 <!-- Minor S16 -->
                 <div class="minor-block" id="minor-16">
-                    <div class="minor-header" onclick="toggleMinor(16)">
+                    <div class="minor-header" data-static-action-59="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 6.3 Enter Reorder Mode</span>
                         <span class="minor-status" id="status-minor-16">0/2</span>
                     </div>
@@ -910,11 +914,11 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-23">
-                                <input type="checkbox" id="sub-23" onchange="toggleSub('sub-23')">
+                                <input type="checkbox" id="sub-23" data-static-action-60="">
                                 <label class="sub-label" for="sub-23"><span class="hash-tag">#23</span> Observe the two new actions initially placed at the bottom of the list.</label>
                             </li>
                             <li class="sub-item" id="item-sub-24">
-                                <input type="checkbox" id="sub-24" onchange="toggleSub('sub-24')">
+                                <input type="checkbox" id="sub-24" data-static-action-61="">
                                 <label class="sub-label" for="sub-24"><span class="hash-tag">#24</span> Tap the <strong>Reorder Arrows (⇅)</strong> button in the blue Actions header.</label>
                             </li>
                         </ul>
@@ -923,7 +927,7 @@
 
                 <!-- Minor S17 -->
                 <div class="minor-block" id="minor-17">
-                    <div class="minor-header" onclick="toggleMinor(17)">
+                    <div class="minor-header" data-static-action-62="">
                         <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 6.4 Position Actions & Save</span>
                         <span class="minor-status" id="status-minor-17">0/2</span>
                     </div>
@@ -935,11 +939,11 @@
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-25">
-                                <input type="checkbox" id="sub-25" onchange="toggleSub('sub-25')">
+                                <input type="checkbox" id="sub-25" data-static-action-63="">
                                 <label class="sub-label" for="sub-25"><span class="hash-tag">#25</span> Drag <code>Disable macro [App Blocker]</code> under <code>If</code>, and drag <code>Enable macro [App Blocker]</code> under <code>Else</code>.</label>
                             </li>
                             <li class="sub-item" id="item-sub-26">
-                                <input type="checkbox" id="sub-26" onchange="toggleSub('sub-26')">
+                                <input type="checkbox" id="sub-26" data-static-action-64="">
                                 <label class="sub-label" for="sub-26"><span class="hash-tag">#26</span> Tap the bottom-right checkmark button to save your completed Cloud Bridge macro.</label>
                             </li>
                         </ul>
@@ -985,9 +989,9 @@
     </div>
 </div>
 
-<script src="safety.js"></script>
-<script src="agent-engine.js"></script>
-<script>
+<script type="text/taskitator-script" src="safety.js"></script>
+<script type="text/taskitator-script" src="agent-engine.js"></script>
+<script type="text/taskitator-script">
     // --- Phase 1 Sequential Engine Config ---
     const P1_TOTAL_SUBS = 6;
     const P1_STORAGE_KEY = 'taskitator_guide_phase1_progress';
@@ -1302,7 +1306,7 @@
         });
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('taskitator-auth-ready', () => {
         // Init Phase 1
         const p1State = getP1SavedState();
         for (let i = 1; i <= P1_TOTAL_SUBS; i++) {
@@ -1341,5 +1345,73 @@
     });
 </script>
 
+<script type="text/taskitator-script">
+document.querySelector('[data-static-action-0]').addEventListener('click', function(event){resetPhase1Progress()});
+document.querySelector('[data-static-action-1]').addEventListener('click', function(event){toggleP1Major(1)});
+document.querySelector('[data-static-action-2]').addEventListener('click', function(event){toggleP1Minor(1)});
+document.querySelector('[data-static-action-3]').addEventListener('change', function(event){toggleP1Sub('p1-sub-1')});
+document.querySelector('[data-static-action-4]').addEventListener('click', function(event){toggleP1Minor(2)});
+document.querySelector('[data-static-action-5]').addEventListener('change', function(event){toggleP1Sub('p1-sub-2')});
+document.querySelector('[data-static-action-6]').addEventListener('click', function(event){toggleP1Minor(3)});
+document.querySelector('[data-static-action-7]').addEventListener('change', function(event){toggleP1Sub('p1-sub-3')});
+document.querySelector('[data-static-action-8]').addEventListener('click', function(event){toggleP1Major(2)});
+document.querySelector('[data-static-action-9]').addEventListener('click', function(event){toggleP1Minor(4)});
+document.querySelector('[data-static-action-10]').addEventListener('change', function(event){toggleP1Sub('p1-sub-4')});
+document.querySelector('[data-static-action-11]').addEventListener('click', function(event){toggleP1Minor(5)});
+document.querySelector('[data-static-action-12]').addEventListener('change', function(event){toggleP1Sub('p1-sub-5')});
+document.querySelector('[data-static-action-13]').addEventListener('click', function(event){toggleP1Minor(6)});
+document.querySelector('[data-static-action-14]').addEventListener('change', function(event){toggleP1Sub('p1-sub-6')});
+document.querySelector('[data-static-action-15]').addEventListener('click', function(event){resetPhase2Progress()});
+document.querySelector('[data-static-action-16]').addEventListener('click', function(event){toggleMajor(1)});
+document.querySelector('[data-static-action-17]').addEventListener('click', function(event){toggleMinor(1)});
+document.querySelector('[data-static-action-18]').addEventListener('change', function(event){toggleSub('sub-1')});
+document.querySelector('[data-static-action-19]').addEventListener('click', function(event){toggleMinor(2)});
+document.querySelector('[data-static-action-20]').addEventListener('change', function(event){toggleSub('sub-2')});
+document.querySelector('[data-static-action-21]').addEventListener('change', function(event){toggleSub('sub-3')});
+document.querySelector('[data-static-action-22]').addEventListener('click', function(event){toggleMajor(2)});
+document.querySelector('[data-static-action-23]').addEventListener('click', function(event){toggleMinor(3)});
+document.querySelector('[data-static-action-24]').addEventListener('change', function(event){toggleSub('sub-4')});
+document.querySelector('[data-static-action-25]').addEventListener('click', function(event){toggleMinor(4)});
+document.querySelector('[data-static-action-26]').addEventListener('change', function(event){toggleSub('sub-5')});
+document.querySelector('[data-static-action-27]').addEventListener('change', function(event){toggleSub('sub-6')});
+document.querySelector('[data-static-action-28]').addEventListener('click', function(event){toggleMajor(3)});
+document.querySelector('[data-static-action-29]').addEventListener('click', function(event){toggleMinor(5)});
+document.querySelector('[data-static-action-30]').addEventListener('change', function(event){toggleSub('sub-7')});
+document.querySelector('[data-static-action-31]').addEventListener('click', function(event){toggleMinor(6)});
+document.querySelector('[data-static-action-32]').addEventListener('change', function(event){toggleSub('sub-8')});
+document.querySelector('[data-static-action-33]').addEventListener('change', function(event){toggleSub('sub-9')});
+document.querySelector('[data-static-action-34]').addEventListener('change', function(event){toggleSub('sub-10')});
+document.querySelector('[data-static-action-35]').addEventListener('click', function(event){toggleMajor(4)});
+document.querySelector('[data-static-action-36]').addEventListener('click', function(event){toggleMinor(7)});
+document.querySelector('[data-static-action-37]').addEventListener('change', function(event){toggleSub('sub-11')});
+document.querySelector('[data-static-action-38]').addEventListener('click', function(event){toggleMinor(8)});
+document.querySelector('[data-static-action-39]').addEventListener('change', function(event){toggleSub('sub-12')});
+document.querySelector('[data-static-action-40]').addEventListener('change', function(event){toggleSub('sub-13')});
+document.querySelector('[data-static-action-41]').addEventListener('click', function(event){toggleMinor(9)});
+document.querySelector('[data-static-action-42]').addEventListener('change', function(event){toggleSub('sub-14')});
+document.querySelector('[data-static-action-43]').addEventListener('change', function(event){toggleSub('sub-15')});
+document.querySelector('[data-static-action-44]').addEventListener('click', function(event){toggleMajor(5)});
+document.querySelector('[data-static-action-45]').addEventListener('click', function(event){toggleMinor(10)});
+document.querySelector('[data-static-action-46]').addEventListener('change', function(event){toggleSub('sub-16')});
+document.querySelector('[data-static-action-47]').addEventListener('click', function(event){toggleMinor(11)});
+document.querySelector('[data-static-action-48]').addEventListener('change', function(event){toggleSub('sub-17')});
+document.querySelector('[data-static-action-49]').addEventListener('click', function(event){toggleMinor(12)});
+document.querySelector('[data-static-action-50]').addEventListener('change', function(event){toggleSub('sub-18')});
+document.querySelector('[data-static-action-51]').addEventListener('click', function(event){toggleMinor(13)});
+document.querySelector('[data-static-action-52]').addEventListener('change', function(event){toggleSub('sub-19')});
+document.querySelector('[data-static-action-53]').addEventListener('change', function(event){toggleSub('sub-20')});
+document.querySelector('[data-static-action-54]').addEventListener('click', function(event){toggleMajor(6)});
+document.querySelector('[data-static-action-55]').addEventListener('click', function(event){toggleMinor(14)});
+document.querySelector('[data-static-action-56]').addEventListener('change', function(event){toggleSub('sub-21')});
+document.querySelector('[data-static-action-57]').addEventListener('click', function(event){toggleMinor(15)});
+document.querySelector('[data-static-action-58]').addEventListener('change', function(event){toggleSub('sub-22')});
+document.querySelector('[data-static-action-59]').addEventListener('click', function(event){toggleMinor(16)});
+document.querySelector('[data-static-action-60]').addEventListener('change', function(event){toggleSub('sub-23')});
+document.querySelector('[data-static-action-61]').addEventListener('change', function(event){toggleSub('sub-24')});
+document.querySelector('[data-static-action-62]').addEventListener('click', function(event){toggleMinor(17)});
+document.querySelector('[data-static-action-63]').addEventListener('change', function(event){toggleSub('sub-25')});
+document.querySelector('[data-static-action-64]').addEventListener('change', function(event){toggleSub('sub-26')});
+</script>
+<script defer src="auth-bootstrap.js"></script>
 </body>
 </html>

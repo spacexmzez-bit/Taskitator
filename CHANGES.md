@@ -1,3 +1,5 @@
+> Security update: SECURITY-SETUP.txt is the current setup/deployment guide. Older instructions below describe the previous recurrence release and must not be used to restore legacy authentication. See SECURITY-REVIEW.md for current verification and limits.
+
 # What changed, in plain English
 
 This update starts from Taskitator-main-4.zip. The Taskitator Ari prompt fix is preserved. No account tiering or unrelated product expansion was added.

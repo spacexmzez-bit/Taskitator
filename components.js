@@ -332,6 +332,23 @@ window.TaskitatorComponents = Object.freeze({
                 
                 el.parentNode.replaceChild(div, el);
                 
+                const insertText = text => {
+                    div.focus();
+                    const selection = window.getSelection();
+                    const range = selection && selection.rangeCount ? selection.getRangeAt(0) : document.createRange();
+                    if (!div.contains(range.commonAncestorContainer)) { range.selectNodeContents(div); range.collapse(false); }
+                    range.deleteContents();
+                    const node = document.createTextNode(text);
+                    range.insertNode(node); range.setStartAfter(node); range.collapse(true);
+                    selection.removeAllRanges(); selection.addRange(range);
+                    div.dispatchEvent(new Event('input', { bubbles: true }));
+                };
+                div.addEventListener('paste', event => {
+                    event.preventDefault(); insertText(event.clipboardData.getData('text/plain'));
+                });
+                div.addEventListener('drop', event => {
+                    event.preventDefault(); insertText(event.dataTransfer.getData('text/plain'));
+                });
                 div.addEventListener('input', (e) => handleInput(e, contextType, div));
                 div.addEventListener('click', (e) => handleClick(e, contextType, div));
                 div.addEventListener('keydown', handleKeydown);
@@ -418,7 +435,7 @@ window.TaskitatorComponents = Object.freeze({
                         }
                     } else if (prefix === '@') {
                         chipData = {
-                            html: `<span class="nlp-chip nlp-tag" contenteditable="false" data-type="tag" data-id="${value}" data-raw="${rawToken}"># ${value} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                            html: `<span class="nlp-chip nlp-tag" contenteditable="false" data-type="tag" data-id="${TaskitatorSafety.escapeHtml(value)}" data-raw="${TaskitatorSafety.escapeHtml(rawToken)}"># ${TaskitatorSafety.escapeHtml(value)} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
                             action: () => {
                                 host.catalogs.addTag(value);
                                 if (contextType === 'edit') {
@@ -575,7 +592,7 @@ window.TaskitatorComponents = Object.freeze({
 
             if (auditTaskTitle) auditTaskTitle.textContent = task.title;
             
-            let criteriaHtml = `<strong>Required Criteria &lt;PC&gt;:</strong> ${task.proof_criteria || 'General confirmation of task completion.'}`;
+            let criteriaHtml = `<strong>Required Criteria &lt;PC&gt;:</strong> ${TaskitatorSafety.escapeHtml(task.proof_criteria || 'General confirmation of task completion.')}`;
             
             if (window.ExemplarStore) {
                 const hasExemplar = await ExemplarStore.hasExemplar(task.id);
@@ -621,7 +638,7 @@ window.TaskitatorComponents = Object.freeze({
                     if (child.strict_prerequisites) cBadges += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️</span>';
 
                     sLi.innerHTML = `
-                        <span>${child.status === 'completed' ? '✓ ' : ''}${child.title} ${cBadges}</span>
+                        <span>${child.status === 'completed' ? '✓ ' : ''}${TaskitatorSafety.escapeHtml(child.title)} ${cBadges}</span>
                         <button type="button" class="icon-btn" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
                     `;
                     sLi.querySelector('button').addEventListener('click', () => {
@@ -691,7 +708,7 @@ window.TaskitatorComponents = Object.freeze({
             
             const titleForEdit = task.raw_title !== undefined ? task.raw_title : (task.title || '');
             if (editTaskTitle) {
-                if (editTaskTitle.tagName === 'DIV') editTaskTitle.innerHTML = titleForEdit;
+                if (editTaskTitle.tagName === 'DIV') editTaskTitle.textContent = titleForEdit;
                 else editTaskTitle.value = titleForEdit;
             }
             
@@ -1113,8 +1130,9 @@ window.TaskitatorComponents = Object.freeze({
                             div.className = 'subtask-builder-item';
                             div.innerHTML = `
                                 <input type="text" class="subtask-input-title" value="${TaskitatorSafety.escapeHtml(rawText)}" style="flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" required>
-                                <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
+                                <button type="button" class="action-del-btn">✕</button>
                             `;
+                            div.querySelector('.action-del-btn').addEventListener('click', () => div.remove());
                             subtaskBuilderList.appendChild(div);
                         }
 
@@ -1200,9 +1218,10 @@ window.TaskitatorComponents = Object.freeze({
                     div.className = 'subtask-builder-item';
                     div.innerHTML = `
                         <input type="text" class="subtask-input-title" placeholder="Quick subtask title... ($$ for bonus)" style="flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" required>
-                        <button type="button" class="action-del-btn" onclick="this.parentElement.remove()">✕</button>
+                        <button type="button" class="action-del-btn">✕</button>
                     `;
-                    subtaskBuilderList.appendChild(div);
+                    div.querySelector('.action-del-btn').addEventListener('click', () => div.remove());
+                            subtaskBuilderList.appendChild(div);
                 });
             }
 
@@ -2312,7 +2331,7 @@ window.TaskitatorComponents = Object.freeze({
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <strong style="color: var(--text-color); font-size: 0.9rem;">${TaskitatorSafety.escapeHtml(item.title)}</strong>
-                                <span class="tag-chip" style="font-size: 0.7rem; background: #052e16; color: #86efac;">${item.score}/10</span>
+                                <span class="tag-chip" style="font-size: 0.7rem; background: #052e16; color: #86efac;">${TaskitatorSafety.escapeHtml(item.score)}/10</span>
                                 ${exemplarBadge}
                             </div>
                             <button type="button" class="action-del-btn delete-saved-crit-btn" title="Delete Saved Criteria" style="font-size: 0.85rem; padding: 2px 6px;">✕</button>
@@ -2386,7 +2405,7 @@ window.TaskitatorComponents = Object.freeze({
                 if (feedbackEl) {
                     feedbackEl.style.display = 'block';
                     feedbackEl.className = 'criteria-feedback-box pass';
-                    feedbackEl.innerHTML = `<strong>✓ Applied Saved Criteria (${stateTarget.score}/10)</strong>: "${TaskitatorSafety.escapeHtml(savedItem.title)}"<br><small style="color:var(--text-muted);">Modifying this criteria will automatically drop its verification.</small>`;
+                    feedbackEl.innerHTML = `<strong>✓ Applied Saved Criteria (${TaskitatorSafety.escapeHtml(stateTarget.score)}/10)</strong>: "${TaskitatorSafety.escapeHtml(savedItem.title)}"<br><small style="color:var(--text-muted);">Modifying this criteria will automatically drop its verification.</small>`;
                 }
 
                 if (templatesModal) templatesModal.classList.remove('open');

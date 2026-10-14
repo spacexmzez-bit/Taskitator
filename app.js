@@ -343,13 +343,13 @@ window.TaskitatorApp = (() => {
                     
                     card.innerHTML = `
                         <div class="dump-note-header">
-                            <input type="text" class="dump-note-title-input" placeholder="Optional Title..." value="${n.title || ''}" data-idx="${idx}">
+                            <input type="text" class="dump-note-title-input" placeholder="Optional Title..." value="${TaskitatorSafety.escapeHtml(n.title || '')}" data-idx="${idx}">
                             <div class="dump-note-actions">
                                 <span style="font-size: 0.7rem; color: #f59e0b; font-weight: 700; white-space: nowrap; margin-right: 6px;">⏳ ${formatRemainingTTL(n.created_at)}</span>
                                 <button type="button" class="icon-btn del-escrow-note" data-idx="${idx}" style="color: var(--danger); border-color: rgba(239,68,68,0.3); padding: 2px 8px; font-size: 0.75rem;">✕</button>
                             </div>
                         </div>
-                        <div style="font-size: 0.88rem; line-height: 1.45; color: var(--text-color); white-space: pre-wrap; padding-top: 4px;">${n.text}</div>
+                        <div style="font-size: 0.88rem; line-height: 1.45; color: var(--text-color); white-space: pre-wrap; padding-top: 4px;">${TaskitatorSafety.escapeHtml(n.text)}</div>
                     `;
                     
                     const titleInput = card.querySelector('.dump-note-title-input');
@@ -633,7 +633,7 @@ window.TaskitatorApp = (() => {
             settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
         } catch (e) {}
 
-        if (!settings.worker_passkey) {
+        if (!window.SyncEngine?.isConfigured()) {
             updateSyncDot('local-only');
         } else {
             updateSyncDot('pending');
@@ -659,7 +659,7 @@ window.TaskitatorApp = (() => {
         try {
             settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
         } catch (e) {}
-        if (!settings.worker_passkey) updateSyncDot('local-only');
+        if (!window.SyncEngine?.isConfigured()) updateSyncDot('local-only');
         else updateSyncDot('synced');
     }
 
@@ -1421,9 +1421,9 @@ window.TaskitatorApp = (() => {
             row.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 6px;';
 
             row.innerHTML = `
-                <input type="time" class="b-start" value="${startVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 7px 10px; border: 1.5px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color); font-size: 0.9rem;">
+                <input type="time" class="b-start" value="${TaskitatorSafety.escapeHtml(startVal)}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 7px 10px; border: 1.5px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color); font-size: 0.9rem;">
                 <span style="color: var(--text-muted); font-size: 0.85rem; font-weight: 700;">to</span>
-                <input type="time" class="b-end" value="${endVal}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 7px 10px; border: 1.5px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color); font-size: 0.9rem;">
+                <input type="time" class="b-end" value="${TaskitatorSafety.escapeHtml(endVal)}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 7px 10px; border: 1.5px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color); font-size: 0.9rem;">
                 ${!disabled ? '<button type="button" class="del-break-row-btn" style="background: none; border: none; color: var(--danger); font-size: 1.3rem; cursor: pointer; padding: 0 4px; line-height: 1;">&times;</button>' : ''}
             `;
 
@@ -1617,9 +1617,9 @@ window.TaskitatorApp = (() => {
                     graceRow.innerHTML = `
                         <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
                             <span style="color: var(--success); font-weight: 700;">✓ Completed:</span>
-                            <span style="text-decoration: line-through; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${task.title}</span>
+                            <span style="text-decoration: line-through; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${TaskitatorSafety.escapeHtml(task.title)}</span>
                         </div>
-                        <button class="undo-grace-btn" id="undoBtn_${task.id}">Undo (<span id="undoTimerSec_${task.id}">${graceInfo.remainingSec}</span>s)</button>
+                        <button class="undo-grace-btn" id="undoBtn_${TaskitatorSafety.escapeHtml(task.id)}">Undo (<span id="undoTimerSec_${TaskitatorSafety.escapeHtml(task.id)}">${graceInfo.remainingSec}</span>s)</button>
                     `;
                     const uBtn = graceRow.querySelector(`#undoBtn_${task.id}`);
                     if (uBtn) {
@@ -1881,7 +1881,7 @@ window.TaskitatorApp = (() => {
 
             info.innerHTML = `
                 <div style="font-weight: 600; text-decoration: line-through; color: var(--text-muted);">
-                    ${task.title} ${badgesHtml}
+                    ${TaskitatorSafety.escapeHtml(task.title)} ${badgesHtml}
                 </div>
                 ${task.completed_at ? `<small style="color: var(--text-muted); font-size: 0.75rem;">Done at: ${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
             `;
@@ -2557,7 +2557,7 @@ window.TaskitatorApp = (() => {
                 let settings = {};
                 try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch (e) {}
 
-                if (!settings.worker_passkey) {
+                if (!window.SyncEngine?.isConfigured()) {
                     alert('Cannot sync: No secret passkey configured in Settings.');
                     updateSyncDot('local-only');
                     return;
@@ -2623,12 +2623,12 @@ window.TaskitatorApp = (() => {
     };
 })();
 
-document.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('taskitator-auth-ready', () => {
     TaskitatorApp.init();
 });
 
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
+    window.addEventListener('taskitator-auth-ready', () => {
         navigator.serviceWorker.register('./sw.js')
             .catch(err => console.error('SW Registration failed:', err));
     });

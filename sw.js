@@ -1,6 +1,12 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-recurrence-audit-fix-v1';
+const CACHE_NAME = 'taskitator-security-clerk-v2';
+
+self.addEventListener('message', event => {
+    if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
+        event.ports[0]?.postMessage({ version: CACHE_NAME });
+    }
+});
 
 const STATIC_ASSETS = [
     './',
@@ -19,6 +25,10 @@ const STATIC_ASSETS = [
     './app.js',
     './components.js',
     './safety.js',
+    './auth-client.js',
+    './auth-bootstrap.js',
+    './auth-config.js',
+    './login-page.js',
     './pomodoro.js',
     './exemplar-store.js',
     './agent-engine.js',
@@ -72,6 +82,7 @@ self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
 
+    if (/\/(?:auth|sync)(?:\/|$)/.test(url.pathname) || url.pathname === '/status' || request.headers.has('Authorization')) return;
     const cacheKey = new Request(url.origin + url.pathname);
 
     // Only intercept standard GET requests
@@ -81,6 +92,11 @@ self.addEventListener('fetch', (event) => {
 
     // Bypass caching for cross-origin API calls (Gemini API, external CDNs & Cloudflare Worker)
     if (url.origin !== self.location.origin) {
+        return;
+    }
+
+    if (/\/(?:auth-config|auth-client|auth-bootstrap|sync-engine)\.js$/.test(url.pathname)) {
+        event.respondWith(fetch(request, { cache: 'no-cache' }));
         return;
     }
 

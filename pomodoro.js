@@ -544,7 +544,7 @@
 
     // Auto-initialize when the DOM finishes loading
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', injectDOM);
+        window.addEventListener('taskitator-auth-ready', injectDOM);
     } else {
         injectDOM();
     }

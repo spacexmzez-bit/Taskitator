@@ -1,3 +1,5 @@
+> Security update: SECURITY-SETUP.txt is the current setup/deployment guide. Older instructions below describe the previous recurrence release and must not be used to restore legacy authentication. See SECURITY-REVIEW.md for current verification and limits.
+
 # Install this update from your phone
 
 This guide updates the existing Taskitator repository and taskitator-sync Worker. You do not need to create a new account, Worker, database, or domain. The configuration file already contains the existing Worker name and bindings from your supplied version.

@@ -1,11 +1,19 @@
-# Taskitator - recurring tasks update
+# Taskitator — managed authentication security update
 
-This is the complete updated application, based on Taskitator-main-4.zip, including the Ari prompt fix. The app keeps its existing taskitator-sync Worker, cloud account, custom domain, and database bindings.
+Complete project based on the attached Taskitator-main.zip. Taskitator keeps its existing website, Cloudflare Worker, Durable Object account data, KV migration source, recurrence engine, AI audits, and sync conflict handling.
 
-Read CHANGES.md for what changed, RECURRING-TASKS.md for how recurrence behaves, SETUP.md for phone-friendly upload/deployment instructions, and CHECKS.md for verification and limits.
+Start with **SECURITY-SETUP.txt**. It explains Clerk production setup, the public frontend key, Cloudflare secrets, email-approved migration, deployment, and the new status-only MacroDroid token. Authentication must be configured before this version can be used.
 
-The full ZIP includes icons and guide images. The separate upload-only ZIP includes only new or changed files, preserving their paths. Extract either ZIP before uploading its contents. Uploading a ZIP to GitHub does not install its contained files.
+Pause phone-blocking macros before deploying: old tokens stop working immediately. Existing users connect their old Taskitator account to a verified Clerk login once. New users explicitly create a new account after email verification.
 
-Both the website and Worker need this update. The Worker now imports recurrence-core.js from the repository root, so do not paste worker.js alone into Cloudflare's single-file editor.
+Run the dependency-free regression suite with Node 22 or newer:
 
-The optional GitHub Actions deployment file runs only when manually requested. It does not deploy automatically after every commit.
+```sh
+npm test
+```
+
+Deploy using the manual `.github/workflows/deploy-worker-security.yml` workflow, or `npm run deploy:worker` after Cloudflare authorization. Do not deploy `worker.js` alone: it imports `cloudflare/auth.js` and the root recurrence module.
+
+The Clerk JavaScript SDK manages sessions; Taskitator obtains short-lived tokens for Worker requests without saving them in app settings. The Worker checks signatures, issuer, origin, expiration, user identity, and live session status. Password management and recovery are in the managed account profile.
+
+See **SECURITY-REVIEW.md** for implementation details and verification limits. Historical recurrence documentation remains in RECURRING-TASKS.md and the earlier sections of CHANGES.md/CHECKS.md. SECURITY-SETUP.txt supersedes older deployment instructions.

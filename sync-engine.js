@@ -65,84 +65,29 @@ const SyncEngine = {
         }
     },
 
-    validatePasswordComplexity(password) {
-        const pass = String(password || '');
-        const errors = [];
-
-        if (pass.length < 8) {
-            errors.push('Must be at least 8 characters long');
-        }
-        if (!/[A-Z]/.test(pass)) {
-            errors.push('Must include at least 1 uppercase letter');
-        }
-        if (!/[a-z]/.test(pass)) {
-            errors.push('Must include at least 1 lowercase letter');
-        }
-        if (!/[0-9]/.test(pass)) {
-            errors.push('Must include at least 1 numeric digit');
-        }
-        if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pass)) {
-            errors.push('Must include at least 1 special character/symbol');
-        }
-
-        return {
-            valid: errors.length === 0,
-            errors
-        };
-    },
-
-    async hashCredentials(username, password) {
-        const cleanUser = String(username || '').trim().toLowerCase();
-        const cleanPass = String(password || '').trim();
-        const salt = 'taskitator-client-v1';
-
-        const encoder = new TextEncoder();
-        const payloadData = encoder.encode(`${cleanUser}:${cleanPass}:${salt}`);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', payloadData);
-        
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    },
-
-    async ensureSha256(rawSecret) {
-        const str = String(rawSecret || '').trim();
-        if (/^[a-f0-9]{64}$/i.test(str)) {
-            return str.toLowerCase();
-        }
-        const encoder = new TextEncoder();
-        const data = encoder.encode(str);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    },
-
     getConfig() {
-        let settings = {};
-        try {
-            settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
-        } catch (e) {
-            settings = {};
-        }
-
+        const account = window.TaskitatorAuth?.account;
         return {
-            url: this.HARDCODED_WORKER_URL,
-            username: (settings.worker_username || '').trim().toLowerCase(),
-            secret: (settings.worker_passkey || '').trim(),
-            last_synced: settings.last_synced || null
+            url: window.TASKITATOR_AUTH_CONFIG?.workerUrl || this.HARDCODED_WORKER_URL,
+            username: account?.user || '',
+            userId: window.TaskitatorAuth?.userId || '',
+            authSessionId: window.Clerk?.session?.id || '',
+            displayName: account?.display_name || '',
+            last_synced: JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}').last_synced || null
         };
     },
 
     isConfigured() {
-        const config = this.getConfig();
-        return Boolean(config.secret && config.username);
+        return Boolean(window.TaskitatorAuth?.signedIn && this.getConfig().username);
     },
 
     accountCacheKey(config) {
-        return `taskitator_account_cache:${config.username}:${config.secret}`;
+        return `taskitator_account_cache_v2:${encodeURIComponent(config.username)}`;
     },
 
     archiveLocalAccount() {
-        const config = this.getConfig();
+        const localSettings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
+        const cacheOwner = localStorage.getItem(this.STORAGE_KEY_OWNER) || localSettings.worker_username || '';
         const snapshot = {};
         this.ACCOUNT_KEYS.forEach(key => {
             const value = localStorage.getItem(key);
@@ -150,14 +95,14 @@ const SyncEngine = {
         });
         if (!Object.keys(snapshot).length) return;
         if (snapshot[this.STORAGE_KEY_SETTINGS]) {
-            const settings = JSON.parse(snapshot[this.STORAGE_KEY_SETTINGS]);
+            const settings = window.TaskitatorAuth.cleanSettings(JSON.parse(snapshot[this.STORAGE_KEY_SETTINGS]));
             delete settings.worker_username;
             delete settings.worker_passkey;
             snapshot[this.STORAGE_KEY_SETTINGS] = JSON.stringify(settings);
         }
-        const owned = config.username && config.secret &&
-            localStorage.getItem(this.STORAGE_KEY_OWNER) === config.username;
-        const key = owned ? this.accountCacheKey(config) : 'taskitator_unclaimed_backup';
+        // A newly signed-in identity may differ from the cached data's owner.
+        // Archive under the data owner before restoring the next account.
+        const key = cacheOwner ? this.accountCacheKey({ username: cacheOwner }) : 'taskitator_unclaimed_backup';
         localStorage.setItem(key, JSON.stringify(snapshot));
     },
 
@@ -168,12 +113,19 @@ const SyncEngine = {
         sessionStorage.removeItem('gemini_fallback_active');
     },
 
-    beginLogin(username, secret) {
+    beginLogin(username) {
+        if (localStorage.getItem(this.STORAGE_KEY_OWNER) === username) {
+            const settings = window.TaskitatorAuth.cleanSettings(JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}'));
+            settings.worker_username = username;
+            localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+            this.initializeSession();
+            return;
+        }
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
         this.pendingPageRefresh = false;
         this.pendingDownloadOrigin = null;
         this.archiveLocalAccount();
-        const config = { username: username.trim().toLowerCase(), secret };
+        const config = { username: username.trim().toLowerCase() };
         const raw = localStorage.getItem(this.accountCacheKey(config));
         const snapshot = raw ? JSON.parse(raw) : {};
         this.clearLocalAccount();
@@ -182,7 +134,7 @@ const SyncEngine = {
         });
         const settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
         settings.worker_username = config.username;
-        settings.worker_passkey = secret;
+        delete settings.worker_passkey;
         settings.worker_url = this.HARDCODED_WORKER_URL;
         localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
         localStorage.setItem(this.STORAGE_KEY_OWNER, config.username);
@@ -198,7 +150,8 @@ const SyncEngine = {
         if (!localStorage.getItem('taskitator_exemplar_legacy_owner')) {
             localStorage.setItem('taskitator_exemplar_legacy_owner', config.username || '__unclaimed__');
         }
-        if (config.username && config.secret && !owner) {
+        if (config.username && !owner &&
+            JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}').worker_username === config.username) {
             localStorage.setItem(this.STORAGE_KEY_OWNER, config.username);
         }
         if (!localStorage.getItem(this.STORAGE_KEY_SESSION)) {
@@ -211,7 +164,8 @@ const SyncEngine = {
     sessionMatches(config, sessionId = this.sessionId) {
         const current = this.getConfig();
         return sessionId === localStorage.getItem(this.STORAGE_KEY_SESSION) &&
-            current.username === config.username && current.secret === config.secret &&
+            current.username === config.username && current.userId === config.userId &&
+            current.authSessionId === config.authSessionId &&
             localStorage.getItem(this.STORAGE_KEY_OWNER) === config.username;
     },
 
@@ -270,7 +224,7 @@ const SyncEngine = {
             recurrence_schema: 1,
             tasks: tasks,
             projects: projects,
-            settings: settings,
+            settings: window.TaskitatorAuth.cleanSettings(settings),
             today_breaks: todayBreaks,
             completed_audit_ledger: ledger,
             saved_criteria: savedCriteria,
@@ -315,7 +269,7 @@ const SyncEngine = {
             const payload = this.getPayload(false, currentExtras);
             payload.base_version = Number(base);
             payload.mutation_id = revision;
-            const bearerToken = await this.ensureSha256(config.secret);
+            const bearerToken = await window.TaskitatorAuth.token();
             if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
             const res = await this.request(`${config.url}/sync/push`, {
                 method: 'POST',
@@ -347,7 +301,7 @@ const SyncEngine = {
     },
 
     async readCloud(config = this.getConfig()) {
-        const bearerToken = await this.ensureSha256(config.secret);
+        const bearerToken = await window.TaskitatorAuth.token();
         const res = await this.request(`${config.url}/sync/pull`, {
             method: 'GET', cache: 'no-store',
             headers: { 'Authorization': `Bearer ${bearerToken}`, 'X-App-ID': 'taskitator',
@@ -362,6 +316,10 @@ const SyncEngine = {
     },
 
     async request(url, options) {
+        const headers = new Headers(options.headers);
+        headers.set('Authorization', 'Bearer ' + await window.TaskitatorAuth.token());
+        headers.delete('X-Taskitator-User');
+        options = { ...options, headers };
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 30000);
         try {
@@ -523,113 +481,14 @@ const SyncEngine = {
         }
     },
 
-    changePassword(currentPassword, newPassword) {
-        const config = this.getConfig();
-        const sessionId = this.sessionId;
-        const run = () => this.sessionMatches(config, sessionId)
-            ? this.performPasswordChange(currentPassword, newPassword)
-            : { success: false, error: 'Session changed. Please sign in again.' };
-        const result = this.pushQueue.then(run, run);
-        this.pushQueue = result.catch(() => {});
-        return result;
-    },
-
-    async performPasswordChange(currentPassword, newPassword) {
-        const config = this.getConfig(), sessionId = this.sessionId;
-        if (!this.isConfigured() || this.needsInitialPull()) {
-            return { success: false, error: 'Complete initial synchronization before changing passwords.' };
-        }
-        const currentHash = await this.hashCredentials(config.username, currentPassword);
-        const activeToken = await this.ensureSha256(config.secret);
-        if (currentHash !== activeToken) return { success: false, error: 'Current password is incorrect.' };
-        const complexity = this.validatePasswordComplexity(newPassword);
-        if (!complexity.valid) return { success: false, error: complexity.errors.join('; ') };
-        const newHash = await this.hashCredentials(config.username, newPassword);
-        if (newHash === activeToken) return { success: false, error: 'New password must be different.' };
-        if (!this.sessionMatches(config, sessionId)) return { success: false, error: 'Session changed.' };
-        const pending = this.getPendingRotation();
-        if (pending) {
-            if (pending.new_token !== newHash) return { success: false, error: 'Finish the previous password change first.' };
-            return this.resumePasswordChange();
-        }
-        if (this.debounceTimer) clearTimeout(this.debounceTimer);
-        this.debounceTimer = null;
-        // Persist local edits with version protection before rotating credentials.
-        if (this.isDirty()) {
-            const uploaded = await this.performPush(false);
-            if (!uploaded.success || uploaded.pending) return { ...uploaded, success: false,
-                error: uploaded.error || 'Finish syncing local edits before changing passwords.' };
-        }
-        if (!this.sessionMatches(config, sessionId)) return { success: false, error: 'Session changed.' };
-        const version = localStorage.getItem(this.STORAGE_KEY_REMOTE_VERSION);
-        if (version === null) return { success: false, error: 'Sync once before changing passwords.' };
-        const operation = { username: config.username, old_token: activeToken, new_token: newHash,
-            base_version: Number(version), rotation_id: crypto.randomUUID() };
-        try {
-            // Small recovery record; never store plaintext passwords or duplicate the snapshot.
-            localStorage.setItem(this.STORAGE_KEY_ROTATION, JSON.stringify(operation));
-        } catch {
-            return { success: false, error: 'Cannot save password-change recovery details. Free local storage and retry.' };
-        }
-        return this.resumePasswordChange();
-    },
-
-    getPendingRotation() {
-        const raw = localStorage.getItem(this.STORAGE_KEY_ROTATION);
-        return raw ? JSON.parse(raw) : null;
+    async changePassword() {
+        await window.TaskitatorAuth.manageAccount();
+        return { success: true };
     },
 
     async resumePasswordChange() {
-        // Share one request when a page-load download and a queued upload both recover.
-        if (this.rotationInFlight) return this.rotationInFlight;
-        const operation = this.getPendingRotation();
-        if (!operation) return { success: true };
-        this.rotationInFlight = this.completePasswordRotation(operation);
-        try { return await this.rotationInFlight; }
-        finally { this.rotationInFlight = null; }
-    },
-
-    async completePasswordRotation(operation) {
-        const config = this.getConfig(), sessionId = this.sessionId;
-        const configuredToken = await this.ensureSha256(config.secret);
-        if (config.username !== operation.username ||
-            ![operation.old_token, operation.new_token].includes(configuredToken)) {
-            return { success: false, error: 'Password recovery belongs to another session.' };
-        }
-        try {
-            this.notify('syncing');
-            const res = await this.request(`${config.url}/sync/password-change`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${operation.old_token}`, 'X-App-ID': 'taskitator',
-                    'X-Taskitator-User': operation.username },
-                body: JSON.stringify({ username: operation.username, new_token: operation.new_token,
-                    base_version: operation.base_version, rotation_id: operation.rotation_id })
-            });
-            const data = await res.json();
-            if (!this.sessionMatches(config, sessionId)) return { success: false, error: 'Session changed.' };
-            if (res.status === 409) {
-                localStorage.removeItem(this.STORAGE_KEY_ROTATION);
-                return this.reportConflict(data);
-            }
-            if (!res.ok || data.success !== true || data.rotation_id !== operation.rotation_id ||
-                data.version !== operation.base_version + 1) {
-                if ([400, 428].includes(res.status)) localStorage.removeItem(this.STORAGE_KEY_ROTATION);
-                throw new Error(data.error || 'Password change was not confirmed. Retry to recover the result.');
-            }
-            const settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
-            settings.worker_passkey = operation.new_token;
-            settings.last_synced = data.updated_at;
-            localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
-            this.rememberRemoteVersion(data.version);
-            localStorage.removeItem(this.STORAGE_KEY_ROTATION);
-            this.notify(this.isDirty() ? 'pending' : 'synced', { timestamp: data.updated_at });
-            if (this.isDirty()) this.queueAutoPush();
-            return { success: true, newToken: operation.new_token };
-        } catch (err) {
-            if (!this.sessionMatches(config, sessionId)) return { success: false, error: 'Session changed.' };
-            this.notify('error', err.message);
-            return { success: false, error: err.message, recoveryPending: true };
-        }
+        // Legacy credential rotation was replaced by managed account security.
+        return { success: true };
     },
 
     async fetchMrStudyRules() {
@@ -687,8 +546,8 @@ const SyncEngine = {
                 taskitator_recurrence_state: JSON.stringify(data.recurrence_state || {series:[],history:[]}),
                 [this.STORAGE_KEY_TASKS]: JSON.stringify(data.tasks || []),
                 [this.STORAGE_KEY_PROJECTS]: JSON.stringify(data.projects || []),
-                [this.STORAGE_KEY_SETTINGS]: JSON.stringify({ ...(data.settings || currentSettings),
-                    worker_username: config.username, worker_passkey: config.secret,
+                [this.STORAGE_KEY_SETTINGS]: JSON.stringify({ ...window.TaskitatorAuth.cleanSettings(data.settings || currentSettings),
+                    worker_username: config.username,
                     last_synced: data.saved_at || data.updated_at || new Date().toISOString() }),
                 [this.STORAGE_KEY_LEDGER]: JSON.stringify(data.completed_audit_ledger || []),
                 [this.STORAGE_KEY_SAVED_CRITERIA]: JSON.stringify(data.saved_criteria || []),
@@ -780,7 +639,7 @@ const SyncEngine = {
                     taskitator_recurrence_state: snapshot.recurrence_state || {series:[],history:[]},
                     taskitator_tasks: snapshot.tasks || [],
                     taskitator_projects: snapshot.projects || [],
-                    taskitator_settings: settings,
+                    taskitator_settings: window.TaskitatorAuth.cleanSettings(settings),
                     taskitator_daily_breaks: snapshot.today_breaks || {},
                     taskitator_audit_ledger: snapshot.completed_audit_ledger || [],
                     taskitator_saved_criteria: snapshot.saved_criteria || []
@@ -829,15 +688,11 @@ const SyncEngine = {
         }
     },
 
-    logout() {
+    async logout() {
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
         this.debounceTimer = null;
-        try {
-            this.archiveLocalAccount();
-        } catch (err) {
-            this.notify('error', 'Could not preserve local data. Export a backup before logging out.');
-            return false;
-        }
+        this.archiveLocalAccount();
+        await window.TaskitatorAuth.signOut();
         this.clearLocalAccount();
         this.pendingPageRefresh = false;
         this.pendingDownloadOrigin = null;
@@ -857,10 +712,9 @@ SyncEngine.initializeSession();
     const isLoginPage = cleanPath === 'login.html';
     const isConfigured = SyncEngine.isConfigured() && !SyncEngine.needsInitialPull();
 
-    if (!isConfigured && !isLoginPage) {
+    if (!SyncEngine.isConfigured() && !isLoginPage) {
         window.location.replace('login.html');
-    } else if (isConfigured && isLoginPage) {
-        window.location.replace('index.html');
+
     }
 })();
 
@@ -868,7 +722,7 @@ window.SyncEngine = SyncEngine;
 
 // No polling loop. Events only restore an existing change-triggered deadline
 // or finish a download/reload deferred by an unfinished form.
-window.addEventListener('load', () => {
+window.addEventListener('taskitator-auth-ready', () => {
     if (window.location.pathname.split('/').pop().toLowerCase() === 'login.html') return;
     SyncEngine.armAutoSync();
     SyncEngine.maybeRefreshPage();

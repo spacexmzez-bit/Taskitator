@@ -1,8 +1,12 @@
 <!-- File: calendar.html -->
 <!-- calendar.html -->
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="auth-pending">
 <head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-e/Gtmm8I/7hpE+FrfICP8F6/1/Wntp3+ER8O7T7pM5Y=' 'sha256-DlzQe/l7G1QSEPzShRdrCtjLtdYRGO2RJXFCTTW6c/s=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://generativelanguage.googleapis.com https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<script src="auth-config.js"></script>
+<script src="auth-client.js"></script>
+<style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Taskitator - Calendar</title>
@@ -269,7 +273,7 @@
 
     <!-- Collapsible Unscheduled / Backlog Tasks -->
     <div class="unscheduled-toggle-card" id="unscheduledCard">
-        <div class="unscheduled-header" onclick="toggleUnscheduledCard()">
+        <div class="unscheduled-header" data-static-action-0="">
             <span id="unscheduledTitle">▸ Unscheduled Tasks</span>
             <span class="agenda-count-badge" id="unscheduledCountBadge">0</span>
         </div>
@@ -306,13 +310,13 @@
     </form>
 </aside>
 
-<script src="safety.js"></script>
-<script src="audit-engine.js"></script>
-<script src="recurrence-core.js"></script>
-<script src="recurrence-ui.js"></script>
-<script src="sync-engine.js"></script>
-<script src="agent-engine.js"></script>
-<script>
+<script type="text/taskitator-script" src="safety.js"></script>
+<script type="text/taskitator-script" src="audit-engine.js"></script>
+<script type="text/taskitator-script" src="recurrence-core.js"></script>
+<script type="text/taskitator-script" src="recurrence-ui.js"></script>
+<script type="text/taskitator-script" src="sync-engine.js"></script>
+<script type="text/taskitator-script" src="agent-engine.js"></script>
+<script type="text/taskitator-script">
 const TASKS_KEY = 'taskitator_tasks';
 const PROJECTS_KEY = 'taskitator_projects';
 const SETTINGS_KEY = 'taskitator_settings';
@@ -678,18 +682,22 @@ window.addEventListener('taskitator-synced', () => {
     renderAgenda();
 });
 
-document.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('taskitator-auth-ready', () => {
     loadData();
     renderCalendar();
     renderAgenda();
 });
 
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
+    window.addEventListener('taskitator-auth-ready', () => {
         navigator.serviceWorker.register('./sw.js')
             .catch(err => console.error('SW Registration failed:', err));
     });
 }
 </script>
+<script type="text/taskitator-script">
+document.querySelector('[data-static-action-0]').addEventListener('click', function(event){toggleUnscheduledCard()});
+</script>
+<script defer src="auth-bootstrap.js"></script>
 </body>
 </html>

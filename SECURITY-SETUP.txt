@@ -1,0 +1,441 @@
+TASKITATOR SECURITY UPDATE — STEP-BY-STEP SETUP
+============================================
+
+This update uses your existing Taskitator website, Cloudflare Worker,
+TASKITATOR_SYNC Durable Object, and TASKITATOR_KV database. Clerk handles
+passwords, email verification, sign-in, sessions, and password recovery.
+You do not need to choose hashing algorithms or build a password database.
+
+The ZIP contains the COMPLETE updated project, including your icons/images.
+Use the files INSIDE Taskitator-security as your repository contents.
+Uploading the ZIP itself to GitHub does not install the app.
+
+Your website remains:
+https://taskitator.mazendev.com
+Your Worker remains:
+https://taskitator-sync.spacexmzez.workers.dev
+
+If you have changed either address since this uploaded version, adjust the
+public config, allowed origins, and CSP tool before deploying. The instructions
+below assume the addresses in your uploaded project are still correct.
+
+READ THIS FIRST — AVOID PHONE LOCKOUT
+-----------------------------------
+1. Open MacroDroid on your Android phone.
+2. Find every Taskitator macro that checks unlock status or blocks apps.
+3. Turn those macros OFF temporarily. This includes scheduled/background checks.
+4. Make sure you can open MacroDroid, your browser, and Cloudflare normally.
+5. Leave blocking disabled until you have migrated and tested the NEW phone token.
+
+The old full-access token stops working as soon as the new Worker is deployed.
+A macro that treats failed requests as “locked” can otherwise lock your phone.
+Changing your password AFTER this update does not change the new phone token.
+
+CORRECTED BUILD: SAVED COPIES AND CONTINUE
+-----------------------------------------
+This corrected build fixes three migration/startup bugs without changing Clerk
+authentication, Worker permissions, or phone-token security. No additional Clerk
+or Cloudflare setup is required if you have already completed this guide.
+
+1. Upload the corrected frontend files together, including sw.js. Keep YOUR
+   configured auth-config.js values; do not replace them with the placeholder
+   key included in a fresh ZIP. Never put a secret key in auth-config.js.
+2. Close other Taskitator tabs, then reopen the website and reload it.
+   The security cache will update before the task interface starts.
+3. If the login screen shows recovered copies, click each "Download recovered
+   copy" button. Keep ALL downloaded files before clicking Continue.
+4. These downloads contain tasks/settings, not login or AI API credentials.
+   Different copies are NOT automatically merged: a missing task could represent
+   a deliberate deletion. The newest dated saved copy is selected when possible,
+   while all distinct recovered copies remain available on this device.
+5. If synchronization reports a conflict, download both copies using its dialog,
+   choose which copy to keep, then click Continue on the login page.
+6. To review recovered copies later, open the website's /login.html page while
+   signed into the linked account. They are not shown for unrelated accounts.
+7. To restore a downloaded copy, first export your current data in Settings.
+   Then use Settings > Data Backup / Import, select the recovered JSON file,
+   and choose the appropriate restore option. For recurring-task backups use
+   Replace, not Smart Merge. A restore can replace cloud data on the next sync.
+8. If login warns about unreadable old copies, do NOT clear browser/site data
+   or perform a factory reset. The damaged original has been retained, not used
+   to authenticate or restored automatically. It may contain historical secrets;
+   do not share it publicly. Preserve this browser profile and request assistance
+   with recovering that specific copy before removing it.
+
+A. BACK UP BEFORE UPLOADING
+--------------------------
+1. Open your CURRENT Taskitator website, before replacing any files.
+2. Sync your latest tasks. If sync reports a conflict, resolve it first.
+3. Open Settings and find Data Backup / Export.
+4. Export your data and keep the downloaded JSON privately. Old backups include
+   credentials and your Gemini API key; do not share an old backup.
+5. Also save your current GitHub repository as a ZIP:
+   open its main page > Code > Download ZIP.
+6. Do not delete any Cloudflare KV namespace or Durable Object.
+7. Choose the email address you will use for the new secure login. You must be
+   able to read email at that address, including verification/recovery messages.
+
+B. CREATE CLERK AND CONFIGURE YOUR LOGIN
+--------------------------------------
+1. Open https://dashboard.clerk.com and create/sign into your Clerk account.
+2. Create an application named Taskitator.
+3. Enable email sign-up/sign-in and password authentication.
+4. Require email verification during sign-up. Keep social sign-in disabled for
+   this initial setup; no Google/Apple integration is needed.
+5. In User & authentication > Password, open Update password requirements.
+   Enable Reject compromised passwords and keep Clerk's password-strength checks.
+   Use a long, unique passphrase for your own new password.
+6. Keep personal accounts enabled and single-session mode for this integration.
+   Organizations are not used by Taskitator.
+7. Keep the provider's normal bot/abuse protections enabled. Do not enable its
+   Native API just to make this browser app work.
+8. The default expiring session policy is suitable. Taskitator also checks with
+   Clerk on EVERY cloud request, so a revoked session cannot keep syncing using
+   an unexpired JWT.
+
+Clerk's screen labels can change. The corresponding official instructions are:
+https://clerk.com/docs/guides/secure/password-protection-and-rules
+https://clerk.com/docs/js-frontend/getting-started/quickstart
+
+C. CREATE THE PRODUCTION INSTANCE AND DNS RECORDS
+------------------------------------------------
+Use a PRODUCTION instance for your actual website, not development/test keys.
+
+1. At the top of the Clerk dashboard, open the Development instance selector.
+2. Select Create production instance and copy your configured login settings.
+3. Set the application domain to taskitator.mazendev.com.
+4. Open Clerk's Domains page. It displays the exact DNS records required.
+5. In another tab, open Cloudflare > your mazendev.com domain > DNS > Records.
+6. For each Clerk record, click Add record, choose its displayed type, then copy
+   the displayed Name and Target/Value exactly. Do not invent example values.
+7. For Clerk CNAME records, set Proxy status to DNS only (grey cloud), then Save.
+8. Do not change/delete the existing taskitator website DNS record.
+9. Return to Clerk and verify the DNS records. Allow propagation time if needed.
+10. Follow the dashboard's remaining production checklist and deploy certificates
+    when it offers that button.
+11. Configure the sign-in/sign-up paths to /login.html and the application/home
+    URL to https://taskitator.mazendev.com/login.html if those fields are shown.
+    The app also sets these paths in code.
+12. Make sure you are viewing the PRODUCTION instance before copying keys.
+
+Official production guide:
+https://clerk.com/docs/guides/development/deployment/production
+
+D. COPY THREE CLERK VALUES
+-------------------------
+Open the production instance's API keys page. You need:
+
+1. Publishable key: starts with pk_live_. This is safe in the website code.
+2. Secret key: starts with sk_live_. This belongs ONLY in Cloudflare Secrets.
+3. JWT PUBLIC KEY: the PEM value starting with:
+   -----BEGIN PUBLIC KEY-----
+   Copy the ENTIRE value, including the BEGIN and END lines. This is the public
+   key used to verify Clerk's session signatures, not the sk_live_ secret.
+
+Also find your Frontend API URL/host on the production API keys or Domains page.
+For CLERK_ISSUER you will use https:// followed by that exact host, with no path.
+Example format only: https://clerk.taskitator.mazendev.com
+Use the host YOUR Clerk dashboard actually gives you.
+
+The verification mechanism is documented here:
+https://clerk.com/docs/guides/sessions/manual-jwt-verification
+
+E. FILL IN THE PUBLIC CONFIG FILE
+--------------------------------
+1. Download and extract Taskitator-security-update.zip.
+2. Open the extracted Taskitator-security folder.
+3. Open auth-config.js with a text editor.
+4. Replace ONLY PASTE_YOUR_CLERK_PUBLISHABLE_KEY_HERE with your pk_live_ key.
+   Leave the single quotes surrounding the value.
+5. Leave workerUrl unchanged if your Worker still uses the address above.
+6. Save the file.
+7. Never put sk_live_ in auth-config.js, any HTML file, or a GitHub commit.
+
+The app deliberately displays a setup message and does not enable the old login
+if the publishable key has not been filled in.
+
+F. ADD THE CLOUDFLARE SETTINGS
+----------------------------
+1. Open https://dash.cloudflare.com.
+2. Open Workers & Pages, then select your EXISTING taskitator-sync Worker.
+3. Open Settings, then Variables and Secrets.
+4. Add the following values using Add variable / Add secret.
+   Save each entry (and deploy the settings if Cloudflare asks you to do so).
+
+Name: CLERK_SECRET_KEY
+Type: Secret
+Value: your complete sk_live_ key
+
+Name: CLERK_JWT_KEY
+Type: Secret (Text is also safe for this PUBLIC key, but Secret is fine)
+Value: the complete multiline -----BEGIN PUBLIC KEY----- PEM from Clerk
+
+Name: CLERK_ISSUER
+Type: Text
+Value: https:// followed by your exact Clerk Frontend API host
+
+Name: ALLOWED_ORIGINS
+Type: Text
+Value: https://taskitator.mazendev.com
+No trailing slash. Do not use an asterisk.
+
+Name: LEGACY_MIGRATION_OWNERS
+Type: Secret
+Value: a JSON object mapping existing Taskitator usernames to approved email
+addresses. For example, if your OLD username was rd and your NEW verified email
+is you@example.com, enter:
+{"rd":"you@example.com"}
+Replace both values with your real ones. Use the old username in lowercase.
+For multiple existing users, include each approved username/email pair:
+{"rd":"you@example.com","anotheruser":"another@example.com"}
+Do not include passwords or tokens in this map. New users do not need an entry.
+This extra ownership check protects existing accounts during migration.
+
+Name: LEGACY_MIGRATION_UNTIL
+Type: Text
+Value: a UTC ISO date/time after your planned migration, for example:
+2026-11-14T23:59:59Z
+If you deploy later, choose a future date. Migration automatically closes then.
+You can close it sooner after all existing users finish (Section K).
+
+5. Under Bindings, confirm these EXISTING bindings are still present:
+   TASKITATOR_KV — your existing KV namespace.
+   TASKITATOR_SYNC — your existing TaskitatorSync Durable Object.
+6. Do not create replacement databases or change the existing Worker name.
+7. Existing accounts already in Durable Objects migrate there. Older accounts
+   can be imported from KV. The update does not delete KV data.
+
+The provided wrangler.toml uses keep_vars = true, so later deployments preserve
+these dashboard values. Clerk secret keys are not included in the ZIP.
+Official Cloudflare configuration reference:
+https://developers.cloudflare.com/workers/wrangler/configuration/
+
+G. UPLOAD THE UPDATED PROJECT TO YOUR EXISTING GITHUB REPOSITORY
+---------------------------------------------------------------
+A computer is easiest for this step.
+
+1. Open your existing Taskitator repository on GitHub.
+2. Select the branch that currently hosts your site, usually main.
+3. Click Add file > Upload files.
+4. Open the extracted Taskitator-security folder on your computer.
+5. Select and drag its CONTENTS into GitHub's upload area. Include cloudflare,
+   tools, tests, image and icon folders, as well as all root files.
+6. Do NOT drag only the enclosing Taskitator-security folder: index.html must
+   remain at the repository root, alongside app.js and auth-config.js.
+7. Do NOT upload the ZIP itself as the update.
+8. Review the upload and commit it with a message such as:
+   Install managed authentication and phone access security update
+9. Confirm the repository root now contains auth-config.js, auth-client.js,
+   auth-bootstrap.js, login-page.js, and the updated index.html/login.html.
+10. Confirm cloudflare contains BOTH worker.js and auth.js.
+11. Check auth-config.js on GitHub: it must contain pk_live_, never sk_live_.
+12. Keep your existing CNAME/domain and GitHub Pages publishing settings.
+
+GitHub's browser uploader may omit hidden files/folders. Install the manual
+Worker workflow explicitly so you do not depend on hidden-folder uploads:
+
+13. In GitHub, click Add file > Create new file.
+14. In the filename box enter EXACTLY:
+    .github/workflows/deploy-worker-security.yml
+    GitHub creates the intermediate directories automatically.
+15. Open the file with that same path in the extracted ZIP and copy ALL of its
+    contents into GitHub's editor. If hidden folders are invisible, enable
+    “Show hidden files” in your file manager or use a code editor.
+16. Commit the new workflow file.
+17. If it already exists from your upload, inspect it instead of creating it twice.
+18. Also include .gitignore if you are using Codespaces; it protects local secrets.
+
+This workflow runs only when you press Run workflow. Do not use an older Worker
+deployment workflow that points to a different root-level worker.js.
+
+H. CONFIGURE GITHUB DEPLOYMENT AND DEPLOY THE WORKER
+--------------------------------------------------
+Skip adding secrets if your repository already has BOTH of these exact names.
+
+1. In the GitHub repository, open Settings.
+2. Open Secrets and variables > Actions.
+3. Add a repository secret named CLOUDFLARE_API_TOKEN.
+   Use a Cloudflare token with permission to deploy Workers in your account.
+4. Add a repository secret named CLOUDFLARE_ACCOUNT_ID.
+   This is your Cloudflare Account ID, not your domain's Zone ID.
+5. Review cloudflare/wrangler.toml. Keep name = "taskitator-sync".
+6. Verify its KV namespace id is the id of your EXISTING namespace. The ZIP
+   preserves the id from your uploaded project; change it only if your live
+   configuration uses a different id. Do not create a new namespace.
+7. Preserve any extra live routes, environments and historical migration entries
+   if your real configuration has more than the uploaded file. Do not invent a
+   new migration for an already-created TaskitatorSync class.
+8. Open the repository's Actions tab.
+9. Select Deploy Taskitator security Worker.
+10. Click Run workflow, select your hosting branch, then Run workflow again.
+11. Open the new run. The security tests run first; deployment runs only if they
+    pass. Wait for a green checkmark.
+12. If the workflow is not listed, ensure the file is under .github/workflows/
+    (plural workflows) and committed to the repository's default branch.
+13. Do not paste worker.js alone into Cloudflare's single-file editor. It imports
+    auth.js and recurrence-core.js, which Wrangler bundles for deployment.
+14. Wait for your existing website publishing job to finish as well.
+
+Optional Codespaces route instead of Actions:
+Open the repository in Codespaces, open Terminal > New Terminal, then run:
+  npm test
+  npx wrangler@4 login
+  npm run deploy:worker
+The browser login opens Cloudflare authorization. Do not change the Worker name.
+You do not need npm install for the regression tests; they use Node built-ins.
+
+I. CONNECT YOUR EXISTING ACCOUNT
+-------------------------------
+1. Keep MacroDroid's blocking macros OFF.
+2. Open https://taskitator.mazendev.com/login.html in your normal browser.
+3. Hard-refresh the page. If an old installed PWA remains cached, open the normal
+   browser URL first and complete migration there. Do not clear all site data
+   before exporting unsynced drafts.
+4. Select Sign up in the secure sign-in interface, or enter your email if the
+   interface combines sign-in and sign-up into one email-first screen.
+5. Register using the EXACT email approved in LEGACY_MIGRATION_OWNERS.
+6. Set a NEW long, unique password. Complete the email verification code/link.
+7. After secure sign-in you will see Connect your tasks.
+8. Enter your OLD Taskitator username and OLD Taskitator password.
+9. Press Connect existing account. Do NOT press Create a new Taskitator account
+   if you want to keep your existing cloud tasks.
+10. Taskitator links the existing data to your new Clerk identity. It does not
+    recreate tasks or reset cloud versions.
+11. If this device has unsynced edits, resolve the normal cloud conflict dialog.
+    Download both copies before choosing one. Your drafts are retained.
+12. Confirm your tasks, projects, breaks, recurring tasks and audit history.
+13. On other devices, use the NEW email/password. Migration is done once per
+    account, not once per device. Other devices' unsynced edits remain protected
+    by the existing conflict checks.
+14. Forgotten OLD passwords cannot be recovered through Clerk. Use your backup
+    and contact the app owner; this update does not add an unsafe old-login bypass.
+
+A new user registers/verifies their email, then chooses Create a new Taskitator
+account. They do not need a migration ownership entry or an old password.
+
+J. INSTALL THE NEW MACRODROID TOKEN
+----------------------------------
+1. Open Taskitator Settings > Account / MacroDroid integration.
+2. If Taskitator blocks token replacement because tasks are due, use a scheduled
+   break or Emergency Bypass, or complete those tasks first. Your blocking macro
+   should still be OFF during this setup.
+3. Press Generate / replace phone token and confirm.
+4. Copy the new token immediately. It starts with tkp_. It is shown only once and
+   is not saved in Taskitator's browser storage or exported backups.
+5. Open the Taskitator status-request action inside MacroDroid.
+6. Keep the HTTP method GET.
+7. Keep the URL:
+   https://taskitator-sync.spacexmzez.workers.dev/?action=status&format=text
+8. Open the HTTP action's request headers.
+9. Set header name to Authorization.
+10. Set its value to Bearer followed by ONE space and your complete new token:
+    Bearer tkp_your_actual_complete_token
+11. Save the HTTP action and the macro. Do this in EVERY macro/device that uses
+    the old token. Never use the new Clerk password or a Clerk JWT here.
+12. Run a manual test while blocking is still disabled.
+13. Confirm HTTP 200 and the expected response, for example:
+    device_unlocked = true
+    It may correctly be false when unfinished tasks are due outside a break.
+14. Re-enable blocking only after the request succeeds and you have confirmed
+    you can still reach your recovery controls.
+
+One active phone token is supported per Taskitator account. You may configure
+that token on your own multiple devices. Replacing it invalidates the previous
+one immediately; update all devices together. Signing out or changing your
+browser password does not revoke it. Use Revoke phone access for a lost phone.
+Treat the phone token as a private secret even though it cannot read task data.
+
+K. CHECK THE UPDATE AND CLOSE MIGRATION
+--------------------------------------
+1. In Taskitator, change a task and sync. Check it from a second signed-in device.
+2. Open Settings > Manage account & password. Verify account management opens.
+3. Sign out, then verify the dashboard routes back to secure login.
+4. Use Forgot password on the secure login interface and verify recovery email
+   delivery before you rely on it.
+5. Export a NEW backup. It must not contain worker_passkey, session_token,
+   phone_token, macro_token, gemini_api_key, or claude_api_key.
+6. Keep your AI key privately. Normal cloud sync still preserves AI settings;
+   ordinary backup exports deliberately exclude AI credentials.
+7. Test the installed PWA, recurrence editor, task detail/editor, notes, calendar,
+   projects, stats and trash. The browser boot now waits for secure sign-in.
+8. When all existing accounts are linked, set LEGACY_MIGRATION_OWNERS to {} and
+   LEGACY_MIGRATION_UNTIL to a past timestamp in Cloudflare. This closes the old
+   password migration path without disabling the new accounts.
+9. Keep your original backups private. Old KV still contains legacy data and
+   credentials; retain it for recovery until you are satisfied. Deleting that
+   namespace is a separate, deliberate operation, not part of this update.
+
+TROUBLESHOOTING
+---------------
+“Secure sign-in needs one-time setup”:
+- Fill auth-config.js with the production pk_live_ key and publish that file.
+
+“Authentication setup is incomplete”:
+- Check CLERK_SECRET_KEY, CLERK_JWT_KEY, and CLERK_ISSUER on the same Worker the
+  website calls. Ensure all three are from the same Clerk production instance.
+
+“Session is invalid or expired” immediately after sign-in:
+- Check the full PEM public key, issuer URL and allowed origin.
+- Do not mix pk_test_ with sk_live_/a production public key.
+- Open your custom website domain, not github.io, for this configuration.
+- If Clerk rotates signing keys, update CLERK_JWT_KEY with its current public key.
+
+“This account is not approved for migration”:
+- Check old username spelling/lowercase and the approved email JSON map.
+- Check the new Clerk account's primary email is verified and matches the map.
+
+“Legacy migration is closed”:
+- Set LEGACY_MIGRATION_UNTIL to a future UTC timestamp while authorized accounts
+  are still migrating, then close it again after completion.
+
+“Existing account could not be verified”:
+- Use the OLD Taskitator password, not the new Clerk password.
+- Confirm you kept the existing KV/DO bindings and account data.
+
+“Too many attempts”:
+- Wait one minute, then retry carefully. Do not disable the limit.
+
+Clerk component fails to load:
+- Check DNS/certificates and production instance deployment.
+- Check browser privacy extensions that block Clerk or Cloudflare challenges.
+- The shipped CSP allows Clerk's required hosts and this app's current domain.
+  If you change domains, update tools/rebuild-csp.mjs, run
+  node tools/rebuild-csp.mjs, then upload the regenerated HTML files.
+
+Taskitator looks old after uploading:
+- Confirm index.html is at the repository ROOT, then check the website publish job.
+- Hard-refresh or close/reopen the installed PWA.
+- The security service-worker version changes, but avoid deleting unsynced drafts.
+
+Worker deployment fails:
+- Open the failed Actions step and read its first error.
+- Verify Cloudflare account/token permissions, existing bindings, KV id and
+  deployment filename. Do not fix migration errors by deleting a database.
+
+TESTING AND PRACTICAL LIMITS
+---------------------------
+The included Node regression tests cover authentication, ownership, session
+revocation, migration, phone permissions, sync conflicts and credential cleanup.
+Real Clerk sign-in, production DNS, email delivery, Cloudflare deployment, and
+physical-phone/PWA behavior must be verified after you add your own settings.
+No live keys or deployed account were available during preparation. Browser
+execution was also unavailable in the preparation environment.
+
+Secure sign-in/cloud sync require network access. Existing offline drafts are
+retained, but opening the app waits for authenticated session verification.
+Local task archives are not encrypted; use separate device/browser accounts on
+shared computers. They no longer grant cloud access through a saved password
+hash. This update does not encrypt task data end to end.
+
+Taskitator does not store the Clerk password or JWT in its settings/localStorage.
+Clerk manages its own session cookies; short-lived JWTs are obtained through
+its SDK for authenticated Worker calls. This is Clerk's supported session flow,
+not a custom promise that every provider cookie is HttpOnly.
+
+The existing single Durable Object coordinator is preserved. Separate objects
+per account can be considered later if public usage makes it a bottleneck.
+That scaling change is intentionally outside this security update.
+
+Clerk account administration is a security boundary. Protect the Clerk and
+Cloudflare administrator accounts with multifactor authentication. Check
+https://clerk.com/pricing for the current plan limits before expanding usage.

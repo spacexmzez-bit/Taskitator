@@ -748,7 +748,7 @@ ${formattedInput}`;
     window.addEventListener('taskitator-synced', refreshSystemNames);
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initUI);
+        window.addEventListener('taskitator-auth-ready', initUI);
     } else {
         initUI();
     }
