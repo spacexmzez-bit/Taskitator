@@ -41,7 +41,7 @@ export class ActionVerification {
         }
         return record;
     }
-    async start(request, identity, method, action = 'delete-account', stageId = null) {
+    async start(request, identity, method, action = 'delete-account', stageId = null, provider = 'gemini') {
         if (!['delete-account','api-key-reveal','api-key-save','api-key-delete'].includes(action)) throw new SecurityError(400,'Invalid verification action.');
         if (action === 'delete-account' && this.env.ACCOUNT_DELETION_ENABLED !== 'true') throw new SecurityError(503,'Account deletion needs one-time setup. Follow PHASE-1-SETUP.txt.');
         if (action !== 'delete-account' && !this.service.vault.ready()) throw new SecurityError(503,'Secure key storage needs setup. Follow PHASE-2-SETUP.html.');
@@ -54,7 +54,7 @@ export class ActionVerification {
         const id = randomSecret(), record = { userId:identity.userId, sessionId:identity.sessionId,
             action, method, status:'pending', created:Date.now(), expires:Date.now()+VERIFICATION_MS,
             baseline:identity.reverificationId || null, origin };
-        if (action !== 'delete-account') record.context = await this.service.vault.context(identity,action,stageId);
+        if (action !== 'delete-account') record.context = await this.service.vault.context(identity,action,stageId,provider);
         let authorizationUrl;
         if (method === 'google') {
             if (!this.env.GOOGLE_OAUTH_CLIENT_ID || !this.env.GOOGLE_OAUTH_CLIENT_SECRET || !this.env.GOOGLE_VERIFICATION_REDIRECT_URI) {

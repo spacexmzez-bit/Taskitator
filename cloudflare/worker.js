@@ -3,7 +3,8 @@ import '../recurrence-core.js';
 import { SecurityError, allowedOrigins, verifySession, verifiedEmail, sha256 as authHash, randomPhoneToken } from './auth.js';
 import { ActionVerification } from './verification.js';
 import { AccountDeletion } from './deletion.js';
-import { KeyVault, GeminiGateway, scrubSettings } from './vault.js';
+import { KeyVault, scrubSettings } from './vault.js';
+import { AIGateway } from './ai-gateway.js';
 const Recurrence = globalThis.TaskitatorRecurrence;
 // Taskitator transactional sync. Required: TASKITATOR_SYNC (Durable Object).
 // Keep TASKITATOR_KV bound for one-time migration of existing accounts.
@@ -243,7 +244,7 @@ export class TaskitatorSync {
         this.verification = new ActionVerification(this);
         this.deletion = new AccountDeletion(this);
         this.vault = new KeyVault(this);
-        this.ai = new GeminiGateway(this);
+        this.ai = new AIGateway(this);
     }
 
     async migrateVault(identity) {
@@ -277,6 +278,7 @@ export class TaskitatorSync {
                 await tx.put('vault-cleanup:'+await this.vault.prefix(identity),{userId:identity.userId,user:link.user,cursor:null});
                 meta.vault_legacy_cleanup_queued=true;await tx.put(accountKey(link.user),meta);
             }
+            await this.vault.recoverClaudeArchives(tx,identity);
         });
         await this.ensureAlarm(15000);
     }
@@ -496,7 +498,7 @@ export class TaskitatorSync {
             const proofStatus = method === 'POST' && path === '/auth/verification/status';
             const deletion = method === 'DELETE' && path === '/auth/account';
             const deletionStatus = method === 'POST' && path === '/auth/deletion/status';
-            const keyRoute = ['/ai/keys','/ai/keys/stage','/ai/keys/reveal','/ai/keys/test','/ai/generate'].includes(path);
+            const keyRoute = ['/ai/keys','/ai/keys/stage','/ai/keys/reveal','/ai/keys/test','/ai/generate','/ai/provider'].includes(path);
             if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
                 !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute) {
                 return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
@@ -527,7 +529,7 @@ export class TaskitatorSync {
                 }
                 if (proofStart) {
                     const body=await readJson(request,8192);
-                    return json(await this.verification.start(request,identity,body.method,body.action,body.stage_id));
+                    return json(await this.verification.start(request,identity,body.method,body.action,body.stage_id,body.provider));
                 }
                 if (proofPassword) {
                     const body=await readJson(request,8192);
@@ -546,16 +548,17 @@ export class TaskitatorSync {
                 user = account.user;
                 if (phoneAdmin) return await this.phoneAccess(request, user);
                 if (keyRoute) {
-                    if (path === '/ai/keys' && method === 'GET') return json(await this.vault.metadata(identity));
-                    if (path === '/ai/keys/test' && method === 'POST') return json(await this.vault.testSaved(identity));
+                    if (path === '/ai/keys' && method === 'GET') return json(await this.vault.metadata(identity,url.searchParams.get('provider')||'gemini'));
                     const body=await readJson(request,path === '/ai/generate' ? MAX_BODY_BYTES : 65536);
+                    if (path === '/ai/keys/test' && method === 'POST') return json(await this.vault.testSaved(identity,body.provider));
+                    if (path === '/ai/provider' && method === 'POST') return json(await this.vault.select(identity,body.provider));
                     if (path === '/ai/keys' && method === 'POST') return json(await this.vault.save(identity,body));
                     if (path === '/ai/keys' && method === 'DELETE') return json(await this.vault.remove(identity,body));
                     if (path === '/ai/keys/stage' && method === 'POST') {
                         await this.rateBucket('key-stage:'+identity.userId,10);
-                        const result=await this.vault.stage(identity,body.keys);
+                        await this.vault.stage(identity,body.keys);
                         if (body.claude_keys?.length) await this.vault.stage(identity,body.claude_keys,'claude');
-                        return json(result);
+                        return json(await this.vault.metadata(identity));
                     }
                     if (path === '/ai/keys/reveal' && method === 'POST') return json(await this.vault.reveal(identity,body));
                     if (path === '/ai/generate' && method === 'POST') return json(await this.ai.generate(identity,body));

@@ -1,6 +1,7 @@
 import {SecurityError, sha256} from './auth.js';
 import {randomSecret} from './verification.js';
-export const AI_MODELS = ['gemini-3.5-flash-lite','gemini-3.1-flash-lite'];
+import {PROVIDERS,providerId} from './ai-models.js';
+export const AI_MODELS = PROVIDERS.gemini.models;
 export const MAX_AI_BYTES = 20 * 1024 * 1024;
 export const secretFields = ['gemini_api_key','claude_api_key','worker_passkey','session_token','phone_token','macro_token','auth_user_id'];
 export function scrubSettings(settings) {
@@ -29,12 +30,12 @@ export class KeyVault {
         }catch{throw new SecurityError(503,'Vault encryption key is unavailable. Check retained key versions; no saved key was replaced.');}
     }
     async prefix(identity){return await sha256(identity.userId);}
-    async recordKey(identity){return 'vault:'+await this.prefix(identity)+':gemini';}
+    async recordKey(identity,provider='gemini'){return 'vault:'+await this.prefix(identity)+':'+providerId(provider);}
     async stagePrefix(identity,provider='gemini'){return 'vault-stage:'+await this.prefix(identity)+':'+provider+':';}
     validateKey(value){
-        if(typeof value!=='string')throw new SecurityError(400,'Enter a valid Gemini API key.');
+        if(typeof value!=='string')throw new SecurityError(400,'Enter a valid API key for the selected provider.');
         const key=value.trim();
-        if(key.length<8 || key.length>2048 || /\s|[\x00-\x1f\x7f]/.test(key))throw new SecurityError(400,'Enter a valid Gemini API key without spaces or line breaks.');
+        if(key.length<8 || key.length>2048 || /\s|[\x00-\x1f\x7f]/.test(key))throw new SecurityError(400,'Enter a valid API key without spaces or line breaks.');
         return key;
     }
     recoveredKey(value){
@@ -51,8 +52,9 @@ export class KeyVault {
             await this.cryptoKey(kid),new TextEncoder().encode(value));
         return {...record,iv:encode(iv),ciphertext:encode(new Uint8Array(ciphertext))};
     }
-    async unseal(identity,record){
+    async unseal(identity,record,provider='gemini'){
         if(!record?.ciphertext || !['active','stage'].includes(record.kind))throw new SecurityError(404,'No saved key is available.');
+        if((record.provider||'gemini')!==providerId(provider))throw new SecurityError(503,'Saved key provider does not match this record. No key was returned or replaced.');
         const key=await this.cryptoKey(record.kid);
         try{return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:decode(record.iv),
             additionalData:this.aad(identity,record),tagLength:128},key,decode(record.ciphertext)));}
@@ -64,17 +66,58 @@ export class KeyVault {
         if(!meta || meta.deleting || meta.owner_id!==identity.userId)throw new SecurityError(403,'API key access denied.');
         return link;
     }
-    async metadata(identity){
-        await this.assertOwner(this.storage,identity);
-        const record=await this.storage.get(await this.recordKey(identity));
-        const staged=await this.storage.list({prefix:await this.stagePrefix(identity),limit:17});
-        return {ready:this.ready(),saved:record?.kind==='active',version:record?.version||'empty',
+    async providerMetadata(identity,provider){
+        const record=await this.storage.get(await this.recordKey(identity,provider));
+        const staged=await this.storage.list({prefix:await this.stagePrefix(identity,provider),limit:17});
+        const archives=provider==='claude'?await this.storage.list({prefix:'vault:'+await this.prefix(identity)+':claude-archive',limit:1}):new Map();
+        return {provider,models:PROVIDERS[provider].models,ready:this.ready(),saved:record?.kind==='active',version:record?.version||'empty',archive_pending:archives.size>0,
             suffix:record?.kind==='active'?record.suffix:null,
-            pending:[...staged].map(([key,item])=>({id:key.split(':').pop(),suffix:item.suffix,updated_at:item.updated_at})),
+            pending:[...staged].map(([key,item])=>({id:key.split(':').pop(),suffix:item.suffix,updated_at:item.updated_at}))};
+    }
+    async selectedProvider(identity){
+        const link=await this.assertOwner(this.storage,identity);
+        const meta=await this.storage.get('account:'+encodeURIComponent(link.user));
+        return providerId(meta.ai_provider||'gemini');
+    }
+    async metadata(identity,provider='gemini'){
+        providerId(provider);await this.assertOwner(this.storage,identity);
+        const providers={};
+        for(const id of Object.keys(PROVIDERS))providers[id]=await this.providerMetadata(identity,id);
+        return {...providers[provider],providers,selected_provider:await this.selectedProvider(identity),
             historical_cleanup_pending:Boolean(await this.storage.get('vault-cleanup:'+await this.prefix(identity)))};
     }
+    async select(identity,provider){
+        providerId(provider);await this.assertOwner(this.storage,identity);
+        const record=await this.storage.get(await this.recordKey(identity,provider));
+        if(record?.kind!=='active')throw new SecurityError(409,'Save and test a key for this provider before using it for AI.');
+        await this.unseal(identity,record,provider);
+        await this.storage.transaction(async tx=>{
+            const link=await this.assertOwner(tx,identity),key='account:'+encodeURIComponent(link.user),meta=await tx.get(key);
+            const current=await tx.get(await this.recordKey(identity,provider));
+            if(current?.kind!=='active' || current.version!==record.version)throw new SecurityError(409,'The saved key changed. Refresh its status and try again.');
+            meta.ai_provider=provider;await tx.put(key,meta);
+        });
+        return this.metadata(identity,provider);
+    }
+    async recoverClaudeArchives(tx,identity){
+        const prefix=await this.stagePrefix(identity,'claude');
+        const staged=await tx.list({prefix,limit:17});
+        const archives=await tx.list({prefix:'vault:'+await this.prefix(identity)+':claude-archive',limit:16});
+        for(const [name,record]of archives){
+            // Leave inaccessible versions intact; do not block unrelated Gemini
+            // use or silently discard an encrypted archive on a keyring error.
+            let value;try{value=await this.unseal(identity,record,'claude');}catch{return;}
+            const key=prefix+await sha256(value);
+            if(!staged.has(key)){
+                if(staged.size>=16)return;
+                const recovered=await this.seal(identity,value,'stage','claude');
+                await tx.put(key,recovered);staged.set(key,recovered);
+            }
+            await tx.delete(name);
+        }
+    }
     async stage(identity,values,provider='gemini'){
-        if(!['gemini','claude'].includes(provider))throw new SecurityError(400,'Invalid recovered key provider.');
+        providerId(provider);
         if(!this.ready())throw new SecurityError(503,'Secure key storage needs setup before old keys can be migrated.');
         await this.assertOwner(this.storage,identity);
         if(!Array.isArray(values) || values.length>16)throw new SecurityError(400,'Too many recovered keys. Keep the original copies and contact support.');
@@ -89,23 +132,25 @@ export class KeyVault {
             if(new Set([...existing.keys(),...prepared.map(([key])=>key)]).size>16)throw new SecurityError(409,'Recovered key storage is full. Review saved keys before migrating more.');
             for(const [key,record]of prepared)if(!await tx.get(key))await tx.put(key,record);
         });
-        return this.metadata(identity);
+        return this.metadata(identity,provider);
     }
-    async context(identity,action,stageId){
+    async context(identity,action,stageId,provider='gemini'){
+        providerId(provider);
         await this.assertOwner(this.storage,identity);
         if(!['api-key-reveal','api-key-save','api-key-delete'].includes(action))throw new SecurityError(400,'Invalid key action.');
         if(stageId && !validId(stageId))throw new SecurityError(400,'Invalid recovered key selection.');
-        if(stageId && !await this.storage.get(await this.stagePrefix(identity)+stageId))throw new SecurityError(404,'Recovered key was not found.');
-        const record=await this.storage.get(await this.recordKey(identity));
-        return {provider:'gemini',version:record?.version||'empty',stage_id:stageId||null};
+        if(stageId && !await this.storage.get(await this.stagePrefix(identity,provider)+stageId))throw new SecurityError(404,'Recovered key was not found.');
+        const record=await this.storage.get(await this.recordKey(identity,provider));
+        return {provider,version:record?.version||'empty',stage_id:stageId||null};
     }
-    async takeProof(tx,identity,id,action,stageId=null){
+    async takeProof(tx,identity,id,action,stageId=null,provider='gemini'){
+        providerId(provider);
         await this.assertOwner(tx,identity);
         if(!validId(id))throw new SecurityError(403,'Verify your identity for this key action.');
         const proofKey='action-proof:'+await sha256(id),proof=await tx.get(proofKey);
-        const current=await tx.get(await this.recordKey(identity));
+        const current=await tx.get(await this.recordKey(identity,provider));
         if(!proof || proof.status!=='verified' || proof.expires<=Date.now() || proof.userId!==identity.userId ||
-            proof.sessionId!==identity.sessionId || proof.action!==action || proof.context?.provider!=='gemini' ||
+            proof.sessionId!==identity.sessionId || proof.action!==action || proof.context?.provider!==provider ||
             proof.context.version!==(current?.version||'empty') || proof.context.stage_id!==stageId){
             throw new SecurityError(403,'Verification expired, was used, or the saved key changed. Verify again.');
         }
@@ -113,58 +158,67 @@ export class KeyVault {
         return current;
     }
     async reveal(identity,body){
-        const stageId=body.stage_id||null,key=stageId?await this.stagePrefix(identity)+stageId:await this.recordKey(identity);
+        const provider=providerId(body.provider);
+        const stageId=body.stage_id||null,key=stageId?await this.stagePrefix(identity,provider)+stageId:await this.recordKey(identity,provider);
         if(stageId && !validId(stageId))throw new SecurityError(400,'Invalid recovered key.');
         const record=await this.storage.transaction(async tx=>{
-            await this.takeProof(tx,identity,body.verification_id,'api-key-reveal',stageId);
+            await this.takeProof(tx,identity,body.verification_id,'api-key-reveal',stageId,provider);
             const saved=await tx.get(key);if(!saved?.ciphertext)throw new SecurityError(404,'No key is saved.');return saved;
         });
-        const value=await this.unseal(identity,record);
+        const value=await this.unseal(identity,record,provider);
         await this.assertOwner(this.storage,identity);
         return {key:value,reveal_seconds:30};
     }
-    async testKey(key){
+    async testKey(key,provider='gemini'){
+        providerId(provider);
         let response;
-        try{response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+AI_MODELS[0],{
-            headers:{'x-goog-api-key':key},signal:AbortSignal.timeout(15000)});}
-        catch{throw new SecurityError(503,'Gemini connection could not be checked. Try again.');}
-        if(!response.ok)throw new SecurityError(response.status===429?429:400,'Gemini did not accept the key/model check. Check the key, API restrictions and account access.');
-        return {success:true,generated_tokens:0,model:AI_MODELS[0],
+        const model=PROVIDERS[provider].models[0],name=PROVIDERS[provider].name;
+        const url=provider==='claude'?'https://api.anthropic.com/v1/models/'+model:'https://generativelanguage.googleapis.com/v1beta/models/'+model;
+        const headers=provider==='claude'?{'x-api-key':key,'anthropic-version':'2023-06-01'}:{'x-goog-api-key':key};
+        try{response=await fetch(url,{headers,signal:AbortSignal.timeout(15000)});}
+        catch{throw new SecurityError(503,name+' connection could not be checked. Try again.');}
+        if(!response.ok){
+            try{await response.body?.cancel();}catch{}
+            throw new SecurityError(response.status===429?429:response.status>=500?503:400,name+' did not accept the key/model check. Check the key, API restrictions and model access.');
+        }
+        try{await response.body?.cancel();}catch{}
+        return {success:true,generated_tokens:0,model,provider,
             message:'Key and model access accepted. No tokens generated; generation quota and billing were not tested.'};
     }
     async save(identity,body){
-        const stageId=body.stage_id||null;
+        const stageId=body.stage_id||null,provider=providerId(body.provider);
         const proof=await this.service.verification.get(body.verification_id,identity,'api-key-save');
-        const context=await this.context(identity,'api-key-save',stageId);
+        const context=await this.context(identity,'api-key-save',stageId,provider);
         if(proof.status!=='verified' || JSON.stringify(proof.context)!==JSON.stringify(context))throw new SecurityError(403,'Verify your identity for this key change.');
         await this.service.rateBucket('key-test:'+identity.userId,6);
         let value;
         if(stageId){
             if(!validId(stageId))throw new SecurityError(400,'Invalid recovered key.');
-            value=this.validateKey(await this.unseal(identity,await this.storage.get(await this.stagePrefix(identity)+stageId)));
+            value=this.validateKey(await this.unseal(identity,await this.storage.get(await this.stagePrefix(identity,provider)+stageId),provider));
         }else value=this.validateKey(body.key);
-        const test=await this.testKey(value),sealed=await this.seal(identity,value);
+        const test=await this.testKey(value,provider),sealed=await this.seal(identity,value,'active',provider);
         await this.storage.transaction(async tx=>{
-            await this.takeProof(tx,identity,body.verification_id,'api-key-save',stageId);
-            await tx.put(await this.recordKey(identity),sealed);
-            if(stageId)await tx.delete(await this.stagePrefix(identity)+stageId);
+            await this.takeProof(tx,identity,body.verification_id,'api-key-save',stageId,provider);
+            await tx.put(await this.recordKey(identity,provider),sealed);
+            if(stageId)await tx.delete(await this.stagePrefix(identity,provider)+stageId);
         });
-        return {...await this.metadata(identity),test};
+        return {...await this.metadata(identity,provider),test};
     }
     async remove(identity,body){
-        const stageId=body.stage_id||null;
+        const stageId=body.stage_id||null,provider=providerId(body.provider);
         if(stageId && !validId(stageId))throw new SecurityError(400,'Invalid recovered key.');
         await this.storage.transaction(async tx=>{
-            await this.takeProof(tx,identity,body.verification_id,'api-key-delete',stageId);
-            if(stageId)await tx.delete(await this.stagePrefix(identity)+stageId);
-            else await tx.put(await this.recordKey(identity),{kind:'deleted',version:randomSecret(),updated_at:Date.now()});
+            await this.takeProof(tx,identity,body.verification_id,'api-key-delete',stageId,provider);
+            if(stageId)await tx.delete(await this.stagePrefix(identity,provider)+stageId);
+            else await tx.put(await this.recordKey(identity,provider),{kind:'deleted',provider,version:randomSecret(),updated_at:Date.now()});
         });
-        return this.metadata(identity);
+        return this.metadata(identity,provider);
     }
-    async testSaved(identity){
+    async testSaved(identity,provider='gemini'){
+        providerId(provider);
         await this.assertOwner(this.storage,identity);
         await this.service.rateBucket('key-test:'+identity.userId,6);
-        return this.testKey(await this.unseal(identity,await this.storage.get(await this.recordKey(identity))));
+        return this.testKey(await this.unseal(identity,await this.storage.get(await this.recordKey(identity,provider)),provider),provider);
     }
     async cleanupLegacy(){
         const jobs=await this.storage.list({prefix:'vault-cleanup:',limit:1});
@@ -186,11 +240,7 @@ export class KeyVault {
                         const gemini=record.settings.gemini_api_key;
                         if(typeof gemini==='string' && gemini.trim())await this.stage(identity,[gemini]);
                         const claude=record.settings.claude_api_key;
-                        if(typeof claude==='string' && claude.trim()){
-                            const archive='vault:'+await this.prefix(identity)+':claude-archive:'+await sha256(claude);
-                            const sealed=await this.seal(identity,this.recoveredKey(claude),'active','claude');
-                            await this.storage.transaction(async tx=>{await this.assertOwner(tx,identity);if(!await tx.get(archive))await tx.put(archive,sealed);});
-                        }
+                        if(typeof claude==='string' && claude.trim())await this.stage(identity,[claude],'claude');
                         await this.assertOwner(this.storage,identity);
                         record.settings=scrubSettings(record.settings);
                         await kv.put(entry.name,JSON.stringify(record));
@@ -203,11 +253,12 @@ export class KeyVault {
     }
 }
 
-function validatePayload(payload){
+export function validatePayload(payload){
     if(!payload || typeof payload!=='object' || Array.isArray(payload) || !Array.isArray(payload.contents) ||
         !payload.contents.length || payload.contents.length>100)throw new SecurityError(400,'Invalid AI conversation.');
-    const allowed=new Set(['contents','systemInstruction','system_instruction','generationConfig','tools','toolConfig','tool_config','safetySettings']);
+    const allowed=new Set(['contents','systemInstruction','system_instruction','generationConfig','tools','toolConfig','tool_config','safetySettings','taskitatorFormat']);
     if(Object.keys(payload).some(key=>!allowed.has(key)))throw new SecurityError(400,'Unsupported AI request options.');
+    if(payload.taskitatorFormat && !['criteria','proof','notes'].includes(payload.taskitatorFormat))throw new SecurityError(400,'Unsupported AI output format.');
     const inspect=part=>{
         if(!part || typeof part!=='object')throw new SecurityError(400,'Invalid AI content.');
         const allowedParts=new Set(['text','inline_data','inlineData','functionCall','function_call','functionResponse','function_response','thoughtSignature','thought_signature','thought']);
@@ -233,37 +284,4 @@ function validatePayload(payload){
     if(generation.candidateCount && generation.candidateCount!==1)throw new SecurityError(400,'Only one AI result is supported per request.');
     generation.maxOutputTokens=maximum;generation.candidateCount=1;
     return {...payload,generationConfig:generation};
-}
-export class GeminiGateway {
-    constructor(service){this.service=service;this.inflight=new Map();}
-    async generate(identity,body){
-        if(!AI_MODELS.includes(body.model))throw new SecurityError(400,'This Gemini model is not enabled for Taskitator.');
-        const payload=validatePayload(body.payload);
-        await this.service.vault.assertOwner(this.service.storage,identity);
-        await this.service.rateBucket('ai-user:'+identity.userId,30);
-        const count=this.inflight.get(identity.userId)||0;
-        if(count>=2)throw new SecurityError(429,'Two AI requests are already running. Wait for one to finish.');
-        this.inflight.set(identity.userId,count+1);
-        try{
-            const record=await this.service.storage.get(await this.service.vault.recordKey(identity));
-            const key=await this.service.vault.unseal(identity,record);
-            let response;
-            try{response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+body.model+':generateContent',{
-                method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},
-                body:JSON.stringify(payload),signal:AbortSignal.timeout(55000)});}
-            catch{throw new SecurityError(504,'Gemini request timed out or could not connect. Retry carefully; provider usage may already have occurred.');}
-            if(!response.ok){
-                try{await response.body?.cancel();}catch{}
-                const code=response.status;
-                throw new SecurityError([400,401,403,404,429,500,502,503,504].includes(code)?code:502,
-                    code===429?'Gemini quota or rate limit reached.':code===401||code===403?'Gemini rejected the saved key. Check its access and API restrictions.':
-                    code>=500?'Gemini is temporarily unavailable.':'Gemini rejected this request. Check the model, content and file format.');
-            }
-            const text=await response.text();
-            if(text.length>4*1024*1024)throw new SecurityError(502,'Gemini response exceeded the supported size.');
-            let data;try{data=JSON.parse(text.split(key).join('[redacted]'));}catch{throw new SecurityError(502,'Gemini returned an unreadable response.');}
-            await this.service.vault.assertOwner(this.service.storage,identity);
-            return data;
-        }finally{const remaining=(this.inflight.get(identity.userId)||1)-1;if(remaining)this.inflight.set(identity.userId,remaining);else this.inflight.delete(identity.userId);}
-    }
 }
