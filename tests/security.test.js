@@ -45,6 +45,7 @@ function fixture() {
         ALLOWED_ORIGINS: origin, LEGACY_MIGRATION_OWNERS: '{"rd":"rd@example.com"}',
         LEGACY_MIGRATION_UNTIL: new Date(Date.now() + 86400000).toISOString(),
         TASKITATOR_KV: {
+            put: async (key,value) => {kv.set(key,JSON.parse(value));},
             get: async key => {if(kv.get(key)==='__invalid_json__')throw new SyntaxError('corrupt');return structuredClone(kv.get(key) || null);},
             delete: async key => {kv.delete(key);},
             list: async ({prefix='',limit=1000,cursor}={}) => {
@@ -53,9 +54,15 @@ function fixture() {
             }
         } };
     const service = new TaskitatorSync({ storage }, env);
-    let revoked = false, verificationStatus='complete', deleteFailure=false, googleToken=null;
+    let revoked = false, verificationStatus='complete', deleteFailure=false, googleToken=null, providerStatus=200;
+    const providerCalls=[];
     const deletedUsers=new Set();
     globalThis.fetch = async (url,options={}) => {
+        if(String(url).startsWith('https://generativelanguage.googleapis.com/')) {
+            providerCalls.push({url:String(url),options});
+            return providerStatus===200?Response.json(String(url).includes(':generateContent')?
+                {candidates:[{content:{parts:[{text:'{"score":9,"passed":true}'}]}}]}:{name:'models/gemini-3.5-flash-lite'}):Response.json({error:{message:'provider diagnostic secret'}},{status:providerStatus});
+        }
         if(String(url).includes('/reverifications/'))return Response.json({status:verificationStatus,
             first_factor_verification:{status:verificationStatus==='complete'?'verified':'unverified',strategy:'password'}});
         if(String(url)==='https://oauth2.googleapis.com/token')return Response.json({id_token:googleToken});
@@ -84,7 +91,7 @@ function fixture() {
     }
     return { storage, kv, env, service, call, deletedUsers, revoke: () => { revoked = true; },
         setVerificationStatus:value=>{verificationStatus=value},setDeleteFailure:value=>{deleteFailure=value},
-        setGoogleToken:value=>{googleToken=value} };
+        setGoogleToken:value=>{googleToken=value},providerCalls,setProviderStatus:value=>{providerStatus=value} };
 }
 async function create(f, user = 'user_A') {
     const token = await jwt(user);
@@ -92,6 +99,137 @@ async function create(f, user = 'user_A') {
     assert.equal(result.status, 200);
     return { token, user: result.body.account.user };
 }
+
+function enableVault(f) {
+    f.env.API_VAULT_KEYS=JSON.stringify({v1:Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64')});
+    f.env.API_VAULT_ACTIVE_KEY_ID='v1';
+}
+let keyChallenge=0;
+async function keyProof(f,a,action,stage_id=null) {
+    const start=await f.call('/auth/verification/start',a.token,'POST',{method:'password',action,stage_id});
+    assert.equal(start.status,200,JSON.stringify(start.body));
+    const token=await jwt('user_A',{taskitator_reverification_id:'rv_key_'+(++keyChallenge),fva:[0,-1]});
+    const verification_id=start.body.verification_id;
+    assert.equal((await f.call('/auth/verification/password',token,'POST',{verification_id,action})).status,200);
+    return {verification_id,stage_id};
+}
+async function saveKey(f,a,key='AIza-test-secret-123456789') {
+    const body=await keyProof(f,a,'api-key-save');
+    const result=await f.call('/ai/keys',a.token,'POST',{...body,key});
+    assert.equal(result.status,200,JSON.stringify(result.body));return result;
+}
+test('vault fails closed without encryption setup and phone tokens cannot access any AI endpoint',async()=>{
+    const f=fixture(),a=await create(f);
+    assert.equal((await f.call('/ai/keys',a.token)).body.ready,false);
+    assert.equal((await f.call('/auth/verification/start',a.token,'POST',{method:'password',action:'api-key-save'})).status,503);
+    const phone=(await f.call('/auth/phone',a.token,'POST')).body.token;
+    for(const path of ['/ai/keys','/ai/generate','/ai/keys/reveal','/ai/keys/stage'])assert.equal((await f.call(path,phone,'POST',{})).status,403);
+});
+test('vault stores AES-GCM ciphertext, keeps sync key-free, and requires a one-use action proof for reveal',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);const key='AIza-test-secret-123456789';
+    const saved=await saveKey(f,a,key);assert.equal(saved.body.suffix,key.slice(-4));assert.equal(saved.body.test.generated_tokens,0);
+    assert.equal(JSON.stringify([...f.storage.map]).includes(key),false);
+    assert.equal(f.providerCalls[0].options.method,undefined);assert.equal(f.providerCalls[0].url.includes(key),false);
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',{})).status,403);
+    const proof=await keyProof(f,a,'api-key-reveal');
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',proof)).body.key,key);
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',proof)).status,403);
+    const snapshot={tasks:[],settings:{gemini_api_key:'overwrite-attempt',claude_api_key:'other',day_start_hour:2},base_version:0,mutation_id:'vault-sync-one'};
+    assert.equal((await f.call('/sync/push',a.token,'POST',snapshot)).status,200);
+    const pulled=await f.call('/sync/pull',a.token);assert.equal(pulled.body.settings.gemini_api_key,undefined);
+    assert.equal(pulled.body.settings.claude_api_key,undefined);
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',await keyProof(f,a,'api-key-reveal'))).body.key,key);
+});
+test('key actions bind to owner, session, action and current saved revision',async()=>{
+    const f=fixture(),a=await create(f),b=await create(f,'user_B');enableVault(f);await saveKey(f,a);
+    const reveal=await keyProof(f,a,'api-key-reveal');
+    assert.equal((await f.call('/ai/keys',a.token,'DELETE',reveal)).status,403);
+    assert.equal((await f.call('/ai/keys/reveal',b.token,'POST',reveal)).status,403);
+    const row='action-proof:'+await sha256(reveal.verification_id),record=await f.storage.get(row);
+    await f.storage.put(row,{...record,sessionId:'sess_other'});
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',reveal)).status,403);
+    await f.storage.put(row,record);await saveKey(f,a,'AIza-different-key-987654321');
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',reveal)).status,403);
+    assert.equal((await f.call('/auth/verification/start',await jwt('user_A',{act:{sub:'admin'}}),'POST',{method:'password',action:'api-key-save'})).status,403);
+});
+test('browser recovery is encrypted and inactive until a verified selection; deletion cannot be undone by sync',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);
+    const recovered='AIza-browser-recovered-key-1234';
+    const staged=await f.call('/ai/keys/stage',a.token,'POST',{keys:[recovered]});
+    assert.equal(staged.body.saved,false);assert.equal(staged.body.pending.length,1);
+    assert.equal(JSON.stringify([...f.storage.map]).includes(recovered),false);
+    const id=staged.body.pending[0].id;
+    assert.equal((await f.call('/ai/keys',a.token,'POST',{stage_id:id})).status,403);
+    const selected=await f.call('/ai/keys',a.token,'POST',await keyProof(f,a,'api-key-save',id));assert.equal(selected.status,200);assert.equal(selected.body.pending.length,0);
+    assert.equal((await f.call('/ai/keys',a.token,'DELETE',await keyProof(f,a,'api-key-delete'))).body.saved,false);
+    await f.call('/sync/push',a.token,'POST',{tasks:[],settings:{gemini_api_key:recovered},base_version:0,mutation_id:'do-not-restore'});
+    assert.equal((await f.call('/ai/keys',a.token)).body.saved,false);
+});
+test('pending password verification cannot save or cause provider key checks; invalid keys keep the old key',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
+    const started=(await f.call('/auth/verification/start',a.token,'POST',{method:'password',action:'api-key-save'})).body;
+    const count=f.providerCalls.length;
+    assert.equal((await f.call('/ai/keys',a.token,'POST',{verification_id:started.verification_id,key:'another-key-1234'})).status,403);
+    assert.equal(f.providerCalls.length,count);
+    f.setProviderStatus(403);
+    assert.equal((await f.call('/ai/keys',a.token,'POST',{...await keyProof(f,a,'api-key-save'),key:'wrong-key-1234'})).status,400);
+    f.setProviderStatus(200);
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',await keyProof(f,a,'api-key-reveal'))).body.key,'AIza-test-secret-123456789');
+});
+test('gateway sends keys only in provider headers, preserves payloads, rejects unsafe models/files and isolates users',async()=>{
+    const f=fixture(),a=await create(f),b=await create(f,'user_B');enableVault(f);await saveKey(f,a);
+    const payload={contents:[{role:'user',parts:[{text:'Review task'}]}],tools:[{functionDeclarations:[{name:'get_tasks',parameters:{type:'OBJECT'}}]}],generationConfig:{temperature:0.2}};
+    const result=await f.call('/ai/generate',a.token,'POST',{model:'gemini-3.5-flash-lite',payload});assert.equal(result.status,200);assert.ok(result.body.candidates);
+    const call=f.providerCalls.at(-1);assert.equal(call.options.headers['x-goog-api-key'],'AIza-test-secret-123456789');assert.equal(call.url.includes('key='),false);
+    const forwarded=JSON.parse(call.options.body);assert.deepEqual(forwarded.contents,payload.contents);assert.deepEqual(forwarded.tools,payload.tools);assert.equal(forwarded.generationConfig.candidateCount,1);
+    assert.equal((await f.call('/ai/generate',b.token,'POST',{model:'gemini-3.5-flash-lite',payload})).status,404);
+    assert.equal((await f.call('/ai/generate',a.token,'POST',{model:'unrestricted-costly-model',payload})).status,400);
+    assert.equal((await f.call('/ai/generate',a.token,'POST',{model:'gemini-3.5-flash-lite',payload:{contents:[{parts:[{fileData:{fileUri:'https://private.test'}}]}]}})).status,400);
+    assert.equal((await f.call('/ai/generate',a.token,'POST',{model:'gemini-3.5-flash-lite',payload:{...payload,generationConfig:{maxOutputTokens:999999}}})).status,400);
+    f.setProviderStatus(429);const limited=await f.call('/ai/generate',a.token,'POST',{model:'gemini-3.1-flash-lite',payload});assert.equal(limited.status,429);assert.equal(JSON.stringify(limited.body).includes('diagnostic'),false);
+});
+test('ciphertext tampering, cross-user ciphertext swapping and lost key versions fail closed; retained versions work',async()=>{
+    const f=fixture(),a=await create(f),b=await create(f,'user_B');enableVault(f);await saveKey(f,a);
+    const aid={userId:'user_A'},bid={userId:'user_B'},name=await f.service.vault.recordKey(aid),original=await f.storage.get(name);
+    const swapped=await f.service.vault.recordKey(bid);await f.storage.put(swapped,original);
+    await assert.rejects(()=>f.service.vault.unseal(bid,original));
+    await assert.rejects(()=>f.service.vault.unseal(aid,{...original,version:'f'.repeat(64)}));
+    const old=JSON.parse(f.env.API_VAULT_KEYS);f.env.API_VAULT_KEYS=JSON.stringify({...old,v2:Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64')});f.env.API_VAULT_ACTIVE_KEY_ID='v2';
+    assert.equal(await f.service.vault.unseal(aid,original),'AIza-test-secret-123456789');
+    delete old.v1;f.env.API_VAULT_KEYS=JSON.stringify({v2:JSON.parse(f.env.API_VAULT_KEYS).v2});
+    await assert.rejects(()=>f.service.vault.unseal(aid,original));assert.deepEqual(await f.storage.get(name),original);
+});
+test('legacy cloud keys migrate without changing tasks or sync revision and historical copies are scrubbed after encryption',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);
+    const metaKey='account:'+encodeURIComponent(a.user),meta=await f.storage.get(metaKey);
+    const raw={tasks:[{id:'keep-me',status:'active'}],settings:{gemini_api_key:'AIza-legacy-cloud-12345',day_start_hour:2},updated_at:'2026-01-01T00:00:00Z'};
+    meta.has_snapshot=true;meta.chunks=1;meta.version=7;meta.legacy_disabled=true;
+    await f.storage.put('snapshot:'+encodeURIComponent(a.user)+':0',JSON.stringify(raw));await f.storage.put(metaKey,meta);
+    const pulled=await f.call('/sync/pull',a.token);assert.equal(pulled.body.version,7);assert.deepEqual(pulled.body.tasks,raw.tasks);assert.equal(pulled.body.settings.gemini_api_key,undefined);
+    assert.equal((await f.call('/ai/keys',a.token)).body.saved,true);assert.equal(JSON.stringify([...f.storage.map]).includes('AIza-legacy-cloud-12345'),false);
+    f.kv.set('user_data:history',{username:a.user,...raw});f.kv.set('user_data:other',{username:'other',...raw});
+    await f.service.vault.cleanupLegacy();assert.equal(f.kv.get('user_data:history').settings.gemini_api_key,undefined);assert.equal(f.kv.get('user_data:other').settings.gemini_api_key,'AIza-legacy-cloud-12345');
+});
+test('an old invalid placeholder is recovered without blocking account access or becoming active',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);
+    const key='account:'+encodeURIComponent(a.user),meta=await f.storage.get(key);
+    meta.has_snapshot=true;meta.chunks=1;await f.storage.put(key,meta);
+    await f.storage.put('snapshot:'+encodeURIComponent(a.user)+':0',JSON.stringify({tasks:[{id:'preserved'}],settings:{gemini_api_key:'test'}}));
+    assert.equal((await f.call('/auth/me',a.token)).status,200);
+    const state=await f.call('/ai/keys',a.token);assert.equal(state.body.saved,false);assert.equal(state.body.pending.length,1);
+    const id=state.body.pending[0].id;
+    assert.equal((await f.call('/ai/keys',a.token,'POST',await keyProof(f,a,'api-key-save',id))).status,400);
+    assert.equal((await f.call('/sync/pull',a.token)).body.tasks[0].id,'preserved');
+    assert.equal((await f.call('/ai/keys/stage',a.token,'POST',{keys:['old invalid key']})).status,200);
+});
+test('account deletion removes all encrypted keys, recovered copies and cleanup jobs',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
+    await f.call('/ai/keys/stage',a.token,'POST',{keys:['AIza-staged-key-12345'],claude_keys:['sk-ant-preserved-12345']});
+    const deletion=await verifiedDeletion(f,a.token);assert.equal((await f.call('/auth/account',deletion.token,'DELETE',deletion)).status,200);
+    assert.equal((await f.call('/ai/generate',a.token,'POST',{})).status,410);
+    for(let i=0;i<10;i++)await f.service.alarm();
+    assert.equal([...f.storage.map.keys()].some(key=>key.startsWith('vault:')||key.startsWith('vault-stage:')||key.startsWith('vault-cleanup:')),false);
+});
 
 test('unknown legacy credentials cannot create accounts; auth is required', async () => {
     const f = fixture();
@@ -337,14 +475,23 @@ async function googleIdToken(nonce,overrides={}) {
         aud:'google-client',sub:'google_A',nonce,iat:now,exp:now+60,...overrides});
     return data+'.'+Buffer.from(await crypto.subtle.sign('RSASSA-PKCS1-v1_5',keys.privateKey,new TextEncoder().encode(data))).toString('base64url');
 }
-async function startGoogle(f,token) {
+async function startGoogle(f,token,action='delete-account') {
     f.env.ACCOUNT_DELETION_ENABLED='true';f.env.GOOGLE_OAUTH_CLIENT_ID='google-client';
     f.env.GOOGLE_OAUTH_CLIENT_SECRET='google-secret';f.env.GOOGLE_VERIFICATION_REDIRECT_URI='https://worker.test/auth/verification/google/callback';
-    const started=await f.call('/auth/verification/start',token,'POST',{method:'google'});
+    const started=await f.call('/auth/verification/start',token,'POST',{method:'google',action});
     assert.equal(started.status,200);
     const id=started.body.verification_id,record=await f.storage.get('action-proof:'+await sha256(id));
     return {id,record,url:started.body.authorization_url};
 }
+test('Google confirmation authorizes the selected key action once, without granting deletion',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
+    const google=await startGoogle(f,a.token,'api-key-reveal');f.setGoogleToken(await googleIdToken(google.record.nonce));
+    const callback=await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code=test-code'));
+    assert.equal(callback.headers.get('Location'),origin+'/settings.html#key-verification='+google.id);
+    assert.equal((await f.call('/auth/account',a.token,'DELETE',{verification_id:google.id,receipt:'e'.repeat(64),blocker_disabled:true,phrase:'Macrodroid disabled'})).status,403);
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',{verification_id:google.id})).body.key,'AIza-test-secret-123456789');
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',{verification_id:google.id})).status,403);
+});
 test('Google confirmation validates signed identity and grants only the original session; callback is one-use',async()=>{
     const f=fixture(),a=await create(f),google=await startGoogle(f,a.token);
     const url=new URL(google.url);assert.equal(url.searchParams.get('scope'),'openid');

@@ -16,12 +16,92 @@ function client() {
         addEventListener() {}, dispatchEvent() {}, Clerk: { user:{id:'user_A'}, session:{id:'sess_A',getToken:async()=> 'memory-only'} } };
     const context = vm.createContext({window, localStorage:storage, sessionStorage:new LocalStorage(),
         location:window.location, crypto:webcrypto, TextEncoder, AbortSignal, AbortController, Headers, Response,
-        setTimeout,clearTimeout,console,document:{addEventListener(){},visibilityState:'visible'},
+        setTimeout,clearTimeout,console,document:{addEventListener(){},getElementById(){return null;},visibilityState:'visible'},
         CustomEvent: class { constructor(name){this.type=name;} },
         fetch:async()=> Response.json({}) });
     vm.runInContext(fs.readFileSync(new URL('auth-client.js',root),'utf8'),context);
     return { storage, window, context, auth:window.TaskitatorAuth };
 }
+function loadVault(f){vm.runInContext(fs.readFileSync(new URL('vault-client.js',root),'utf8'),f.context);return f.window.TaskitatorVault;}
+test('vault migrates only the current owner and removes plaintext only after encrypted staging succeeds',async()=>{
+    const f=client();f.auth.account={user:'rd'};
+    f.storage.setItem('taskitator_local_owner','rd');
+    f.storage.setItem('taskitator_settings',JSON.stringify({worker_username:'rd',gemini_api_key:'AIza-owned-current',day_start_hour:2}));
+    f.storage.setItem('taskitator_account_cache_v2:rd',JSON.stringify({taskitator_tasks:'["draft"]',taskitator_settings:'{"gemini_api_key":"AIza-owned-archive"}'}));
+    f.storage.setItem('taskitator_account_cache_v2:other',JSON.stringify({taskitator_settings:'{"gemini_api_key":"AIza-other-private"}'}));
+    let submitted;
+    f.auth.api=async(path,options)=>{
+        if(path==='/ai/keys')return {ready:true,saved:false,pending:[]};
+        assert.ok(JSON.stringify(f.storage).includes('AIza-owned-current'));submitted=JSON.parse(options.body);
+        return {ready:true,saved:false,pending:[{id:'a'.repeat(64),suffix:'rent'}]};
+    };
+    const vault=loadVault(f);await vault.initialize();
+    assert.deepEqual(submitted.keys.sort(),['AIza-owned-archive','AIza-owned-current']);
+    assert.equal(JSON.stringify(f.storage).includes('AIza-owned'),false);assert.equal(JSON.stringify(f.storage).includes('AIza-other-private'),true);
+    assert.equal(JSON.parse(f.storage.getItem('taskitator_settings')).day_start_hour,2);
+    assert.equal(JSON.parse(f.storage.getItem('taskitator_account_cache_v2:rd')).taskitator_tasks,'["draft"]');assert.equal(vault.available,false);
+});
+test('failed staging retains all original browser copies and does not write a secret into sessionStorage',async()=>{
+    const f=client();f.auth.account={user:'rd'};f.storage.setItem('taskitator_local_owner','rd');
+    f.storage.setItem('taskitator_settings','{"gemini_api_key":"AIza-retain-after-error"}');
+    f.auth.api=async path=>{if(path==='/ai/keys')return {ready:true,saved:false,pending:[]};throw new Error('Storage unavailable');};
+    const before=JSON.stringify(f.storage);await assert.rejects(()=>loadVault(f).initialize(),/Storage unavailable/);
+    assert.equal(JSON.stringify(f.storage),before);assert.equal(JSON.stringify(f.context.sessionStorage).includes('AIza'),false);
+});
+test('vault gateway preserves provider errors and never adds keys to browser requests',async()=>{
+    const f=client();let request;
+    f.auth.api=async(path,options)=>{request={path,...options};const error=new Error('Quota exceeded');error.status=429;throw error;};
+    const response=await loadVault(f).generate('gemini-3.1-flash-lite',{contents:[{parts:[{text:'Test'}]}]});
+    assert.equal(response.status,429);assert.equal((await response.json()).error.message,'Quota exceeded');
+    assert.equal(request.path,'/ai/generate');assert.equal(request.timeoutMs,70000);assert.equal(JSON.stringify(request).includes('api_key'),false);
+});
+test('evidence criteria and Copilot use the vault and retain Gemini fallback behavior without browser keys',async()=>{
+    const f=client();const calls=[];let first=true;
+    f.window.TaskitatorVault={available:true,generate:async(model,payload)=>{
+        calls.push({model,payload});
+        if(first){first=false;return Response.json({error:{message:'Quota'}},{status:429});}
+        return Response.json({candidates:[{content:{parts:[{text:'{"score":9,"passed":true}'}]}}]});
+    }};
+    vm.runInContext(fs.readFileSync(new URL('audit-engine.js',root),'utf8'),f.context);
+    const result=await f.window.TaskitatorEngine.AuditEngine.validateCriteria('Photo of completed checklist','Checklist');
+    assert.equal(result.success,true);assert.equal(result.model_used,'gemini-3.1-flash-lite');
+    assert.deepEqual(calls.map(call=>call.model),['gemini-3.5-flash-lite','gemini-3.1-flash-lite']);
+    assert.ok(calls[0].payload.contents[0].parts[0].text.includes('Checklist'));
+    calls.length=0;f.context.document.readyState='loading';
+    vm.runInContext(fs.readFileSync(new URL('agent-engine.js',root),'utf8'),f.context);
+    const reply=await f.window.TaskitatorAgent.sendMessage('Hello');assert.equal(typeof reply.text,'string');assert.equal(calls.length,1);assert.ok(calls[0].payload.tools);
+});
+
+test('Google key callback opens Account controls and permits one verified reveal with clipboard fallback',async()=>{
+    const f=client(),events=new Map(),nodes=new Map();let accountTabOpened=false;
+    const node=id=>{
+        if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,textContent:'',handlers:{},
+            addEventListener(name,fn){this.handlers[name]=fn;},replaceChildren(){},append(){},
+            showModal(){this.open=true;},close(){this.open=false;this.handlers.close?.();}});
+        return nodes.get(id);
+    };
+    f.context.document.getElementById=node;
+    f.context.document.querySelector=selector=>({click(){assert.equal(selector,'.tab-btn[data-tab="tab-account"]');accountTabOpened=true;}});
+    f.window.addEventListener=(name,fn)=>events.set(name,fn);
+    f.auth.account={user:'rd'};const proof='a'.repeat(64);
+    f.context.sessionStorage.setItem('taskitator_key_verification',JSON.stringify({kind:'copy',stageId:null,proofId:proof,user:'rd',session:'sess_A'}));
+    f.context.location.hash='#key-verification='+proof;f.context.history={replaceState(){}};
+    f.context.navigator={clipboard:{writeText:async()=>{throw new Error('permission denied');}}};
+    f.auth.api=async(path,options)=>{
+        const body=JSON.parse(options.body);assert.equal(body.verification_id,proof);
+        if(path==='/auth/verification/status'){assert.equal(body.action,'api-key-reveal');return {verified:true};}
+        assert.equal(path,'/ai/keys/reveal');return {key:'AIza-visible-after-Google',reveal_seconds:30};
+    };
+    const vault=loadVault(f);await events.get('taskitator-auth-ready')();
+    assert.equal(accountTabOpened,true);assert.equal(node('vaultDialog').open,true);
+    assert.equal(node('vaultConfirmBtn').disabled,false);
+    await node('vaultConfirmBtn').handlers.click();
+    assert.equal(node('vaultRevealedKey').value,'AIza-visible-after-Google');assert.equal(node('vaultRevealArea').hidden,false);
+    assert.match(node('vaultFeedback').textContent,/Copy displayed key/);
+    assert.equal(f.context.sessionStorage.getItem('taskitator_key_verification'),null);
+    vault.clear();assert.equal(node('vaultRevealedKey').value,'');assert.equal(node('vaultRevealArea').hidden,true);
+});
+
 test('legacy cleanup removes credentials from settings, archive keys, values, and rotation records while keeping drafts',()=>{
     const {storage,auth}=client(), secret='a'.repeat(64);
     const settings={worker_username:'rd',worker_passkey:secret,gemini_api_key:'keep-ai-key',day_start_hour:2};
@@ -37,12 +117,12 @@ test('legacy cleanup removes credentials from settings, archive keys, values, an
     assert.equal(JSON.parse(archive.taskitator_tasks)[0].title,'Keep draft');
     assert.equal(JSON.parse(storage.getItem('taskitator_settings')).gemini_api_key,'keep-ai-key');
 });
-test('backup sanitation excludes authentication and AI secrets, while normal sync preserves AI settings',()=>{
+test('backup sanitation excludes authentication and AI secrets, and normal sync also omits AI keys',()=>{
     const {auth}=client();const raw={worker_passkey:'old',phone_token:'phone',session_token:'session',worker_username:'rd',gemini_api_key:'ai',sound_effects_enabled:false};
     const backup=auth.cleanSettings(raw,true);
     for(const key of ['worker_passkey','phone_token','session_token','worker_username','gemini_api_key'])assert.equal(backup[key],undefined);
     assert.equal(backup.sound_effects_enabled,false);
-    assert.equal(auth.cleanSettings(raw).gemini_api_key,'ai');
+    assert.equal(auth.cleanSettings(raw).gemini_api_key,undefined);
     assert.equal(raw.worker_passkey,'old');
 });
 test('sync archive keys do not contain bearer credentials and logout awaits revocation',async()=>{
@@ -71,7 +151,7 @@ test('HTML inline scripts have matching CSP hashes and no inline event handlers 
             const hash="'sha256-"+createHash('sha256').update(match[2]).digest('base64')+"'";
             assert.ok(csp.includes(hash),filename+' CSP does not match inline code');
         }
-        if (['account-deletion.html','welcome.html','privacy.html','terms.html','PHASE-1-SETUP.html'].includes(filename)) {
+        if (['account-deletion.html','welcome.html','privacy.html','terms.html','PHASE-1-SETUP.html','PHASE-2-SETUP.html'].includes(filename)) {
             assert.equal(/<script\b[^>]*\bsrc=["']auth-bootstrap\.js["']/.test(html),false);
         } else assert.ok(html.includes('auth-bootstrap.js'));
     }
@@ -85,7 +165,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase-1-deletion-v1'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase-2-vault-v1'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
