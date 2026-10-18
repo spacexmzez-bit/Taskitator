@@ -55,9 +55,16 @@ function fixture() {
         } };
     const service = new TaskitatorSync({ storage }, env);
     let revoked = false, verificationStatus='complete', deleteFailure=false, googleToken=null, providerStatus=200;
+    let claudeResponse={model:'claude-haiku-5-5',stop_reason:'end_turn',content:[{type:'text',text:'Hello from Claude'}],usage:{input_tokens:12,output_tokens:4}};
     const providerCalls=[];
     const deletedUsers=new Set();
     globalThis.fetch = async (url,options={}) => {
+        if(String(url).startsWith('https://api.anthropic.com/v1/')){
+            providerCalls.push({url:String(url),options});
+            if(providerStatus!==200)return Response.json({error:{message:'provider diagnostic secret'}},{status:providerStatus});
+            if(String(url).includes('/models/'))return Response.json({id:'claude-haiku-5-5',type:'model'});
+            return Response.json(typeof claudeResponse==='function'?await claudeResponse(options):claudeResponse);
+        }
         if(String(url).startsWith('https://generativelanguage.googleapis.com/')) {
             providerCalls.push({url:String(url),options});
             return providerStatus===200?Response.json(String(url).includes(':generateContent')?
@@ -91,7 +98,7 @@ function fixture() {
     }
     return { storage, kv, env, service, call, deletedUsers, revoke: () => { revoked = true; },
         setVerificationStatus:value=>{verificationStatus=value},setDeleteFailure:value=>{deleteFailure=value},
-        setGoogleToken:value=>{googleToken=value},providerCalls,setProviderStatus:value=>{providerStatus=value} };
+        setGoogleToken:value=>{googleToken=value},providerCalls,setProviderStatus:value=>{providerStatus=value},setClaudeResponse:value=>{claudeResponse=value} };
 }
 async function create(f, user = 'user_A') {
     const token = await jwt(user);
@@ -105,19 +112,127 @@ function enableVault(f) {
     f.env.API_VAULT_ACTIVE_KEY_ID='v1';
 }
 let keyChallenge=0;
-async function keyProof(f,a,action,stage_id=null) {
-    const start=await f.call('/auth/verification/start',a.token,'POST',{method:'password',action,stage_id});
+async function keyProof(f,a,action,stage_id=null,provider='gemini') {
+    const start=await f.call('/auth/verification/start',a.token,'POST',{method:'password',action,stage_id,provider});
     assert.equal(start.status,200,JSON.stringify(start.body));
     const token=await jwt('user_A',{taskitator_reverification_id:'rv_key_'+(++keyChallenge),fva:[0,-1]});
     const verification_id=start.body.verification_id;
     assert.equal((await f.call('/auth/verification/password',token,'POST',{verification_id,action})).status,200);
-    return {verification_id,stage_id};
+    return {verification_id,stage_id,provider};
 }
-async function saveKey(f,a,key='AIza-test-secret-123456789') {
-    const body=await keyProof(f,a,'api-key-save');
+async function saveKey(f,a,key='AIza-test-secret-123456789',provider='gemini') {
+    const body=await keyProof(f,a,'api-key-save',null,provider);
     const result=await f.call('/ai/keys',a.token,'POST',{...body,key});
     assert.equal(result.status,200,JSON.stringify(result.body));return result;
 }
+test('Claude and Gemini retain separate encrypted keys and provider selection persists without exposing either key',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);
+    assert.equal((await f.call('/ai/provider',a.token,'POST',{provider:'claude'})).status,409);
+    await saveKey(f,a);await saveKey(f,a,'sk-ant-claude-secret-123456','claude');
+    const state=(await f.call('/ai/keys?provider=claude',a.token)).body;
+    assert.equal(state.provider,'claude');assert.equal(state.providers.gemini.saved,true);assert.equal(state.providers.claude.saved,true);
+    assert.equal(state.selected_provider,'gemini');assert.equal(JSON.stringify([...f.storage.map]).includes('sk-ant-claude-secret'),false);
+    assert.equal((await f.call('/ai/provider',a.token,'POST',{provider:'claude'})).body.selected_provider,'claude');
+    assert.equal((await f.call('/ai/keys',a.token)).body.selected_provider,'claude');
+    assert.equal((await f.call('/ai/provider',a.token,'POST',{provider:'gemini'})).body.providers.claude.saved,true);
+    assert.equal((await f.call('/ai/keys?provider=other',a.token)).status,400);
+});
+test('Claude save and connection checks use only zero-generation model metadata with header authentication',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a,'sk-ant-test-no-generation','claude');
+    const test=await f.call('/ai/keys/test',a.token,'POST',{provider:'claude'});assert.equal(test.status,200);assert.equal(test.body.generated_tokens,0);
+    assert.equal(f.providerCalls.length,2);
+    for(const call of f.providerCalls){assert.equal(call.url,'https://api.anthropic.com/v1/models/claude-haiku-5-5');assert.equal(call.options.method,undefined);assert.equal(call.options.body,undefined);assert.equal(call.options.headers['x-api-key'],'sk-ant-test-no-generation');}
+});
+test('provider-bound proofs cannot reveal, replace or remove the other provider key',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);await saveKey(f,a,'sk-ant-private-123456','claude');
+    const reveal=await keyProof(f,a,'api-key-reveal',null,'claude');
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',{...reveal,provider:'gemini'})).status,403);
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',reveal)).body.key,'sk-ant-private-123456');
+    const remove=await keyProof(f,a,'api-key-delete',null,'claude');
+    assert.equal((await f.call('/ai/keys',a.token,'DELETE',{...remove,provider:'gemini'})).status,403);
+    assert.equal((await f.call('/ai/keys',a.token,'DELETE',remove)).body.providers.gemini.saved,true);
+    assert.equal((await f.call('/ai/keys',a.token)).body.providers.claude.saved,false);
+});
+test('provider ciphertext substitution fails authentication even for the same owner',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
+    const identity={userId:'user_A'},record=await f.storage.get(await f.service.vault.recordKey(identity));
+    await assert.rejects(()=>f.service.vault.unseal(identity,record,'claude'));
+    await assert.rejects(()=>f.service.vault.unseal(identity,{...record,provider:'claude'},'claude'));
+});
+test('Claude chat uses only its saved key, allowed model and Messages API, and never silently falls back',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);await saveKey(f,a,'sk-ant-cl-key-1234','claude');
+    await f.call('/ai/provider',a.token,'POST',{provider:'claude'});
+    const payload={contents:[{role:'user',parts:[{text:'Hello'}]}],generationConfig:{temperature:0.2}};
+    const request={provider:'claude',model:'claude-haiku-5-5',payload};
+    const result=await f.call('/ai/generate',a.token,'POST',request);assert.equal(result.status,200);assert.equal(result.body.candidates[0].content.parts[0].text,'Hello from Claude');
+    const call=f.providerCalls.at(-1),body=JSON.parse(call.options.body);assert.equal(call.url,'https://api.anthropic.com/v1/messages');assert.equal(call.options.headers['x-api-key'],'sk-ant-cl-key-1234');
+    assert.equal(body.temperature,undefined);assert.deepEqual(body.thinking,{type:'disabled'});assert.equal(body.output_config.effort,'low');assert.equal(body.model,'claude-haiku-5-5');assert.equal(body.messages[0].content[0].text,'Hello');
+    assert.equal((await f.call('/ai/generate',a.token,'POST',{...request,model:'claude-sonnet-5-5'})).status,400);
+    assert.equal((await f.call('/ai/generate',a.token,'POST',{model:'gemini-3.5-flash-lite',payload})).status,409);
+    f.setProviderStatus(529);const count=f.providerCalls.length;
+    assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,503);assert.equal(f.providerCalls.length,count+1);
+});
+test('Gemini incomplete output is rejected before any tool action or audit approval is returned',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
+    const previousFetch=globalThis.fetch;
+    globalThis.fetch=async(url,options)=>String(url).includes(':generateContent')?Response.json({candidates:[{finishReason:'MAX_TOKENS',content:{parts:[{functionCall:{name:'trash_task',args:{id:'x'}}}]}}]}):previousFetch(url,options);
+    const result=await f.call('/ai/generate',a.token,'POST',{model:'gemini-3.5-flash-lite',payload:{contents:[{parts:[{text:'Test'}]}]}});
+    assert.equal(result.status,502);assert.equal(result.body.candidates,undefined);
+});
+test('Claude preserves audit image/PDF parts and uses strict output schemas; invalid results never approve',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a,'sk-ant-for-audit-1234','claude');await f.call('/ai/provider',a.token,'POST',{provider:'claude'});
+    const payload={taskitatorFormat:'proof',contents:[{parts:[{text:'Review evidence'},{inline_data:{mime_type:'image/png',data:'aGVsbG8='}},{inline_data:{mime_type:'application/pdf',data:'cGRm'}}]}],generationConfig:{responseMimeType:'application/json'}};
+    const request={provider:'claude',model:'claude-haiku-5-5',payload};
+    f.setClaudeResponse({stop_reason:'end_turn',content:[{type:'text',text:'{"verdict":"approved","confidence":0.9,"critique":"Evidence matches"}'}]});
+    assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,200);
+    const body=JSON.parse(f.providerCalls.at(-1).options.body);assert.equal(body.messages[0].content[1].type,'image');assert.equal(body.messages[0].content[2].type,'document');assert.equal(body.output_config.format.schema.additionalProperties,false);
+    for(const raw of [null,{verdict:'approved'}, {verdict:'approved',confidence:2,critique:'bad'}]){
+        f.setClaudeResponse({stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify(raw)}]});assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,502);
+    }
+    f.setClaudeResponse({stop_reason:'refusal',content:[{type:'text',text:'No'}]});assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,422);
+    f.setClaudeResponse({stop_reason:'max_tokens',content:[{type:'text',text:'partial'}]});assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,502);
+    payload.contents[0].parts=[{inlineData:{mimeType:'image/heic',data:'aGVsbG8='}}];const count=f.providerCalls.length;
+    assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,415);assert.equal(f.providerCalls.length,count);
+});
+test('Claude tool identifiers round-trip across real adapter calls and locked tasks remain client-owned',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a,'sk-ant-for-tools-1234','claude');await f.call('/ai/provider',a.token,'POST',{provider:'claude'});
+    const payload={contents:[{role:'user',parts:[{text:'List tasks'}]}],tools:[{functionDeclarations:[{name:'get_tasks',parameters:{type:'OBJECT',properties:{}}}]}]};
+    const request={provider:'claude',model:'claude-haiku-5-5',payload};
+    f.setClaudeResponse({stop_reason:'tool_use',content:[{type:'tool_use',id:'toolu_real_123',name:'get_tasks',input:{}}]});
+    const answer=await f.call('/ai/generate',a.token,'POST',request);assert.equal(answer.status,200);
+    const part=answer.body.candidates[0].content.parts[0];assert.equal(part.functionCall.id,'toolu_real_123');
+    payload.contents.push({role:'model',parts:[part]},{role:'user',parts:[{functionResponse:{id:'toolu_real_123',name:'get_tasks',response:{tasks:[]}}}]});
+    f.setClaudeResponse({stop_reason:'end_turn',content:[{type:'text',text:'No tasks'}]});assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,200);
+    const forwarded=JSON.parse(f.providerCalls.at(-1).options.body);assert.equal(forwarded.tools[0].input_schema.type,'object');assert.equal(forwarded.messages[2].content[0].tool_use_id,'toolu_real_123');
+    payload.contents[2].parts[0].functionResponse.id='toolu_wrong';assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,400);
+});
+test('an AI provider/key change while Claude is running rejects its result instead of applying it',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);await saveKey(f,a,'sk-ant-inflight-1234','claude');await f.call('/ai/provider',a.token,'POST',{provider:'claude'});
+    let release,started;const didStart=new Promise(resolve=>{started=resolve;});const blocked=new Promise(resolve=>{release=resolve;});
+    f.setClaudeResponse(async()=>{started();await blocked;return {stop_reason:'end_turn',content:[{type:'text',text:'Old answer'}]};});
+    const running=f.call('/ai/generate',a.token,'POST',{provider:'claude',model:'claude-haiku-5-5',payload:{contents:[{parts:[{text:'Test'}]}]}});
+    await didStart;await f.call('/ai/provider',a.token,'POST',{provider:'gemini'});release();assert.equal((await running).status,409);
+});
+test('concurrent generation limits are shared across providers and released after a provider change',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);await saveKey(f,a,'sk-ant-concurrent-1234','claude');await f.call('/ai/provider',a.token,'POST',{provider:'claude'});
+    let release,notify,count=0;const blocked=new Promise(resolve=>{release=resolve;});const started=new Promise(resolve=>{notify=resolve;});
+    f.setClaudeResponse(async()=>{if(++count===2)notify();await blocked;return {stop_reason:'end_turn',content:[{type:'text',text:'Done'}]};});
+    const payload={contents:[{parts:[{text:'Test'}]}]},request={provider:'claude',model:'claude-haiku-5-5',payload};
+    const one=f.call('/ai/generate',a.token,'POST',request),two=f.call('/ai/generate',a.token,'POST',request);await started;
+    assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,429);
+    await f.call('/ai/provider',a.token,'POST',{provider:'gemini'});
+    const gemini={model:'gemini-3.5-flash-lite',payload};assert.equal((await f.call('/ai/generate',a.token,'POST',gemini)).status,429);
+    release();assert.deepEqual((await Promise.all([one,two])).map(result=>result.status),[409,409]);
+    assert.equal((await f.call('/ai/generate',a.token,'POST',gemini)).status,200);
+});
+test('Phase 2 encrypted Claude archives recover into protected pending keys without changing active Gemini',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);
+    const identity={userId:'user_A'},prefix='vault:'+await f.service.vault.prefix(identity)+':claude-archive';
+    await f.storage.put(prefix,await f.service.vault.seal(identity,'sk-ant-phase2-archive-1234','active','claude'));
+    const result=(await f.call('/ai/keys?provider=claude',a.token)).body;assert.equal(result.pending.length,1);assert.equal(result.saved,false);assert.equal(result.selected_provider,'gemini');assert.equal(await f.storage.get(prefix),undefined);
+    assert.equal((await f.call('/ai/keys',a.token,'POST',await keyProof(f,a,'api-key-save',result.pending[0].id,'claude'))).body.providers.claude.saved,true);
+});
+
 test('vault fails closed without encryption setup and phone tokens cannot access any AI endpoint',async()=>{
     const f=fixture(),a=await create(f);
     assert.equal((await f.call('/ai/keys',a.token)).body.ready,false);
@@ -224,6 +339,7 @@ test('an old invalid placeholder is recovered without blocking account access or
 });
 test('account deletion removes all encrypted keys, recovered copies and cleanup jobs',async()=>{
     const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
+    await saveKey(f,a,'sk-ant-delete-active-key-1234','claude');await f.call('/ai/provider',a.token,'POST',{provider:'claude'});
     await f.call('/ai/keys/stage',a.token,'POST',{keys:['AIza-staged-key-12345'],claude_keys:['sk-ant-preserved-12345']});
     const deletion=await verifiedDeletion(f,a.token);assert.equal((await f.call('/auth/account',deletion.token,'DELETE',deletion)).status,200);
     assert.equal((await f.call('/ai/generate',a.token,'POST',{})).status,410);
@@ -475,14 +591,23 @@ async function googleIdToken(nonce,overrides={}) {
         aud:'google-client',sub:'google_A',nonce,iat:now,exp:now+60,...overrides});
     return data+'.'+Buffer.from(await crypto.subtle.sign('RSASSA-PKCS1-v1_5',keys.privateKey,new TextEncoder().encode(data))).toString('base64url');
 }
-async function startGoogle(f,token,action='delete-account') {
+async function startGoogle(f,token,action='delete-account',provider='gemini') {
     f.env.ACCOUNT_DELETION_ENABLED='true';f.env.GOOGLE_OAUTH_CLIENT_ID='google-client';
     f.env.GOOGLE_OAUTH_CLIENT_SECRET='google-secret';f.env.GOOGLE_VERIFICATION_REDIRECT_URI='https://worker.test/auth/verification/google/callback';
-    const started=await f.call('/auth/verification/start',token,'POST',{method:'google',action});
+    const started=await f.call('/auth/verification/start',token,'POST',{method:'google',action,provider});
     assert.equal(started.status,200);
     const id=started.body.verification_id,record=await f.storage.get('action-proof:'+await sha256(id));
     return {id,record,url:started.body.authorization_url};
 }
+test('linked Google confirmation reveals only the selected Claude key once',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a,'sk-ant-google-confirmed-key','claude');
+    const google=await startGoogle(f,a.token,'api-key-reveal','claude');f.setGoogleToken(await googleIdToken(google.record.nonce));
+    const response=await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code=test-code'));assert.equal(response.status,303);
+    const body={provider:'claude',verification_id:google.id};
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',{...body,provider:'gemini'})).status,403);
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',body)).body.key,'sk-ant-google-confirmed-key');
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',body)).status,403);
+});
 test('Google confirmation authorizes the selected key action once, without granting deletion',async()=>{
     const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
     const google=await startGoogle(f,a.token,'api-key-reveal');f.setGoogleToken(await googleIdToken(google.record.nonce));

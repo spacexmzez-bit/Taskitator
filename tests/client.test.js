@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { createHash, webcrypto } from 'node:crypto';
+import {toClaudeRequest} from '../cloudflare/ai-gateway.js';
+import {validatePayload} from '../cloudflare/vault.js';
 const root = new URL('../', import.meta.url);
 class LocalStorage {
     getItem(key) { return Object.hasOwn(this, key) ? this[key] : null; }
@@ -23,6 +25,76 @@ function client() {
     return { storage, window, context, auth:window.TaskitatorAuth };
 }
 function loadVault(f){vm.runInContext(fs.readFileSync(new URL('vault-client.js',root),'utf8'),f.context);return f.window.TaskitatorVault;}
+test('provider UI keeps each key metadata, activates explicitly and sends generation to the chosen provider',async()=>{
+    const f=client(),events=new Map(),nodes=new Map(),requests=[];let selected='gemini';
+    const node=id=>{
+        if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,textContent:'',handlers:{},addEventListener(k,fn){this.handlers[k]=fn;},replaceChildren(){},append(){},setAttribute(){},showModal(){},close(){this.handlers.close?.();}});
+        return nodes.get(id);
+    };
+    f.context.document.getElementById=node;f.context.document.querySelectorAll=()=>[];
+    f.context.document.querySelector=()=>({click(){}});f.window.addEventListener=(name,fn)=>events.set(name,fn);
+    f.auth.account={user:'rd'};
+    const providers={gemini:{provider:'gemini',ready:true,saved:true,suffix:'1111',version:'gemini-v1',pending:[]},claude:{provider:'claude',ready:true,saved:true,suffix:'2222',version:'claude-v1',pending:[]}};
+    const state=()=>({...providers.gemini,providers,selected_provider:selected});
+    f.auth.api=async(path,options)=>{
+        requests.push({path,body:options.body?JSON.parse(options.body):null});
+        if(path==='/ai/provider')selected=JSON.parse(options.body).provider;
+        if(path==='/ai/generate')return {candidates:[]};
+        return state();
+    };
+    const vault=loadVault(f);await vault.initialize();await events.get('taskitator-auth-ready')();
+    node('aiProviderSelect').handlers.change({target:{value:'claude'}});
+    assert.equal(vault.provider,'gemini');assert.match(node('vaultStatus').textContent,/2222/);assert.equal(node('vaultUseProviderBtn').disabled,false);
+    await node('vaultUseProviderBtn').handlers.click();assert.equal(vault.provider,'claude');
+    await vault.generate('claude-haiku-5-5',{contents:[{parts:[{text:'Hello'}]}]});
+    const call=requests.find(request=>request.path==='/ai/generate');assert.equal(call.body.provider,'claude');assert.equal(call.body.key_version,'claude-v1');
+    node('aiProviderSelect').handlers.change({target:{value:'gemini'}});assert.match(node('vaultStatus').textContent,/1111/);
+    assert.equal(vault.provider,'claude');assert.equal(JSON.stringify(f.storage).includes('api_key'),false);
+});
+test('Claude Copilot completes tool loops, preserves identifiers and cannot trash AI-locked tasks',async()=>{
+    const f=client(),calls=[];f.context.document.readyState='loading';f.context.document.querySelectorAll=()=>[];
+    f.storage.setItem('taskitator_tasks','[{"id":"locked","title":"Protected","ai_locked":true,"status":"active"}]');
+    vm.runInContext(fs.readFileSync(new URL('safety.js',root),'utf8'),f.context);f.context.TaskitatorSafety=f.window.TaskitatorSafety;
+    f.window.TaskitatorVault={available:true,selection:()=>({provider:'claude',primary:'claude-haiku-5-5',fallback:null,keyVersion:'v1'}),generate:async(model,payload,selection)=>{
+        calls.push({model,payload,selection});const adapted=toClaudeRequest(validatePayload(payload));assert.equal(adapted.messages[0].role,'user');
+        return Response.json({candidates:[{content:{parts:calls.length===1?[{functionCall:{id:'toolu_locked',name:'trash_task',args:{task_id:'locked'}}}]:[{text:'Protected task kept.'}]}}]});
+    }};
+    vm.runInContext(fs.readFileSync(new URL('agent-engine.js',root),'utf8'),f.context);
+    const reply=await f.window.TaskitatorAgent.sendMessage('Trash protected task');assert.equal(reply.text,'Protected task kept.');assert.equal(calls.length,2);
+    assert.equal(calls[1].payload.contents.at(-1).parts[0].functionResponse.id,'toolu_locked');
+    assert.equal(calls[1].payload.contents.at(-1).parts[0].functionResponse.response.status,'error');
+    assert.match(calls[1].payload.contents.at(-1).parts[0].functionResponse.response.error,/AI|locked|bypass/i);
+    assert.equal(JSON.parse(f.storage.getItem('taskitator_tasks'))[0].status,'active');assert.ok(calls.every(call=>call.model==='claude-haiku-5-5'));
+});
+test('long Claude conversations retain complete tool turns and provider changes clear prior context',async()=>{
+    const f=client(),events=new Map();f.context.document.readyState='loading';let selection={provider:'claude',primary:'claude-haiku-5-5',fallback:null,keyVersion:'v1'},calls=0;
+    f.window.addEventListener=(name,fn)=>events.set(name,fn);
+    f.window.TaskitatorVault={available:true,selection:()=>selection,generate:async(model,payload)=>{
+        calls++;toClaudeRequest(validatePayload(payload));
+        return Response.json({candidates:[{content:{parts:calls%2?[{functionCall:{id:'toolu_'+calls,name:'get_tasks',args:{}}}]:[{text:'Done'}]}}]});
+    }};
+    vm.runInContext(fs.readFileSync(new URL('agent-engine.js',root),'utf8'),f.context);
+    for(let turn=0;turn<6;turn++)assert.equal((await f.window.TaskitatorAgent.sendMessage('List turn '+turn)).text,'Done');
+    assert.ok(f.window.TaskitatorAgent.getHistory().length>8);
+    selection={provider:'gemini',primary:'gemini-3.5-flash-lite',fallback:'gemini-3.1-flash-lite',keyVersion:'v2'};
+    events.get('taskitator-ai-provider-changed')();assert.equal(f.window.TaskitatorAgent.getHistory().length,0);
+});
+test('Claude criteria errors do not call Gemini or reuse another provider validation cache',async()=>{
+    const f=client(),calls=[];let provider='gemini';
+    f.window.TaskitatorVault={available:true,selection:()=>({provider,primary:provider==='gemini'?'gemini-3.5-flash-lite':'claude-haiku-5-5',fallback:provider==='gemini'?'gemini-3.1-flash-lite':null,keyVersion:provider}),generate:async(model,payload,selection)=>{
+        calls.push({model,payload,selection});
+        return provider==='gemini'?Response.json({candidates:[{content:{parts:[{text:'{"score":9,"passed":true,"critique":"Good","suggested_rewrite":""}'}]}}]}):Response.json({error:{message:'Claude quota'}},{status:429});
+    }};
+    vm.runInContext(fs.readFileSync(new URL('audit-engine.js',root),'utf8'),f.context);
+    assert.equal((await f.window.TaskitatorEngine.AuditEngine.validateCriteria('Photo of checklist','Task')).success,true);
+    provider='claude';assert.equal((await f.window.TaskitatorEngine.AuditEngine.validateCriteria('Photo of checklist','Task')).success,false);
+    assert.deepEqual(calls.map(call=>call.model),['gemini-3.5-flash-lite','claude-haiku-5-5']);assert.equal(calls[1].payload.taskitatorFormat,'criteria');
+});
+test('newer-website/older-Worker failures explain the deployment action without clearing drafts',async()=>{
+    const f=client();f.storage.setItem('taskitator_tasks','[{"title":"Retain"}]');
+    f.context.fetch=async()=>Response.json({error:'Endpoint not found. Password changes are managed through your account profile.'},{status:404});
+    await assert.rejects(()=>f.auth.api('/ai/keys'),/GitHub Actions.*Deploy Taskitator security Worker/);assert.match(f.storage.getItem('taskitator_tasks'),/Retain/);
+});
 test('vault migrates only the current owner and removes plaintext only after encrypted staging succeeds',async()=>{
     const f=client();f.auth.account={user:'rd'};
     f.storage.setItem('taskitator_local_owner','rd');
@@ -151,7 +223,7 @@ test('HTML inline scripts have matching CSP hashes and no inline event handlers 
             const hash="'sha256-"+createHash('sha256').update(match[2]).digest('base64')+"'";
             assert.ok(csp.includes(hash),filename+' CSP does not match inline code');
         }
-        if (['account-deletion.html','welcome.html','privacy.html','terms.html','PHASE-1-SETUP.html','PHASE-2-SETUP.html'].includes(filename)) {
+        if (['account-deletion.html','welcome.html','privacy.html','terms.html','PHASE-1-SETUP.html','PHASE-2-SETUP.html','PHASE-3-SETUP.html'].includes(filename)) {
             assert.equal(/<script\b[^>]*\bsrc=["']auth-bootstrap\.js["']/.test(html),false);
         } else assert.ok(html.includes('auth-bootstrap.js'));
     }
@@ -165,7 +237,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase-2-vault-v1'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase-3-providers-v1'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -364,4 +436,6 @@ test('Settings initially activates Tags & Priority and keeps local reset distinc
     assert.match(html,/<div class="tab-pane active" id="tab-tasks">/);
     assert.doesNotMatch(html,/<div class="tab-pane active" id="tab-account">/);
     assert.ok(html.includes('This does NOT delete your cloud account or cloud data.'));
+    const system=html.slice(html.indexOf('id="tab-system"'),html.indexOf('id="tab-tasks"'));
+    for(const href of ['privacy.html','terms.html','privacy.html#deletion'])assert.ok(system.includes('href="'+href+'"'),href+' must be reachable under System');
 });
