@@ -32,26 +32,29 @@ export async function verifyGoogleToken(token, env, nonce, subject) {
 }
 export class ActionVerification {
     constructor(service) { this.service = service; this.storage = service.storage; this.env = service.env; }
-    async get(id, identity) {
+    async get(id, identity, action = 'delete-account') {
         if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) throw new SecurityError(403, 'Start verification again.');
         const record = await this.storage.get('action-proof:'+await sha256(id));
         if (!record || record.expires <= Date.now() || record.userId !== identity.userId ||
-            record.sessionId !== identity.sessionId || record.action !== 'delete-account') {
+            record.sessionId !== identity.sessionId || record.action !== action) {
             throw new SecurityError(403, 'Verification expired or belongs to a different session. Start again.');
         }
         return record;
     }
-    async start(request, identity, method) {
-        if (this.env.ACCOUNT_DELETION_ENABLED !== 'true') throw new SecurityError(503,'Account deletion needs one-time setup. Follow PHASE-1-SETUP.txt.');
-        if (identity.actor) throw new SecurityError(403, 'Impersonated sessions cannot delete accounts.');
+    async start(request, identity, method, action = 'delete-account', stageId = null) {
+        if (!['delete-account','api-key-reveal','api-key-save','api-key-delete'].includes(action)) throw new SecurityError(400,'Invalid verification action.');
+        if (action === 'delete-account' && this.env.ACCOUNT_DELETION_ENABLED !== 'true') throw new SecurityError(503,'Account deletion needs one-time setup. Follow PHASE-1-SETUP.txt.');
+        if (action !== 'delete-account' && !this.service.vault.ready()) throw new SecurityError(503,'Secure key storage needs setup. Follow PHASE-2-SETUP.html.');
+        if (identity.actor) throw new SecurityError(403, 'Impersonated sessions cannot authorize sensitive actions.');
         if (!(await this.service.accountFor(identity))) throw new SecurityError(403,'Connect your Taskitator account before verification.');
         await this.service.rateBucket('verify-user:'+identity.userId, 8);
         if (!['password','google'].includes(method)) throw new SecurityError(400, 'Choose password or Google verification.');
         const origin = request.headers.get('Origin');
         if (!allowedOrigins(this.env).includes(origin)) throw new SecurityError(403, 'Open verification from the Taskitator website.');
         const id = randomSecret(), record = { userId:identity.userId, sessionId:identity.sessionId,
-            action:'delete-account', method, status:'pending', created:Date.now(), expires:Date.now()+VERIFICATION_MS,
+            action, method, status:'pending', created:Date.now(), expires:Date.now()+VERIFICATION_MS,
             baseline:identity.reverificationId || null, origin };
+        if (action !== 'delete-account') record.context = await this.service.vault.context(identity,action,stageId);
         let authorizationUrl;
         if (method === 'google') {
             if (!this.env.GOOGLE_OAUTH_CLIENT_ID || !this.env.GOOGLE_OAUTH_CLIENT_SECRET || !this.env.GOOGLE_VERIFICATION_REDIRECT_URI) {
@@ -80,8 +83,8 @@ export class ActionVerification {
         await this.service.ensureAlarm();
         return { verification_id:id, expires_at:record.expires, ...(authorizationUrl ? {authorization_url:authorizationUrl} : {}) };
     }
-    async password(id, identity) {
-        const record = await this.get(id, identity);
+    async password(id, identity, action = 'delete-account') {
+        const record = await this.get(id, identity, action);
         if (record.method !== 'password' || record.status !== 'pending') throw new SecurityError(403, 'Start password verification again.');
         const rv = identity.reverificationId;
         if (typeof rv !== 'string' || !/^[A-Za-z0-9_-]{5,100}$/.test(rv) || rv === record.baseline ||
@@ -142,7 +145,8 @@ export class ActionVerification {
             delete current.verifier; delete current.nonce; delete current.subject;
             await tx.put(key,current);
         });
-        return new Response(null, {status:303,headers:{Location:record.origin+'/settings.html#delete-verification='+id,
+        const fragment = record.action === 'delete-account' ? 'delete-verification' : 'key-verification';
+        return new Response(null, {status:303,headers:{Location:record.origin+'/settings.html#'+fragment+'='+id,
             'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
     }
 }

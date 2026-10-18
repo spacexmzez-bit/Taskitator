@@ -33,7 +33,7 @@ export class AccountDeletion {
             if (await tx.get('deletion-status:'+statusHash)) throw new SecurityError(409,'This receipt is already in use. Start again.');
             const proofKey='action-proof:'+await sha256(body.verification_id), current=await tx.get(proofKey);
             if (!current || current.status!=='verified' || current.expires<=Date.now() ||
-                current.userId!==identity.userId || current.sessionId!==identity.sessionId) {
+                current.userId!==identity.userId || current.sessionId!==identity.sessionId || current.action!=='delete-account') {
                 throw new SecurityError(403,'Verification was already used or expired. Start again.');
             }
             const link=await tx.get('identity:'+identity.userId);
@@ -113,13 +113,17 @@ export class AccountDeletion {
                     if (job.stage==='snapshots') next=await this.page(job,'snapshot:'+encodeURIComponent(job.user)+':');
                     else if (job.stage==='credentials') next=await this.page(job,'credential:',value=>value?.user===job.user);
                     else if (job.stage==='proofs') next=await this.page(job,'action-proof:',value=>value?.userId===job.userId);
+                    else if (job.stage==='vault') next=await this.page(job,'vault:'+await sha256(job.userId)+':');
+                    else if (job.stage==='vault-stages') next=await this.page(job,'vault-stage:'+await sha256(job.userId)+':');
                     else if (job.stage==='legacy') next=await this.legacy(job);
                     else if (job.stage==='clerk') {
                         await this.deleteClerk(job.userId);
                         const completed=Date.now(), expires=completed+RECOVERY_MS;
                         await this.storage.transaction(async tx=>{
                             await tx.delete([accountKey(job.user),'identity:'+job.userId,
-                                'rate:connect-user:'+job.userId,'rate:verify-user:'+job.userId]);
+                                'rate:connect-user:'+job.userId,'rate:verify-user:'+job.userId,
+                                'rate:ai-user:'+job.userId,'rate:key-test:'+job.userId,
+                                'vault-cleanup:'+await sha256(job.userId)]);
                             await tx.put('deletion-status:'+job.statusHash,{status:'complete',accepted_at:job.accepted_at,
                                 completed_at:completed,phone_recovery_until:job.phone_recovery_until,
                                 legacy_review_needed:job.unreadable_legacy===true,
@@ -130,7 +134,7 @@ export class AccountDeletion {
                         continue;
                     }
                     if (next) {
-                        job.stage=({snapshots:'credentials',credentials:'proofs',proofs:'legacy',legacy:'clerk'})[job.stage];
+                        job.stage=({snapshots:'credentials',credentials:'proofs',proofs:'vault',vault:'vault-stages','vault-stages':'legacy',legacy:'clerk'})[job.stage];
                         job.cursor=null;
                     }
                     await this.storage.put(key,job);

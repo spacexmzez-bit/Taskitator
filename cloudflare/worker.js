@@ -3,6 +3,7 @@ import '../recurrence-core.js';
 import { SecurityError, allowedOrigins, verifySession, verifiedEmail, sha256 as authHash, randomPhoneToken } from './auth.js';
 import { ActionVerification } from './verification.js';
 import { AccountDeletion } from './deletion.js';
+import { KeyVault, GeminiGateway, scrubSettings } from './vault.js';
 const Recurrence = globalThis.TaskitatorRecurrence;
 // Taskitator transactional sync. Required: TASKITATOR_SYNC (Durable Object).
 // Keep TASKITATOR_KV bound for one-time migration of existing accounts.
@@ -98,8 +99,7 @@ function publicRecord(record) {
     const result = { ...record };
     // The client already has its bearer credential; do not echo it in snapshots.
     if (object(result.settings)) {
-        result.settings = { ...result.settings };
-        for (const key of ['worker_passkey', 'session_token', 'phone_token', 'macro_token', 'auth_user_id']) delete result.settings[key];
+        result.settings = scrubSettings(result.settings);
     }
     delete result.force;
     delete result.base_version;
@@ -242,6 +242,43 @@ export class TaskitatorSync {
         this.env = env;
         this.verification = new ActionVerification(this);
         this.deletion = new AccountDeletion(this);
+        this.vault = new KeyVault(this);
+        this.ai = new GeminiGateway(this);
+    }
+
+    async migrateVault(identity) {
+        if (!this.vault.ready()) return;
+        await this.storage.transaction(async tx => {
+            const link = await this.vault.assertOwner(tx,identity);
+            const meta = await tx.get(accountKey(link.user));
+            const record = await loadSnapshot(tx,link.user,meta);
+            if (record?.settings) {
+                const raw = record.settings.gemini_api_key;
+                const vaultKey = await this.vault.recordKey(identity);
+                // Only a previously stored, owned cloud snapshot may initialize an
+                // empty vault. Ordinary sync requests can never change a vault key.
+                if (typeof raw === 'string' && raw.trim() && !await tx.get(vaultKey)) {
+                    const value=this.vault.recoveredKey(raw);
+                    let valid=true;try{this.vault.validateKey(value);}catch{valid=false;}
+                    if (valid) await tx.put(vaultKey,await this.vault.seal(identity,value));
+                    else await tx.put(await this.vault.stagePrefix(identity)+await authHash(value),await this.vault.seal(identity,value,'stage'));
+                }
+                const claude = record.settings.claude_api_key;
+                if (typeof claude === 'string' && claude.trim()) {
+                    const archiveKey='vault:'+await this.vault.prefix(identity)+':claude-archive';
+                    if (!await tx.get(archiveKey)) await tx.put(archiveKey,await this.vault.seal(identity,this.vault.recoveredKey(claude),'active','claude'));
+                }
+                if ('gemini_api_key' in record.settings || 'claude_api_key' in record.settings) {
+                    await saveSnapshot(tx,link.user,meta,publicRecord(record));
+                    await tx.put(accountKey(link.user),meta);
+                }
+            }
+            if (meta.legacy_disabled && !meta.vault_legacy_cleanup_queued) {
+                await tx.put('vault-cleanup:'+await this.vault.prefix(identity),{userId:identity.userId,user:link.user,cursor:null});
+                meta.vault_legacy_cleanup_queued=true;await tx.put(accountKey(link.user),meta);
+            }
+        });
+        await this.ensureAlarm(15000);
     }
 
     async importAccount(user, token, digest) {
@@ -251,7 +288,7 @@ export class TaskitatorSync {
         if (await this.storage.get(accountKey(user))) return;
         if (!this.env.TASKITATOR_KV) throw new HTTPError(503, 'Keep TASKITATOR_KV bound for account migration.');
         // Read legacy KV only when this account has never been imported.
-        // No writes or deletes are made to the legacy namespace.
+        // Historical key fields are scrubbed by the vault migration after linking.
         let registration = null, record = null;
         if (this.env.TASKITATOR_KV) {
             [registration, record] = await Promise.all([
@@ -280,7 +317,15 @@ export class TaskitatorSync {
                 saved_at: record?.saved_at || new Date().toISOString(),
                 has_snapshot: false, chunks: 0
             };
-            if (record) await saveSnapshot(tx, user, meta, publicRecord(record));
+            if (record) {
+                const imported=publicRecord(record);
+                // Retain keys internally until their authenticated owner can encrypt
+                // them. publicRecord always strips these fields from responses.
+                for (const field of ['gemini_api_key','claude_api_key']) {
+                    if (record.settings?.[field]) (imported.settings ||= {})[field]=record.settings[field];
+                }
+                await saveSnapshot(tx,user,meta,imported);
+            }
             await tx.put(accountKey(user), meta);
             await tx.put(tokenKey(digest), { user, revoked: false });
         });
@@ -310,6 +355,7 @@ export class TaskitatorSync {
     }
 
     async alarm() {
+        await this.vault.cleanupLegacy();
         await this.deletion.run();
         let after;
         while (true) {
@@ -331,7 +377,8 @@ export class TaskitatorSync {
             }
         }
         const pending = await this.storage.list({prefix:'deletion-job:',limit:1});
-        await this.storage.setAlarm(Date.now() + (pending.size ? 15000 : 3600000));
+        const cleanup = await this.storage.list({prefix:'vault-cleanup:',limit:1});
+        await this.storage.setAlarm(Date.now() + (pending.size || cleanup.size ? 15000 : 3600000));
     }
 
     async accountFor(identity) {
@@ -449,8 +496,9 @@ export class TaskitatorSync {
             const proofStatus = method === 'POST' && path === '/auth/verification/status';
             const deletion = method === 'DELETE' && path === '/auth/account';
             const deletionStatus = method === 'POST' && path === '/auth/deletion/status';
+            const keyRoute = ['/ai/keys','/ai/keys/stage','/ai/keys/reveal','/ai/keys/test','/ai/generate'].includes(path);
             if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
-                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus) {
+                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute) {
                 return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
             }
             await this.rateLimit(request);
@@ -477,18 +525,42 @@ export class TaskitatorSync {
                     if (me) return json({account:null,deletion:deleting});
                     throw new HTTPError(410, 'Account deletion has been accepted.');
                 }
-                if (proofStart) return json(await this.verification.start(request,identity,(await readJson(request,8192)).method));
-                if (proofPassword) return json(await this.verification.password((await readJson(request,8192)).verification_id,identity));
+                if (proofStart) {
+                    const body=await readJson(request,8192);
+                    return json(await this.verification.start(request,identity,body.method,body.action,body.stage_id));
+                }
+                if (proofPassword) {
+                    const body=await readJson(request,8192);
+                    return json(await this.verification.password(body.verification_id,identity,body.action));
+                }
                 if (proofStatus) {
-                    const record = await this.verification.get((await readJson(request,8192)).verification_id,identity);
-                    return json({verified:record.status==='verified',status:record.status});
+                    const body=await readJson(request,8192);
+                    const record = await this.verification.get(body.verification_id,identity,body.action);
+                    return json({verified:record.status==='verified',status:record.status,action:record.action,context:record.context,expires_at:record.expires});
                 }
                 if (connect) return await this.connectAccount(request, identity);
                 const account = await this.accountFor(identity);
+                if (account && this.vault.ready()) await this.migrateVault(identity);
                 if (me) return json({ account });
                 if (!account) throw new HTTPError(403, 'Connect your Taskitator account on the login page first.');
                 user = account.user;
                 if (phoneAdmin) return await this.phoneAccess(request, user);
+                if (keyRoute) {
+                    if (path === '/ai/keys' && method === 'GET') return json(await this.vault.metadata(identity));
+                    if (path === '/ai/keys/test' && method === 'POST') return json(await this.vault.testSaved(identity));
+                    const body=await readJson(request,path === '/ai/generate' ? MAX_BODY_BYTES : 65536);
+                    if (path === '/ai/keys' && method === 'POST') return json(await this.vault.save(identity,body));
+                    if (path === '/ai/keys' && method === 'DELETE') return json(await this.vault.remove(identity,body));
+                    if (path === '/ai/keys/stage' && method === 'POST') {
+                        await this.rateBucket('key-stage:'+identity.userId,10);
+                        const result=await this.vault.stage(identity,body.keys);
+                        if (body.claude_keys?.length) await this.vault.stage(identity,body.claude_keys,'claude');
+                        return json(result);
+                    }
+                    if (path === '/ai/keys/reveal' && method === 'POST') return json(await this.vault.reveal(identity,body));
+                    if (path === '/ai/generate' && method === 'POST') return json(await this.ai.generate(identity,body));
+                    throw new HTTPError(405,'Method not allowed.');
+                }
             }
             const body = push ? await readJson(request) : null;
             if (body) validateVersion(body);
@@ -513,7 +585,7 @@ export class TaskitatorSync {
                             record={...record,version:meta.version,saved_at:meta.saved_at};
                         }
                     }
-                    if (pull) return json(record || { empty: true, version: meta.version });
+                    if (pull) return json(record ? publicRecord(record) : { empty: true, version: meta.version });
                     const state = evaluateStatus(record);
                     return url.searchParams.get('format') === 'text'
                         ? new Response(`device_unlocked = ${state.device_unlocked}`, { headers: { ...CORS, 'Content-Type': 'text/plain; charset=utf-8' } })
@@ -528,6 +600,9 @@ export class TaskitatorSync {
                 const now = new Date().toISOString();
                 if (push) {
                     const previous = await loadSnapshot(tx, user, meta);
+                    if (!this.vault.ready() && (previous?.settings?.gemini_api_key || previous?.settings?.claude_api_key)) {
+                        throw new HTTPError(503,'Set up encrypted key storage before syncing this legacy account. No saved data was replaced.');
+                    }
                     if (previous?.recurrence_state?.series?.length && body.recurrence_schema !== 1) {
                         throw new HTTPError(428, 'Refresh Taskitator on this device before syncing recurring tasks.');
                     }
