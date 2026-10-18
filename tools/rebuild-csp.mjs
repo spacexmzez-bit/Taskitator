@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const hosts = 'https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com';
 for (const file of fs.readdirSync(root).filter(name => name.endsWith('.html'))) {
-    if (['welcome.html','privacy.html','terms.html','PHASE-1-SETUP.html','PHASE-2-SETUP.html'].includes(file)) continue;
+    if (['welcome.html','privacy.html','terms.html','PHASE-1-SETUP.html','PHASE-2-SETUP.html','PHASE-3-SETUP.html'].includes(file)) continue;
     const filename = path.join(root, file);
     let html = fs.readFileSync(filename, 'utf8').replace(/\n?<meta http-equiv="Content-Security-Policy" content="[^"]*">/g, '');
     const hashes = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)]
