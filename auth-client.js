@@ -7,19 +7,19 @@
     function readSnapshot(raw) {
         const snapshot = JSON.parse(raw);
         if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new Error('Invalid saved copy');
-        return cleanSnapshot(snapshot);
+        return cleanSnapshot(snapshot, true);
     }
     function recoveryCopies(username) {
         const raw = localStorage.getItem(recoveryPrefix + encodeURIComponent(username));
         if (!raw) return [];
         const copies = JSON.parse(raw);
         if (!Array.isArray(copies)) throw new Error('Invalid recovery copies');
-        return copies.map(copy => cleanSnapshot(copy));
+        return copies.map(copy => cleanSnapshot(copy, true));
     }
     function preserveCopy(username, snapshot) {
         const key = recoveryPrefix + encodeURIComponent(username);
         const copies = recoveryCopies(username);
-        const clean = cleanSnapshot(snapshot);
+        const clean = cleanSnapshot(snapshot, true);
         if (!copies.some(copy => JSON.stringify(copy) === JSON.stringify(clean))) copies.push(clean);
         localStorage.setItem(key, JSON.stringify(copies));
     }
@@ -27,20 +27,22 @@
         const time = Date.parse(snapshot.taskitator_tasks_last_modified || '');
         return Number.isFinite(time) ? time : 0;
     }
-    function cleanSettings(settings, exportSecrets = false) {
+    function cleanSettings(settings, exportSecrets = false, preserveLegacyAI = false) {
         const result = { ...(settings || {}) };
         credentialFields.forEach(key => delete result[key]);
-        if (exportSecrets) {
+        if (!preserveLegacyAI) {
             delete result.gemini_api_key;
             delete result.claude_api_key;
+        }
+        if (exportSecrets) {
             delete result.worker_username;
         }
         return result;
     }
-    function cleanSnapshot(snapshot) {
+    function cleanSnapshot(snapshot, preserveLegacyAI = false) {
         const result = { ...snapshot };
         if (result.taskitator_settings) {
-            result.taskitator_settings = JSON.stringify(cleanSettings(JSON.parse(result.taskitator_settings)));
+            result.taskitator_settings = JSON.stringify(cleanSettings(JSON.parse(result.taskitator_settings),false,preserveLegacyAI));
         }
         delete result.taskitator_pending_rotation;
         return result;
@@ -88,7 +90,9 @@
             try { localStorage.setItem('taskitator_unclaimed_backup', JSON.stringify(readSnapshot(backup))); }
             catch (err) { storageWarnings.push('An old unclaimed backup is unreadable. It has been retained, not restored.'); }
         }
-        localStorage.setItem('taskitator_settings', JSON.stringify(cleanSettings(settings)));
+        // Vault migration runs after account ownership is known. Until encryption
+        // succeeds, retain old AI values rather than silently discard a user's key.
+        localStorage.setItem('taskitator_settings', JSON.stringify(cleanSettings(settings,false,true)));
         localStorage.removeItem('taskitator_pending_rotation');
     }
     async function loadScript(src, attributes = {}) {
@@ -116,12 +120,12 @@
             return token;
         },
         async api(path, options = {}) {
-            const { freshToken = false, ...requestOptions } = options;
+            const { freshToken = false, timeoutMs = 30000, ...requestOptions } = options;
             const headers = new Headers(options.headers);
             headers.set('Authorization', 'Bearer ' + await this.token(freshToken));
             if (options.body) headers.set('Content-Type', 'application/json');
             const res = await fetch(config.workerUrl.replace(/\/$/, '') + path,
-                { ...requestOptions, headers, cache: 'no-store', signal: AbortSignal.timeout(30000) });
+                { ...requestOptions, headers, cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
             const data = await res.json();
             if (!res.ok) { const error = new Error(data.error || 'Account request failed.'); error.status = res.status; throw error; }
             return data;
@@ -129,6 +133,7 @@
         async connect(body) {
             const data = await this.api('/auth/account', { method: 'POST', body: JSON.stringify(body) });
             this.account = data.account;
+            await window.TaskitatorVault?.initialize();
             return data.account;
         },
         async signOut() {
@@ -155,6 +160,7 @@
                 const data = await this.api('/auth/me');
                 this.account = data.account;
                 this.deletion = data.deletion || null;
+                if (this.account && !this.deletion) await window.TaskitatorVault?.initialize();
             }
         }
     };

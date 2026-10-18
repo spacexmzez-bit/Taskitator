@@ -1,0 +1,325 @@
+TASKITATOR PHASE 2 — ENCRYPTED API KEYS & IDENTITY CONFIRMATION
+=============================================================
+
+Use PHASE-2-SETUP.html for the structured, browser-friendly version of this
+guide. It also includes an offline encryption-key generator. This TXT has the
+same setup instructions. No terminal or local code editor is required.
+
+This update is built on your uploaded Taskitator-main-2.zip, which already
+contains Phase 1. It includes Phase 1's account deletion and Tags & Prio default.
+It adds encrypted Gemini key storage and protected show/copy/save/delete.
+Claude selection and Settings policy links remain Phase 3.
+
+Install Taskitator-phase-2-update.zip into your EXISTING GitHub repository.
+Your live auth-config.js is excluded from that ZIP. Do not upload the ZIP itself
+or an enclosing Taskitator folder. A full-project ZIP is provided as an alternative.
+Keep your current production config, bindings, migration history and routes.
+
+A. PREPARE AND BACK UP
+-----------------------
+1. Open your current Taskitator site and export your data from Settings > Data &
+   Backup. Keep any API key you may need in a password manager. Updated exports
+   intentionally omit API keys; older exports can contain plaintext secrets.
+2. Open your GitHub Taskitator repository. Select Code > Download ZIP to save a
+   copy of the version you currently run. This does not back up Cloudflare data.
+3. Pause Taskitator's blocking macros in MacroDroid on every connected device.
+   Keep the working phone token. This update does not normally rotate it.
+4. Plan for a short maintenance window. GitHub Pages may publish the new frontend
+   before you manually deploy the Worker. During that gap the secure app may
+   show an error; finish the Worker deployment, close old tabs and refresh.
+5. Keep two browser tabs open: GitHub for your repository, and Cloudflare for
+   your existing taskitator-sync Worker. Do not create a new Worker or database.
+
+B. CREATE THE VAULT ENCRYPTION SECRET — DO THIS FIRST
+----------------------------------------------------
+1. Download and open PHASE-2-SETUP.html in your browser. Go to section B.
+2. If you have NEVER configured API_VAULT_KEYS before, press Generate encryption
+   key once. It creates 32 random bytes on your device and displays a JSON object
+   with a v1 property. Nothing is sent from the guide or saved by it.
+3. Copy the ENTIRE JSON object, including braces, quotes and the v1 name. Save
+   this exact JSON in a password manager under Taskitator vault encryption.
+   Do not put it in GitHub, auth-config.js, screenshots, chat or public files.
+4. Open https://dash.cloudflare.com and select the account hosting Taskitator.
+   Go to Workers & Pages. Select your existing taskitator-sync Worker, not the
+   Pages website and not a new project.
+5. Open Settings > Variables and Secrets > Add. Select type Secret. Enter the
+   exact name API_VAULT_KEYS. Paste the complete generated JSON as its value.
+   Save / Deploy the settings when prompted.
+6. Add another variable with type Text: name API_VAULT_ACTIVE_KEY_ID, value v1.
+   Save / Deploy again. Do not add quotes around v1 in this text field.
+7. Leave all existing Clerk, Google, deletion and migration settings in place.
+   Do not replace CLERK_SECRET_KEY or your phone token with the vault secret.
+8. If API_VAULT_KEYS ALREADY EXISTS, reuse it. Do not generate and overwrite it.
+   An existing ciphertext needs the same encryption key to be decrypted. A new
+   random secret is not a recovery method for lost encryption material.
+9. If you cannot run the HTML generator, use your password manager's secure
+   random-byte/Base64 generator: generate exactly 32 random bytes, encode them
+   in standard Base64, and place that value in JSON as {"v1":"BASE64_VALUE"}.
+   A memorable password, UUID or arbitrary 32-character phrase is not suitable.
+10. Confirm that the secret and active ID are saved on the PRODUCTION Worker.
+    Never use [vars] in wrangler.toml for the secret. No new Durable Object
+    binding, KV namespace, D1 database or migration tag is needed.
+
+C. CHECK PASSWORD CONFIRMATION IN CLERK
+---------------------------------------
+1. Open https://dashboard.clerk.com. Select Taskitator and its Production
+   instance. Keep using the existing Clerk application and users.
+2. Go to Configure > Sessions. Find Customize session token / custom claims.
+3. Add this property to the existing JSON object if it is not already there:
+   "taskitator_reverification_id": "{{session.reverification_id}}"
+4. If the claims object is empty, this complete value is valid:
+   {"taskitator_reverification_id":"{{session.reverification_id}}"}
+5. Preserve any other properties and use commas between JSON properties. Save.
+   The default fva claim supplies factor-verification age automatically.
+6. Keep Phase 1's setting that disables Clerk-only user self-deletion. In-app
+   Taskitator deletion must remain the coordinated deletion path.
+7. Passwords go to Clerk's SDK, not to Taskitator's Worker. The Worker checks
+   the signed new verification ID, its age and completed password verification
+   using Clerk's backend before issuing one-use authorization.
+8. Google-only users can use Google confirmation after section D. They do not
+   need to invent a Taskitator password. Ordinary sign-in alone does not
+   authorize key display or changes.
+
+D. CHECK GOOGLE CONFIRMATION — SEPARATE FROM GOOGLE LOGIN
+---------------------------------------------------------
+1. If Google confirmation already worked for Phase 1 deletion, keep the same
+   Google OAuth client, callback and Cloudflare variables. No extra scope or
+   second client is needed for API-key confirmation. Continue to section E.
+2. Otherwise open https://console.cloud.google.com and select the existing
+   Taskitator project used for Google login. Open Google Auth Platform > Clients.
+3. Open the Web application OAuth client used by Clerk Google sign-in. In
+   Authorized redirect URIs, ADD the following exact address:
+   https://taskitator-sync.spacexmzez.workers.dev/auth/verification/google/callback
+4. KEEP Clerk's existing redirect URI. Do not replace it. Save the client.
+   Scheme, domain, path and trailing slash must match exactly.
+5. Copy this client's Client ID and Client Secret. These are Google values,
+   not Clerk pk_live_ / sk_live_ keys or your Gemini API key.
+6. Return to the existing Cloudflare Worker > Settings > Variables and Secrets.
+   Add GOOGLE_OAUTH_CLIENT_ID as Text, containing the full Google Client ID.
+7. Add GOOGLE_OAUTH_CLIENT_SECRET as Secret, containing the Google client secret.
+8. Add GOOGLE_VERIFICATION_REDIRECT_URI as Text, containing the exact callback
+   address from step 3. Save / Deploy the settings.
+9. If Google will not accept workers.dev, use an owned custom domain on this
+   SAME Worker, for example api.taskitator.mazendev.com. Complete Cloudflare's
+   custom-domain setup. Add its HTTPS /auth/verification/google/callback URL to
+   Google and use that exact value for GOOGLE_VERIFICATION_REDIRECT_URI.
+   Keep the website and existing Worker storage in place. The ordinary workerUrl
+   can remain unchanged; the callback is a redirect, not a browser API call.
+10. In Google Auth Platform > Branding, use Taskitator, operator Mazendev and
+    info@mazendev.com. Keep the homepage, privacy and terms URLs accurate:
+    https://taskitator.mazendev.com/welcome.html
+    https://taskitator.mazendev.com/privacy.html
+    https://taskitator.mazendev.com/terms.html
+11. In Audience, keep the existing appropriate External configuration for public
+    users. If the app remains in Testing, add your test Google email as a test
+    user. Follow Google's console requirements before publishing to everyone.
+    Internal restricts access to the Google Workspace organization.
+12. After deploying, users who originally signed up with a password must link
+    Google to that EXISTING Clerk account through Settings > Manage account &
+    password. Signing into another identity can create a different workspace.
+13. The confirmation button opens Google and requires selecting the linked
+    Google account. Google decides whether to reuse a session or ask for login.
+    Taskitator verifies the signed Google identity, one-use state, nonce, PKCE
+    and original Clerk session. It rejects an unrelated Google account.
+
+E. UPLOAD THE UPDATE AND DEPLOY THE EXISTING WORKER
+--------------------------------------------------
+1. Extract Taskitator-phase-2-update.zip. Open the extracted folder. Its top
+   level contains files such as settings.html and folders such as cloudflare.
+2. Open the existing GitHub Taskitator repository on its usual hosting branch.
+   Choose Add file > Upload files. Upload the extracted CONTENTS at the root.
+   Do not put them inside a new Taskitator-phase-2 folder or upload the ZIP.
+3. Include every file in the update, including cloudflare/vault.js, worker.js,
+   verification.js, deletion.js, vault-client.js, auth-client.js, auth-bootstrap.js,
+   agent-engine.js, audit-engine.js, sync-engine.js, all changed HTML pages,
+   sw.js, tests, the CSP tool, policies and setup/check documents.
+4. Commit the upload. Verify vault-client.js is beside settings.html and
+   cloudflare/vault.js is beside cloudflare/worker.js. The update does not
+   replace auth-config.js; keep your live public key and Worker URL.
+5. Keep the live cloudflare/wrangler.toml Worker name, namespace IDs, routes,
+   bindings and migration history. The provided configuration already uses
+   keep_vars = true. Do not create a second TaskitatorSync migration.
+6. In GitHub open Actions. Select Deploy Taskitator security Worker. Press
+   Run workflow, choose the branch you just updated, then Run workflow again.
+   On a narrow screen, request the browser's Desktop site view if necessary.
+7. Open the new run. Wait for its tests and deployment to finish with a green
+   check. If it fails, open the failed step. Do not continue as if it deployed.
+8. If the workflow is missing, ensure this exact repository file is present:
+   .github/workflows/deploy-worker-security.yml
+   It must be on the default branch for manual dispatch to be available.
+9. If GitHub says a Cloudflare secret is missing, open repository Settings >
+   Secrets and variables > Actions > Repository secrets > New repository secret.
+   Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID using the SAME values used
+   for your existing deployment. These are deployment credentials, separate
+   from Worker Variables and Secrets. Never put vault or Google secrets here
+   as a substitute for configuring them on the Worker itself.
+10. If the Cloudflare API token needs replacing, use a token restricted to the
+    existing account and the permissions needed by this existing Worker/DO/KV
+    deployment. Follow the original security setup; do not use a Global API Key.
+11. Also wait for your normal GitHub Pages deployment to complete. Open the
+    production website. Close old Taskitator tabs and reload; the new service
+    worker activates taskitator-phase-2-vault-v1 before task scripts run.
+12. If you manually edit inline JavaScript later in settings.html, regenerate
+    CSP hashes using node tools/rebuild-csp.mjs before publishing. The supplied
+    update already contains matching hashes; no manual code edit is required.
+
+F. MIGRATE EXISTING KEYS AND TEST NORMAL USE
+--------------------------------------------
+1. Sign into Taskitator using your existing account. Do not create a new empty
+   account to work around a migration problem. Keep your original backups.
+2. Existing owned cloud Gemini keys are encrypted before their settings fields
+   are removed. Tasks, sync revisions, model names and phone tokens are kept.
+3. Browser-only keys and attributed recovery copies are sent once to encrypted
+   recovered storage. They are not silently made active. After server success,
+   the matching plaintext fields are removed from that browser's copies.
+4. Open Settings. Tags & Prio remains the first tab. Select the Account tab
+   containing Gemini AI Engine. Look for Key saved securely or recovered rows.
+5. If a recovered key is the one you want to use, press Use this key. Confirm
+   with your sign-in password or linked Google account, then press Save key.
+   Google returns to this dialog; finish the action after returning.
+6. To add a new key, press Save / replace key. Confirm your password, enter the
+   Gemini key in the separate key field, then press Save key. If using Google,
+   complete Google first, return here, enter the new key and press Save key.
+   No key is carried in sessionStorage across the Google redirect.
+7. Save runs a model-metadata request. It generates ZERO tokens rather than a
+   one-token completion. It checks key/model access, not generation quota,
+   available credits or successful content generation. Failure preserves the
+   previous active key; review the error before retrying.
+8. Press Test connection. Confirm it reports zero generated tokens. Then make
+   a small real Copilot request to test generation; that request can use and
+   bill provider tokens. Test a normal proof audit with a small supported file.
+9. Current models remain gemini-3.5-flash-lite primary and gemini-3.1-flash-lite
+   fallback. Your provider account must support them. This update preserves
+   those configured names; it cannot grant model access or provider quota.
+10. Press Show key. Without completing confirmation, cancel: no key should
+    appear. Repeat, confirm, and continue. The key should appear for 30 seconds
+    and clear when you hide it, leave the page or hide the browser tab.
+11. Press Copy key and confirm again. If browser clipboard permission blocks
+    automatic copy, press Copy displayed key while it is visible. Your OS may
+    retain clipboard contents after Taskitator clears the display; clear it
+    manually when finished. The app does not promise clipboard erasure.
+12. Test Google confirmation using the linked Google account, then try an
+    unrelated account and verify it is rejected. Google may accept a logged-in
+    session; a fresh Google password or OTP is not forced by Taskitator.
+13. On a DISPOSABLE test account, test Delete key and confirmation. After removal,
+    AI should ask for a key. Ordinary sync must not restore the deleted key.
+    Removing a saved key does not revoke that key at Google AI Studio.
+14. General Settings Save never stores an API key. New cloud snapshots, conflict
+    backups and normal exports omit keys. A pre-update backup on disk is not
+    rewritten, and another user's archives are left for that owner to migrate.
+15. Sign into the updated site on every device that held a key, then close old
+    app tabs. Review/delete old exported backups securely. Ambiguous/unreadable
+    local or historical records require manual ownership review; they are not
+    guessed at or erased. Do not clear an unsynced browser as a shortcut.
+16. Legacy keys in attributable historical KV snapshots are encrypted into
+    recovered storage before those old fields are scrubbed in background batches.
+    Previously stored Claude fields are retained encrypted for later provider
+    work; this phase does not add Claude integration or its key-management UI.
+
+G. CHECK PHASE 1 AND RESUME BLOCKING
+------------------------------------
+1. Confirm Settings still opens on Tags & Prio, sync works on your usual devices,
+   existing projects/tasks are present, and Copilot/evidence review work.
+2. With a DISPOSABLE account, test Phase 1's coordinated account deletion.
+   Follow its blocker checkbox, identity confirmation and manually typed
+   Macrodroid disabled phrase. The irreversible step must never use your real
+   account. The deletion job now also removes encrypted keys and recovered keys.
+3. Verify the deletion status completes or reports retrying. For that disposable
+   account, an existing phone token returns unlocked for seven days from
+   acceptance, then becomes invalid. Never reuse the test token on your real macro.
+4. On your REAL account, test the existing MacroDroid HTTP status request before
+   re-enabling blocking. Confirm the expected locked/unlocked behavior and keep
+   access to MacroDroid and recovery controls. Resume only when your tests pass.
+
+H. TROUBLESHOOT FROM THE POINT THAT FAILED
+------------------------------------------
+Secure storage needs setup: check API_VAULT_KEYS is a Secret containing valid
+JSON with a v1 Base64 value decoding to 32 bytes. Check API_VAULT_ACTIVE_KEY_ID
+is Text v1, then deploy settings. A Clerk key or Gemini key is not a vault key.
+
+Saved key could not be decrypted: restore the ORIGINAL encryption key/version
+from your password manager. Do not overwrite the vault with a new random key.
+
+Password confirmation rejected: check section C's custom signed claim on the
+correct production Clerk instance. Refresh, start a NEW action, confirm with
+the correct password, and finish within five minutes. Each proof is used once.
+Verification is limited to eight starts per minute per user; wait a minute
+after repeated attempts. Key connection checks are limited to six per minute.
+
+Google button says setup needed: ordinary Google login alone is insufficient.
+Complete section D's Worker variables and additional redirect URI.
+
+redirect_uri_mismatch: compare the exact Worker callback in Google's Web client
+and GOOGLE_VERIFICATION_REDIRECT_URI. Keep Clerk's existing callback too.
+
+Google identity not connected: link Google through Manage account & password
+on the account whose tasks and key you want. Choose that exact Google identity.
+
+Google says access blocked / test user: check the OAuth project's Audience,
+test users, publishing state and Branding. Follow Google's console guidance.
+
+App says Endpoint not found / secure files updating: confirm the workflow
+deployed the updated Worker and GitHub Pages finished, then close old tabs and
+reload. Do not clear local storage containing drafts just to refresh scripts.
+
+Key saved but Copilot fails: a zero-token metadata test is not a generation
+quota test. Check Google model access, restrictions, billing and quotas. Since
+requests now come from a Worker, browser-HTTP-referrer-only API key restrictions
+may reject them. Use a dedicated key restricted to the Generative Language API
+with application restrictions suitable for your server environment; Cloudflare
+Workers do not provide a fixed outbound IP by default. Revoke a key if exposed.
+
+429 / two requests already running: wait for in-flight requests and retry.
+Taskitator caps 30 generation requests per minute per user and two concurrent
+requests. Google imposes its own limits. The existing fallback behavior remains.
+
+Large AI request rejected: each image/PDF is limited to 5 MB; the complete JSON
+request is limited to 20 MB. Output is limited to one candidate and 16,384 tokens.
+Provider timeouts can occur after usage; don't repeatedly retry a timed-out audit.
+
+Connection save timed out: press Refresh status before submitting again. A
+successful save/delete may have committed even if its response was lost. A
+consumed proof cannot be reused; start a new confirmation when required.
+
+Recovered key limit: keep original data. At most 16 distinct recovered keys per
+provider can be staged. Review and remove unwanted recovered Gemini copies with
+confirmation before retrying. Do not erase unreviewed legacy copies to proceed.
+
+I. RETENTION, ROTATION AND PRACTICAL LIMITS
+------------------------------------------
+1. Keep the vault keyring in a password manager independently of Cloudflare.
+   Losing it can make stored API keys unrecoverable. This is encryption at rest,
+   not end-to-end encryption: Taskitator's Worker decrypts a key to contact Google.
+   An operator or attacker controlling the Worker and its secrets could decrypt it.
+2. The full key enters browser memory only during entry, legacy migration or an
+   explicitly verified reveal/copy. The normal AI path does not send the saved
+   key to the browser. Protect your device, account and browser extensions.
+3. Keep Worker request/response bodies and Authorization/x-goog-api-key headers
+   out of custom logs or third-party logging. This code does not log keys and
+   does not return raw provider diagnostic bodies on errors.
+4. Do not casually rotate the encryption secret. Planned rotation adds a new
+   version such as v2 to the SAME JSON keyring while RETAINING v1, then changes
+   the active ID to v2. New writes use v2; existing v1 ciphertext still needs v1.
+   There is no automatic full re-encryption job in this release. Keep every old
+   version until all active, recovered and archived records have been migrated
+   and verified. Removing v1 early breaks those records.
+5. Deleting the saved key in Taskitator is separate from revoking it at its AI
+   provider. Account deletion removes application vault records; downloaded
+   backups, other devices and provider operational backups can need separate
+   cleanup. Physical erasure of provider backups is not promised.
+6. Don't roll the Worker back to a pre-vault build after migration. That old
+   build cannot use encrypted keys and could reintroduce plaintext storage.
+   Keep the vault secret and vault-aware Worker while addressing an issue.
+7. Automated checks substitute provider HTTP and storage. They do not constitute
+   a live Google/Clerk/Cloudflare deployment test. Run sections F and G yourself
+   after deployment; no live credentials, user deletion or paid AI calls were
+   exercised while building this package.
+8. Support: Mazendev, info@mazendev.com. Do not send passwords, API keys, vault
+   encryption secrets, OAuth secrets or phone tokens in support messages.
+
+Official setup references (checked October 17, 2026):
+https://developers.cloudflare.com/workers/configuration/secrets/
+https://clerk.com/docs/guides/secure/reverification
+https://developers.google.com/identity/openid-connect/openid-connect
+https://developers.google.com/identity/protocols/oauth2/web-server
+https://ai.google.dev/api/models

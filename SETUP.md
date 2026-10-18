@@ -1,4 +1,4 @@
-> Security update: SECURITY-SETUP.txt is the current setup/deployment guide. Older instructions below describe the previous recurrence release and must not be used to restore legacy authentication. See SECURITY-REVIEW.md for current verification and limits.
+> Phase 2 is current: follow PHASE-2-SETUP.html, including the vault secret, identity confirmation, deployment and live checks. The installation instructions below are historical.
 
 # Install this update from your phone
 

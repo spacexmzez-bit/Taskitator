@@ -1,5 +1,9 @@
 # Authentication changes and validation
 
+**Phase 2 is current.** Read PHASE-2-SETUP.html and PHASE-2-CHECKS.md. Saved Gemini
+keys are encrypted in server storage and key actions require one-use identity
+confirmation. The older text and test counts below describe earlier builds.
+
 Phase 1 adds coordinated deletion and Settings changes on top of this security
 build. See PHASE-1-REVIEW.md and PHASE-1-SETUP.html for the current behavior and
 required configuration. The current suite has 37 passing tests; the counts below

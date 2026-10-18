@@ -242,29 +242,18 @@ window.TaskitatorAgent = (() => {
     // 4. API Key & Auth Retrieval
     // =========================================================================
     function getApiKey() {
-        try {
-            const settings = JSON.parse(localStorage.getItem(STORAGE_KEY_SETTINGS) || '{}');
-            return (settings.gemini_api_key || '').trim();
-        } catch (e) {
-            return '';
-        }
+        // Availability only: the provider key stays in the encrypted Worker vault.
+        return Boolean(window.TaskitatorVault?.available);
     }
 
     // =========================================================================
     // 5. Dual-Model Cascade with Session 429 Fallback Latch
     // =========================================================================
     async function executeModelCall(payload, apiKey) {
-        const buildUrl = (model) =>
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
         const isFallbackLatched = sessionStorage.getItem(SESSION_LATCH_KEY) === 'true';
         let targetModel = isFallbackLatched ? FALLBACK_MODEL : PRIMARY_MODEL;
 
-        let response = await fetch(buildUrl(targetModel), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+        let response = await window.TaskitatorVault.generate(targetModel,payload);
 
         // Failover on 429 Quota Exceeded and set session latch
         if (response.status === 429 && targetModel === PRIMARY_MODEL) {
@@ -272,11 +261,7 @@ window.TaskitatorAgent = (() => {
             sessionStorage.setItem(SESSION_LATCH_KEY, 'true');
             targetModel = FALLBACK_MODEL;
 
-            response = await fetch(buildUrl(targetModel), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            response = await window.TaskitatorVault.generate(targetModel,payload);
         }
 
         if (!response.ok) {

@@ -1,4 +1,12 @@
-# Taskitator — managed authentication security update
+# Taskitator — encrypted API keys (Phase 2)
+
+Start with [PHASE-2-SETUP.html](PHASE-2-SETUP.html), or its TXT equivalent.
+This build uses the uploaded Taskitator-main-2.zip as its baseline and includes
+Phase 1. See [PHASE-2-CHECKS.md](PHASE-2-CHECKS.md) for current validation and limits.
+The update ZIP preserves your configured auth-config.js. Configure the vault
+secret before uploading/deploying. Claude integration remains Phase 3.
+
+## Earlier login setup reference
 
 Complete project based on the attached Taskitator-main.zip. Taskitator keeps its existing website, Cloudflare Worker, Durable Object account data, KV migration source, recurrence engine, AI audits, and sync conflict handling.
 

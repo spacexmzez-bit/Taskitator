@@ -95,7 +95,8 @@ const SyncEngine = {
         });
         if (!Object.keys(snapshot).length) return;
         if (snapshot[this.STORAGE_KEY_SETTINGS]) {
-            const settings = window.TaskitatorAuth.cleanSettings(JSON.parse(snapshot[this.STORAGE_KEY_SETTINGS]));
+            const settings = window.TaskitatorAuth.cleanSettings(JSON.parse(snapshot[this.STORAGE_KEY_SETTINGS]), false,
+                cacheOwner !== window.TaskitatorAuth.account?.user);
             delete settings.worker_username;
             delete settings.worker_passkey;
             snapshot[this.STORAGE_KEY_SETTINGS] = JSON.stringify(settings);

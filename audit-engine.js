@@ -463,7 +463,6 @@ const TaskitatorEngine = {
         },
 
         async callGeminiWithParts(modelName, apiKey, partsArray) {
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
             const payload = {
                 contents: [{
                     // Older saved exemplars contain the blob fields directly.
@@ -482,11 +481,7 @@ const TaskitatorEngine = {
                 }
             };
 
-            return await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            return await window.TaskitatorVault.generate(modelName,payload);
         },
 
         async callGemini(modelName, apiKey, inlineDataPart, promptText) {
@@ -524,7 +519,7 @@ const TaskitatorEngine = {
                 settings = {};
             }
 
-            const apiKey = (settings.gemini_api_key || '').trim();
+            const apiKey = Boolean(window.TaskitatorVault?.available);
             if (!apiKey) {
                 return {
                     success: false,
@@ -629,7 +624,7 @@ Return strictly valid JSON with this exact schema:
                 settings = {};
             }
 
-            const apiKey = (settings.gemini_api_key || '').trim();
+            const apiKey = Boolean(window.TaskitatorVault?.available);
             if (!apiKey) {
                 return { success: false, status: 401, error: 'No Gemini API Key configured in Settings.' };
             }

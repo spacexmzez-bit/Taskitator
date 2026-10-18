@@ -1,4 +1,4 @@
-> Security update: SECURITY-SETUP.txt is the current setup/deployment guide. Older instructions below describe the previous recurrence release and must not be used to restore legacy authentication. See SECURITY-REVIEW.md for current verification and limits.
+> Phase 2 is current: encrypted Gemini key storage, protected key actions and the authenticated Worker AI gateway. See PHASE-2-SETUP.html and PHASE-2-CHECKS.md. The release notes below are historical.
 
 # What changed, in plain English
 

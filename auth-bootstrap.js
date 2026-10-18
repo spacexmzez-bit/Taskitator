@@ -17,7 +17,7 @@
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-phase-1-deletion-v1');
+                    resolve(event.data?.version === 'taskitator-phase-2-vault-v1');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
@@ -74,6 +74,7 @@
             window.Clerk.addListener(({ session }) => {
                 if (initialSession && session?.id !== initialSession) {
                     if (window.TaskitatorDeletionAccepted) return;
+                    window.TaskitatorVault?.clear();
                     window.SyncEngine?.archiveLocalAccount();
                     window.SyncEngine?.clearLocalAccount();
                     location.replace('login.html');

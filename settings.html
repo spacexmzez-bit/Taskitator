@@ -3,9 +3,10 @@
 <!DOCTYPE html>
 <html lang="en" class="auth-pending">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-zGKlXVbW1v7IslKbO54/H++YAjkYy2i89K9tDpgRX3E=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://generativelanguage.googleapis.com https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-DxQqeXy4TZTB6sJ4EmZUAp08y4j5ujcklpouaqbXmqo=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
 <script src="auth-config.js"></script>
 <script src="auth-client.js"></script>
+<script src="vault-client.js"></script>
 <style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -401,16 +402,23 @@
                     Audits task evidence and drives your personal AI assistant. Dual-model cascade: <strong>gemini-3.5-flash-lite</strong> primary, falling back to <strong>gemini-3.1-flash-lite</strong> on high demand or quota limits.
                 </p>
 
-                <div class="form-group">
-                    <label for="geminiApiKey">Google AI Studio API Key</label>
-                    <input type="password" id="geminiApiKey" placeholder="AIzaSy...">
+                <p id="vaultStatus" role="status">Checking secure key storage…</p>
+                <p style="font-size:.85rem;color:var(--text-muted)">Keys are encrypted on the server. Show, copy, replace and delete require your password or linked Google account. AI requests pass through Taskitator's server.</p>
+                <div class="vault-actions">
+                    <button type="button" class="icon-btn" id="vaultSaveBtn">Save / replace key</button>
+                    <button type="button" class="icon-btn" id="vaultShowBtn">Show key</button>
+                    <button type="button" class="icon-btn" id="vaultCopyBtn">Copy key</button>
+                    <button type="button" class="icon-btn" id="vaultDeleteBtn">Delete key</button>
+                    <button type="button" class="icon-btn" id="vaultTestBtn">Test connection</button>
+                    <button type="button" class="icon-btn" id="vaultRefreshBtn">Refresh status</button>
                 </div>
-
-                <div style="display: flex; gap: 10px; margin-top: 14px;">
-                    <button type="button" class="icon-btn" id="testGeminiBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Test Connection</button>
-                    <button type="button" class="icon-btn" id="toggleKeyVisibilityBtn">Show Key</button>
+                <div id="vaultRevealArea" hidden style="margin-top:12px">
+                    <label for="vaultRevealedKey">Visible for 30 seconds</label>
+                    <input id="vaultRevealedKey" type="text" readonly autocomplete="off" spellcheck="false">
+                    <div class="vault-actions"><button type="button" class="icon-btn" id="vaultCopyDisplayedBtn">Copy displayed key</button><button type="button" class="icon-btn" id="vaultHideBtn">Hide now</button></div>
                 </div>
-                <div id="geminiTestFeedback" class="notice-banner"></div>
+                <div id="vaultRecovered" aria-label="Recovered API keys"></div>
+                <p id="vaultFeedback" role="status" aria-live="polite" style="font-size:.85rem;color:var(--text-muted)">Connection testing generates zero tokens. It checks key/model access, not generation quota or billing.</p>
             </div>
 
             <!-- MacroDroid Device Lockdown Integration Bridge -->
@@ -710,6 +718,33 @@
     </div>
 </div>
 
+<style>
+.vault-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.vault-recovery-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding-top:14px;margin-top:14px;border-top:1px solid var(--border-color)}
+#vaultDialog{width:min(92vw,540px);max-height:88vh;overflow:auto;border:1px solid var(--primary);border-radius:18px;padding:24px;background:var(--card-bg);color:var(--text-color)}
+#vaultDialog::backdrop{background:#000b}#vaultDialog label{display:block;margin-bottom:6px}#vaultDialog input,#vaultRevealedKey{box-sizing:border-box;width:100%;padding:12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-color)}
+#vaultDialog [hidden],[hidden]#vaultRevealArea{display:none!important}
+</style>
+<dialog id="vaultDialog" aria-labelledby="vaultDialogTitle" aria-describedby="vaultDialogFeedback">
+    <h2 id="vaultDialogTitle">Protect your saved key</h2>
+    <p id="vaultDialogFeedback" role="status" aria-live="polite"></p>
+    <label for="vaultPassword">Taskitator sign-in password</label>
+    <input id="vaultPassword" type="password" autocomplete="current-password" placeholder="Password users: enter your password">
+    <div class="vault-actions">
+        <button type="button" class="icon-btn" id="vaultPasswordBtn">Confirm password</button>
+        <button type="button" class="icon-btn" id="vaultGoogleBtn">Sign in with Google</button>
+    </div>
+    <p style="font-size:.85rem;color:var(--text-muted)">For Google sign-in, choose the account already linked to this Taskitator login. Google may accept your existing session.</p>
+    <div id="vaultNewKeyArea" style="margin-top:18px">
+        <label for="vaultNewKey">New Gemini API key</label>
+        <input id="vaultNewKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your Google AI Studio API key">
+        <p style="font-size:.85rem;color:var(--text-muted)">This is saved separately from general Settings. Google confirmation returns here before you enter the new key.</p>
+    </div>
+    <div class="vault-actions">
+        <button type="button" class="icon-btn" id="vaultConfirmBtn" disabled>Continue</button>
+        <button type="button" class="icon-btn" id="vaultCancelBtn">Cancel</button>
+    </div>
+</dialog>
+
 <!-- Copilot Slide-Over Drawer -->
 <div class="copilot-drawer-backdrop" id="copilotBackdrop"></div>
 <aside class="copilot-drawer" id="copilotDrawer">
@@ -766,7 +801,6 @@ const DEFAULT_PRIORITIES = [
 const authenticatedSettingsContainer = document.getElementById('authenticatedSettingsContainer');
 const soundEffectsToggle = document.getElementById('soundEffectsToggle');
 const copilotNameInput = document.getElementById('copilotNameInput');
-const geminiApiKeyInput = document.getElementById('geminiApiKey');
 const strictCriteriaToggle = document.getElementById('strictCriteriaToggle');
 const autoPageRefreshToggle = document.getElementById('autoPageRefreshToggle');
 const activeUsernameDisplay = document.getElementById('activeUsernameDisplay');
@@ -1019,7 +1053,6 @@ function loadSettings() {
 
     if (soundEffectsToggle) soundEffectsToggle.checked = settings.sound_effects_enabled !== false;
     if (copilotNameInput) copilotNameInput.value = settings.copilot_name || 'Focus Copilot';
-    if (geminiApiKeyInput) geminiApiKeyInput.value = settings.gemini_api_key || '';
     if (strictCriteriaToggle) strictCriteriaToggle.checked = settings.strict_criteria_validation !== false;
     if (autoPageRefreshToggle) autoPageRefreshToggle.checked = settings.auto_page_refresh !== false;
 
@@ -1068,7 +1101,6 @@ async function saveSettings(silent = false) {
 
     settings.sound_effects_enabled = soundEffectsToggle ? Boolean(soundEffectsToggle.checked) : true;
     settings.copilot_name = copilotNameInput ? (copilotNameInput.value.trim() || 'Focus Copilot').slice(0, 20) : 'Focus Copilot';
-    settings.gemini_api_key = geminiApiKeyInput ? geminiApiKeyInput.value.trim() : '';
     settings.strict_criteria_validation = strictCriteriaToggle ? Boolean(strictCriteriaToggle.checked) : true;
     settings.auto_page_refresh = autoPageRefreshToggle ? Boolean(autoPageRefreshToggle.checked) : true;
     settings.dump_duration = currentDumpDur;
@@ -1166,15 +1198,6 @@ if (dumpDurationSlider && dumpDurationReadout) {
     });
 }
 
-const toggleKeyBtn = document.getElementById('toggleKeyVisibilityBtn');
-if (toggleKeyBtn && geminiApiKeyInput) {
-    toggleKeyBtn.addEventListener('click', () => {
-        const isPassword = geminiApiKeyInput.type === 'password';
-        geminiApiKeyInput.type = isPassword ? 'text' : 'password';
-        toggleKeyBtn.textContent = isPassword ? 'Hide Key' : 'Show Key';
-    });
-}
-
 if (copyUrlBtn) {
     copyUrlBtn.addEventListener('click', () => {
         const urlInput = document.getElementById('macroEndpointUrl');
@@ -1206,7 +1229,7 @@ if (toggleTokenVisibilityBtn && macroBearerToken) {
     });
 }
 
-[soundEffectsToggle, copilotNameInput, geminiApiKeyInput, strictCriteriaToggle, autoPageRefreshToggle, weekendStartSelect, weekendEndSelect, dayStartHourSelect].forEach(el => {
+[soundEffectsToggle, copilotNameInput, strictCriteriaToggle, autoPageRefreshToggle, weekendStartSelect, weekendEndSelect, dayStartHourSelect].forEach(el => {
     if (el) {
         el.addEventListener('input', markUnsaved);
         el.addEventListener('change', markUnsaved);
@@ -1217,48 +1240,6 @@ if (dayStartHourSelect) {
     dayStartHourSelect.addEventListener('change', () => {
         updateBreakPlanningStatus();
         markUnsaved();
-    });
-}
-
-const testGeminiBtn = document.getElementById('testGeminiBtn');
-if (testGeminiBtn && geminiApiKeyInput) {
-    testGeminiBtn.addEventListener('click', async () => {
-        const key = geminiApiKeyInput.value.trim();
-        const feedback = document.getElementById('geminiTestFeedback');
-        if (!feedback) return;
-        feedback.style.display = 'block';
-
-        if (!key) {
-            feedback.className = 'notice-banner notice-warning';
-            feedback.textContent = 'Please enter an API key first.';
-            return;
-        }
-
-        feedback.className = 'notice-banner notice-info';
-        feedback.textContent = 'Testing connection with primary model (gemini-3.5-flash-lite)...';
-
-        try {
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${key}`;
-            const res = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: 'Ping test. Respond with OK.' }] }]
-                })
-            });
-
-            if (res.ok) {
-                feedback.className = 'notice-banner notice-success';
-                feedback.innerHTML = '<strong>Success!</strong> API key valid and connected to gemini-3.5-flash-lite.';
-            } else {
-                const errData = await res.json().catch(() => ({}));
-                feedback.className = 'notice-banner notice-warning';
-                feedback.textContent = `API Error (${res.status}): ${errData.error?.message || 'Check key validity'}`;
-            }
-        } catch (err) {
-            feedback.className = 'notice-banner notice-warning';
-            feedback.textContent = `Network Error: ${err.message}`;
-        }
     });
 }
 
@@ -1392,7 +1373,6 @@ async function processImport(mode) {
         if (mode === 'replace') {
             localStorage.setItem('taskitator_recurrence_state',JSON.stringify(importedRecurrence));
             const newSettings = TaskitatorAuth.cleanSettings(imported.taskitator_settings || {}, true);
-            if (localSettingsRaw.gemini_api_key) newSettings.gemini_api_key = localSettingsRaw.gemini_api_key;
             if (currentUser) newSettings.worker_username = currentUser;
 
             if (currentUrl) newSettings.worker_url = currentUrl;

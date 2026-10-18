@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-phase-1-deletion-v1';
+const CACHE_NAME = 'taskitator-phase-2-vault-v1';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -26,6 +26,7 @@ const STATIC_ASSETS = [
     './components.js',
     './safety.js',
     './auth-client.js',
+    './vault-client.js',
     './auth-bootstrap.js',
     './auth-config.js',
     './login-page.js',
@@ -85,7 +86,7 @@ self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
 
-    if (/\/(?:auth|sync)(?:\/|$)/.test(url.pathname) || url.pathname === '/status' || request.headers.has('Authorization')) return;
+    if (/\/(?:auth|sync|ai)(?:\/|$)/.test(url.pathname) || url.pathname === '/status' || request.headers.has('Authorization')) return;
     const cacheKey = new Request(url.origin + url.pathname);
 
     // Only intercept standard GET requests
@@ -98,7 +99,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    if (/\/(?:auth-config|auth-client|auth-bootstrap|sync-engine|deletion-client|deletion-status)\.js$/.test(url.pathname)) {
+    if (/\/(?:auth-config|auth-client|vault-client|auth-bootstrap|sync-engine|deletion-client|deletion-status)\.js$/.test(url.pathname)) {
         event.respondWith(fetch(request, { cache: 'no-cache' }));
         return;
     }
