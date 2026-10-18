@@ -21,6 +21,7 @@
     <link rel="apple-touch-icon" href="icon/icon-192.png">
 
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="pro/pro.css">
     <style>
         .notice-banner {
             padding: 10px 14px;
@@ -394,6 +395,9 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Taskitator Pro Section -->
+            <div id="pro-settings-container"></div>
 
             <!-- Protected provider keys -->
             <div class="settings-card">
@@ -1642,6 +1646,8 @@ if ('serviceWorker' in navigator) {
     });
 }
 </script>
+<script defer src="pro/pro-client.js"></script>
+<script defer src="pro/pro-ui.js"></script>
 <script defer src="auth-bootstrap.js"></script>
 </body>
 </html>
