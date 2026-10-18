@@ -1,4 +1,4 @@
-> Phase 2 is current: follow PHASE-2-SETUP.html, including the vault secret, identity confirmation, deployment and live checks. The installation instructions below are historical.
+> Phase 3 is current: follow PHASE-3-SETUP.html. If Phase 2 works, keep its secrets and upload/deploy; no new vault secret, DNS or OAuth setup is needed. The installation instructions below are historical.
 
 # Install this update from your phone
 

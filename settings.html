@@ -395,15 +395,24 @@
                 </div>
             </div>
 
-            <!-- Gemini BYOK -->
+            <!-- Protected provider keys -->
             <div class="settings-card">
-                <h3 style="margin-top: 0; color: var(--primary);">🤖 Gemini AI Engine</h3>
+                <h3 style="margin-top: 0; color: var(--primary);">🤖 AI provider &amp; saved keys</h3>
                 <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                    Audits task evidence and drives your personal AI assistant. Dual-model cascade: <strong>gemini-3.5-flash-lite</strong> primary, falling back to <strong>gemini-3.1-flash-lite</strong> on high demand or quota limits.
+                    Choose Gemini or Claude for Copilot, criteria review, evidence audits and note extraction. Each provider keeps its own encrypted key when you switch.
                 </p>
+                <div class="form-group">
+                    <label for="aiProviderSelect">View and manage provider</label>
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <select id="aiProviderSelect" style="flex:1;min-width:0"><option value="gemini">Gemini</option><option value="claude">Claude</option></select>
+                        <button type="button" class="icon-btn" id="vaultModelInfoBtn" aria-expanded="false" aria-controls="vaultModelInfo" aria-label="Show models and supported files">ⓘ</button>
+                    </div>
+                    <p id="vaultModelInfo" hidden style="font-size:.85rem;color:var(--text-muted)"></p>
+                </div>
+                <p id="aiActiveProvider" style="font-size:.85rem;font-weight:700">Currently used for AI: Gemini</p>
 
                 <p id="vaultStatus" role="status">Checking secure key storage…</p>
-                <p style="font-size:.85rem;color:var(--text-muted)">Keys are encrypted on the server. Show, copy, replace and delete require your password or linked Google account. AI requests pass through Taskitator's server.</p>
+                <p style="font-size:.85rem;color:var(--text-muted)">Keys are encrypted on the server. Show, copy, replace and delete require your password or linked Google account. AI requests pass through Taskitator's server to the active provider.</p>
                 <div class="vault-actions">
                     <button type="button" class="icon-btn" id="vaultSaveBtn">Save / replace key</button>
                     <button type="button" class="icon-btn" id="vaultShowBtn">Show key</button>
@@ -411,6 +420,7 @@
                     <button type="button" class="icon-btn" id="vaultDeleteBtn">Delete key</button>
                     <button type="button" class="icon-btn" id="vaultTestBtn">Test connection</button>
                     <button type="button" class="icon-btn" id="vaultRefreshBtn">Refresh status</button>
+                    <button type="button" class="icon-btn" id="vaultUseProviderBtn">Gemini is active</button>
                 </div>
                 <div id="vaultRevealArea" hidden style="margin-top:12px">
                     <label for="vaultRevealedKey">Visible for 30 seconds</label>
@@ -469,6 +479,15 @@
         <!-- TAB 2: System Configuration                                              -->
         <!-- ========================================================================= -->
         <div class="tab-pane" id="tab-system">
+            <div class="settings-card" id="systemLegalCard">
+                <h3 style="margin-top:0;color:var(--primary)">Privacy &amp; terms</h3>
+                <p style="font-size:.85rem;color:var(--text-muted)">How Taskitator handles your data, AI keys and account.</p>
+                <div class="vault-actions">
+                    <a class="icon-btn" href="privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+                    <a class="icon-btn" href="terms.html" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a>
+                    <a class="icon-btn" href="privacy.html#deletion" target="_blank" rel="noopener noreferrer">Account &amp; data deletion</a>
+                </div>
+            </div>
             <!-- General Preferences & Persona -->
             <div class="settings-card">
                 <h3 style="margin-top: 0; color: var(--primary);">🎛️ General & Persona</h3>
@@ -735,8 +754,8 @@
     </div>
     <p style="font-size:.85rem;color:var(--text-muted)">For Google sign-in, choose the account already linked to this Taskitator login. Google may accept your existing session.</p>
     <div id="vaultNewKeyArea" style="margin-top:18px">
-        <label for="vaultNewKey">New Gemini API key</label>
-        <input id="vaultNewKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your Google AI Studio API key">
+        <label for="vaultNewKey" id="vaultNewKeyLabel">New provider API key</label>
+        <input id="vaultNewKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the selected provider's API key">
         <p style="font-size:.85rem;color:var(--text-muted)">This is saved separately from general Settings. Google confirmation returns here before you enter the new key.</p>
     </div>
     <div class="vault-actions">

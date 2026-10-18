@@ -1,10 +1,14 @@
-# Taskitator — encrypted API keys (Phase 2)
+# Taskitator — Gemini / Claude and policy links (Phase 3)
 
-Start with [PHASE-2-SETUP.html](PHASE-2-SETUP.html), or its TXT equivalent.
+Start with [PHASE-3-SETUP.html](PHASE-3-SETUP.html), or its TXT equivalent.
 This build uses the uploaded Taskitator-main-2.zip as its baseline and includes
-Phase 1. See [PHASE-2-CHECKS.md](PHASE-2-CHECKS.md) for current validation and limits.
+Phases 1 and 2. See [PHASE-3-CHECKS.md](PHASE-3-CHECKS.md) for current validation and limits.
 The update ZIP preserves your configured auth-config.js. Configure the vault
-secret before uploading/deploying. Claude integration remains Phase 3.
+secret before uploading/deploying if Phase 2 was never configured; otherwise
+keep the existing keyring. Gemini and Claude retain separate encrypted keys,
+the same one-use verification, and a single existing Worker. Privacy and Terms
+are linked under Settings → System. Upload the cumulative update and run the
+existing GitHub Actions deployment workflow.
 
 ## Earlier login setup reference
 

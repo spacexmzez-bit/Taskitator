@@ -1,4 +1,4 @@
-> Phase 2 is current: encrypted Gemini key storage, protected key actions and the authenticated Worker AI gateway. See PHASE-2-SETUP.html and PHASE-2-CHECKS.md. The release notes below are historical.
+> Phase 3 is current: Gemini/Claude selection with separate encrypted keys and provider-bound confirmation; Claude chat/tools/audits/extraction through the existing Worker; policy links under Settings → System. See PHASE-3-SETUP.html and PHASE-3-CHECKS.md. The release notes below are historical.
 
 # What changed, in plain English
 

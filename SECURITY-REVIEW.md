@@ -1,8 +1,9 @@
 # Authentication changes and validation
 
-**Phase 2 is current.** Read PHASE-2-SETUP.html and PHASE-2-CHECKS.md. Saved Gemini
-keys are encrypted in server storage and key actions require one-use identity
-confirmation. The older text and test counts below describe earlier builds.
+**Phase 3 is current.** Read PHASE-3-SETUP.html and PHASE-3-CHECKS.md. Separate
+Gemini/Claude keys are encrypted in server storage; key actions require one-use
+identity confirmation bound to the provider as well as action/session/revision.
+The older text and test counts below describe earlier builds.
 
 Phase 1 adds coordinated deletion and Settings changes on top of this security
 build. See PHASE-1-REVIEW.md and PHASE-1-SETUP.html for the current behavior and

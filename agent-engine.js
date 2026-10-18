@@ -50,6 +50,10 @@ window.TaskitatorAgent = (() => {
 
     // Ephemeral in-memory conversation history
     const conversationHistory = [];
+    let conversationIdentity='';
+    const aiSelection=()=>window.TaskitatorVault?.selection?.()||{provider:'gemini',primary:PRIMARY_MODEL,fallback:FALLBACK_MODEL};
+    const selectionIdentity=selection=>selection.provider+':'+(selection.keyVersion||'');
+    function resetConversation(){conversationHistory.length=0;conversationIdentity='';sessionStorage.removeItem(SESSION_LATCH_KEY);}
 
     // =========================================================================
     // 1. Page Context Detection
@@ -130,7 +134,7 @@ window.TaskitatorAgent = (() => {
             contextDirectives += (
                 "CURRENT PAGE: Settings (settings.html).\n" +
                 "ROLE: Technical Configuration Assistant.\n" +
-                "Explain settings clearly: Gemini API key acquisition (Google AI Studio at aistudio.google.com), Cloudflare KV sync setup, MacroDroid webhook authorization headers, weekend start/end cycle calculation, emergency token mechanics (4 tokens/cycle reset at midnight post-weekend), and the immutable daily break window.\n" +
+                "Explain Gemini (Google AI Studio) and Claude (Claude Console) API keys, separate encrypted provider keys, password/Google confirmation, the Use provider activation button, zero-generation metadata tests, Privacy/Terms links under System, Cloudflare sync, MacroDroid status authorization, weekend cycles, emergency tokens and the daily break window. Never ask a user to send an API key or password in chat.\n" +
                 "CRITICAL RESTRICTION: You DO NOT have task manipulation tools on this page. If the user asks you to create, update, complete, or trash a task, you MUST explicitly refuse and instruct them to switch to the Today or General Tasks page first."
             );
         } else if (page === 'blocker_guide') {
@@ -249,24 +253,24 @@ window.TaskitatorAgent = (() => {
     // =========================================================================
     // 5. Dual-Model Cascade with Session 429 Fallback Latch
     // =========================================================================
-    async function executeModelCall(payload, apiKey) {
-        const isFallbackLatched = sessionStorage.getItem(SESSION_LATCH_KEY) === 'true';
-        let targetModel = isFallbackLatched ? FALLBACK_MODEL : PRIMARY_MODEL;
+    async function executeModelCall(payload, apiKey, selection=aiSelection()) {
+        const isFallbackLatched = selection.provider==='gemini' && sessionStorage.getItem(SESSION_LATCH_KEY) === 'true';
+        let targetModel = isFallbackLatched ? selection.fallback : selection.primary;
 
-        let response = await window.TaskitatorVault.generate(targetModel,payload);
+        let response = await window.TaskitatorVault.generate(targetModel,payload,selection);
 
         // Failover on 429 Quota Exceeded and set session latch
-        if (response.status === 429 && targetModel === PRIMARY_MODEL) {
+        if (selection.fallback && response.status === 429 && targetModel === selection.primary) {
             console.warn(`[Copilot] ${PRIMARY_MODEL} quota exhausted (HTTP 429). Latching to ${FALLBACK_MODEL} for remainder of session.`);
             sessionStorage.setItem(SESSION_LATCH_KEY, 'true');
-            targetModel = FALLBACK_MODEL;
+            targetModel = selection.fallback;
 
-            response = await window.TaskitatorVault.generate(targetModel,payload);
+            response = await window.TaskitatorVault.generate(targetModel,payload,selection);
         }
 
         if (!response.ok) {
             const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error?.message || `Gemini API HTTP ${response.status}`);
+            throw new Error(errData.error?.message || `AI API HTTP ${response.status}`);
         }
 
         const data = await response.json();
@@ -422,7 +426,11 @@ window.TaskitatorAgent = (() => {
     // 7. Sliding-Window Payload Trimmer
     // =========================================================================
     function getTrimmedContents() {
-        const recent = conversationHistory.slice(-8);
+        // Keep complete user/tool turns. A plain eight-message slice can begin
+        // with an orphaned tool result, which Claude correctly refuses.
+        let start=Math.max(0,conversationHistory.length-8);
+        while(start>0 && (conversationHistory[start].role!=='user' || conversationHistory[start].parts.some(part=>part.functionResponse)))start--;
+        const recent = conversationHistory.slice(start);
         return recent.map(msg => ({
             role: msg.role,
             parts: msg.parts
@@ -433,14 +441,16 @@ window.TaskitatorAgent = (() => {
     // 8. Conversational Turn Execution
     // =========================================================================
     async function sendMessage(userText) {
+        const selection=aiSelection();
         const apiKey = getApiKey();
         if (!apiKey) {
             return {
-                text: "No Gemini API key configured. Please add your key in Settings first."
+                text: "No key saved for the active AI provider. Save its key and activate the provider in Settings → Account."
             };
         }
 
         if (isProcessing) return;
+        if(conversationIdentity!==selectionIdentity(selection)){resetConversation();conversationIdentity=selectionIdentity(selection);}
         isProcessing = true;
 
         try {
@@ -471,7 +481,8 @@ window.TaskitatorAgent = (() => {
                     payload.tools = activeTools;
                 }
 
-                const { data, modelUsed } = await executeModelCall(payload, apiKey);
+                const { data, modelUsed } = await executeModelCall(payload, apiKey, selection);
+                if(selectionIdentity(selection)!==selectionIdentity(aiSelection()))throw new Error('AI settings changed. Start a new conversation.');
                 const candidate = data.candidates?.[0]?.content;
 
                 if (!candidate) {
@@ -479,26 +490,21 @@ window.TaskitatorAgent = (() => {
                 }
 
                 const parts = candidate.parts || [];
-                const toolCallPart = parts.find(p => p.functionCall);
+                const toolCallParts = parts.filter(p => p.functionCall);
 
-                if (toolCallPart) {
+                if (toolCallParts.length) {
                     conversationHistory.push({
                         role: 'model',
                         parts: parts
                     });
 
-                    const fnName = toolCallPart.functionCall.name;
-                    const fnArgs = toolCallPart.functionCall.args || {};
-                    const toolResult = executeToolCall(fnName, fnArgs);
-
                     conversationHistory.push({
                         role: 'user',
-                        parts: [{
-                            functionResponse: {
-                                name: fnName,
-                                response: toolResult
-                            }
-                        }]
+                        parts: toolCallParts.map(part=>({functionResponse:{
+                            name:part.functionCall.name,
+                            ...(part.functionCall.id?{id:part.functionCall.id}:{}),
+                            response:executeToolCall(part.functionCall.name,part.functionCall.args||{})
+                        }}))
                     });
 
                     continue;
@@ -523,9 +529,10 @@ window.TaskitatorAgent = (() => {
     // 9. Single-Pass Batch Note Extraction & Proofreading Engine
     // =========================================================================
     async function extractNotesBatch(notesPayload, format = 'txt') {
+        const selection=aiSelection();
         const apiKey = getApiKey();
         if (!apiKey) {
-            return { success: false, error: 'No Gemini API key configured in Settings.' };
+            return { success: false, error: 'Save a key for the active AI provider in Settings → Account.' };
         }
 
         // Strict Completion Gate: Verify every AI-locked task is 100% finished
@@ -575,6 +582,7 @@ ${formattedInput}`;
 
         try {
             const payload = {
+                taskitatorFormat:'notes',
                 contents: [{
                     role: 'user',
                     parts: [{ text: prompt }]
@@ -585,7 +593,7 @@ ${formattedInput}`;
                 }
             };
 
-            const { data } = await executeModelCall(payload, apiKey);
+            const { data } = await executeModelCall(payload, apiKey, selection);
             const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
             if (!rawJson) throw new Error('Model produced an empty response.');
 
@@ -731,6 +739,7 @@ ${formattedInput}`;
     }
 
     window.addEventListener('taskitator-synced', refreshSystemNames);
+    window.addEventListener('taskitator-ai-provider-changed',resetConversation);
 
     if (document.readyState === 'loading') {
         window.addEventListener('taskitator-auth-ready', initUI);

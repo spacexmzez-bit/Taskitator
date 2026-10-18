@@ -1,4 +1,4 @@
-> Phase 2 is current: use PHASE-2-SETUP.html and PHASE-2-CHECKS.md. The counts and instructions below are historical, not results for this package.
+> Phase 3 is current: use PHASE-3-SETUP.html and PHASE-3-CHECKS.md. The counts and instructions below are historical, not results for this package.
 
 # Verification for this update
 

@@ -410,6 +410,7 @@ const TaskitatorEngine = {
     // 3. AI Verification Cascade (Forensic Auditor & Failover)
     // =========================================================================
     AuditEngine: {
+        selection(){return window.TaskitatorVault?.selection?.()||{provider:'gemini',primary:TaskitatorEngine.PRIMARY_MODEL,fallback:TaskitatorEngine.FALLBACK_MODEL};},
         validateFile(file, maxMb = TaskitatorEngine.MAX_FILE_SIZE_MB) {
             if (!file) {
                 return { valid: false, error: 'No file attached.' };
@@ -462,8 +463,9 @@ const TaskitatorEngine = {
             });
         },
 
-        async callGeminiWithParts(modelName, apiKey, partsArray) {
+        async callGeminiWithParts(modelName, apiKey, partsArray, format='proof', selection=this.selection()) {
             const payload = {
+                taskitatorFormat:format,
                 contents: [{
                     // Older saved exemplars contain the blob fields directly.
                     // Gemini requires those fields inside an inline_data Part.
@@ -481,7 +483,7 @@ const TaskitatorEngine = {
                 }
             };
 
-            return await window.TaskitatorVault.generate(modelName,payload);
+            return await window.TaskitatorVault.generate(modelName,payload,selection);
         },
 
         async callGemini(modelName, apiKey, inlineDataPart, promptText) {
@@ -493,6 +495,7 @@ const TaskitatorEngine = {
         },
 
         async validateCriteria(criteriaText, taskTitle = '', exemplarFile = null) {
+            const selection=this.selection();
             const trimmedCriteria = (criteriaText || '').trim();
             const trimmedTitle = (taskTitle || '').trim();
 
@@ -507,7 +510,7 @@ const TaskitatorEngine = {
             }
 
             const fileSignature = exemplarFile ? `${exemplarFile.name}_${exemplarFile.size}` : 'nofile';
-            const cacheKey = `${trimmedTitle}:::${trimmedCriteria}:::${fileSignature}`;
+            const cacheKey = `${selection.provider}:${selection.keyVersion||''}:::${trimmedTitle}:::${trimmedCriteria}:::${fileSignature}`;
             if (TaskitatorEngine._criteriaValidationCache.has(cacheKey)) {
                 return TaskitatorEngine._criteriaValidationCache.get(cacheKey);
             }
@@ -523,7 +526,7 @@ const TaskitatorEngine = {
             if (!apiKey) {
                 return {
                     success: false,
-                    error: 'Gemini API key is not configured. Please set your key in Settings.'
+                    error: 'Save a key for the active AI provider in Settings → Account.'
                 };
             }
 
@@ -569,13 +572,13 @@ Return strictly valid JSON with this exact schema:
             }
 
             try {
-                let usedModel = TaskitatorEngine.PRIMARY_MODEL;
-                let res = await this.callGeminiWithParts(usedModel, apiKey, parts);
+                let usedModel = selection.primary;
+                let res = await this.callGeminiWithParts(usedModel, apiKey, parts, 'criteria', selection);
 
-                if (res.status === 429 || res.status === 503) {
+                if (selection.fallback && (res.status === 429 || res.status === 503)) {
                     console.warn(`[AuditEngine] Model ${usedModel} hit ${res.status}. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
-                    usedModel = TaskitatorEngine.FALLBACK_MODEL;
-                    res = await this.callGeminiWithParts(usedModel, apiKey, parts);
+                    usedModel = selection.fallback;
+                    res = await this.callGeminiWithParts(usedModel, apiKey, parts, 'criteria', selection);
                 }
 
                 if (!res.ok) {
@@ -617,6 +620,7 @@ Return strictly valid JSON with this exact schema:
         },
 
         async verifyProof({ file, taskTitle, criteria, userContext, exemplarPart = null }) {
+            const selection=this.selection();
             let settings = {};
             try {
                 settings = JSON.parse(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_SETTINGS) || '{}');
@@ -626,7 +630,7 @@ Return strictly valid JSON with this exact schema:
 
             const apiKey = Boolean(window.TaskitatorVault?.available);
             if (!apiKey) {
-                return { success: false, status: 401, error: 'No Gemini API Key configured in Settings.' };
+                return { success: false, status: 401, error: 'Save a key for the active AI provider in Settings → Account.' };
             }
 
             const check = this.validateFile(file, TaskitatorEngine.MAX_FILE_SIZE_MB);
@@ -675,13 +679,13 @@ Return valid JSON matching this schema:
             parts.push(proofPart);
 
             try {
-                let usedModel = TaskitatorEngine.PRIMARY_MODEL;
-                let res = await this.callGeminiWithParts(usedModel, apiKey, parts);
+                let usedModel = selection.primary;
+                let res = await this.callGeminiWithParts(usedModel, apiKey, parts, 'proof', selection);
 
-                if (res.status === 429 || res.status === 503) {
+                if (selection.fallback && (res.status === 429 || res.status === 503)) {
                     console.warn(`[AuditEngine] Model ${usedModel} returned ${res.status}. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
-                    usedModel = TaskitatorEngine.FALLBACK_MODEL;
-                    res = await this.callGeminiWithParts(usedModel, apiKey, parts);
+                    usedModel = selection.fallback;
+                    res = await this.callGeminiWithParts(usedModel, apiKey, parts, 'proof', selection);
                 }
 
                 if (!res.ok) {

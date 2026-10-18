@@ -127,7 +127,11 @@
             const res = await fetch(config.workerUrl.replace(/\/$/, '') + path,
                 { ...requestOptions, headers, cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
             const data = await res.json();
-            if (!res.ok) { const error = new Error(data.error || 'Account request failed.'); error.status = res.status; throw error; }
+            if (!res.ok) {
+                const message=res.status===404 && path.startsWith('/ai/') && /Endpoint not found/i.test(data.error||'')?
+                    'The website is newer than its Worker. In GitHub Actions, run Deploy Taskitator security Worker on the branch you uploaded, wait for success, then reload. Your local data has been retained.':data.error || 'Account request failed.';
+                const error = new Error(message); error.status = res.status; throw error;
+            }
             return data;
         },
         async connect(body) {

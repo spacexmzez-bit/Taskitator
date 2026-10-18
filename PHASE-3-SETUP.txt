@@ -1,0 +1,216 @@
+TASKITATOR PHASE 3 — GEMINI / CLAUDE & SETTINGS POLICY LINKS
+==========================================================
+
+If Phase 2 already works, installation is: upload the extracted update files
+to GitHub, commit, and run Deploy Taskitator security Worker in GitHub Actions.
+Keep your current vault encryption secret. No new DNS, OAuth app, Worker,
+database, provider-wide API secret or encryption key is required for Phase 3.
+
+This package includes the Phase 2 changes as well as Phase 3, based on your
+uploaded Taskitator-main-2.zip. You do not have to upload Phase 2 separately.
+auth-config.js and wrangler.toml are excluded from the update ZIP so the live
+public config and Worker bindings stay in place. A complete-project ZIP is
+also available; preserve your live config if you use that alternative.
+
+A. CONFIRM YOUR EXISTING SETUP
+-------------------------------
+1. Keep your data/repository backups, pause Taskitator blocking macros and keep
+   your working phone token. Do not clear browser data containing unsynced drafts.
+2. If you already added API_VAULT_KEYS and API_VAULT_ACTIVE_KEY_ID in Cloudflare,
+   leave them exactly as they are. Do not generate or replace the encryption key.
+3. If you have not configured them yet, follow PHASE-2-SETUP.html section B.
+   You can use the private TXT key file supplied earlier as the API_VAULT_KEYS
+   Secret value, and v1 as the API_VAULT_ACTIVE_KEY_ID Text value. Keep that TXT
+   private and backed up. NEVER upload it to GitHub or put it inside the app.
+4. Existing Clerk password verification and linked-Google confirmation are
+   reused for both provider keys. If those worked in Phase 2, do not redo their
+   setup. If they did not, follow Phase 2 guide sections C/D once.
+
+B. UPLOAD AND DEPLOY — COMPLETE BOTH PARTS
+------------------------------------------
+1. Extract Taskitator-phase-3-update.zip. Open the extracted contents: settings.html,
+   vault-client.js and the cloudflare folder must be at the top level.
+2. Open your existing Taskitator GitHub repository on its usual hosting branch.
+   Choose Add file > Upload files. Upload ALL extracted files/folders to the
+   repository ROOT. Upload the contents, not the ZIP or an enclosing folder.
+3. Commit the upload. Do not overwrite your live auth-config.js, change the
+   Worker name or create a second Durable Object migration. Your existing
+   Cloudflare Variables and Secrets, including the original keyring, stay put.
+4. Open GitHub Actions. Select Deploy Taskitator security Worker. Press Run
+   workflow, select the branch you just updated, then Run workflow again.
+   A phone browser's Desktop site option can reveal the button if it is hidden.
+5. Open that run and wait for BOTH its regression tests and deployment to pass
+   with a green check. If it fails, open the failed step and keep its error.
+   GitHub Pages publishing the website does not deploy this manual Worker job.
+6. Wait for the usual website deployment too. Close old Taskitator tabs, open
+   the live site again and refresh. The cache version is now
+   taskitator-phase-3-providers-v1. Your phone token is not normally rotated.
+7. If you see Endpoint not found / Password changes are managed through your
+   profile, the website is probably contacting an older Worker. Complete step
+   4 on the correct branch and confirm a successful deployment. Do not reset
+   account data or generate another vault secret to address this error.
+8. If the deployment says a repository secret is missing, restore the existing
+   CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID under GitHub repository Settings
+   > Secrets and variables > Actions. The vault keyring belongs in the Worker's
+   Variables and Secrets, not in those deployment-credential fields.
+
+C. CONTINUE USING GEMINI
+--------------------------
+1. Sign in to your existing Taskitator account. Settings still opens on Tags &
+   Prio. Select Account, then find AI provider & saved keys.
+2. Existing accounts default to Gemini. Your already-encrypted Gemini key stays
+   saved. If it appears as a recovered key, confirm and select Use this key as
+   described in the Phase 2 guide. Do not create a new Taskitator account.
+3. The model chain remains gemini-3.5-flash-lite primary and
+   gemini-3.1-flash-lite fallback. Both use the saved Gemini provider key.
+4. Click the information button next to the provider selector to view model and
+   file support. Changing the selector browses/manages that provider's saved
+   key; the Currently used for AI label shows which provider is actually active.
+5. If you only want Gemini, you can stop here. Claude is optional. System now
+   contains the Privacy Policy, Terms & Conditions and data-deletion information
+   links; each opens a public page in another browser tab.
+
+D. GET A CLAUDE KEY — ONLY IF YOU WANT CLAUDE
+---------------------------------------------
+1. Open https://platform.claude.com and sign in to Claude Console, or create a
+   Console account. Use the API platform rather than a Claude chat conversation.
+2. Open Settings > API keys. Choose Create key and give it a recognizable name,
+   for example Taskitator personal. Choose an expiration suitable for your use.
+3. Link it to your own account and scope it to ONE intended workspace. A key
+   that can act across several workspaces may require a separate workspace-ID
+   header; this version expects a key already scoped to one workspace.
+4. Copy the complete API key and save it in your password manager. The Console
+   shows the full secret only when it is created. Do not paste it in chat,
+   GitHub, auth-config.js or a shared Cloudflare variable.
+5. In Console Settings > Billing, confirm the organization has API access and
+   available usage credits or billing. API access is a separate Console product;
+   a chat subscription by itself does not establish API access. Some plans can
+   provide API credits after linking a Console organization; check your account.
+6. This release uses claude-haiku-5-5, not Sonnet or Opus. The key's account must
+   have access to that model. No administrator setup or second Worker is needed
+   just to add a user's own Claude key in Taskitator.
+
+E. SAVE, TEST AND ACTIVATE CLAUDE
+---------------------------------
+1. In Taskitator open Settings > Account > AI provider & saved keys. Change
+   View and manage provider to Claude. Your Gemini key remains saved separately.
+2. Press Save / replace key. Confirm with your Taskitator password or the Google
+   account linked to this existing Clerk login. Google decides whether its
+   existing session is sufficient; Taskitator does not force a fresh Google OTP.
+3. For Google, finish Google confirmation and return to the dialog BEFORE
+   entering the new Claude key. Select the already-linked Google identity.
+   No new API key is stored in sessionStorage across that redirect.
+4. Enter the Claude key and press Save key. Taskitator checks the model metadata
+   with zero generated tokens before saving. A failed check preserves the old
+   saved key. The success message does not prove generation credits or quota.
+5. Press Use Claude for AI. Confirm the Currently used for AI label changes to
+   Claude. General Settings Save is separate from key saving/provider activation.
+6. Send a small Copilot request. This is a REAL generation and can consume API
+   credits. The displayed model should be claude-haiku-5-5. Test ordinary criteria
+   review and a small evidence audit too; these also make real AI calls.
+7. Claude accepts JPG, PNG, WebP and PDF in this integration. Convert HEIC photos
+   before uploading them to Claude, or choose Gemini. Keep each file within
+   5 MB and the complete request within 20 MB. Reference exemplars still work.
+8. Show/copy/change/delete use the same one-use password/Google protection as
+   Gemini. Revealed keys clear after 30 seconds or when the page is hidden/left.
+   Your operating system may retain clipboard contents separately.
+9. To switch back, select Gemini in the provider selector, then press Use Gemini
+   for AI. Its previous key is waiting for you. Browsing a provider does not
+   activate it, and deleting one provider key does not delete the other.
+10. Provider activation is stored with your cloud account. Other devices refresh
+    it when they load/sync or you press Refresh status. Provider/key changes
+    reset Copilot's conversation context; old context is not sent to the new
+    provider. A request already in flight can be rejected if settings change.
+11. There is no automatic Gemini-to-Claude or Claude-to-Gemini fallback. Gemini
+    retains its own two-model fallback; a Claude error stays a Claude error.
+    This avoids sending content to another provider without your selection.
+
+F. CHECK SECURITY, POLICY LINKS AND EXISTING FEATURES
+-----------------------------------------------------
+1. For EACH provider you use, try Show key and cancel before identity confirmation:
+   the key must stay hidden. Then confirm and complete a reveal. Confirming one
+   provider/action must not authorize a different provider/action.
+2. Test linked-Google confirmation for a Claude key, including return to the
+   Account controls. An unrelated Google identity should be rejected. Save/copy
+   and deletion confirmations are one use and expire after five minutes.
+3. In Settings > System, open Privacy Policy, Terms & Conditions and Account &
+   data deletion. Check Mazendev and info@mazendev.com are correct and the AI
+   section explains the selected provider and server-side encrypted keys.
+4. Confirm tasks/projects, normal sync, Tags & Prio default, AI task locks,
+   emergency/break behavior and your existing MacroDroid status request still work.
+5. On a DISPOSABLE account, test deleting a provider key: the other key remains.
+   Deleting a key in Taskitator does not revoke it in Google/Claude Console.
+6. If testing full account deletion, use a DISPOSABLE account and pause its
+   blocking first. The existing manually typed Macrodroid disabled phrase,
+   blocker checkbox and identity confirmation remain. Both providers' encrypted
+   active/recovered/archive keys are included in the coordinated cleanup.
+7. After tests pass, check your REAL account's MacroDroid status request before
+   resuming blocking. Keep access to MacroDroid and its recovery controls.
+
+G. TROUBLESHOOT WITHOUT RESETTING YOUR DATA
+-------------------------------------------
+Missing endpoint: finish B.4-B.6. Check the workflow ran on the same branch whose
+updated files you uploaded. The new Worker needs vault.js, ai-models.js and
+ai-gateway.js alongside worker.js. Upload all update files together.
+
+Vault setup/decryption error: keep the original API_VAULT_KEYS keyring and its
+matching active ID. Restore a missing old version from your password manager;
+a newly generated random key cannot decrypt existing records.
+
+Claude key check rejected: use a Claude API key scoped to one workspace, not a
+chat login, Google key or OAuth secret. Check key expiry, workspace permissions,
+model access and Console billing. Check tests use zero generation, not credits.
+
+Key test succeeds, real AI fails: metadata access does not prove billing/quota
+for Messages/generation. Check the provider's usage/billing console and model
+availability. A timed-out request may already have used credits; retry carefully.
+
+Switching says save a key first: choose the provider, save/test its own key,
+then use its activation button. Merely choosing the dropdown does not activate it.
+
+AI settings changed: another tab/device changed the active provider or key.
+Press Refresh status and start a new conversation/request. Wait for current
+AI work to finish before switching providers.
+
+Claude photo rejected: use JPG/PNG/WebP or PDF. HEIC is not accepted by this
+Claude integration. Convert it or activate Gemini, keeping the existing key.
+
+Claude declines / invalid JSON / truncated output: no partial audit approval
+or partial tool action is accepted. Revise the content or try a smaller request.
+The app does not silently route this failure to Gemini.
+
+Extra Claude archives: Phase 2's encrypted Claude archives become protected
+recovered keys. Review/remove unwanted recovered copies and refresh if the
+16-copy limit is reached. An inaccessible archive is retained, not discarded;
+the operator may need to restore an older encryption-key version.
+
+Verification/quotas: one proof authorizes one action/provider/session/revision.
+Verification starts are capped at eight per minute/user; key checks at six.
+Generation remains capped at 30 requests/minute/user and two concurrent calls
+across both providers. The provider can impose its own additional limits.
+
+H. LIMITS AND OFFICIAL REFERENCES
+----------------------------------
+Both keys remain encrypted at rest, not end-to-end encrypted. The Worker can
+decrypt them to contact their provider. Protect Cloudflare/Clerk access and
+your keyring backup. Other devices, old exported files and clipboard managers
+may hold separate copies. New exports and sync snapshots omit raw keys.
+
+Claude Haiku 5.5 uses thinking disabled and low effort here; sampling parameters
+from the Gemini payload are not sent to Claude. Structured JSON outputs are
+used for criteria, evidence and note extraction. Output is capped at 16,384
+tokens and one result. Provider timeouts are 55 seconds; the client allows 70.
+
+No real API key, paid generation, production migration/deletion or live browser
+OAuth flow was exercised while building this package. Automated checks use
+substituted provider HTTP/storage with real cryptographic operations. Run the
+live checks above after deployment. Support: Mazendev, info@mazendev.com.
+
+Official references checked October 18, 2026:
+https://platform.claude.com/docs/en/get-api-key
+https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide
+https://platform.claude.com/docs/en/api/models/retrieve
+https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+https://platform.claude.com/docs/en/build-with-claude/vision
+https://support.claude.com/en/articles/8977456-how-do-i-pay-for-my-claude-api-usage
+https://ai.google.dev/gemini-api/docs/models
