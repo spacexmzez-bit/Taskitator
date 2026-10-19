@@ -20,7 +20,7 @@ function client() {
         location:window.location, crypto:webcrypto, TextEncoder, AbortSignal, AbortController, Headers, Response,
         setTimeout,clearTimeout,console,document:{addEventListener(){},getElementById(){return null;},visibilityState:'visible'},
         CustomEvent: class { constructor(name){this.type=name;} },
-        fetch:async()=> Response.json({}) });
+        fetch:async(url)=>String(url).endsWith('SYSTEM_PROMPT.md') ? new Response(fs.readFileSync(new URL('SYSTEM_PROMPT.md',root),'utf8'),{status:200,headers:{'Content-Type':'text/markdown'}}) : Response.json({}) });
     vm.runInContext(fs.readFileSync(new URL('auth-client.js',root),'utf8'),context);
     return { storage, window, context, auth:window.TaskitatorAuth };
 }
@@ -147,7 +147,7 @@ test('evidence criteria and Copilot use the vault and retain Gemini fallback beh
 test('Google key callback opens Account controls and permits one verified reveal with clipboard fallback',async()=>{
     const f=client(),events=new Map(),nodes=new Map();let accountTabOpened=false;
     const node=id=>{
-        if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,textContent:'',handlers:{},
+        if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,textContent:'',style:{},handlers:{},
             addEventListener(name,fn){this.handlers[name]=fn;},replaceChildren(){},append(){},
             showModal(){this.open=true;},close(){this.open=false;this.handlers.close?.();}});
         return nodes.get(id);
