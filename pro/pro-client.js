@@ -170,6 +170,55 @@
                 })
             });
         }
+
+        /**
+         * Phase 2.5: Check if a unique username is available.
+         */
+        async checkUsername(username) {
+            if (!username) throw new Error('Username is required.');
+            return await this.request(`/pro/username/check?username=${encodeURIComponent(username.trim())}`, {
+                method: 'GET'
+            });
+        }
+
+        /**
+         * Phase 2.5: Set or update the account's unique username.
+         */
+        async setUsername(username) {
+            if (!username) throw new Error('Username is required.');
+            return await this.request('/pro/username', {
+                method: 'POST',
+                body: JSON.stringify({ username: username.trim() })
+            });
+        }
+
+        /**
+         * Phase 2.5: Get the account username profile.
+         */
+        async getUsernameProfile() {
+            return await this.request('/pro/username/profile', { method: 'GET' });
+        }
+
+        /**
+         * Phase 2.5: Resolve a username for login (pre-auth).
+         */
+        async resolveUsername(username) {
+            const baseUrl = (this.baseUrl || global.TASKITATOR_AUTH_CONFIG?.workerUrl || '').trim().replace(/\/+$/, '');
+            if (!baseUrl) throw new Error('Worker URL is missing.');
+            const res = await fetch(`${baseUrl}/pro/username/resolve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: String(username || '').trim() })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const err = new Error(data.error || 'Failed to resolve username.');
+                err.status = res.status;
+                err.disallow_google = data.disallow_google;
+                throw err;
+            }
+            return data;
+        }
     }
 
     global.ProClient = ProClient;

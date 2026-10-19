@@ -1,3 +1,4 @@
+import { clerkAPI } from '../cloudflare/auth.js';
 // File: pro/pro-backend.js
 // Taskitator Pro Phase 2: Pro Gateway, Keyo Entitlement, Hosted Claude Haiku 5.5 AI Review,
 // Multi-File Proof Review, Batch Proof Review, and BYOK Mode Toggle.
@@ -115,6 +116,25 @@ export class ProGateway {
             return await this.confirmBatchReview(accountId, body);
         }
 
+        // --- Phase 2.5: Unique Username Endpoints ---
+        // Route: GET /pro/username/check
+        if (method === 'GET' && path === '/pro/username/check') {
+            const url = new URL(request.url);
+            const uname = url.searchParams.get('username') || '';
+            return await this.checkUsername(uname, accountId);
+        }
+
+        // Route: POST /pro/username
+        if (method === 'POST' && path === '/pro/username') {
+            const body = await request.json().catch(() => ({}));
+            return await this.setUsername(accountId, body);
+        }
+
+        // Route: GET /pro/username/profile
+        if (method === 'GET' && path === '/pro/username/profile') {
+            return await this.getUsernameProfile(accountId);
+        }
+
         return json({ error: `Pro endpoint not found: ${path}` }, 404);
     }
 
@@ -123,11 +143,15 @@ export class ProGateway {
     async getStatus(accountId) {
         const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
 
+        const usernameRec = await this.storage.get(`pro:user:username:${accountId}`);
+        const currentUsername = usernameRec?.username || null;
+
         if (!entitlement) {
             return json({
                 isPro: false,
                 tier: 'free',
                 status: 'inactive',
+                username: currentUsername,
                 use_byok: false,
                 credits: {
                     daily_limit: 0,
@@ -162,6 +186,7 @@ export class ProGateway {
             isPro: status === 'active',
             tier: entitlement.tier,
             status,
+            username: currentUsername,
             use_byok: useByok,
             activated_at: entitlement.activated_at,
             expires_at: entitlement.expires_at,
@@ -591,11 +616,7 @@ export class ProGateway {
         const apiKey = this.env?.CLAUDE_API_KEY || this.env?.ANTHROPIC_API_KEY;
 
         if (!apiKey) {
-            return {
-                verdict: 'approved',
-                confidence: 0.98,
-                critique: `Evidence verified via Claude Haiku 5.5 against task criteria for "${title}". All observable requirements met across ${files.length} evidence attachment(s).`
-            };
+            throw new Error('Claude API key (CLAUDE_API_KEY) is not configured in Cloudflare Worker secrets. Add CLAUDE_API_KEY in Cloudflare Dashboard > Workers & Pages > taskitator-sync > Settings > Variables and Secrets.');
         }
 
         const system = "You are Taskitator Pro's forensic task audit AI, powered by Claude Haiku 5.5. " +
@@ -677,12 +698,7 @@ export class ProGateway {
         const apiKey = this.env?.CLAUDE_API_KEY || this.env?.ANTHROPIC_API_KEY;
 
         if (!apiKey) {
-            return tasks.map((t, idx) => ({
-                task_id: t.id,
-                status: idx === 0 ? 'eligible' : 'rejected',
-                verdict: idx === 0 ? 'approved' : 'rejected',
-                reason: idx === 0 ? `Evidence satisfies criteria for "${t.title}".` : `Evidence does not demonstrate requirements for "${t.title}".`
-            }));
+            throw new Error('Claude API key (CLAUDE_API_KEY) is not configured in Cloudflare Worker secrets. Add CLAUDE_API_KEY in Cloudflare Dashboard > Workers & Pages > taskitator-sync > Settings > Variables and Secrets.');
         }
 
         const taskManifest = tasks.map(t => `- ID: ${t.id}\n  Title: ${t.title}\n  Criteria: ${t.criteria}`).join('\n\n');
@@ -754,5 +770,124 @@ export class ProGateway {
             verdict: 'rejected',
             reason: 'Could not reliably parse batch evaluation.'
         }));
+    }
+
+    // --- Phase 2.5: Unique Username & Resolution System ---
+
+    async checkUsername(username, currentAccountId = null) {
+        const raw = String(username || '').trim();
+        const norm = raw.toLowerCase();
+        if (!norm || !/^[a-zA-Z0-9_]{3,20}$/.test(norm)) {
+            return json({
+                available: false,
+                error: 'Username must be 3-20 characters long and contain only letters, numbers, and underscores.'
+            }, 400);
+        }
+        const RESERVED = ['admin', 'administrator', 'system', 'root', 'taskitator', 'support', 'help', 'moderator', 'mod', 'official', 'bot', 'universe', 'owner', 'security'];
+        if (RESERVED.includes(norm)) {
+            return json({ available: false, error: 'This username is reserved.' }, 400);
+        }
+        const existing = await this.storage.get(`pro:username:map:${norm}`);
+        if (existing && existing.accountId !== currentAccountId) {
+            return json({ available: false, username: raw, error: 'Username is already taken.' }, 200);
+        }
+        return json({ available: true, username: raw });
+    }
+
+    async setUsername(accountId, body) {
+        const raw = String(body.username || '').trim();
+        const norm = raw.toLowerCase();
+        if (!norm || !/^[a-zA-Z0-9_]{3,20}$/.test(norm)) {
+            return json({
+                error: 'Username must be 3-20 characters long and contain only letters, numbers, and underscores.'
+            }, 400);
+        }
+        const RESERVED = ['admin', 'administrator', 'system', 'root', 'taskitator', 'support', 'help', 'moderator', 'mod', 'official', 'bot', 'universe', 'owner', 'security'];
+        if (RESERVED.includes(norm)) {
+            return json({ error: 'This username is reserved.' }, 400);
+        }
+
+        const existing = await this.storage.get(`pro:username:map:${norm}`);
+        if (existing && existing.accountId !== accountId) {
+            return json({ error: 'Username is already taken.' }, 409);
+        }
+
+        // Release old username if user already had one
+        const prev = await this.storage.get(`pro:user:username:${accountId}`);
+        if (prev && prev.normalizedUsername && prev.normalizedUsername !== norm) {
+            await this.storage.delete(`pro:username:map:${prev.normalizedUsername}`);
+        }
+
+        const now = Date.now();
+        await this.storage.put(`pro:username:map:${norm}`, {
+            accountId,
+            username: raw,
+            createdAt: now
+        });
+        await this.storage.put(`pro:user:username:${accountId}`, {
+            username: raw,
+            normalizedUsername: norm,
+            updatedAt: now
+        });
+
+        const link = await this.storage.get('identity:' + accountId);
+        if (link) {
+            link.username = raw;
+            await this.storage.put('identity:' + accountId, link);
+        }
+
+        return json({ success: true, username: raw, normalized: norm });
+    }
+
+    async getUsernameProfile(accountId) {
+        const usernameRec = await this.storage.get(`pro:user:username:${accountId}`);
+        const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
+        const isPro = entitlement?.status === 'active';
+        // Note: Strict privacy rule - members see usernames, never email!
+        return json({
+            username: usernameRec?.username || null,
+            isPro,
+            tier: entitlement?.tier || 'free'
+        });
+    }
+
+    async resolveUsername(body) {
+        const raw = String(body.username || '').trim();
+        const norm = raw.toLowerCase();
+        if (!norm || !/^[a-zA-Z0-9_]{3,20}$/.test(norm)) {
+            return json({ error: 'Username must be 3-20 characters long and contain only letters, numbers, and underscores.' }, 400);
+        }
+        const entry = await this.storage.get(`pro:username:map:${norm}`);
+        if (!entry) {
+            return json({ error: 'Username not found. Check spelling or sign in using your email address.' }, 404);
+        }
+
+        // Check if user account was created via Google OAuth only
+        let clerkUser = null;
+        if (this.env && typeof clerkAPI === 'function') {
+            try {
+                clerkUser = await clerkAPI(this.env, 'users/' + encodeURIComponent(entry.accountId));
+            } catch {}
+        }
+
+        if (clerkUser) {
+            const hasGoogle = clerkUser.external_accounts?.some(acc => acc.provider === 'oauth_google' || acc.provider === 'google');
+            const hasPassword = Boolean(clerkUser.password_enabled);
+            // Strict constraint: Google sign-in disallowed from username login
+            if (hasGoogle && !hasPassword) {
+                return json({
+                    error: 'Google sign-in accounts cannot log in using a username. Please sign in using your email address or Google Sign-In button.',
+                    disallow_google: true
+                }, 403);
+            }
+            const email = clerkUser.email_addresses?.find(e => e.id === clerkUser.primary_email_address_id)?.email_address
+                || clerkUser.email_addresses?.[0]?.email_address;
+            return json({ success: true, username: entry.username, email, requires_password: true });
+        }
+
+        // Fallback for mock environment or stored identity
+        const link = await this.storage.get('identity:' + entry.accountId);
+        const email = (link?.display_name && link.display_name.includes('@')) ? link.display_name : (entry.email || `${norm}@example.com`);
+        return json({ success: true, username: entry.username, email, requires_password: true });
     }
 }
