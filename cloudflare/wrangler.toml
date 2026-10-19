@@ -21,3 +21,12 @@ class_name = "TaskitatorSync"
 [[migrations]]
 tag = "taskitator-sync-v1"
 new_sqlite_classes = ["TaskitatorSync"]
+
+[[d1_databases]]
+binding = "TASKITATOR_DB"
+database_name = "taskitator-db"
+database_id = "77181165-dff3-49c7-907f-521b4b2d3b45"
+
+[[r2_buckets]]
+binding = "TASKITATOR_EVIDENCE"
+bucket_name = "taskitator-evidence"
