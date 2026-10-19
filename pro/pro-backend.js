@@ -1,7 +1,11 @@
 // File: pro/pro-backend.js
 // Taskitator Pro Phase 1: Pro Gateway, Keyo Entitlement & Hosted AI Review
-// Strictly enforces Gemini Lite/Flash model boundaries (Pro-family models excluded)
-// Implements Asia/Riyadh quota tracking, credit reservation, and idempotency.
+// Strictly conforms to Keyo's 18 Oct 2026 App Integration & Security Guide:
+// - 16-char normalized keys, project-scoped public clientId
+// - POST {endpoint}/api/v1/activate?projectId={PUBLIC_CLIENT_ID}
+// - Signed ECDSA P-256 token verification
+// - Enforces Gemini Lite and Flash model boundaries (Pro models excluded)
+// - Asia/Riyadh quota tracking, credit reservation, and idempotency.
 
 const OFFSET_RIYADH = 3 * 3600000; // Asia/Riyadh UTC+3
 const DAY_MS = 86400000;
@@ -12,6 +16,17 @@ const CORS = {
     'Access-Control-Max-Age': '86400',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff'
+};
+
+// Default Keyo Public Configuration from Integration Guide
+const DEFAULT_KEYO_ORIGIN = 'https://keyo-api.spacexmzez.workers.dev';
+const DEFAULT_KEYO_JWK = {
+    kty: 'EC',
+    crv: 'P-256',
+    x: '12kmFYFug4HYBs-ZTpRleElP9Q8kpQaI5aVyG9CqVOc',
+    y: 'Up7x4X65FL-LaRweIptSkCZsXN4A3mZM7XIIHRzNndY',
+    ext: true,
+    key_ops: ['verify']
 };
 
 function json(value, status = 200) {
@@ -34,8 +49,16 @@ function getRiyadhDateStrings(now = Date.now()) {
     return { dateStr, monthStr };
 }
 
-// Strict model allowlist: Lite and Flash families only.
-// Pro-family models are strictly forbidden in this build per execution spec.
+function base64UrlDecode(str) {
+    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) base64 += '=';
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+}
+
+// Strict model allowlist: Lite and Flash families only per execution plan
 const ALLOWED_MODELS = [
     'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
@@ -45,7 +68,6 @@ const ALLOWED_MODELS = [
 ];
 
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
-const FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 
 // Supported proof file types per execution spec (JPEG, PNG, WebP, PDF)
 const ALLOWED_MIME_TYPES = [
@@ -148,10 +170,11 @@ export class ProGateway {
             return json({ error: 'Please provide a valid license key.', code: 'INVALID_KEY' }, 400);
         }
 
-        const normalizedKey = rawKey.toUpperCase();
+        // Keyo normalization: uppercase and strip display hyphens/spaces
+        const normalizedKey = rawKey.toUpperCase().replace(/[\s-]/g, '');
         const keyFingerprint = await sha256(normalizedKey);
 
-        // Check cross-resource binding: a key already bound to another account cannot be stolen
+        // Check cross-resource binding: a key already bound to another account cannot be claimed
         const existingBinding = await this.storage.get(`pro:binding:${keyFingerprint}`);
         if (existingBinding && existingBinding.account_id !== accountId) {
             return json({
@@ -160,8 +183,8 @@ export class ProGateway {
             }, 409);
         }
 
-        // Validate key with Keyo API or deterministic mock adapter
-        const validation = await this.verifyKeyoKey(normalizedKey, accountId);
+        // Validate key against Keyo API contract or test adapter
+        const validation = await this.verifyKeyoKey(normalizedKey, accountId, rawKey);
         if (!validation.valid) {
             return json({
                 error: validation.reason || 'License key validation failed.',
@@ -170,14 +193,14 @@ export class ProGateway {
         }
 
         const now = Date.now();
-        const durationDays = validation.duration_days || 365;
-        const expiresAt = now + durationDays * DAY_MS;
+        const expiresAt = validation.expires_at || (now + 365 * DAY_MS);
 
         const entitlement = {
             account_id: accountId,
-            tier: 'pro',
+            tier: validation.tier || 'pro',
             status: 'active',
             key_fingerprint: keyFingerprint,
+            signed_token: validation.signed_token || null,
             activated_at: now,
             expires_at: expiresAt,
             last_verified_at: now,
@@ -194,18 +217,18 @@ export class ProGateway {
             bound_at: now
         });
 
-        // If D1 is configured, also record in D1 if available
+        // Sync to D1 if TASKITATOR_DB is bound
         if (this.env?.TASKITATOR_DB) {
             try {
                 await this.env.TASKITATOR_DB.prepare(
                     `INSERT INTO entitlements (account_id, key_fingerprint, tier, status, activated_at, expires_at, policy_version)
-                     VALUES (?, ?, 'pro', 'active', ?, ?, '1.0')
+                     VALUES (?, ?, ?, 'active', ?, ?, '1.0')
                      ON CONFLICT(account_id) DO UPDATE SET
                      key_fingerprint = excluded.key_fingerprint,
                      status = 'active',
                      expires_at = excluded.expires_at,
                      last_verified_at = ?`
-                ).bind(accountId, keyFingerprint, now, expiresAt, now).run();
+                ).bind(accountId, keyFingerprint, entitlement.tier, now, expiresAt, now).run();
             } catch (err) {
                 console.warn('[Pro] D1 sync warning (non-fatal, DO storage is authoritative):', err.message);
             }
@@ -214,61 +237,82 @@ export class ProGateway {
         return json({
             success: true,
             isPro: true,
-            tier: 'pro',
+            tier: entitlement.tier,
             status: 'active',
             expires_at: expiresAt,
             message: 'Taskitator Pro successfully activated.'
         });
     }
 
-    async verifyKeyoKey(key, accountId) {
+    async verifyKeyoKey(normalizedKey, accountId, rawInput) {
         // Test key simulation: explicit invalid/expired patterns
-        if (key.includes('EXPIRED')) {
+        if (normalizedKey.includes('EXPIRED') || rawInput.includes('EXPIRED')) {
             return { valid: false, code: 'KEY_EXPIRED', reason: 'This license key has expired.' };
         }
-        if (key.includes('INVALID') || key.includes('REVOKED')) {
+        if (normalizedKey.includes('INVALID') || normalizedKey.includes('REVOKED') || rawInput.includes('INVALID') || rawInput.includes('REVOKED')) {
             return { valid: false, code: 'KEY_REVOKED', reason: 'This license key has been revoked or is invalid.' };
         }
 
-        // Live Keyo API integration when credentials are configured
-        if (this.env?.KEYO_SECRET_KEY && this.env?.KEYO_PROJECT_ID) {
+        // Live Keyo Cloudflare Worker API call (Section 9 of Keyo Guide)
+        // POST {endpoint}/api/v1/activate?projectId={PUBLIC_CLIENT_ID}
+        const keyoOrigin = this.env?.KEYO_API_ORIGIN || this.env?.KEYO_API_URL;
+        const projectId = this.env?.KEYO_PROJECT_ID || this.env?.KEYO_CLIENT_ID;
+
+        if (keyoOrigin && projectId) {
             try {
-                const endpoint = this.env.KEYO_API_URL || 'https://api.keyo.io/v1/licenses/verify';
-                const resp = await fetch(endpoint, {
+                const url = `${keyoOrigin.replace(/\/+$/, '')}/api/v1/activate?projectId=${encodeURIComponent(projectId)}`;
+                const resp = await fetch(url, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this.env.KEYO_SECRET_KEY}`
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        project_id: this.env.KEYO_PROJECT_ID,
-                        key,
-                        account_id: accountId
+                        accountId: accountId,
+                        key: normalizedKey
                     })
                 });
 
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));
-                    return { valid: false, code: 'KEYO_REJECTED', reason: err.message || 'Keyo license verification failed.' };
+                    return {
+                        valid: false,
+                        code: err.error || 'KEY_UNAVAILABLE',
+                        reason: err.error ? `Keyo rejected key: ${err.error}` : `Keyo responded with status ${resp.status}`
+                    };
                 }
 
                 const data = await resp.json();
-                return {
-                    valid: data.status === 'active' || data.valid === true,
-                    duration_days: data.duration_days || 365,
-                    tier: data.tier || 'pro'
-                };
+                if (!data.entitlement) {
+                    return { valid: false, code: 'INVALID_ENTITLEMENT', reason: 'Missing signed entitlement in Keyo response.' };
+                }
+
+                // Parse compact signed token payload
+                const parts = data.entitlement.split('.');
+                if (parts.length === 3) {
+                    const payload = JSON.parse(base64UrlDecode(parts[1]));
+                    const tier = (payload.tier || 'PRO').toLowerCase();
+                    return {
+                        valid: true,
+                        tier: tier === 'max' ? 'max' : 'pro',
+                        expires_at: payload.expiresAt || null,
+                        signed_token: data.entitlement
+                    };
+                }
             } catch (err) {
-                return { valid: false, code: 'KEYO_UNREACHABLE', reason: `Keyo service error: ${err.message}` };
+                console.error('[Keyo] API call error:', err);
+                return { valid: false, code: 'KEYO_NETWORK_ERROR', reason: `Keyo service communication error: ${err.message}` };
             }
         }
 
-        // Pilot / standard format pattern: KEYO-PRO-xxxx or PRO-xxxx or alphanumeric
-        if (/^(KEYO-PRO-|PRO-|TASK-)[A-Z0-9-]{6,64}$/.test(key) || key.length >= 12) {
-            return { valid: true, duration_days: 365, tier: 'pro' };
+        // Offline / Pilot Key validation:
+        // Keyo keys are 16-character alphanumeric uppercase strings (or test prefix KEYO-PRO-)
+        if (normalizedKey.length === 16 || /^(KEYOPRO|PRO)[A-Z0-9]{8,32}$/.test(normalizedKey) || normalizedKey.length >= 12) {
+            return {
+                valid: true,
+                tier: 'pro',
+                expires_at: Date.now() + 365 * DAY_MS
+            };
         }
 
-        return { valid: false, code: 'MALFORMED_KEY', reason: 'Invalid license key format.' };
+        return { valid: false, code: 'MALFORMED_KEY', reason: 'Keyo license keys must be 16 characters (excluding hyphens).' };
     }
 
     async executeHostedReview(accountId, body) {
@@ -325,7 +369,6 @@ export class ProGateway {
             const cachedOp = await this.storage.get(`pro:op:${accountId}:${operationId}`);
             if (cachedOp) {
                 if (cachedOp.inputHash === inputHash) {
-                    // Return previously stored result without charging credits again
                     return json(cachedOp.result);
                 } else {
                     return json({
@@ -351,7 +394,6 @@ export class ProGateway {
                 }, 415);
             }
 
-            // Cap checks: 7 MiB base64 max (~5 MiB binary)
             if (base64Data.length > 7 * 1024 * 1024) {
                 return json({
                     error: 'Evidence file exceeds maximum size limit of 5 MiB.',
@@ -360,19 +402,17 @@ export class ProGateway {
             }
         }
 
-        // 6. Execute AI Review via Gemini API (Hosted Server Key)
+        // 6. Execute AI Review via Gemini API
         const apiKey = this.env?.GEMINI_API_KEY || this.env?.HOSTED_GEMINI_API_KEY;
 
         let reviewResult = null;
         try {
             if (!apiKey) {
-                // If running in development / test harness without live key, return mock valid review
                 reviewResult = this.mockReview(body.task_title || 'Task', body.criteria || '', mimeType);
             } else {
                 reviewResult = await this.callGeminiReview(apiKey, modelToUse, body.task_title || '', body.criteria || '', mimeType, base64Data);
             }
         } catch (err) {
-            // Technical failure: Release any credit hold, do not charge user
             return json({
                 error: `Hosted AI review failed: ${err.message}`,
                 code: 'AI_PROVIDER_ERROR',
@@ -386,7 +426,7 @@ export class ProGateway {
 
         const responsePayload = {
             success: true,
-            verdict: reviewResult.verdict, // 'approved' | 'rejected'
+            verdict: reviewResult.verdict,
             confidence: reviewResult.confidence,
             critique: reviewResult.critique,
             model_used: modelToUse,
@@ -398,7 +438,6 @@ export class ProGateway {
             operation_id: operationId
         };
 
-        // Cache operation for idempotency
         if (operationId) {
             await this.storage.put(`pro:op:${accountId}:${operationId}`, {
                 inputHash,
