@@ -94,4 +94,63 @@
         }
         catch (err) { show(err.message); } finally { event.target.disabled = false; }
     };
+
+    
+    // Phase 2.5: Unique username sign-in
+    const toggleBtn = document.getElementById('toggleUsernameLoginBtn');
+    const uForm = document.getElementById('usernameLoginForm');
+    const uSubmit = document.getElementById('submitUsernameLoginBtn');
+    const uInput = document.getElementById('loginUsernameInput');
+    const pInput = document.getElementById('loginPasswordInput');
+
+    if (toggleBtn && uForm) {
+        toggleBtn.onclick = () => {
+            uForm.hidden = !uForm.hidden;
+            toggleBtn.textContent = uForm.hidden ? 'Sign in with unique username instead' : 'Hide username sign-in';
+        };
+    }
+
+    if (uSubmit && uInput && pInput) {
+        uSubmit.onclick = async () => {
+            const username = uInput.value.trim();
+            const password = pInput.value;
+            if (!username) { show('Enter your username.'); return; }
+            if (!password) { show('Enter your account password.'); return; }
+            uSubmit.disabled = true;
+            try {
+                const workerUrl = (window.TASKITATOR_AUTH_CONFIG?.workerUrl || '').replace(/\/+$/, '');
+                const res = await fetch(workerUrl + '/pro/username/resolve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    if (data.disallow_google) {
+                        show(data.error || 'Google sign-in accounts cannot log in using a username. Please use your email address or Google Sign-In button.');
+                    } else {
+                        show(data.error || 'Username login failed.');
+                    }
+                    return;
+                }
+                if (!data.email) throw new Error('Email identifier could not be resolved for this username.');
+
+                // Complete sign in via Clerk password strategy
+                const attempt = await window.Clerk.client.signIn.create({
+                    identifier: data.email,
+                    password: password
+                });
+                if (attempt.status === 'complete') {
+                    await window.Clerk.setActive({ session: attempt.createdSessionId });
+                    location.replace('login.html');
+                } else {
+                    show('Additional verification required. Please sign in with your email directly.');
+                }
+            } catch (err) {
+                show(err.message || 'Incorrect password or authentication failed.');
+            } finally {
+                uSubmit.disabled = false;
+            }
+        };
+    }
 })();

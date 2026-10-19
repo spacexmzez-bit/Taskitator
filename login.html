@@ -10,6 +10,17 @@
 <style>body{display:flex;justify-content:center;min-height:100vh;padding:32px 16px}.login-card{width:min(100%,480px);height:fit-content;background:var(--card-bg,#182133);padding:28px;border-radius:16px;border:1px solid var(--border-color,#334155)}[hidden]{display:none!important}input{width:100%;padding:12px;margin:8px 0 16px;box-sizing:border-box}button{margin:8px 6px 8px 0;padding:12px;cursor:pointer}#loginFeedback{white-space:pre-wrap;color:#fbbf24}#secureSignIn{margin-top:20px}</style>
 </head><body><main class="login-card"><h1>Taskitator</h1><p>Sign in securely to access your tasks.</p>
 <div id="secureSignIn"></div>
+<div id="usernameSignInSection" style="margin-top:16px;border-top:1px solid var(--border-color,#334155);padding-top:14px">
+    <button id="toggleUsernameLoginBtn" type="button" style="background:none;border:none;color:#818cf8;font-size:0.88rem;cursor:pointer;padding:0;text-decoration:underline;">Sign in with unique username instead</button>
+    <div id="usernameLoginForm" hidden style="margin-top:12px">
+        <label for="loginUsernameInput" style="display:block;font-size:0.85rem;color:#94a3b8;margin-bottom:4px">Username</label>
+        <input id="loginUsernameInput" type="text" autocomplete="username" placeholder="e.g. alex_99" maxlength="30">
+        <label for="loginPasswordInput" style="display:block;font-size:0.85rem;color:#94a3b8;margin-bottom:4px">Password</label>
+        <input id="loginPasswordInput" type="password" autocomplete="current-password" placeholder="••••••••" maxlength="1024">
+        <button id="submitUsernameLoginBtn" type="button" style="width:100%;background:#6366f1;color:#fff;border:none;border-radius:8px;font-weight:600">Sign In with Username</button>
+        <p style="font-size:0.8rem;color:#94a3b8;margin-top:8px;line-height:1.4">🔒 For accounts using email &amp; password. Accounts using Google sign-in must use the Google button above.</p>
+    </div>
+</div>
 <section id="signedInPanel" hidden><p id="signedInEmail"></p><button id="signOutLoginBtn">Use another login</button><button id="continueBtn" hidden>Continue</button></section>
 <section id="recoveryPanel" hidden aria-label="Recovered device copies"></section>
 <section id="connectPanel" hidden><h2>Connect your tasks</h2><p>Already used Taskitator? Connect your existing account once to keep its data. First pause your phone’s blocking macro while you replace its old token.</p>

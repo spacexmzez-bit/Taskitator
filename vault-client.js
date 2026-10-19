@@ -142,7 +142,7 @@
         el.textContent=message;
         const isErr=/needs one-time setup|misconfigured|Connect your Google|expired|failed|error|invalid/i.test(message);
         const isOk=/confirmed/i.test(message);
-        el.style.cssText=isErr?'padding:10px 12px;border-radius:8px;background:rgba(239,68,68,0.16);border:1px solid #ef4444;color:#fca5a5;font-weight:600;margin:10px 0;':
+        if(el.style)el.style.cssText=isErr?'padding:10px 12px;border-radius:8px;background:rgba(239,68,68,0.16);border:1px solid #ef4444;color:#fca5a5;font-weight:600;margin:10px 0;':
                          isOk?'padding:10px 12px;border-radius:8px;background:rgba(16,185,129,0.16);border:1px solid #10b981;color:#34d399;font-weight:600;margin:10px 0;':
                          'padding:8px 0;color:#cbd5e1;';
     }
