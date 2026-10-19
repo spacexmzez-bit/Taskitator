@@ -391,6 +391,8 @@ export class TaskitatorSync {
         if (!link) return null;
         const meta = await this.storage.get(accountKey(link.user));
         if (!meta || meta.deleting || meta.owner_id !== identity.userId) throw new HTTPError(403, 'Account ownership could not be verified.');
+        const usernameRec = await this.storage.get('pro:user:username:' + identity.userId);
+        if (usernameRec?.username) link.username = usernameRec.username;
         return link;
     }
 
@@ -508,6 +510,9 @@ export class TaskitatorSync {
             }
             await this.rateLimit(request);
             if (deletionStatus) return json(await this.deletion.status((await readJson(request,8192)).receipt));
+            if (path === '/pro/username/resolve' && method === 'POST') {
+                return await this.pro.resolveUsername(await readJson(request, 4096));
+            }
             const token = /^Bearer\s+(\S+)\s*$/i.exec(request.headers.get('Authorization') || '')?.[1];
             if (!token) throw new HTTPError(401, 'Sign in to continue.');
             let user, identity;
