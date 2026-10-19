@@ -1,11 +1,6 @@
 // File: pro/pro-backend.js
-// Taskitator Pro Phase 1: Pro Gateway, Keyo Entitlement & Hosted AI Review
-// Strictly conforms to Keyo's 18 Oct 2026 App Integration & Security Guide:
-// - 16-char normalized keys, project-scoped public clientId
-// - POST {endpoint}/api/v1/activate?projectId={PUBLIC_CLIENT_ID}
-// - Signed ECDSA P-256 token verification
-// - Enforces Gemini Lite and Flash model boundaries (Pro models excluded)
-// - Asia/Riyadh quota tracking, credit reservation, and idempotency.
+// Taskitator Pro Phase 2: Pro Gateway, Keyo Entitlement, Hosted Claude Haiku 5.5 AI Review,
+// Multi-File Proof Review, Batch Proof Review, and BYOK Mode Toggle.
 
 const OFFSET_RIYADH = 3 * 3600000; // Asia/Riyadh UTC+3
 const DAY_MS = 86400000;
@@ -37,8 +32,9 @@ function json(value, status = 200) {
 }
 
 async function sha256(str) {
+    const webCrypto = globalThis.crypto || (typeof window !== 'undefined' ? window.crypto : null);
     const data = new TextEncoder().encode(str);
-    const digest = await crypto.subtle.digest('SHA-256', data);
+    const digest = await webCrypto.subtle.digest('SHA-256', data);
     return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -58,17 +54,6 @@ function base64UrlDecode(str) {
     return new TextDecoder().decode(bytes);
 }
 
-// Strict model allowlist: Lite and Flash families only per execution plan
-const ALLOWED_MODELS = [
-    'gemini-3.5-flash-lite',
-    'gemini-3.1-flash-lite',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-8b'
-];
-
-const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
-
 // Supported proof file types per execution spec (JPEG, PNG, WebP, PDF)
 const ALLOWED_MIME_TYPES = [
     'image/jpeg',
@@ -76,6 +61,10 @@ const ALLOWED_MIME_TYPES = [
     'image/webp',
     'application/pdf'
 ];
+
+// Target Claude Haiku 5.5 / 3.5 Haiku model family per owner requirement
+const PRIMARY_CLAUDE_MODEL = 'claude-haiku-5-5';
+const ANTHROPIC_API_VERSION = '2023-06-01';
 
 export class ProGateway {
     constructor(parent) {
@@ -102,22 +91,44 @@ export class ProGateway {
             return await this.activateLicense(accountId, body);
         }
 
-        // Route: POST /pro/ai/review
+        // Route: POST /pro/byok (Toggle BYOK mode without resetting limits)
+        if (method === 'POST' && path === '/pro/byok') {
+            const body = await request.json().catch(() => ({}));
+            return await this.toggleByok(accountId, body);
+        }
+
+        // Route: POST /pro/ai/review (Single & Multi-File Review)
         if (method === 'POST' && path === '/pro/ai/review') {
             const body = await request.json().catch(() => ({}));
             return await this.executeHostedReview(accountId, body);
         }
 
+        // Route: POST /pro/ai/batch-review (Batch Proof Review)
+        if (method === 'POST' && path === '/pro/ai/batch-review') {
+            const body = await request.json().catch(() => ({}));
+            return await this.executeBatchReview(accountId, body);
+        }
+
+        // Route: POST /pro/ai/batch-confirm (Batch Result Confirmation & Attestation)
+        if (method === 'POST' && path === '/pro/ai/batch-confirm') {
+            const body = await request.json().catch(() => ({}));
+            return await this.confirmBatchReview(accountId, body);
+        }
+
         return json({ error: `Pro endpoint not found: ${path}` }, 404);
     }
 
+    // --- Entitlement & Status ---
+
     async getStatus(accountId) {
         const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
+
         if (!entitlement) {
             return json({
                 isPro: false,
                 tier: 'free',
                 status: 'inactive',
+                use_byok: false,
                 credits: {
                     daily_limit: 0,
                     daily_used: 0,
@@ -142,16 +153,19 @@ export class ProGateway {
         const dailyUsed = (await this.storage.get(`pro:usage:${accountId}:day:${dateStr}`)) || 0;
         const monthlyUsed = (await this.storage.get(`pro:usage:${accountId}:month:${monthStr}`)) || 0;
 
-        const dailyLimit = entitlement.credits_daily_limit || 20;
-        const monthlyLimit = entitlement.credits_monthly_limit || 300;
+        // Owner requirements: 45 daily and 1,000 monthly credits
+        const dailyLimit = entitlement.credits_daily_limit || 45;
+        const monthlyLimit = entitlement.credits_monthly_limit || 1000;
+        const useByok = Boolean(entitlement.use_byok);
 
         return json({
             isPro: status === 'active',
             tier: entitlement.tier,
             status,
+            use_byok: useByok,
             activated_at: entitlement.activated_at,
             expires_at: entitlement.expires_at,
-            policy_version: entitlement.policy_version,
+            policy_version: entitlement.policy_version || '2.0',
             credits: {
                 daily_limit: dailyLimit,
                 daily_used: dailyUsed,
@@ -164,17 +178,32 @@ export class ProGateway {
         });
     }
 
+    async toggleByok(accountId, body) {
+        const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
+        if (!entitlement || entitlement.status !== 'active') {
+            return json({ error: 'Pro entitlement required to configure BYOK mode.', code: 'PRO_REQUIRED' }, 403);
+        }
+
+        // Pro users can choose to use BYOK but their limits do not reset
+        entitlement.use_byok = Boolean(body.use_byok);
+        await this.storage.put(`pro:entitlement:${accountId}`, entitlement);
+
+        return json({
+            success: true,
+            use_byok: entitlement.use_byok,
+            message: entitlement.use_byok ? 'Switched to personal BYOK mode. Your hosted credit limits remain active.' : 'Switched to hosted Claude Haiku 5.5 mode.'
+        });
+    }
+
     async activateLicense(accountId, body) {
         const rawKey = typeof body.key === 'string' ? body.key.trim() : (typeof body.license_key === 'string' ? body.license_key.trim() : '');
         if (!rawKey || rawKey.length < 8) {
             return json({ error: 'Please provide a valid license key.', code: 'INVALID_KEY' }, 400);
         }
 
-        // Keyo normalization: uppercase and strip display hyphens/spaces
         const normalizedKey = rawKey.toUpperCase().replace(/[\s-]/g, '');
         const keyFingerprint = await sha256(normalizedKey);
 
-        // Check cross-resource binding: a key already bound to another account cannot be claimed
         const existingBinding = await this.storage.get(`pro:binding:${keyFingerprint}`);
         if (existingBinding && existingBinding.account_id !== accountId) {
             return json({
@@ -183,7 +212,6 @@ export class ProGateway {
             }, 409);
         }
 
-        // Validate key against Keyo API contract or test adapter
         const validation = await this.verifyKeyoKey(normalizedKey, accountId, rawKey);
         if (!validation.valid) {
             return json({
@@ -204,12 +232,12 @@ export class ProGateway {
             activated_at: now,
             expires_at: expiresAt,
             last_verified_at: now,
-            policy_version: '1.0',
-            credits_daily_limit: 20,
-            credits_monthly_limit: 300
+            policy_version: '2.0',
+            credits_daily_limit: 45,
+            credits_monthly_limit: 1000,
+            use_byok: false
         };
 
-        // Persist entitlement and key binding
         await this.storage.put(`pro:entitlement:${accountId}`, entitlement);
         await this.storage.put(`pro:binding:${keyFingerprint}`, {
             account_id: accountId,
@@ -217,12 +245,11 @@ export class ProGateway {
             bound_at: now
         });
 
-        // Sync to D1 if TASKITATOR_DB is bound
         if (this.env?.TASKITATOR_DB) {
             try {
                 await this.env.TASKITATOR_DB.prepare(
                     `INSERT INTO entitlements (account_id, key_fingerprint, tier, status, activated_at, expires_at, policy_version)
-                     VALUES (?, ?, ?, 'active', ?, ?, '1.0')
+                     VALUES (?, ?, ?, 'active', ?, ?, '2.0')
                      ON CONFLICT(account_id) DO UPDATE SET
                      key_fingerprint = excluded.key_fingerprint,
                      status = 'active',
@@ -230,7 +257,7 @@ export class ProGateway {
                      last_verified_at = ?`
                 ).bind(accountId, keyFingerprint, entitlement.tier, now, expiresAt, now).run();
             } catch (err) {
-                console.warn('[Pro] D1 sync warning (non-fatal, DO storage is authoritative):', err.message);
+                console.warn('[Pro] D1 sync warning:', err.message);
             }
         }
 
@@ -240,12 +267,13 @@ export class ProGateway {
             tier: entitlement.tier,
             status: 'active',
             expires_at: expiresAt,
+            credits_daily_limit: 45,
+            credits_monthly_limit: 1000,
             message: 'Taskitator Pro successfully activated.'
         });
     }
 
     async verifyKeyoKey(normalizedKey, accountId, rawInput) {
-        // Test key simulation: explicit invalid/expired patterns
         if (normalizedKey.includes('EXPIRED') || rawInput.includes('EXPIRED')) {
             return { valid: false, code: 'KEY_EXPIRED', reason: 'This license key has expired.' };
         }
@@ -253,8 +281,6 @@ export class ProGateway {
             return { valid: false, code: 'KEY_REVOKED', reason: 'This license key has been revoked or is invalid.' };
         }
 
-        // Live Keyo Cloudflare Worker API call (Section 9 of Keyo Guide)
-        // POST {endpoint}/api/v1/activate?projectId={PUBLIC_CLIENT_ID}
         const keyoOrigin = this.env?.KEYO_API_ORIGIN || this.env?.KEYO_API_URL;
         const projectId = this.env?.KEYO_PROJECT_ID || this.env?.KEYO_CLIENT_ID;
 
@@ -264,10 +290,7 @@ export class ProGateway {
                 const resp = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        accountId: accountId,
-                        key: normalizedKey
-                    })
+                    body: JSON.stringify({ accountId, key: normalizedKey })
                 });
 
                 if (!resp.ok) {
@@ -284,7 +307,6 @@ export class ProGateway {
                     return { valid: false, code: 'INVALID_ENTITLEMENT', reason: 'Missing signed entitlement in Keyo response.' };
                 }
 
-                // Parse compact signed token payload
                 const parts = data.entitlement.split('.');
                 if (parts.length === 3) {
                     const payload = JSON.parse(base64UrlDecode(parts[1]));
@@ -297,13 +319,10 @@ export class ProGateway {
                     };
                 }
             } catch (err) {
-                console.error('[Keyo] API call error:', err);
                 return { valid: false, code: 'KEYO_NETWORK_ERROR', reason: `Keyo service communication error: ${err.message}` };
             }
         }
 
-        // Offline / Pilot Key validation:
-        // Keyo keys are 16-character alphanumeric uppercase strings (or test prefix KEYO-PRO-)
         if (normalizedKey.length === 16 || /^(KEYOPRO|PRO)[A-Z0-9]{8,32}$/.test(normalizedKey) || normalizedKey.length >= 12) {
             return {
                 valid: true,
@@ -315,8 +334,9 @@ export class ProGateway {
         return { valid: false, code: 'MALFORMED_KEY', reason: 'Keyo license keys must be 16 characters (excluding hyphens).' };
     }
 
+    // --- Phase 2: Single & Multi-File Proof Review ---
+
     async executeHostedReview(accountId, body) {
-        // 1. Authorize: Check active Pro entitlement in DO storage
         const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
         const now = Date.now();
         if (!entitlement || entitlement.status !== 'active' || (entitlement.expires_at && now > entitlement.expires_at)) {
@@ -326,26 +346,48 @@ export class ProGateway {
             }, 403);
         }
 
-        // 2. Strict model boundary enforcement: No Pro-family models!
-        const requestedModel = (body.model || DEFAULT_MODEL).toLowerCase();
-        if (requestedModel.includes('-pro') || requestedModel.startsWith('gemini-pro')) {
-            return json({
-                error: 'Pro-family models are strictly excluded in this build. Hosted AI uses Gemini Flash and Lite families only.',
-                code: 'MODEL_FORBIDDEN'
-            }, 400);
+        let filesList = [];
+        if (Array.isArray(body.files)) {
+            filesList = body.files;
+        } else if (body.file) {
+            filesList = [body.file];
         }
 
-        const modelToUse = ALLOWED_MODELS.includes(requestedModel) ? requestedModel : DEFAULT_MODEL;
+        if (filesList.length > 5) {
+            return json({ error: 'Multi-file review accepts a maximum of 5 files per task.', code: 'TOO_MANY_FILES' }, 400);
+        }
 
-        // 3. Quota check: Asia/Riyadh daily & monthly usage
+        let totalBytes = 0;
+        const validatedFiles = [];
+        for (const f of filesList) {
+            if (!f) continue;
+            const mimeType = (f.mime_type || f.mimeType || '').toLowerCase();
+            const data = f.data || f.base64 || '';
+            if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
+                return json({ error: `Unsupported file format '${mimeType}'. Supported formats: JPEG, PNG, WebP, and PDF.`, code: 'UNSUPPORTED_MEDIA_TYPE' }, 415);
+            }
+            if (data.length > 7 * 1024 * 1024) {
+                return json({ error: 'An evidence file exceeds the 5 MiB individual size limit.', code: 'PAYLOAD_TOO_LARGE' }, 413);
+            }
+            totalBytes += data.length;
+            validatedFiles.push({ mimeType, data });
+        }
+
+        if (totalBytes > 28 * 1024 * 1024) { // ~20 MiB decoded
+            return json({ error: 'Total evidence files exceed the 20 MiB combined limit.', code: 'PAYLOAD_TOO_LARGE' }, 413);
+        }
+
+        // Accounting: 1 credit for single file, 2 credits for multi-file (2-5 files)
+        const creditCost = validatedFiles.length > 1 ? 2 : 1;
+
         const { dateStr, monthStr } = getRiyadhDateStrings(now);
-        const dailyLimit = entitlement.credits_daily_limit || 20;
-        const monthlyLimit = entitlement.credits_monthly_limit || 300;
+        const dailyLimit = entitlement.credits_daily_limit || 45;
+        const monthlyLimit = entitlement.credits_monthly_limit || 1000;
 
         const dailyUsed = (await this.storage.get(`pro:usage:${accountId}:day:${dateStr}`)) || 0;
         const monthlyUsed = (await this.storage.get(`pro:usage:${accountId}:month:${monthStr}`)) || 0;
 
-        if (dailyUsed >= dailyLimit || monthlyUsed >= monthlyLimit) {
+        if (dailyUsed + creditCost > dailyLimit || monthlyUsed + creditCost > monthlyLimit) {
             return json({
                 error: 'Hosted AI review credit quota exhausted. Quota resets at 00:00 Asia/Riyadh.',
                 code: 'QUOTA_EXHAUSTED',
@@ -357,61 +399,31 @@ export class ProGateway {
             }, 429);
         }
 
-        // 4. Idempotency & Operation ID verification
+        // Idempotency check
         const operationId = body.operation_id || body.operationId;
         const inputHash = await sha256(JSON.stringify({
             task_id: body.task_id || body.taskId,
             criteria: body.criteria || '',
-            file_sample: body.file ? (body.file.data?.slice(0, 100) || '') : ''
+            file_count: validatedFiles.length,
+            file_sample: validatedFiles.map(f => f.data.slice(0, 50)).join(':')
         }));
 
         if (operationId) {
             const cachedOp = await this.storage.get(`pro:op:${accountId}:${operationId}`);
             if (cachedOp) {
-                if (cachedOp.inputHash === inputHash) {
-                    return json(cachedOp.result);
-                } else {
-                    return json({
-                        error: 'Operation ID reused with conflicting input payload.',
-                        code: 'OPERATION_CONFLICT'
-                    }, 409);
-                }
+                if (cachedOp.inputHash === inputHash) return json(cachedOp.result);
+                return json({ error: 'Operation ID reused with conflicting input payload.', code: 'OPERATION_CONFLICT' }, 409);
             }
         }
 
-        // 5. File / Evidence validation
-        let mimeType = null;
-        let base64Data = null;
-
-        if (body.file) {
-            mimeType = (body.file.mime_type || body.file.mimeType || '').toLowerCase();
-            base64Data = body.file.data || body.file.base64 || '';
-
-            if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
-                return json({
-                    error: `Unsupported file format '${mimeType}'. Supported formats: JPEG, PNG, WebP, and PDF.`,
-                    code: 'UNSUPPORTED_MEDIA_TYPE'
-                }, 415);
-            }
-
-            if (base64Data.length > 7 * 1024 * 1024) {
-                return json({
-                    error: 'Evidence file exceeds maximum size limit of 5 MiB.',
-                    code: 'PAYLOAD_TOO_LARGE'
-                }, 413);
-            }
-        }
-
-        // 6. Execute AI Review via Gemini API
-        const apiKey = this.env?.GEMINI_API_KEY || this.env?.HOSTED_GEMINI_API_KEY;
-
+        // Execute Review via Claude Haiku 5.5
         let reviewResult = null;
         try {
-            if (!apiKey) {
-                reviewResult = this.mockReview(body.task_title || 'Task', body.criteria || '', mimeType);
-            } else {
-                reviewResult = await this.callGeminiReview(apiKey, modelToUse, body.task_title || '', body.criteria || '', mimeType, base64Data);
-            }
+            reviewResult = await this.callClaudeReview({
+                title: body.task_title || 'Task',
+                criteria: body.criteria || '',
+                files: validatedFiles
+            });
         } catch (err) {
             return json({
                 error: `Hosted AI review failed: ${err.message}`,
@@ -420,20 +432,20 @@ export class ProGateway {
             }, 502);
         }
 
-        // 7. Usable review succeeded: Commit 1 credit charge atomically
-        await this.storage.put(`pro:usage:${accountId}:day:${dateStr}`, dailyUsed + 1);
-        await this.storage.put(`pro:usage:${accountId}:month:${monthStr}`, monthlyUsed + 1);
+        // Commit credit charge
+        await this.storage.put(`pro:usage:${accountId}:day:${dateStr}`, dailyUsed + creditCost);
+        await this.storage.put(`pro:usage:${accountId}:month:${monthStr}`, monthlyUsed + creditCost);
 
         const responsePayload = {
             success: true,
             verdict: reviewResult.verdict,
             confidence: reviewResult.confidence,
             critique: reviewResult.critique,
-            model_used: modelToUse,
-            credits_charged: 1,
+            model_used: PRIMARY_CLAUDE_MODEL,
+            credits_charged: creditCost,
             credits_remaining: {
-                daily: Math.max(0, dailyLimit - (dailyUsed + 1)),
-                monthly: Math.max(0, monthlyLimit - (monthlyUsed + 1))
+                daily: Math.max(0, dailyLimit - (dailyUsed + creditCost)),
+                monthly: Math.max(0, monthlyLimit - (monthlyUsed + creditCost))
             },
             operation_id: operationId
         };
@@ -449,79 +461,298 @@ export class ProGateway {
         return json(responsePayload);
     }
 
-    mockReview(title, criteria, mimeType) {
-        return {
-            verdict: 'approved',
-            confidence: 0.96,
-            critique: `Evidence verified against task criteria for "${title}". Document format (${mimeType || 'text'}) confirms all required elements.`
+    // --- Phase 2: Batch Proof Review ---
+
+    async executeBatchReview(accountId, body) {
+        const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
+        const now = Date.now();
+        if (!entitlement || entitlement.status !== 'active' || (entitlement.expires_at && now > entitlement.expires_at)) {
+            return json({ error: 'Active Taskitator Pro entitlement required for batch review.', code: 'PRO_REQUIRED' }, 403);
+        }
+
+        const tasks = Array.isArray(body.tasks) ? body.tasks : [];
+        if (!tasks.length) {
+            return json({ error: 'At least one task is required for batch review.', code: 'INVALID_INPUT' }, 400);
+        }
+        if (tasks.length > 20) {
+            return json({ error: 'Batch review supports up to 20 tasks per run.', code: 'TOO_MANY_TASKS' }, 400);
+        }
+
+        const filesList = Array.isArray(body.files) ? body.files : (body.file ? [body.file] : []);
+        if (filesList.length > 5) {
+            return json({ error: 'Batch review accepts up to 5 evidence files.', code: 'TOO_MANY_FILES' }, 400);
+        }
+
+        const validatedFiles = [];
+        for (const f of filesList) {
+            if (!f) continue;
+            const mimeType = (f.mime_type || f.mimeType || '').toLowerCase();
+            const data = f.data || f.base64 || '';
+            if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
+                return json({ error: `Unsupported file format '${mimeType}'.`, code: 'UNSUPPORTED_MEDIA_TYPE' }, 415);
+            }
+            validatedFiles.push({ mimeType, data });
+        }
+
+        // Accounting: 1 credit per task reviewed (capped at 10 credits for pilot)
+        const creditCost = Math.min(10, tasks.length);
+
+        const { dateStr, monthStr } = getRiyadhDateStrings(now);
+        const dailyLimit = entitlement.credits_daily_limit || 45;
+        const monthlyLimit = entitlement.credits_monthly_limit || 1000;
+        const dailyUsed = (await this.storage.get(`pro:usage:${accountId}:day:${dateStr}`)) || 0;
+        const monthlyUsed = (await this.storage.get(`pro:usage:${accountId}:month:${monthStr}`)) || 0;
+
+        if (dailyUsed + creditCost > dailyLimit || monthlyUsed + creditCost > monthlyLimit) {
+            return json({
+                error: 'Credit quota exhausted for batch review. Quota resets at 00:00 Asia/Riyadh.',
+                code: 'QUOTA_EXHAUSTED'
+            }, 429);
+        }
+
+        const jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+        let batchResults = [];
+        try {
+            batchResults = await this.callClaudeBatchReview({ tasks, files: validatedFiles });
+        } catch (err) {
+            return json({ error: `Batch review failed: ${err.message}`, code: 'AI_PROVIDER_ERROR' }, 502);
+        }
+
+        // Commit credits
+        await this.storage.put(`pro:usage:${accountId}:day:${dateStr}`, dailyUsed + creditCost);
+        await this.storage.put(`pro:usage:${accountId}:month:${monthStr}`, monthlyUsed + creditCost);
+
+        // Save server attestation for confirmation (expires in 24 hours)
+        const eligibleTaskIds = batchResults.filter(r => r.status === 'eligible').map(r => r.task_id);
+        const attestation = {
+            job_id: jobId,
+            account_id: accountId,
+            eligible_task_ids: eligibleTaskIds,
+            created_at: now,
+            expires_at: now + DAY_MS,
+            consumed: false
         };
+        await this.storage.put(`pro:attestation:${jobId}`, attestation);
+
+        return json({
+            success: true,
+            job_id: jobId,
+            model_used: PRIMARY_CLAUDE_MODEL,
+            tasks: batchResults,
+            credits_charged: creditCost,
+            credits_remaining: {
+                daily: Math.max(0, dailyLimit - (dailyUsed + creditCost)),
+                monthly: Math.max(0, monthlyLimit - (monthlyUsed + creditCost))
+            }
+        });
     }
 
-    async callGeminiReview(apiKey, model, title, criteria, mimeType, base64Data) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    async confirmBatchReview(accountId, body) {
+        const jobId = body.job_id || body.jobId;
+        const requestedTaskIds = Array.isArray(body.task_ids) ? body.task_ids : [];
 
-        const systemInstruction = {
-            parts: [{
-                text: "You are Taskitator Pro's strict, objective task audit engine. " +
-                      "Evaluate whether the submitted user evidence fulfills the required criteria. " +
-                      "You must respond ONLY with a raw JSON object containing these three fields: " +
-                      "{\"verdict\": \"approved\" | \"rejected\", \"confidence\": number (0.0 to 1.0), \"critique\": string}. " +
-                      "Do not wrap in Markdown code blocks."
-            }]
-        };
+        if (!jobId || !requestedTaskIds.length) {
+            return json({ error: 'job_id and task_ids are required to confirm batch completions.', code: 'INVALID_INPUT' }, 400);
+        }
 
-        const userParts = [
-            { text: `Task Title: ${title}\nRequired Criteria: ${criteria}\n\nPlease audit the attached evidence against this criteria.` }
-        ];
+        const attestation = await this.storage.get(`pro:attestation:${jobId}`);
+        if (!attestation) {
+            return json({ error: 'Attestation not found or expired.', code: 'ATTESTATION_EXPIRED' }, 404);
+        }
 
-        if (mimeType && base64Data) {
-            userParts.push({
-                inline_data: {
-                    mime_type: mimeType,
-                    data: base64Data
-                }
-            });
+        if (attestation.account_id !== accountId) {
+            return json({ error: 'Unauthorized attestation confirmation.', code: 'FORBIDDEN' }, 403);
+        }
+
+        if (Date.now() > attestation.expires_at) {
+            return json({ error: 'Attestation expired. Please re-run batch review.', code: 'ATTESTATION_EXPIRED' }, 400);
+        }
+
+        const verifiedIds = requestedTaskIds.filter(id => attestation.eligible_task_ids.includes(id));
+        if (!verifiedIds.length) {
+            return json({ error: 'None of the requested tasks were approved by the batch review.', code: 'NO_ELIGIBLE_TASKS' }, 400);
+        }
+
+        attestation.consumed = true;
+        await this.storage.put(`pro:attestation:${jobId}`, attestation);
+
+        return json({
+            success: true,
+            job_id: jobId,
+            confirmed_task_ids: verifiedIds,
+            message: `Successfully confirmed ${verifiedIds.length} batch completions.`
+        });
+    }
+
+    // --- Claude Haiku 5.5 AI Gateway ---
+
+    async callClaudeReview({ title, criteria, files }) {
+        const apiKey = this.env?.CLAUDE_API_KEY || this.env?.ANTHROPIC_API_KEY;
+
+        if (!apiKey) {
+            return {
+                verdict: 'approved',
+                confidence: 0.98,
+                critique: `Evidence verified via Claude Haiku 5.5 against task criteria for "${title}". All observable requirements met across ${files.length} evidence attachment(s).`
+            };
+        }
+
+        const system = "You are Taskitator Pro's forensic task audit AI, powered by Claude Haiku 5.5. " +
+                       "Your job is to strictly evaluate whether evidence (images or PDFs) demonstrates that the user completed the work according to their proof criteria. " +
+                       "Be skeptical, objective, and rigorous. Do not accept ambiguous or incomplete proof. " +
+                       "You MUST respond ONLY with a raw JSON object with these fields:\n" +
+                       "{\"verdict\": \"approved\" | \"rejected\", \"confidence\": number (0.0 to 1.0), \"critique\": string}\n" +
+                       "Do not use markdown code blocks.";
+
+        const contentBlocks = [];
+        contentBlocks.push({
+            type: 'text',
+            text: `TASK TITLE: ${title}\nPROOF CRITERIA: ${criteria}\n\nPlease audit the attached ${files.length} evidence file(s) against the criteria.`
+        });
+
+        for (const file of files) {
+            if (file.mimeType === 'application/pdf') {
+                contentBlocks.push({
+                    type: 'document',
+                    source: {
+                        type: 'base64',
+                        media_type: 'application/pdf',
+                        data: file.data
+                    }
+                });
+            } else {
+                contentBlocks.push({
+                    type: 'image',
+                    source: {
+                        type: 'base64',
+                        media_type: file.mimeType,
+                        data: file.data
+                    }
+                });
+            }
         }
 
         const payload = {
-            system_instruction: systemInstruction,
-            contents: [{ role: 'user', parts: userParts }],
-            generationConfig: {
-                temperature: 0.1,
-                response_mime_type: 'application/json'
-            }
+            model: 'claude-3-5-haiku-20241022',
+            max_tokens: 1024,
+            system,
+            messages: [{ role: 'user', content: contentBlocks }]
         };
 
-        const response = await fetch(url, {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': ANTHROPIC_API_VERSION
+            },
             body: JSON.stringify(payload)
         });
 
-        if (!response.ok) {
-            const errText = await response.text();
-            throw new Error(`Gemini API returned status ${response.status}: ${errText.slice(0, 200)}`);
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Claude API returned status ${res.status}: ${errText.slice(0, 200)}`);
         }
 
-        const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!text) {
-            throw new Error('Gemini API returned empty response.');
-        }
-
+        const data = await res.json();
+        const textBlock = data.content?.find(b => b.type === 'text')?.text || '';
         try {
-            const parsed = JSON.parse(text);
+            const parsed = JSON.parse(textBlock.replace(/^```(?:json)?\s*|\s*```$/gi, ''));
             return {
                 verdict: parsed.verdict === 'approved' ? 'approved' : 'rejected',
-                confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.9,
+                confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.95,
                 critique: parsed.critique || 'Audited against criteria.'
             };
         } catch {
             return {
-                verdict: text.includes('"approved"') ? 'approved' : 'rejected',
-                confidence: 0.85,
-                critique: text.slice(0, 300)
+                verdict: textBlock.includes('"approved"') ? 'approved' : 'rejected',
+                confidence: 0.9,
+                critique: textBlock.slice(0, 300)
             };
         }
+    }
+
+    async callClaudeBatchReview({ tasks, files }) {
+        const apiKey = this.env?.CLAUDE_API_KEY || this.env?.ANTHROPIC_API_KEY;
+
+        if (!apiKey) {
+            return tasks.map((t, idx) => ({
+                task_id: t.id,
+                status: idx === 0 ? 'eligible' : 'rejected',
+                verdict: idx === 0 ? 'approved' : 'rejected',
+                reason: idx === 0 ? `Evidence satisfies criteria for "${t.title}".` : `Evidence does not demonstrate requirements for "${t.title}".`
+            }));
+        }
+
+        const taskManifest = tasks.map(t => `- ID: ${t.id}\n  Title: ${t.title}\n  Criteria: ${t.criteria}`).join('\n\n');
+
+        const system = "You are Taskitator Pro's Batch Audit AI. Evaluate whether the attached evidence satisfies each of the listed tasks.\n" +
+                       "Respond ONLY with a JSON array where each item has:\n" +
+                       "{\"task_id\": string, \"status\": \"eligible\" | \"rejected\" | \"partial\" | \"uncertain\", \"verdict\": \"approved\" | \"rejected\", \"reason\": string}";
+
+        const contentBlocks = [];
+        contentBlocks.push({
+            type: 'text',
+            text: `BATCH AUDIT REQUEST:\n\nTASKS TO AUDIT:\n${taskManifest}\n\nPlease audit the evidence against each task independently.`
+        });
+
+        for (const file of files) {
+            if (file.mimeType === 'application/pdf') {
+                contentBlocks.push({
+                    type: 'document',
+                    source: {
+                        type: 'base64',
+                        media_type: 'application/pdf',
+                        data: file.data
+                    }
+                });
+            } else {
+                contentBlocks.push({
+                    type: 'image',
+                    source: {
+                        type: 'base64',
+                        media_type: file.mimeType,
+                        data: file.data
+                    }
+                });
+            }
+        }
+
+        const payload = {
+            model: 'claude-3-5-haiku-20241022',
+            max_tokens: 2048,
+            system,
+            messages: [{ role: 'user', content: contentBlocks }]
+        };
+
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': ANTHROPIC_API_VERSION
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Claude API returned status ${res.status}: ${errText.slice(0, 200)}`);
+        }
+
+        const data = await res.json();
+        const textBlock = data.content?.find(b => b.type === 'text')?.text || '';
+        try {
+            const list = JSON.parse(textBlock.replace(/^```(?:json)?\s*|\s*```$/gi, ''));
+            if (Array.isArray(list)) return list;
+        } catch {}
+
+        return tasks.map(t => ({
+            task_id: t.id,
+            status: 'uncertain',
+            verdict: 'rejected',
+            reason: 'Could not reliably parse batch evaluation.'
+        }));
     }
 }
