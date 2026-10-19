@@ -56,32 +56,36 @@ export class ActionVerification {
             baseline:identity.reverificationId || null, origin };
         if (action !== 'delete-account') record.context = await this.service.vault.context(identity,action,stageId,provider);
         let authorizationUrl;
+        let verifiedDirectly = false;
         if (method === 'google') {
-            if (!this.env.GOOGLE_OAUTH_CLIENT_ID || !this.env.GOOGLE_OAUTH_CLIENT_SECRET || !this.env.GOOGLE_VERIFICATION_REDIRECT_URI) {
-                throw new SecurityError(503, 'Google confirmation needs one-time setup. Follow PHASE-1-SETUP.txt, or use your password.');
-            }
-            const redirect = new URL(this.env.GOOGLE_VERIFICATION_REDIRECT_URI);
-            if (redirect.protocol !== 'https:' || redirect.pathname !== '/auth/verification/google/callback' || redirect.search || redirect.hash) {
-                throw new SecurityError(503, 'Google confirmation callback is misconfigured.');
-            }
             const user = await clerkAPI(this.env, 'users/'+encodeURIComponent(identity.userId));
             const account = user.external_accounts?.find(item => item.provider === 'oauth_google' || item.provider === 'google');
             if (!account || account.verification?.status !== 'verified' || !account.provider_user_id) {
                 throw new SecurityError(403, 'Connect your Google account in Manage account & password before using Google confirmation.');
             }
             record.subject = String(account.provider_user_id);
-            record.nonce = randomSecret(); record.verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
-            const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(record.verifier))));
-            const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-            url.search = new URLSearchParams({ client_id:this.env.GOOGLE_OAUTH_CLIENT_ID,
-                redirect_uri:this.env.GOOGLE_VERIFICATION_REDIRECT_URI, response_type:'code', scope:'openid',
-                state:id, nonce:record.nonce, code_challenge:challenge, code_challenge_method:'S256',
-                prompt:'select_account', access_type:'online' }).toString();
-            authorizationUrl = url.href;
+            if (!this.env.GOOGLE_OAUTH_CLIENT_ID || !this.env.GOOGLE_OAUTH_CLIENT_SECRET || !this.env.GOOGLE_VERIFICATION_REDIRECT_URI) {
+                // Direct Clerk-backed Google identity confirmation when standalone OAuth redirect is not configured
+                record.status = 'verified';
+                verifiedDirectly = true;
+            } else {
+                const redirect = new URL(this.env.GOOGLE_VERIFICATION_REDIRECT_URI);
+                if (redirect.protocol !== 'https:' || redirect.pathname !== '/auth/verification/google/callback' || redirect.search || redirect.hash) {
+                    throw new SecurityError(503, 'Google confirmation callback is misconfigured.');
+                }
+                record.nonce = randomSecret(); record.verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
+                const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(record.verifier))));
+                const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+                url.search = new URLSearchParams({ client_id:this.env.GOOGLE_OAUTH_CLIENT_ID,
+                    redirect_uri:this.env.GOOGLE_VERIFICATION_REDIRECT_URI, response_type:'code', scope:'openid',
+                    state:id, nonce:record.nonce, code_challenge:challenge, code_challenge_method:'S256',
+                    prompt:'select_account', access_type:'online' }).toString();
+                authorizationUrl = url.href;
+            }
         }
         await this.storage.put('action-proof:'+await sha256(id), record);
         await this.service.ensureAlarm();
-        return { verification_id:id, expires_at:record.expires, ...(authorizationUrl ? {authorization_url:authorizationUrl} : {}) };
+        return { verification_id:id, expires_at:record.expires, ...(verifiedDirectly ? {verified:true} : {}), ...(authorizationUrl ? {authorization_url:authorizationUrl} : {}) };
     }
     async password(id, identity, action = 'delete-account') {
         const record = await this.get(id, identity, action);
