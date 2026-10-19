@@ -2,7 +2,7 @@
 // Unit & Integration Tests for Taskitator Pro Phase 2 Backend
 
 import crypto from 'node:crypto';
-globalThis.crypto = globalThis.crypto || crypto.webcrypto;
+if (!globalThis.crypto) Object.defineProperty(globalThis, 'crypto', { value: crypto.webcrypto, configurable: true });
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
