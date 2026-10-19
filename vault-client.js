@@ -136,7 +136,16 @@
         byId('vaultNewKey').disabled=busy;
         byId('vaultNewKeyArea').hidden=operation?.kind!=='save' || Boolean(operation?.stageId);
     }
-    function dialogMessage(message){byId('vaultDialogFeedback').textContent=message;}
+    function dialogMessage(message){
+        const el=byId('vaultDialogFeedback');
+        if(!el)return;
+        el.textContent=message;
+        const isErr=/needs one-time setup|misconfigured|Connect your Google|expired|failed|error|invalid/i.test(message);
+        const isOk=/confirmed/i.test(message);
+        el.style.cssText=isErr?'padding:10px 12px;border-radius:8px;background:rgba(239,68,68,0.16);border:1px solid #ef4444;color:#fca5a5;font-weight:600;margin:10px 0;':
+                         isOk?'padding:10px 12px;border-radius:8px;background:rgba(16,185,129,0.16);border:1px solid #10b981;color:#34d399;font-weight:600;margin:10px 0;':
+                         'padding:8px 0;color:#cbd5e1;';
+    }
     function open(kind,stageId=null){
         if(busy)return;
         // Google returns to a fresh Settings load with Tags & Prio selected.
@@ -172,6 +181,14 @@
         if(busy)return;busy=true;verified=false;updateDialog();
         try{
             const result=await start('google');
+            if(result.verified){
+                verified=true;
+                dialogMessage('Google identity confirmed via your active Clerk session. Click Continue below.');
+                busy=false;
+                updateDialog();
+                return;
+            }
+            if(!result.authorization_url)throw new Error('Google verification URL missing.');
             // Only action metadata survives navigation; no API key or password.
             sessionStorage.setItem(pendingKey,JSON.stringify({...operation,proofId,user:auth().account.user,session:window.Clerk.session.id}));
             byId('vaultNewKey').value='';byId('vaultPassword').value='';

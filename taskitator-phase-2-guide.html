@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taskitator Pro — Phase 2 Setup & Operational Guide</title>
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --surface: #151e2e;
+            --surface-subtle: #1e293b;
+            --border: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #6366f1;
+            --primary-light: #818cf8;
+            --accent: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --code-bg: #060911;
+            --p2-color: #a855f7;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            line-height: 1.6;
+            padding: 0 0 80px 0;
+        }
+
+        header {
+            background: linear-gradient(135deg, #2e1065 0%, #0f172a 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 44px 24px;
+            text-align: center;
+        }
+
+        .header-content {
+            max-width: 980px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 12px;
+            background: linear-gradient(90deg, #c084fc, #818cf8, #38bdf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 1.05rem;
+            color: var(--text-muted);
+            max-width: 780px;
+            margin: 0 auto 20px auto;
+        }
+
+        .badge-pill {
+            display: inline-block;
+            background: rgba(168, 85, 247, 0.2);
+            color: #d8b4fe;
+            border: 1px solid rgba(168, 85, 247, 0.4);
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 14px;
+        }
+
+        .notice-banner {
+            background: rgba(99, 102, 241, 0.12);
+            border: 1px solid rgba(99, 102, 241, 0.35);
+            border-radius: 10px;
+            padding: 14px 20px;
+            max-width: 860px;
+            margin: 16px auto 0 auto;
+            text-align: left;
+            font-size: 0.92rem;
+            color: #cbd5e1;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .container {
+            max-width: 1040px;
+            margin: 36px auto;
+            padding: 0 20px;
+        }
+
+        /* TOC Navigation */
+        .toc {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 24px;
+            margin-bottom: 40px;
+        }
+
+        .toc h2 {
+            font-size: 1.15rem;
+            margin-bottom: 16px;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+        }
+
+        .toc-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 8px;
+            color: var(--text-main);
+            text-decoration: none;
+            font-size: 0.92rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .toc-link:hover {
+            background: rgba(168, 85, 247, 0.18);
+            border-color: var(--primary);
+            color: #ffffff;
+            transform: translateY(-1px);
+        }
+
+        .toc-icon {
+            font-size: 1.3rem;
+        }
+
+        /* Section */
+        .service-section {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 40px;
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.4);
+        }
+
+        .service-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid var(--surface-subtle);
+            padding-bottom: 16px;
+            margin-bottom: 26px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .service-title-wrap {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .service-icon {
+            font-size: 2rem;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 12px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .service-name {
+            font-size: 1.45rem;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        .tag-p2 {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            background: rgba(168, 85, 247, 0.15);
+            color: var(--p2-color);
+            border: 1px solid rgba(168, 85, 247, 0.35);
+        }
+
+        /* Steps */
+        .step-block {
+            margin-bottom: 24px;
+            background: rgba(11, 15, 25, 0.6);
+            border: 1px solid var(--surface-subtle);
+            border-radius: 12px;
+            padding: 22px;
+        }
+
+        .step-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .step-title-wrap {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .step-number {
+            background: #8b5cf6;
+            color: #ffffff;
+            font-size: 0.85rem;
+            font-weight: 700;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .step-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .action-list {
+            list-style: none;
+            padding-left: 36px;
+            margin-bottom: 12px;
+        }
+
+        .action-list li {
+            position: relative;
+            margin-bottom: 10px;
+            color: #cbd5e1;
+            font-size: 0.95rem;
+        }
+
+        .action-list li::before {
+            content: "➔";
+            position: absolute;
+            left: -24px;
+            color: #c084fc;
+            font-size: 0.8rem;
+            top: 2px;
+        }
+
+        .ui-click {
+            font-weight: 600;
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.12);
+            padding: 2px 7px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .ui-val {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            background: #060911;
+            color: #38bdf8;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            border: 1px solid #1e293b;
+        }
+
+        .callout {
+            border-left: 4px solid var(--primary);
+            background: rgba(99, 102, 241, 0.1);
+            padding: 12px 16px;
+            border-radius: 0 8px 8px 0;
+            margin: 14px 0 8px 36px;
+            font-size: 0.88rem;
+            color: #e2e8f0;
+        }
+
+        .callout-success {
+            border-left-color: var(--accent);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .callout-warning {
+            border-left-color: var(--warning);
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        .callout-title {
+            font-weight: 700;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+            overflow-x: auto;
+            margin: 12px 0 12px 36px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.88rem;
+            color: #e2e8f0;
+        }
+
+        code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 60px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+            padding-top: 30px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-content">
+        <span class="badge-pill">Phase 2 Release</span>
+        <h1>Taskitator Pro — Phase 2 Setup & Operational Guide</h1>
+        <p class="subtitle">Complete deployment and operational manual for Hosted Claude Haiku 5.5 AI Audits, Multi-File Proof Reviews, Batch Proof Reviews, and 45/1000 Quota Management.</p>
+        <div class="notice-banner">
+            <span style="font-size: 1.3rem;">🚀</span>
+            <div>
+                <strong>Phase 2 Standalone Scope:</strong> This release introduces multi-file proof submission, toolbar-level batch audit reviews, personal BYOK toggle controls, and routes hosted Pro reviews to personal Claude Haiku 5.5. All changes are packaged in <code>Taskitator-Pro-Phase-2.zip</code>.
+            </div>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+
+    <!-- Table of Contents -->
+    <nav class="toc">
+        <h2><span>📑</span> Phase 2 Guide Contents</h2>
+        <div class="toc-grid">
+            <a href="#deployment" class="toc-link"><span class="toc-icon">📦</span> 1. Deploying Phase 2 Files</a>
+            <a href="#claude-secrets" class="toc-link"><span class="toc-icon">🤖</span> 2. Worker Secret: Claude Haiku 5.5</a>
+            <a href="#multi-file" class="toc-link"><span class="toc-icon">📁</span> 3. Multi-File Proof Review (1–5 Files)</a>
+            <a href="#batch-review" class="toc-link"><span class="toc-icon">⚡</span> 4. Batch Proof Review (Up to 20 Tasks)</a>
+            <a href="#quotas-byok" class="toc-link"><span class="toc-icon">⚖️</span> 5. 45/1000 Quotas & BYOK Mode</a>
+            <a href="#google-preview-fix" class="toc-link"><span class="toc-icon">🔑</span> 6. Google Sign-In & Key Preview Fix</a>
+        </div>
+    </nav>
+
+    <!-- SECTION 1: DEPLOYMENT -->
+    <section class="service-section" id="deployment">
+        <div class="service-header">
+            <div class="service-title-wrap">
+                <span class="service-icon">📦</span>
+                <div>
+                    <h2 class="service-name">1. Deploying Phase 2 Code Files</h2>
+                </div>
+            </div>
+            <span class="tag-p2">Files Included</span>
+        </div>
+
+        <div class="step-block">
+            <div class="step-header">
+                <div class="step-title-wrap">
+                    <div class="step-number">1</div>
+                    <h3 class="step-title">Extract and Upload Taskitator-Pro-Phase-2.zip</h3>
+                </div>
+            </div>
+            <ul class="action-list">
+                <li>Download and extract <span class="ui-val">Taskitator-Pro-Phase-2.zip</span> on your computer or phone.</li>
+                <li>In your GitHub repository, upload and commit the modified/created files to your <span class="ui-val">main</span> branch:
+                    <pre><code>pro/pro-backend.js      (Claude Haiku 5.5 gateway, multi-file & batch accounting)
+pro/pro-client.js       (Client library with batchReview and BYOK methods)
+pro/pro-ui.js           (Batch review modal, file chip renderer, settings card)
+pro/pro.css             (Modern styling for modals, chips, and progress bars)
+pro/pro.test.js         (7 automated unit/integration test suites)
+index.html              (Multi-file input attribute, batch trigger button, pro scripts)
+components.js           (Multi-file array gathering and proof submission hook)
+audit-engine.js         (Pro hosted Claude audit delegation hook)
+vault-client.js         (Direct Google verification check and styled feedback)
+cloudflare/verification.js (Direct Clerk-backed Google identity confirmation)</code></pre>
+                </li>
+                <li>Go to GitHub <span class="ui-click">Actions</span> &gt; run <span class="ui-click">Deploy Taskitator security Worker</span>. Verify the build succeeds with a green checkmark.</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- SECTION 2: CLAUDE SECRETS -->
+    <section class="service-section" id="claude-secrets">
+        <div class="service-header">
+            <div class="service-title-wrap">
+                <span class="service-icon">🤖</span>
+                <div>
+                    <h2 class="service-name">2. Configuring Personal Claude API Key</h2>
+                </div>
+            </div>
+            <span class="tag-p2">Cloudflare Worker Secret</span>
+        </div>
+
+        <div class="step-block">
+            <div class="step-header">
+                <div class="step-title-wrap">
+                    <div class="step-number">2</div>
+                    <h3 class="step-title">Add CLAUDE_API_KEY to Cloudflare Worker Secrets</h3>
+                </div>
+            </div>
+            <ul class="action-list">
+                <li>Log in to the Cloudflare Dashboard at <span class="ui-val">https://dash.cloudflare.com</span>.</li>
+                <li>Navigate to <span class="ui-click">Workers &amp; Pages</span> &gt; click your Worker (<span class="ui-val">taskitator-sync</span>).</li>
+                <li>Click <span class="ui-click">Settings</span> &gt; <span class="ui-click">Variables and Secrets</span>.</li>
+                <li>Under <strong>Secrets</strong>, click <span class="ui-click">Add</span>:
+                    <ul style="list-style: disc; padding-left: 20px; margin-top: 6px;">
+                        <li>Secret Name: <span class="ui-val">CLAUDE_API_KEY</span></li>
+                        <li>Value: Paste your personal Anthropic API key (<span class="ui-val">sk-ant-api03-...</span>).</li>
+                    </ul>
+                </li>
+                <li>Click <span class="ui-click">Deploy</span> to save the secret to your Worker runtime.</li>
+            </ul>
+            <div class="callout callout-success">
+                <div class="callout-title">✓ Model Boundary &amp; Formats</div>
+                Pro hosted audits use <strong>Claude Haiku 5.5</strong> (<code>claude-3-5-haiku-20241022</code>) exclusively. The gateway natively handles JPEG, PNG, WebP, and multi-page PDF documents.
+            </div>
+        </div>
+    </section>
+
+    <!-- SECTION 3: MULTI-FILE PROOF -->
+    <section class="service-section" id="multi-file">
+        <div class="service-header">
+            <div class="service-title-wrap">
+                <span class="service-icon">📁</span>
+                <div>
+                    <h2 class="service-name">3. Multi-File Proof Review (1–5 Files)</h2>
+                </div>
+            </div>
+            <span class="tag-p2">Core Phase 2 Feature</span>
+        </div>
+
+        <div class="step-block">
+            <div class="step-header">
+                <div class="step-title-wrap">
+                    <div class="step-number">3</div>
+                    <h3 class="step-title">Submitting Multiple Evidence Files for a Single Task</h3>
+                </div>
+            </div>
+            <ul class="action-list">
+                <li>On the main tasks screen (<span class="ui-val">index.html</span>), tap the completion circle of an AI-audited task to open the proof submission dialog.</li>
+                <li>The file picker now accepts multiple attachments: select up to <span class="ui-val">5 files</span> (photos or PDFs).</li>
+                <li>The system validates that individual files do not exceed <span class="ui-val">5 MiB</span> and the combined batch does not exceed <span class="ui-val">20 MiB</span>.</li>
+                <li>Single-file review consumes <span class="ui-val">1 credit</span>; multi-file review (2–5 files) consumes <span class="ui-val">2 credits</span>.</li>
+                <li>Claude Haiku 5.5 cross-references all attached files together against the criteria before issuing an approval verdict.</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- SECTION 4: BATCH PROOF -->
+    <section class="service-section" id="batch-review">
+        <div class="service-header">
+            <div class="service-title-wrap">
+                <span class="service-icon">⚡</span>
+                <div>
+                    <h2 class="service-name">4. Batch Proof Review (Up to 20 Tasks)</h2>
+                </div>
+            </div>
+            <span class="tag-p2">Core Phase 2 Feature</span>
+        </div>
+
+        <div class="step-block">
+            <div class="step-header">
+                <div class="step-title-wrap">
+                    <div class="step-number">4</div>
+                    <h3 class="step-title">Reviewing Multiple Finished Tasks Against Shared Proof</h3>
+                </div>
+            </div>
+            <ul class="action-list">
+                <li>In the page title section of <span class="ui-val">index.html</span>, click the new <span class="ui-click">⚡ Batch Review</span> button.</li>
+                <li>In the modal that opens, select up to <span class="ui-val">20 active AI tasks</span> you want to prove simultaneously.</li>
+                <li>Attach up to <span class="ui-val">5 shared proof files</span> (e.g. photos of a multi-page math assignment or lecture notes covering multiple topics).</li>
+                <li>Click <span class="ui-click">Run Batch Audit</span>. The server evaluates each task independently and charges 1 credit per task reviewed (capped at 10 credits).</li>
+                <li>Review the individual results: eligible tasks are marked <span style="color:#34d399; font-weight:700;">✓ ELIGIBLE</span> and rejected tasks are marked with concise critiques.</li>
+                <li>Click <span class="ui-click">Confirm Completion for Eligible Tasks</span> to commit the completions. The server verifies its 24-hour attestation and marks all confirmed tasks complete in local storage and cloud sync.</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- SECTION 5: QUOTAS & BYOK -->
+    <section class="service-section" id="quotas-byok">
+        <div class="service-header">
+            <div class="service-title-wrap">
+                <span class="service-icon">⚖️</span>
+                <div>
+                    <h2 class="service-name">5. 45/1000 Credit Quotas & Personal BYOK Toggle</h2>
+                </div>
+            </div>
+            <span class="tag-p2">Settings Management</span>
+        </div>
+
+        <div class="step-block">
+            <div class="step-header">
+                <div class="step-title-wrap">
+                    <div class="step-number">5</div>
+                    <h3 class="step-title">Managing Quotas and Switching to Personal BYOK</h3>
+                </div>
+            </div>
+            <ul class="action-list">
+                <li>Open <span class="ui-click">Settings</span> in Taskitator. Under the ⭐ Taskitator Pro card, you will see your updated quotas:
+                    <ul style="list-style: disc; padding-left: 20px; margin-top: 6px;">
+                        <li><strong>Daily Credits:</strong> <span class="ui-val">45</span> (resets at 00:00 Asia/Riyadh).</li>
+                        <li><strong>Monthly Credits:</strong> <span class="ui-val">1,000</span>.</li>
+                    </ul>
+                </li>
+                <li><strong>BYOK Toggle:</strong> Check the box <span class="ui-click">Personal BYOK Mode</span> to route task proofs through your own saved provider key in Settings &rarr; AI Provider & Saved Keys.</li>
+                <li><em>Non-Resetting Guarantee:</em> Toggling BYOK preserves your existing hosted credit limits and balances—your hosted credits do not reset or disappear when using your personal key.</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- SECTION 6: GOOGLE FIX -->
+    <section class="service-section" id="google-preview-fix">
+        <div class="service-header">
+            <div class="service-title-wrap">
+                <span class="service-icon">🔑</span>
+                <div>
+                    <h2 class="service-name">6. Google Sign-In &amp; API Key Preview Fix</h2>
+                </div>
+            </div>
+            <span class="tag-p2">Security & Identity</span>
+        </div>
+
+        <div class="step-block">
+            <div class="step-header">
+                <div class="step-title-wrap">
+                    <div class="step-number">6</div>
+                    <h3 class="step-title">How the Google Key Preview Fix Operates</h3>
+                </div>
+            </div>
+            <ul class="action-list">
+                <li>In <span class="ui-click">Settings &rarr; AI provider & saved keys</span>, clicking <span class="ui-click">Show</span> opens the identity confirmation dialog.</li>
+                <li><strong>What was fixed:</strong> Previously, clicking <span class="ui-click">Sign in with Google</span> threw a silent 503 error if standalone Google OAuth redirect variables were unconfigured in Cloudflare.</li>
+                <li><strong>How it works now:</strong> The updated Worker checks your active Clerk session directly. If your Clerk account has a verified Google login linked, it confirms your identity immediately without requiring external Google OAuth redirect secrets, and enables the <span class="ui-click">Continue</span> button.</li>
+                <li>If Google is not linked to your Clerk profile, a clear red alert is displayed advising you to enter your account password in the field above to reveal your key for 30 seconds.</li>
+            </ul>
+        </div>
+    </section>
+
+    <footer>
+        <p>Taskitator Pro Build &amp; Deployment Specification • Phase 2 Manual Guide</p>
+        <p>Covers Phase 2 Multi-File, Batch Review, Claude Haiku 5.5, and 45/1000 Quota Management</p>
+    </footer>
+
+</div>
+
+</body>
+</html>

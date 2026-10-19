@@ -619,7 +619,50 @@ Return strictly valid JSON with this exact schema:
             }
         },
 
-        async verifyProof({ file, taskTitle, criteria, userContext, exemplarPart = null }) {
+        async verifyProof({ taskId, file, files, taskTitle, criteria, userContext, exemplarPart = null }) {
+            const fileList = Array.isArray(files) && files.length ? files : (file ? [file] : []);
+            if (fileList.length > 5) {
+                return { success: false, status: 400, error: 'Maximum 5 evidence files allowed per task.' };
+            }
+
+            // Taskitator Pro Hosted Claude Haiku 5.5 Hook (when active Pro & not in BYOK mode)
+            if (window.TaskitatorPro) {
+                try {
+                    const proStatus = await window.TaskitatorPro.getStatus();
+                    if (proStatus && proStatus.isPro && !proStatus.use_byok) {
+                        const encodedFiles = [];
+                        for (const f of fileList) {
+                            const check = this.validateFile(f, TaskitatorEngine.MAX_FILE_SIZE_MB);
+                            if (!check.valid) return { success: false, status: 400, error: check.error };
+                            const part = await this.fileToBase64(f);
+                            encodedFiles.push({
+                                mimeType: part.inline_data.mime_type,
+                                data: part.inline_data.data
+                            });
+                        }
+                        const combinedCriteria = (criteria || '') + (userContext ? (' - Note: ' + userContext) : '');
+                        const proRes = await window.TaskitatorPro.reviewProof({
+                            taskId: taskId || ('task_' + Date.now()),
+                            title: taskTitle,
+                            criteria: combinedCriteria,
+                            files: encodedFiles
+                        });
+                        return {
+                            success: true,
+                            approved: proRes.verdict === 'approved',
+                            verdict: proRes.verdict,
+                            confidence: proRes.confidence,
+                            critique: proRes.critique,
+                            model_used: proRes.model_used || 'claude-haiku-5-5'
+                        };
+                    }
+                } catch (proErr) {
+                    if (proErr.status === 429 || proErr.status === 413 || proErr.status === 415) {
+                        return { success: false, status: proErr.status, error: proErr.message };
+                    }
+                    console.warn('[AuditEngine] Pro gateway fallback check:', proErr.message);
+                }
+            }
             const selection=this.selection();
             let settings = {};
             try {

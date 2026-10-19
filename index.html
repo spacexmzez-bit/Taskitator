@@ -21,6 +21,7 @@
     <link rel="apple-touch-icon" href="icon/icon-192.png">
 
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="pro/pro.css">
     <style>
         .page-title-section {
             padding: 10px 0 8px 0;
@@ -1065,8 +1066,8 @@
         <div id="auditCriteriaDisplay" style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 14px; background: var(--card-subtle); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);"></div>
 
         <div class="form-group">
-            <label>Upload Proof (Photo or PDF &le; 5MB):</label>
-            <input type="file" id="auditImageInput" accept="image/*,application/pdf" style="display: block; width: 100%; padding: 10px; border: 1.5px solid var(--border-color); border-radius: 8px; background: var(--card-subtle);">
+            <label>Upload Proof (1&ndash;5 Photos or PDFs &le; 5MB each):</label>
+            <input type="file" id="auditImageInput" multiple accept="image/*,application/pdf" style="display: block; width: 100%; padding: 10px; border: 1.5px solid var(--border-color); border-radius: 8px; background: var(--card-subtle);">
         </div>
 
         <div class="form-group">
@@ -1149,6 +1150,8 @@
 <script type="text/taskitator-script" src="components.js"></script>
 <script type="text/taskitator-script" src="app.js"></script>
 <script type="text/taskitator-script" src="./pomodoro.js"></script>
+<script defer src="pro/pro-client.js"></script>
+<script defer src="pro/pro-ui.js"></script>
 <script defer src="auth-bootstrap.js"></script>
 </body>
 </html>

@@ -1903,7 +1903,8 @@ window.TaskitatorComponents = Object.freeze({
 
                     const auditSession = localStorage.getItem('taskitator_session_id');
                     const auditedId = task.id;
-                    const file = document.getElementById('auditImageInput')?.files[0];
+                    const fileList = Array.from(document.getElementById('auditImageInput')?.files || []);
+                    const file = fileList[0];
                     if (!file) {
                         alert('Please attach an evidence photo or PDF document.');
                         return;
@@ -1933,7 +1934,9 @@ window.TaskitatorComponents = Object.freeze({
                         }
 
                         result = await TaskitatorEngine.AuditEngine.verifyProof({
+                            taskId: task.id,
                             file: file,
+                            files: fileList,
                             taskTitle: task.title,
                             criteria: task.proof_criteria,
                             userContext: document.getElementById('auditContextInput')?.value.trim() || '',
