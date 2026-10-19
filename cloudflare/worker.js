@@ -5,6 +5,7 @@ import { ActionVerification } from './verification.js';
 import { AccountDeletion } from './deletion.js';
 import { KeyVault, scrubSettings } from './vault.js';
 import { AIGateway } from './ai-gateway.js';
+import { ProGateway } from '../pro/pro-backend.js';
 const Recurrence = globalThis.TaskitatorRecurrence;
 // Taskitator transactional sync. Required: TASKITATOR_SYNC (Durable Object).
 // Keep TASKITATOR_KV bound for one-time migration of existing accounts.
@@ -245,6 +246,7 @@ export class TaskitatorSync {
         this.deletion = new AccountDeletion(this);
         this.vault = new KeyVault(this);
         this.ai = new AIGateway(this);
+        this.pro = new ProGateway(this);
     }
 
     async migrateVault(identity) {
@@ -499,8 +501,9 @@ export class TaskitatorSync {
             const deletion = method === 'DELETE' && path === '/auth/account';
             const deletionStatus = method === 'POST' && path === '/auth/deletion/status';
             const keyRoute = ['/ai/keys','/ai/keys/stage','/ai/keys/reveal','/ai/keys/test','/ai/generate','/ai/provider'].includes(path);
+            const proRoute = path.startsWith('/pro/');
             if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
-                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute) {
+                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute) {
                 return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
             }
             await this.rateLimit(request);
@@ -521,6 +524,10 @@ export class TaskitatorSync {
                 user = access.user;
             } else {
                 identity = await verifySession(request, this.env, token);
+                if (proRoute) {
+                    const account = await this.accountFor(identity);
+                    return await this.pro.handleRequest(request, path, method, identity, account || { user: identity.userId });
+                }
                 if (deletion) return json(await this.deletion.accept(request, identity, await readJson(request,8192)));
                 const deleting = await this.deletion.marker(identity);
                 if (deleting) {
