@@ -1,4 +1,5 @@
 import { SecurityError, clerkAPI, sha256, allowedOrigins } from './auth.js';
+export const VERIFICATION_VERSION = 2;
 export const VERIFICATION_MS = 5 * 60000;
 export const randomSecret = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
 const base64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -35,7 +36,7 @@ export class ActionVerification {
     async get(id, identity, action = 'delete-account') {
         if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) throw new SecurityError(403, 'Start verification again.');
         const record = await this.storage.get('action-proof:'+await sha256(id));
-        if (!record || record.expires <= Date.now() || record.userId !== identity.userId ||
+        if (!record || record.version !== VERIFICATION_VERSION || record.expires <= Date.now() || record.userId !== identity.userId ||
             record.sessionId !== identity.sessionId || record.action !== action) {
             throw new SecurityError(403, 'Verification expired or belongs to a different session. Start again.');
         }
@@ -51,41 +52,39 @@ export class ActionVerification {
         if (!['password','google'].includes(method)) throw new SecurityError(400, 'Choose password or Google verification.');
         const origin = request.headers.get('Origin');
         if (!allowedOrigins(this.env).includes(origin)) throw new SecurityError(403, 'Open verification from the Taskitator website.');
-        const id = randomSecret(), record = { userId:identity.userId, sessionId:identity.sessionId,
+        const id = randomSecret(), record = { version:VERIFICATION_VERSION, userId:identity.userId, sessionId:identity.sessionId,
             action, method, status:'pending', created:Date.now(), expires:Date.now()+VERIFICATION_MS,
             baseline:identity.reverificationId || null, origin };
         if (action !== 'delete-account') record.context = await this.service.vault.context(identity,action,stageId,provider);
         let authorizationUrl;
-        let verifiedDirectly = false;
         if (method === 'google') {
+            const settings = ['GOOGLE_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_SECRET','GOOGLE_VERIFICATION_REDIRECT_URI'];
+            const missing = settings.filter(name => typeof this.env[name] !== 'string' || !this.env[name].trim());
+            if (missing.length) throw new SecurityError(503, 'Google confirmation needs Worker setup: '+missing.join(', ')+'. See pro/verification-setup.html.');
+            let redirect;
+            try { redirect = new URL(this.env.GOOGLE_VERIFICATION_REDIRECT_URI); }
+            catch { throw new SecurityError(503, 'Google confirmation callback is misconfigured. See pro/verification-setup.html.'); }
+            if (redirect.protocol !== 'https:' || redirect.username || redirect.password || redirect.pathname !== '/auth/verification/google/callback' || redirect.search || redirect.hash) {
+                throw new SecurityError(503, 'Google confirmation callback is misconfigured. See pro/verification-setup.html.');
+            }
             const user = await clerkAPI(this.env, 'users/'+encodeURIComponent(identity.userId));
             const account = user.external_accounts?.find(item => item.provider === 'oauth_google' || item.provider === 'google');
             if (!account || account.verification?.status !== 'verified' || !account.provider_user_id) {
                 throw new SecurityError(403, 'Connect your Google account in Manage account & password before using Google confirmation.');
             }
             record.subject = String(account.provider_user_id);
-            if (!this.env.GOOGLE_OAUTH_CLIENT_ID || !this.env.GOOGLE_OAUTH_CLIENT_SECRET || !this.env.GOOGLE_VERIFICATION_REDIRECT_URI) {
-                // Direct Clerk-backed Google identity confirmation when standalone OAuth redirect is not configured
-                record.status = 'verified';
-                verifiedDirectly = true;
-            } else {
-                const redirect = new URL(this.env.GOOGLE_VERIFICATION_REDIRECT_URI);
-                if (redirect.protocol !== 'https:' || redirect.pathname !== '/auth/verification/google/callback' || redirect.search || redirect.hash) {
-                    throw new SecurityError(503, 'Google confirmation callback is misconfigured.');
-                }
-                record.nonce = randomSecret(); record.verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
-                const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(record.verifier))));
-                const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-                url.search = new URLSearchParams({ client_id:this.env.GOOGLE_OAUTH_CLIENT_ID,
-                    redirect_uri:this.env.GOOGLE_VERIFICATION_REDIRECT_URI, response_type:'code', scope:'openid',
-                    state:id, nonce:record.nonce, code_challenge:challenge, code_challenge_method:'S256',
-                    prompt:'select_account', access_type:'online' }).toString();
-                authorizationUrl = url.href;
-            }
+            record.nonce = randomSecret(); record.verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
+            const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(record.verifier))));
+            const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+            url.search = new URLSearchParams({ client_id:this.env.GOOGLE_OAUTH_CLIENT_ID,
+                redirect_uri:this.env.GOOGLE_VERIFICATION_REDIRECT_URI, response_type:'code', scope:'openid',
+                state:id, nonce:record.nonce, code_challenge:challenge, code_challenge_method:'S256',
+                prompt:'select_account', access_type:'online' }).toString();
+            authorizationUrl = url.href;
         }
         await this.storage.put('action-proof:'+await sha256(id), record);
         await this.service.ensureAlarm();
-        return { verification_id:id, expires_at:record.expires, ...(verifiedDirectly ? {verified:true} : {}), ...(authorizationUrl ? {authorization_url:authorizationUrl} : {}) };
+        return { verification_id:id, expires_at:record.expires, ...(authorizationUrl ? {authorization_url:authorizationUrl} : {}) };
     }
     async password(id, identity, action = 'delete-account') {
         const record = await this.get(id, identity, action);
@@ -97,14 +96,21 @@ export class ActionVerification {
             throw new SecurityError(403, 'Complete a new password verification. Check the Clerk reverification claim setup if this persists.');
         }
         const confirmed = await clerkAPI(this.env, 'sessions/'+encodeURIComponent(identity.sessionId)+'/reverifications/'+encodeURIComponent(rv));
-        if (confirmed.status !== 'complete' || confirmed.first_factor_verification?.status !== 'verified' ||
-            confirmed.first_factor_verification?.strategy !== 'password') {
+        // Backend Reverification has factor timestamps, not the browser SDK's
+        // first_factor_verification object. Bind both timestamps to this attempt.
+        const now = Date.now();
+        if (!confirmed || confirmed.object !== 'reverification' || confirmed.id !== rv ||
+            confirmed.session_id !== identity.sessionId || confirmed.user_id !== identity.userId ||
+            confirmed.status !== 'complete' || !['first_factor','multi_factor'].includes(confirmed.level) ||
+            !Number.isSafeInteger(confirmed.created_at) || !Number.isSafeInteger(confirmed.first_factor_verified_at) ||
+            confirmed.created_at < record.created || confirmed.created_at > now ||
+            confirmed.first_factor_verified_at < confirmed.created_at || confirmed.first_factor_verified_at > now) {
             throw new SecurityError(403, 'Password verification has not completed.');
         }
         const usedKey = 'verification-used:'+await sha256(identity.sessionId+':'+rv);
         await this.storage.transaction(async tx => {
             const key = 'action-proof:'+await sha256(id), current = await tx.get(key);
-            if (!current || current.status !== 'pending' || current.expires <= Date.now() || await tx.get(usedKey)) {
+            if (!current || current.version !== VERIFICATION_VERSION || current.status !== 'pending' || current.expires <= Date.now() || await tx.get(usedKey)) {
                 throw new SecurityError(403, 'This verification was already used. Start again.');
             }
             current.status = 'verified';
@@ -118,7 +124,7 @@ export class ActionVerification {
         const key = 'action-proof:'+await sha256(id);
         const record = await this.storage.transaction(async tx => {
             const current = await tx.get(key);
-            if (!current || current.method !== 'google' || current.status !== 'pending' || current.expires <= Date.now()) {
+            if (!current || current.version !== VERIFICATION_VERSION || current.method !== 'google' || current.status !== 'pending' || current.expires <= Date.now()) {
                 throw new SecurityError(403, 'Google verification expired or was already used.');
             }
             current.status = 'checking'; await tx.put(key,current); return current;
@@ -144,7 +150,7 @@ export class ActionVerification {
         } catch { /* Never return provider tokens, secrets, or detailed errors in URLs. */ }
         await this.storage.transaction(async tx => {
             const current = await tx.get(key);
-            if (!current || current.status !== 'checking') return;
+            if (!current || current.version !== VERIFICATION_VERSION || current.status !== 'checking') return;
             current.status = success && current.expires > Date.now() ? 'verified' : 'failed';
             delete current.verifier; delete current.nonce; delete current.subject;
             await tx.put(key,current);

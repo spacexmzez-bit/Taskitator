@@ -1,5 +1,5 @@
 import {SecurityError, sha256} from './auth.js';
-import {randomSecret} from './verification.js';
+import {randomSecret, VERIFICATION_VERSION} from './verification.js';
 import {PROVIDERS,providerId} from './ai-models.js';
 export const AI_MODELS = PROVIDERS.gemini.models;
 export const MAX_AI_BYTES = 20 * 1024 * 1024;
@@ -149,7 +149,7 @@ export class KeyVault {
         if(!validId(id))throw new SecurityError(403,'Verify your identity for this key action.');
         const proofKey='action-proof:'+await sha256(id),proof=await tx.get(proofKey);
         const current=await tx.get(await this.recordKey(identity,provider));
-        if(!proof || proof.status!=='verified' || proof.expires<=Date.now() || proof.userId!==identity.userId ||
+        if(!proof || proof.version!==VERIFICATION_VERSION || proof.status!=='verified' || proof.expires<=Date.now() || proof.userId!==identity.userId ||
             proof.sessionId!==identity.sessionId || proof.action!==action || proof.context?.provider!==provider ||
             proof.context.version!==(current?.version||'empty') || proof.context.stage_id!==stageId){
             throw new SecurityError(403,'Verification expired, was used, or the saved key changed. Verify again.');
