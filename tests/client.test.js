@@ -233,11 +233,11 @@ test('page bootstrap activates the security cache before initializing an authent
     const source=fs.readFileSync(new URL('auth-bootstrap.js',root),'utf8');
     const calls=[],listeners=new Map();
     const status={style:{},append(){},remove(){calls.push('shown')},textContent:''};
-    const document={body:{append(){}},createElement:()=>status,querySelectorAll:()=>[],documentElement:{classList:{remove(){}}}};
+    const document={body:{append(){}},createElement:()=>status,getElementById:()=>null,querySelectorAll:()=>[],documentElement:{classList:{remove(){}}}};
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase-3-providers-v1'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-mobile-ui-v2'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -591,4 +591,56 @@ test('Google deletion callback only verifies identity and resets manual deletion
     assert.deepEqual(requests,['/auth/verification/status']);assert.equal(f.element('accountDeletionDialog').open,true);
     assert.equal(f.element('deletionPhrase').value,'');assert.equal(f.element('deletionBlockerDisabled').checked,false);
     assert.equal(f.element('confirmAccountDeletionBtn').disabled,true);
+});
+
+test('empty batch review uses CSP-compatible close handlers for both dismissal buttons',()=>{
+    for(const buttonId of ['proBatchCloseBtn','proBatchCancelBtn']){
+        const nodes=new Map(),tasks=[],storage=new LocalStorage();storage.setItem('taskitator_tasks',JSON.stringify(tasks));
+        const modal={removed:false,innerHTML:'',remove(){this.removed=true;nodes.delete(this.id)}};
+        const button=()=>({addEventListener(name,fn){this[name]=fn}});
+        nodes.set('proBatchCloseBtn',button());nodes.set('proBatchCancelBtn',button());
+        const window={addEventListener(){}};
+        const document={readyState:'loading',addEventListener(){},getElementById:id=>nodes.get(id)||null,
+            createElement:()=>modal,body:{appendChild(node){nodes.set(node.id,node)}}};
+        const context=vm.createContext({window,document,localStorage:storage});
+        vm.runInContext(fs.readFileSync(new URL('pro/pro-ui.js',root),'utf8'),context);
+        window.openBatchReviewModal([]);
+        assert.equal(modal.removed,false);assert.match(modal.innerHTML,/None of the selected tasks/);
+        assert.doesNotMatch(modal.innerHTML,/onclick=/);nodes.get(buttonId).click();assert.equal(modal.removed,true);
+    }
+});
+test('batch review is scoped to selected AI tasks and preselects eligible rows without submitting',()=>{
+    const nodes=new Map(),storage=new LocalStorage();let requests=0;
+    storage.setItem('taskitator_tasks',JSON.stringify([
+        {id:'one',title:'Selected',status:'active',ai_locked:true,proof_criteria:'Proof'},
+        {id:'two',title:'Unselected',status:'active',ai_locked:true,proof_criteria:'Other proof'},
+        {id:'plain',title:'Plain',status:'active'},
+        {id:'done',title:'Completed',status:'completed',ai_locked:true}
+    ]));
+    const makeNode=()=>({style:{},textContent:'',addEventListener(){}});
+    for(const id of ['proBatchCloseBtn','proBatchCancelBtn','proBatchSubmitBtn','proBatchPickFilesBtn','proBatchFileInput',
+        'proBatchFileList','proBatchSelectedCount','proBatchFeedback','proBatchResultsArea'])nodes.set(id,makeNode());
+    const modal={innerHTML:'',querySelectorAll(){return []}};
+    const document={readyState:'loading',addEventListener(){},getElementById:id=>nodes.get(id)||null,
+        createElement:()=>modal,body:{appendChild(node){nodes.set(node.id,node)}}};
+    const window={addEventListener(){},TaskitatorPro:{batchReview(){requests++}}};
+    vm.runInContext(fs.readFileSync(new URL('pro/pro-ui.js',root),'utf8'),vm.createContext({window,document,localStorage:storage}));
+    window.openBatchReviewModal(['one','plain','done']);
+    assert.match(modal.innerHTML,/value="one" checked/);assert.doesNotMatch(modal.innerHTML,/value="(?:two|plain|done)"/);
+    assert.equal(nodes.get('proBatchSelectedCount').textContent,1);assert.equal(nodes.get('proBatchSubmitBtn').disabled,true);assert.equal(requests,0);
+});
+test('title username follows Clerk profile updates and uses the existing account profile action',async()=>{
+    const source=fs.readFileSync(new URL('auth-bootstrap.js',root),'utf8'),listeners=[],storage=new LocalStorage();
+    storage.setItem('taskitator_local_owner','rd');
+    const button={setAttribute(){},addEventListener(name,fn){this[name]=fn}},status={style:{},append(){},remove(){}};
+    const document={body:{append(){}},createElement:()=>status,getElementById:id=>id==='accountUsernameBtn'?button:null,
+        querySelectorAll:()=>[],documentElement:{classList:{remove(){}}}};
+    const window={dispatchEvent(){},Clerk:{user:{username:null},session:{id:'sess_A'},addListener(fn){listeners.push(fn)}}};
+    let profileOpens=0;
+    const auth={signedIn:true,account:{user:'rd'},async init(){},async manageAccount(){profileOpens++}};
+    await vm.runInContext(source,vm.createContext({window,document,navigator:{},localStorage:storage,
+        TaskitatorAuth:auth,location:{pathname:'/index.html'},Event}));
+    assert.equal(button.textContent,'Set username');await button.click();assert.equal(profileOpens,1);
+    window.Clerk.user.username='Hogkla';listeners[0]({session:{id:'sess_A'}});assert.equal(button.textContent,'@Hogkla');
+    assert.match(source,/Loading \. \. \./);
 });
