@@ -727,3 +727,26 @@ test('Google key approvals reject other sessions, accounts and actions without c
     assert.equal((await f.call('/ai/keys',a.token,'DELETE',{verification_id:google.id})).status,403);
     assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',{verification_id:google.id})).status,200);
 });
+
+test('account deletion removes hosted operations, spending and username claims without touching another account',async()=>{
+    const f=fixture(),a=await create(f),b=await create(f,'user_B');
+    await f.call('/pro/username',a.token,'POST',{username:'Mazen'});
+    await f.call('/pro/username',b.token,'POST',{username:'OtherName'});
+    for(const prefix of ['pro:op:','pro:usage:','pro:spend:']) {
+        await f.storage.put(prefix+'user_A:test',{value:'remove'});
+        await f.storage.put(prefix+'user_B:test',{value:'keep'});
+    }
+    await f.storage.put('pro:attestation:test_A',{account_id:'user_A'});
+    await f.storage.put('pro:attestation:test_B',{account_id:'user_B'});
+    const body=await verifiedDeletion(f,a.token);await f.call('/auth/account',body.token,'DELETE',body);
+    await finishDeletion(f);
+    for(const prefix of ['pro:op:','pro:usage:','pro:spend:']) {
+        assert.equal(await f.storage.get(prefix+'user_A:test'),undefined);
+        assert.ok(await f.storage.get(prefix+'user_B:test'));
+    }
+    assert.equal(await f.storage.get('pro:username:map:mazen'),undefined);
+    assert.equal(await f.storage.get('pro:user:username:user_A'),undefined);
+    assert.ok(await f.storage.get('pro:username:map:othername'));
+    assert.equal(await f.storage.get('pro:attestation:test_A'),undefined);
+    assert.ok(await f.storage.get('pro:attestation:test_B'));
+});

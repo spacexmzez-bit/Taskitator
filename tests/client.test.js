@@ -237,7 +237,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-profile-ui-v3'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-hosted-policy-v4'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -628,4 +628,24 @@ test('batch review is scoped to selected AI tasks and preselects eligible rows w
     window.openBatchReviewModal(['one','plain','done']);
     assert.match(modal.innerHTML,/value="one" checked/);assert.doesNotMatch(modal.innerHTML,/value="(?:two|plain|done)"/);
     assert.equal(nodes.get('proBatchSelectedCount').textContent,1);assert.equal(nodes.get('proBatchSubmitBtn').disabled,true);assert.equal(requests,0);
+});
+
+test('login choices mount the matching Clerk screen without showing migration as normal sign-in',async()=>{
+    const nodes=new Map(),calls=[];
+    const node=id=>{
+        if(!nodes.has(id))nodes.set(id,{hidden:true,textContent:'',setAttribute(name,value){this[name]=value}});
+        return nodes.get(id);
+    };
+    const window={Clerk:{session:null,
+        mountSignIn(el,options){calls.push({mode:'signIn',options})},unmountSignIn(){},
+        mountSignUp(el,options){calls.push({mode:'signUp',options})},unmountSignUp(){}}};
+    const context=vm.createContext({window,document:{getElementById:node},location:{origin:'https://app.test'}});
+    await vm.runInContext(fs.readFileSync(new URL('login-page.js',root),'utf8'),context);
+    assert.deepEqual(calls.map(c=>c.mode),['signIn']);assert.equal(node('connectPanel').hidden,true);
+    node('showSignUpBtn').onclick();node('showSignInBtn').onclick();
+    assert.deepEqual(calls.map(c=>c.mode),['signIn','signUp','signIn']);
+    assert.ok(calls.every(c=>c.options.forceRedirectUrl==='https://app.test/login.html'));
+    const html=fs.readFileSync(new URL('login.html',root),'utf8');
+    assert.match(html,/<details id="legacyImport">[\s\S]*id="migrationForm"/);
+    assert.doesNotMatch(html,/usernameLoginForm|loginPasswordInput/);
 });
