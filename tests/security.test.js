@@ -54,10 +54,11 @@ function fixture() {
             }
         } };
     const service = new TaskitatorSync({ storage }, env);
+    let verificationOverrides = {};
     let revoked = false, verificationStatus='complete', deleteFailure=false, googleToken=null, providerStatus=200;
     let claudeResponse={model:'claude-haiku-5-5',stop_reason:'end_turn',content:[{type:'text',text:'Hello from Claude'}],usage:{input_tokens:12,output_tokens:4}};
     const providerCalls=[];
-    const deletedUsers=new Set();
+    const deletedUsers=new Set(),sessionOwners=new Map();
     globalThis.fetch = async (url,options={}) => {
         if(String(url).startsWith('https://api.anthropic.com/v1/')){
             providerCalls.push({url:String(url),options});
@@ -70,8 +71,13 @@ function fixture() {
             return providerStatus===200?Response.json(String(url).includes(':generateContent')?
                 {candidates:[{content:{parts:[{text:'{"score":9,"passed":true}'}]}}]}:{name:'models/gemini-3.5-flash-lite'}):Response.json({error:{message:'provider diagnostic secret'}},{status:providerStatus});
         }
-        if(String(url).includes('/reverifications/'))return Response.json({status:verificationStatus,
-            first_factor_verification:{status:verificationStatus==='complete'?'verified':'unverified',strategy:'password'}});
+        if(String(url).includes('/reverifications/')) {
+            const path = new URL(url).pathname.split('/'), now = Date.now();
+            return Response.json({object:'reverification',id:path.at(-1),session_id:path[3],
+                user_id:'user_'+path[3].slice(5),level:'first_factor',status:verificationStatus,
+                created_at:now,first_factor_verified_at:verificationStatus==='complete'?now:null,
+                second_factor_verified_at:null,updated_at:now,...verificationOverrides});
+        }
         if(String(url)==='https://oauth2.googleapis.com/token')return Response.json({id_token:googleToken});
         if(String(url)==='https://www.googleapis.com/oauth2/v3/certs')return Response.json({keys:[{...await crypto.subtle.exportKey('jwk',keys.publicKey),kid:'google-key'}]});
         if(options.method==='DELETE' && String(url).includes('/users/')) {
@@ -80,7 +86,7 @@ function fixture() {
         }
         if (String(url).includes('/sessions/')) {
             const id = String(url).split('/').pop();
-            const userId='user_'+id.slice(5);
+            const userId=sessionOwners.get(id)||'user_'+id.slice(5);
             return Response.json({ status: revoked || deletedUsers.has(userId) ? 'revoked' : 'active', user_id:userId });
         }
         if (String(url).endsWith('/users/user_A')) return Response.json({ primary_email_address_id: 'email1',
@@ -96,7 +102,8 @@ function fixture() {
             ...(body ? { body: JSON.stringify(body) } : {}) }));
         return { status: res.status, body: await res.json() };
     }
-    return { storage, kv, env, service, call, deletedUsers, revoke: () => { revoked = true; },
+    return { storage, kv, env, service, call, deletedUsers, sessionOwners, revoke: () => { revoked = true; },
+        setVerificationResponse:value=>{verificationOverrides=value},
         setVerificationStatus:value=>{verificationStatus=value},setDeleteFailure:value=>{deleteFailure=value},
         setGoogleToken:value=>{googleToken=value},providerCalls,setProviderStatus:value=>{providerStatus=value},setClaudeResponse:value=>{claudeResponse=value} };
 }
@@ -641,4 +648,82 @@ test('Google confirmation rejects wrong account, nonce, audience, expiry, and fo
         assert.equal((await f.call('/auth/verification/status',a.token,'POST',{verification_id:google.id})).body.verified,false);
         assert.ok(await f.storage.get('account:'+encodeURIComponent(a.user)));
     }
+});
+
+test('Backend reverification requires the exact object, identity, level and fresh millisecond timestamps',async()=>{
+    const cases=[{object:'session'},{id:'rv_other'},{user_id:'user_B'},{session_id:'sess_B'},
+        {status:'needs_first_factor'},{status:'needs_second_factor'},{level:'second_factor'},{level:'unknown'},
+        {created_at:null},{first_factor_verified_at:null},{created_at:'123'},
+        {created_at:Date.now()-60000},{first_factor_verified_at:Date.now()-60000},
+        {created_at:Date.now()+60000},{first_factor_verified_at:Date.now()+60000}];
+    for(const overrides of cases){
+        const f=fixture(),a=await create(f);f.env.ACCOUNT_DELETION_ENABLED='true';
+        const started=await f.call('/auth/verification/start',a.token,'POST',{method:'password'});
+        f.setVerificationResponse(overrides);
+        const fresh=await jwt('user_A',{taskitator_reverification_id:'rv_test',fva:[0,-1]});
+        assert.equal((await f.call('/auth/verification/password',fresh,'POST',{verification_id:started.body.verification_id})).status,403,JSON.stringify(overrides));
+        assert.equal((await f.call('/auth/verification/status',fresh,'POST',{verification_id:started.body.verification_id})).body.verified,false);
+    }
+    for(const level of ['first_factor','multi_factor']){
+        const f=fixture(),a=await create(f);f.env.ACCOUNT_DELETION_ENABLED='true';
+        const started=await f.call('/auth/verification/start',a.token,'POST',{method:'password'});
+        f.setVerificationResponse({level});
+        const fresh=await jwt('user_A',{taskitator_reverification_id:'rv_test',fva:[0,-1]});
+        assert.equal((await f.call('/auth/verification/password',fresh,'POST',{verification_id:started.body.verification_id})).status,200);
+    }
+});
+test('expired pending challenges cannot approve a fresh password verification',async()=>{
+    const f=fixture(),a=await create(f);f.env.ACCOUNT_DELETION_ENABLED='true';
+    const start=await f.call('/auth/verification/start',a.token,'POST',{method:'password'});
+    const key='action-proof:'+await sha256(start.body.verification_id),record=await f.storage.get(key);
+    record.expires=Date.now()-1;await f.storage.put(key,record);
+    const fresh=await jwt('user_A',{taskitator_reverification_id:'rv_test',fva:[0,-1]});
+    assert.equal((await f.call('/auth/verification/password',fresh,'POST',{verification_id:start.body.verification_id})).status,403);
+});
+test('every missing or partial Google configuration fails closed for deletion and both provider keys',async()=>{
+    const names=['GOOGLE_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_SECRET','GOOGLE_VERIFICATION_REDIRECT_URI'];
+    for(let mask=0;mask<7;mask++)for(const action of ['delete-account','api-key-save'])for(const provider of ['gemini','claude']){
+        const f=fixture(),a=await create(f);enableVault(f);f.env.ACCOUNT_DELETION_ENABLED='true';
+        const values=['google-client','google-secret','https://worker.test/auth/verification/google/callback'];
+        names.forEach((name,index)=>{if(mask&(1<<index))f.env[name]=values[index]});
+        const result=await f.call('/auth/verification/start',a.token,'POST',{method:'google',action,provider});
+        assert.equal(result.status,503);assert.match(result.body.error,/Worker setup/);
+        names.forEach((name,index)=>{if(!(mask&(1<<index)))assert.ok(result.body.error.includes(name))});
+        assert.equal(result.body.verified,undefined);assert.equal(result.body.authorization_url,undefined);
+        assert.equal((await f.storage.list({prefix:'action-proof:'})).size,0);
+    }
+});
+test('malformed Google callback configuration never creates approval',async()=>{
+    for(const redirect of ['broken','http://worker.test/auth/verification/google/callback','https://worker.test/wrong',
+        'https://user:pass@worker.test/auth/verification/google/callback','https://worker.test/auth/verification/google/callback?x=1']){
+        const f=fixture(),a=await create(f);f.env.ACCOUNT_DELETION_ENABLED='true';
+        Object.assign(f.env,{GOOGLE_OAUTH_CLIENT_ID:'id',GOOGLE_OAUTH_CLIENT_SECRET:'secret',GOOGLE_VERIFICATION_REDIRECT_URI:redirect});
+        assert.equal((await f.call('/auth/verification/start',a.token,'POST',{method:'google'})).status,503);
+        assert.equal((await f.storage.list({prefix:'action-proof:'})).size,0);
+    }
+});
+test('legacy bypass grants cannot authorize status, callbacks, deletion or any key mutation/reveal',async()=>{
+    for(const version of [undefined,1])for(const action of ['delete-account','api-key-save','api-key-reveal','api-key-delete']){
+        const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);f.env.ACCOUNT_DELETION_ENABLED='true';
+        const google=await startGoogle(f,a.token,action),key='action-proof:'+await sha256(google.id);
+        const record=await f.storage.get(key);delete record.version;if(version!==undefined)record.version=version;
+        record.status='verified';await f.storage.put(key,record);
+        assert.equal((await f.call('/auth/verification/status',a.token,'POST',{verification_id:google.id,action})).status,403);
+        const path=action==='delete-account'?'/auth/account':action==='api-key-reveal'?'/ai/keys/reveal':'/ai/keys';
+        const method=['delete-account','api-key-delete'].includes(action)?'DELETE':'POST';
+        assert.equal((await f.call(path,a.token,method,{verification_id:google.id,key:'replacement-key-1234',receipt:'e'.repeat(64),blocker_disabled:true,phrase:'Macrodroid disabled'})).status,403);
+        record.status='pending';await f.storage.put(key,record);
+        assert.equal((await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code=test'))).status,403);
+    }
+});
+test('Google key approvals reject other sessions, accounts and actions without consuming the original approval',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
+    const google=await startGoogle(f,a.token,'api-key-reveal');f.setGoogleToken(await googleIdToken(google.record.nonce));
+    await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code=test'));
+    f.sessionOwners.set('sess_Alternate','user_A');
+    const otherSession=await jwt('user_A',{sid:'sess_Alternate'});
+    const otherUser=(await create(f,'user_B')).token;
+    for(const token of [otherSession,otherUser])assert.equal((await f.call('/ai/keys/reveal',token,'POST',{verification_id:google.id})).status,403);
+    assert.equal((await f.call('/ai/keys',a.token,'DELETE',{verification_id:google.id})).status,403);
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',{verification_id:google.id})).status,200);
 });

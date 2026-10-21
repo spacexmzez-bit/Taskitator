@@ -17,10 +17,10 @@ function client() {
         location: { pathname:'/login.html', replace() {}, reload() {} },
         addEventListener() {}, dispatchEvent() {}, Clerk: { user:{id:'user_A'}, session:{id:'sess_A',getToken:async()=> 'memory-only'} } };
     const context = vm.createContext({window, localStorage:storage, sessionStorage:new LocalStorage(),
-        location:window.location, crypto:webcrypto, TextEncoder, AbortSignal, AbortController, Headers, Response,
+        location:window.location, crypto:webcrypto, TextEncoder, AbortSignal, AbortController, Headers, Response, URL,
         setTimeout,clearTimeout,console,document:{addEventListener(){},getElementById(){return null;},visibilityState:'visible'},
         CustomEvent: class { constructor(name){this.type=name;} },
-        fetch:async(url)=>String(url).endsWith('SYSTEM_PROMPT.md') ? new Response(fs.readFileSync(new URL('SYSTEM_PROMPT.md',root),'utf8'),{status:200,headers:{'Content-Type':'text/markdown'}}) : Response.json({}) });
+        fetch:async()=> Response.json({}) });
     vm.runInContext(fs.readFileSync(new URL('auth-client.js',root),'utf8'),context);
     return { storage, window, context, auth:window.TaskitatorAuth };
 }
@@ -28,7 +28,7 @@ function loadVault(f){vm.runInContext(fs.readFileSync(new URL('vault-client.js',
 test('provider UI keeps each key metadata, activates explicitly and sends generation to the chosen provider',async()=>{
     const f=client(),events=new Map(),nodes=new Map(),requests=[];let selected='gemini';
     const node=id=>{
-        if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,textContent:'',handlers:{},addEventListener(k,fn){this.handlers[k]=fn;},replaceChildren(){},append(){},setAttribute(){},showModal(){},close(){this.handlers.close?.();}});
+        if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,textContent:'',style:{},handlers:{},addEventListener(k,fn){this.handlers[k]=fn;},replaceChildren(){},append(){},setAttribute(){},showModal(){},close(){this.handlers.close?.();}});
         return nodes.get(id);
     };
     f.context.document.getElementById=node;f.context.document.querySelectorAll=()=>[];
@@ -438,4 +438,157 @@ test('Settings initially activates Tags & Priority and keeps local reset distinc
     assert.ok(html.includes('This does NOT delete your cloud account or cloud data.'));
     const system=html.slice(html.indexOf('id="tab-system"'),html.indexOf('id="tab-tasks"'));
     for(const href of ['privacy.html','terms.html','privacy.html#deletion'])assert.ok(system.includes('href="'+href+'"'),href+' must be reachable under System');
+});
+
+function verificationVaultClient() {
+    const f=client(),events=new Map(),nodes=new Map(),calls=[],redirects=[];
+    const node=id=>{
+        if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,textContent:'',style:{},handlers:{},
+            addEventListener(name,fn){this.handlers[name]=fn},replaceChildren(){},append(){},setAttribute(){},
+            showModal(){this.open=true},close(){this.open=false;this.handlers.close?.()}});
+        return nodes.get(id);
+    };
+    f.context.document.getElementById=node;f.context.document.querySelector=()=>({click(){}});
+    f.window.addEventListener=(name,fn)=>events.set(name,fn);
+    f.context.location.assign=url=>redirects.push(url);f.auth.account={user:'rd'};
+    f.window.Clerk.user.passwordEnabled=true;
+    f.window.Clerk.session.startVerification=async()=>{};
+    f.window.Clerk.session.attemptFirstFactorVerification=async()=>({status:'complete'});
+    f.auth.api=async(path,options)=>{
+        calls.push({path,options});
+        if(path.endsWith('/start'))return {verification_id:'a'.repeat(64)};
+        return {verified:true};
+    };
+    loadVault(f);
+    return {...f,node,events,calls,redirects};
+}
+const invalidGoogleUrls=[undefined,null,'','not a URL','/o/oauth2/v2/auth','javascript:alert(1)',
+    'http://accounts.google.com/o/oauth2/v2/auth','https://accounts.google.com.evil.test/o/oauth2/v2/auth',
+    'https://accounts.google.com@evil.test/o/oauth2/v2/auth','https://evil@accounts.google.com/o/oauth2/v2/auth',
+    'https://accounts.google.com:444/o/oauth2/v2/auth','https://accounts.google.com/wrong',
+    'https://accounts.google.com/o/oauth2/v2/auth#evil'];
+const googleUrl='https://accounts.google.com/o/oauth2/v2/auth?client_id=test&state='+'a'.repeat(64);
+test('vault rejects missing or unsafe Google URLs and ignores old verified shortcut for every provider/action',async()=>{
+    for(const provider of ['gemini','claude'])for(const kind of ['Save','Show','Copy','Delete'])for(const authorization_url of invalidGoogleUrls){
+        const f=verificationVaultClient();await f.events.get('taskitator-auth-ready')();
+        f.node('aiProviderSelect').handlers.change({target:{value:provider}});
+        f.node('vault'+kind+'Btn').handlers.click();
+        f.auth.api=async()=>({verified:true,verification_id:'a'.repeat(64),authorization_url});
+        await f.node('vaultGoogleBtn').handlers.click();
+        assert.equal(f.redirects.length,0);assert.equal(f.node('vaultConfirmBtn').disabled,true);
+        assert.match(f.node('vaultDialogFeedback').textContent,/missing or invalid.*retry or cancel/);
+        assert.equal(f.node('vaultGoogleBtn').disabled,false);assert.equal(f.node('vaultCancelBtn').disabled,false);
+        assert.equal(f.context.sessionStorage.getItem('taskitator_key_verification'),null);
+    }
+});
+test('valid Google URLs redirect with pending provider/action metadata and no password or API key',async()=>{
+    for(const provider of ['gemini','claude'])for(const [kind,action] of [['Save','api-key-save'],['Show','api-key-reveal'],['Copy','api-key-reveal'],['Delete','api-key-delete']]){
+        const f=verificationVaultClient();await f.events.get('taskitator-auth-ready')();
+        f.node('aiProviderSelect').handlers.change({target:{value:provider}});f.node('vault'+kind+'Btn').handlers.click();
+        f.node('vaultPassword').value='private-password';f.node('vaultNewKey').value='private-api-key';
+        f.auth.api=async(path,options)=>{
+            const body=JSON.parse(options.body);assert.equal(body.action,action);assert.equal(body.provider,provider);
+            assert.equal(JSON.stringify(options).includes('private-'),false);
+            return {verified:true,verification_id:'a'.repeat(64),authorization_url:googleUrl};
+        };
+        await f.node('vaultGoogleBtn').handlers.click();
+        assert.deepEqual(f.redirects,[googleUrl]);assert.equal(f.node('vaultConfirmBtn').disabled,true);
+        const pending=JSON.parse(f.context.sessionStorage.getItem('taskitator_key_verification'));
+        assert.equal(pending.provider,provider);assert.equal(pending.kind,({Save:'save',Show:'reveal',Copy:'copy',Delete:'delete'})[kind]);
+        assert.equal(pending.session,'sess_A');assert.equal(pending.user,'rd');
+        assert.equal(JSON.stringify(f.context.sessionStorage).includes('private-'),false);
+        assert.equal(f.node('vaultNewKey').value,'');assert.equal(f.node('vaultPassword').value,'');
+    }
+});
+test('deletion validates Google URLs, releases busy state on failure, and never deletes from verification',async()=>{
+    for(const authorization_url of [...invalidGoogleUrls,googleUrl]){
+        const f=deletionClient(),redirects=[],requests=[];await f.events.get('taskitator-auth-ready')();
+        f.context.location.assign=url=>redirects.push(url);f.element('openAccountDeletionBtn').listeners.get('click')();
+        f.auth.api=async(path)=>{requests.push(path);return {verified:true,verification_id:'a'.repeat(64),authorization_url}};
+        await f.element('verifyDeletionGoogleBtn').listeners.get('click')();
+        assert.deepEqual(requests,['/auth/verification/start']);assert.equal(f.element('confirmAccountDeletionBtn').disabled,true);
+        if(authorization_url===googleUrl)assert.deepEqual(redirects,[googleUrl]);
+        else{
+            assert.equal(redirects.length,0);assert.match(f.element('accountDeletionFeedback').textContent,/missing or invalid.*retry or cancel/);
+            assert.equal(f.element('verifyDeletionGoogleBtn').disabled,false);assert.equal(f.element('cancelAccountDeletionBtn').disabled,false);
+        }
+    }
+});
+test('failed Clerk or Worker password confirmation never enables sensitive actions and clears entered passwords',async()=>{
+    for(const failure of ['incomplete','clerk-error','worker-error'])for(const type of ['vault','deletion']){
+        const f=type==='vault'?verificationVaultClient():deletionClient();
+        await f.events.get('taskitator-auth-ready')();
+        const get=type==='vault'?f.node:f.element;
+        const click=id=>type==='vault'?get(id).handlers.click():get(id).listeners.get('click')();
+        click(type==='vault'?'vaultSaveBtn':'openAccountDeletionBtn');
+        get(type==='vault'?'vaultPassword':'deletionPassword').value='private-password';
+        const workerRequests=[];let attempts=0;
+        f.window.Clerk.session.attemptFirstFactorVerification=async body=>{
+            attempts++;assert.equal(body.password,'private-password');assert.equal(body.strategy,'password');
+            if(failure==='clerk-error')throw new Error('Incorrect password');
+            return {status:failure==='incomplete'?'needs_first_factor':'complete'};
+        };
+        f.auth.api=async(path,options)=>{
+            workerRequests.push({path,options});
+            if(path.endsWith('/password'))throw new Error('Password verification has not completed.');
+            return {verification_id:'a'.repeat(64)};
+        };
+        await click(type==='vault'?'vaultPasswordBtn':'verifyDeletionPasswordBtn');
+        assert.equal(attempts,1);assert.equal(get(type==='vault'?'vaultPassword':'deletionPassword').value,'');
+        assert.equal(JSON.stringify(workerRequests).includes('private-password'),false);
+        assert.equal(workerRequests.some(r=>r.path.endsWith('/password')),failure==='worker-error');
+        if(type==='deletion'){
+            get('deletionBlockerDisabled').checked=true;get('deletionPhrase').value='Macrodroid disabled';get('deletionPhrase').listeners.get('input')();
+        }
+        assert.equal(get(type==='vault'?'vaultConfirmBtn':'confirmAccountDeletionBtn').disabled,true);
+        assert.equal(get(type==='vault'?'vaultCancelBtn':'cancelAccountDeletionBtn').disabled,false);
+    }
+});
+test('vault password success uses only the Clerk SDK for passwords and fresh Worker authorization',async()=>{
+    const f=verificationVaultClient();await f.events.get('taskitator-auth-ready')();f.node('vaultSaveBtn').handlers.click();
+    f.node('vaultPassword').value='private-password';let clerkPassword;
+    f.window.Clerk.session.attemptFirstFactorVerification=async body=>{clerkPassword=body.password;return {status:'complete'}};
+    await f.node('vaultPasswordBtn').handlers.click();
+    assert.equal(clerkPassword,'private-password');assert.equal(f.node('vaultConfirmBtn').disabled,false);
+    assert.equal(JSON.stringify(f.calls).includes('private-password'),false);
+    assert.equal(f.calls.find(call=>call.path.endsWith('/password')).options.freshToken,true);
+});
+
+test('Google callback recovery preserves each provider/action and waits for explicit confirmation',async()=>{
+    for(const provider of ['gemini','claude'])for(const kind of ['save','delete','reveal','copy']){
+        const f=verificationVaultClient(),proof='a'.repeat(64),requests=[];
+        f.context.sessionStorage.setItem('taskitator_key_verification',JSON.stringify({kind,provider,stageId:null,proofId:proof,user:'rd',session:'sess_A'}));
+        f.context.location.hash='#key-verification='+proof;f.context.history={replaceState(){}};
+        f.auth.api=async(path,options)=>{
+            requests.push({path,options});assert.equal(path,'/auth/verification/status');
+            const body=JSON.parse(options.body);assert.equal(body.action,'api-key-'+(['copy','reveal'].includes(kind)?'reveal':kind));
+            return {verified:true,context:{provider}};
+        };
+        await f.events.get('taskitator-auth-ready')();
+        assert.equal(f.node('vaultDialog').open,true);assert.equal(f.node('vaultConfirmBtn').disabled,false);
+        assert.equal(requests.length,1);assert.equal(f.node('aiProviderSelect').value,provider);
+        assert.equal(f.context.sessionStorage.getItem('taskitator_key_verification'),null);
+    }
+});
+test('Google callback with wrong pending session or provider never enables confirmation',async()=>{
+    for(const mismatch of ['session','provider','proof']){
+        const f=verificationVaultClient(),proof='a'.repeat(64),requests=[];
+        f.node('vaultConfirmBtn').disabled=true;
+        f.context.sessionStorage.setItem('taskitator_key_verification',JSON.stringify({kind:'save',provider:'claude',stageId:null,
+            proofId:mismatch==='proof'?'b'.repeat(64):proof,user:'rd',session:mismatch==='session'?'sess_other':'sess_A'}));
+        f.context.location.hash='#key-verification='+proof;f.context.history={replaceState(){}};
+        f.auth.api=async(path)=>{requests.push(path);return {verified:true,context:{provider:'gemini'}}};
+        await f.events.get('taskitator-auth-ready')();
+        assert.equal(f.node('vaultConfirmBtn').disabled,true);
+        assert.deepEqual(requests,mismatch==='provider'?['/auth/verification/status']:[]);
+    }
+});
+test('Google deletion callback only verifies identity and resets manual deletion gates',async()=>{
+    const f=deletionClient(),requests=[];f.context.location.hash='#delete-verification='+'a'.repeat(64);
+    f.element('deletionPhrase').value='Macrodroid disabled';f.element('deletionBlockerDisabled').checked=true;
+    f.auth.api=async(path)=>{requests.push(path);return {verified:true}};
+    await f.events.get('taskitator-auth-ready')();
+    assert.deepEqual(requests,['/auth/verification/status']);assert.equal(f.element('accountDeletionDialog').open,true);
+    assert.equal(f.element('deletionPhrase').value,'');assert.equal(f.element('deletionBlockerDisabled').checked,false);
+    assert.equal(f.element('confirmAccountDeletionBtn').disabled,true);
 });
