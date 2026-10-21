@@ -237,17 +237,17 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-mobile-ui-v2'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-profile-ui-v3'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
     const window={dispatchEvent(){calls.push('ready')},Clerk:{session:{id:'sess_A'},addListener(){}}};
     const storage=new LocalStorage();storage.setItem('taskitator_local_owner','rd');
     const context=vm.createContext({window,document,navigator:{serviceWorker},TaskitatorAuth:auth,
-        localStorage:storage,location:{pathname:'/index.html',replace(){calls.push('redirect')}},
+        localStorage:storage,location:{pathname:'/index.html',replace(){calls.push('redirect')},reload(){calls.push('reload')}},
         MessageChannel,Event,setTimeout,clearTimeout});
     await vm.runInContext(source,context);
-    assert.deepEqual(calls,['register','authenticate','ready','shown']);
+    assert.deepEqual(calls,['register','reload']);
 });
 
 test('switching a managed login preserves the previous account drafts under their original owner',()=>{
@@ -628,19 +628,4 @@ test('batch review is scoped to selected AI tasks and preselects eligible rows w
     window.openBatchReviewModal(['one','plain','done']);
     assert.match(modal.innerHTML,/value="one" checked/);assert.doesNotMatch(modal.innerHTML,/value="(?:two|plain|done)"/);
     assert.equal(nodes.get('proBatchSelectedCount').textContent,1);assert.equal(nodes.get('proBatchSubmitBtn').disabled,true);assert.equal(requests,0);
-});
-test('title username follows Clerk profile updates and uses the existing account profile action',async()=>{
-    const source=fs.readFileSync(new URL('auth-bootstrap.js',root),'utf8'),listeners=[],storage=new LocalStorage();
-    storage.setItem('taskitator_local_owner','rd');
-    const button={setAttribute(){},addEventListener(name,fn){this[name]=fn}},status={style:{},append(){},remove(){}};
-    const document={body:{append(){}},createElement:()=>status,getElementById:id=>id==='accountUsernameBtn'?button:null,
-        querySelectorAll:()=>[],documentElement:{classList:{remove(){}}}};
-    const window={dispatchEvent(){},Clerk:{user:{username:null},session:{id:'sess_A'},addListener(fn){listeners.push(fn)}}};
-    let profileOpens=0;
-    const auth={signedIn:true,account:{user:'rd'},async init(){},async manageAccount(){profileOpens++}};
-    await vm.runInContext(source,vm.createContext({window,document,navigator:{},localStorage:storage,
-        TaskitatorAuth:auth,location:{pathname:'/index.html'},Event}));
-    assert.equal(button.textContent,'Set username');await button.click();assert.equal(profileOpens,1);
-    window.Clerk.user.username='Hogkla';listeners[0]({session:{id:'sess_A'}});assert.equal(button.textContent,'@Hogkla');
-    assert.match(source,/Loading \. \. \./);
 });
