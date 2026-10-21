@@ -4,7 +4,7 @@
     const status = document.createElement('div');
     status.id = 'authLoadingStatus';
     status.style.cssText = 'position:fixed;inset:0;background:#0f172a;color:#e2e8f0;z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;gap:16px';
-    status.textContent = 'Checking your secure session…';
+    status.textContent = 'Loading . . .';
     document.body.append(status);
     try {
         // Old cache-first workers ignore query strings and can return an old
@@ -17,7 +17,7 @@
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-phase-3-providers-v1');
+                    resolve(event.data?.version === 'taskitator-mobile-ui-v2');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
@@ -65,6 +65,20 @@
                 });
             } else { script.textContent = original.textContent; document.body.append(script); }
         }
+        // Keep profile controls in the title row, outside the crowded navbar.
+        const usernameButton = document.getElementById('accountUsernameBtn');
+        const refreshUsername = () => {
+            if (!usernameButton) return;
+            const username = window.Clerk?.user?.username;
+            usernameButton.textContent = username ? '@'+username : 'Set username';
+            usernameButton.title = username ? '@'+username+' — manage username' : 'Set username in your account profile';
+            usernameButton.setAttribute('aria-label', usernameButton.title);
+        };
+        refreshUsername();
+        usernameButton?.addEventListener('click', async () => {
+            try { await TaskitatorAuth.manageAccount(); }
+            catch { usernameButton.textContent = 'Try again'; }
+        });
         // Initialize existing page controls after asynchronous authentication.
         window.dispatchEvent(new Event('taskitator-auth-ready'));
         document.documentElement.classList.remove('auth-pending');
@@ -72,6 +86,7 @@
         if (window.Clerk) {
             const initialSession = window.Clerk.session?.id;
             window.Clerk.addListener(({ session }) => {
+                refreshUsername();
                 if (initialSession && session?.id !== initialSession) {
                     if (window.TaskitatorDeletionAccepted) return;
                     window.TaskitatorVault?.clear();

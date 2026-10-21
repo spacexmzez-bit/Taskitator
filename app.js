@@ -1026,7 +1026,10 @@ window.TaskitatorApp = (() => {
         selectedTaskIds.clear();
 
         const btn = document.getElementById('toggleSelectModeBtn');
-        if (btn) btn.classList.toggle('active', isSelectionModeActive);
+        if (btn) {
+            btn.classList.toggle('active', isSelectionModeActive);
+            btn.setAttribute('aria-pressed', String(isSelectionModeActive));
+        }
 
         updateBatchBarUI();
         renderUnifiedTaskTree();
@@ -1050,8 +1053,10 @@ window.TaskitatorApp = (() => {
         const label = document.getElementById('batchSelectedCountLabel');
         if (!bar) return;
 
-        // Clean gate: only show the floating bar if multi-select is active AND at least 1 item is checked
-        if (isSelectionModeActive && selectedTaskIds.size > 0) {
+        const review = document.getElementById('batchReviewSelectedBtn');
+        if (review) review.disabled = selectedTaskIds.size === 0;
+        // Keep the available actions visible while the user chooses tasks.
+        if (isSelectionModeActive) {
             bar.classList.add('open');
             if (label) label.textContent = `${selectedTaskIds.size} Selected`;
         } else {
@@ -2044,6 +2049,13 @@ window.TaskitatorApp = (() => {
         if (toggleSelectModeBtn) {
             toggleSelectModeBtn.addEventListener('click', toggleSelectionMode);
         }
+
+        // Review only the current multiselection; the modal filters AI eligibility.
+        const batchReviewSelectedBtn = document.getElementById('batchReviewSelectedBtn');
+        if (batchReviewSelectedBtn) batchReviewSelectedBtn.addEventListener('click', () => {
+            if (!isSelectionModeActive || !selectedTaskIds.size) return;
+            if (typeof window.openBatchReviewModal === 'function') window.openBatchReviewModal([...selectedTaskIds]);
+        });
 
         // Batch Action Bar Handlers
         const batchSelectAllBtn = document.getElementById('batchSelectAllBtn');

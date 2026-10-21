@@ -370,7 +370,6 @@
         </div>
 
         <div class="nav-right">
-            <div id="navbarUserBadge" class="navbar-user-badge-wrap"></div>
             <!-- Responsive Copilot Trigger: Icon-only on mobile, full label on desktop -->
             <button class="icon-btn nav-link-btn" id="openCopilotNavBtn" title="Open Ari Assistant" aria-label="Open Ari Assistant">
                 <span>💬</span>
@@ -381,9 +380,10 @@
 
     <div class="page-title-section">
         <h1 id="pageViewHeading">Today's Focus</h1>
+        <button type="button" class="account-username-btn" id="accountUsernameBtn" title="Manage username" aria-label="Set username">Set username</button>
         <div class="page-title-actions">
             <!-- Compact Icon-Only Selection Mode Toggle Button -->
-            <button type="button" class="icon-only-btn select-mode-btn" id="toggleSelectModeBtn" title="Toggle Multi-Selection Mode" aria-label="Toggle Multi-Selection Mode">
+            <button type="button" class="icon-only-btn select-mode-btn" id="toggleSelectModeBtn" aria-pressed="false" title="Toggle Multi-Selection Mode" aria-label="Toggle Multi-Selection Mode">
                 <span style="font-size: 0.95rem; line-height: 1;">☑</span>
             </button>
 
@@ -425,6 +425,7 @@
         <button type="button" class="icon-btn" id="batchSelectAllBtn" style="padding: 3px 8px; font-size: 0.75rem;">All</button>
     </div>
 
+    <button type="button" class="icon-btn batch-review-selected-btn" id="batchReviewSelectedBtn" disabled>⚡ Batch review selected tasks</button>
     <div class="batch-controls-group">
         <button type="button" class="icon-btn" id="batchOpenTagsBtn" style="padding: 5px 10px; font-size: 0.8rem;">🏷️ Tags</button>
         <button type="button" class="icon-btn" id="batchOpenPriorityBtn" style="padding: 5px 10px; font-size: 0.8rem;">🎯 Priority</button>

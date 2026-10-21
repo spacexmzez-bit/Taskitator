@@ -348,7 +348,7 @@
             <span id="unsavedIndicator" class="unsaved-pill">Unsaved Changes</span>
         </div>
         <div class="nav-right">
-            <button type="button" class="icon-btn" id="openCopilotNavBtn" title="Focus Copilot" style="font-size: 0.85rem; font-weight: 600; padding: 6px 12px;">💬 Copilot</button>
+            <button type="button" class="icon-btn" id="openCopilotNavBtn" title="Focus Copilot" aria-label="Open Focus Copilot"><span aria-hidden="true">💬</span><span class="nav-copilot-label">Copilot</span></button>
         </div>
     </header>
 
@@ -389,7 +389,7 @@
                         <div style="font-size: 0.8rem; color: var(--text-muted);">Signed in as:</div>
                         <strong id="activeUsernameDisplay" style="color: var(--primary); font-size: 0.95rem;">@local_user</strong>
                     </div>
-                    <div style="display: flex; gap: 8px; align-items: center;">
+                    <div class="account-session-actions">
                         <button type="button" class="icon-btn" id="openChangePasswordModalBtn" style="color: var(--primary); border-color: var(--primary);">Change Password</button>
                         <button type="button" class="icon-btn" id="openLogoutModalBtn" style="color: var(--danger); border-color: #881337;">Log Out</button>
                     </div>
