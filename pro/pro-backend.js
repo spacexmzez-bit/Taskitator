@@ -1,4 +1,5 @@
-import { clerkAPI } from '../cloudflare/auth.js';
+import { HostedAudits } from './audit-service.js';
+import { POLICY } from './audit-policy.js';
 // File: pro/pro-backend.js
 // Taskitator Pro Phase 2: Pro Gateway, Keyo Entitlement, Hosted Claude Haiku 5.5 AI Review,
 // Multi-File Proof Review, Batch Proof Review, and BYOK Mode Toggle.
@@ -55,23 +56,12 @@ function base64UrlDecode(str) {
     return new TextDecoder().decode(bytes);
 }
 
-// Supported proof file types per execution spec (JPEG, PNG, WebP, PDF)
-const ALLOWED_MIME_TYPES = [
-    'image/jpeg',
-    'image/png',
-    'image/webp',
-    'application/pdf'
-];
-
-// Target Claude Haiku 5.5 / 3.5 Haiku model family per owner requirement
-const PRIMARY_CLAUDE_MODEL = 'claude-haiku-5-5';
-const ANTHROPIC_API_VERSION = '2023-06-01';
-
 export class ProGateway {
     constructor(parent) {
         this.parent = parent;
         this.storage = parent.storage;
         this.env = parent.env;
+        this.audits = new HostedAudits(this);
     }
 
     async handleRequest(request, path, method, identity, account) {
@@ -98,16 +88,27 @@ export class ProGateway {
             return await this.toggleByok(accountId, body);
         }
 
-        // Route: POST /pro/ai/review (Single & Multi-File Review)
-        if (method === 'POST' && path === '/pro/ai/review') {
-            const body = await request.json().catch(() => ({}));
-            return await this.executeHostedReview(accountId, body);
-        }
-
-        // Route: POST /pro/ai/batch-review (Batch Proof Review)
-        if (method === 'POST' && path === '/pro/ai/batch-review') {
-            const body = await request.json().catch(() => ({}));
-            return await this.executeBatchReview(accountId, body);
+        if (method === 'POST' && ['/pro/ai/quote','/pro/ai/review','/pro/ai/batch-review'].includes(path)) {
+            // Bound JSON before parsing base64 evidence into memory.
+            const reader=request.body?.getReader();
+            if (!reader) return json({error:'Evidence payload is missing.'},400);
+            let size=0; const chunks=[];
+            while (true) {
+                const {done,value}=await reader.read(); if(done) break;
+                size+=value.byteLength;
+                if(size>30*1024*1024) { await reader.cancel(); return json({error:'Evidence payload exceeds 30 MiB.',code:'PAYLOAD_TOO_LARGE'},413); }
+                chunks.push(value);
+            }
+            const bytes=new Uint8Array(size);let offset=0;
+            for(const chunk of chunks) { bytes.set(chunk,offset);offset+=chunk.byteLength; }
+            let body;
+            try { body=JSON.parse(new TextDecoder().decode(bytes)); }
+            catch { return json({error:'Invalid evidence JSON.'},400); }
+            if (!body || typeof body !== 'object' || Array.isArray(body)) return json({error:'Invalid audit request.'},400);
+            const result = await this.audits.handle(accountId, identity.sessionId, body,
+                path === '/pro/ai/batch-review' || (path === '/pro/ai/quote' && body.batch === true),
+                path === '/pro/ai/quote');
+            return json(result.body,result.status);
         }
 
         // Route: POST /pro/ai/batch-confirm (Batch Result Confirmation & Attestation)
@@ -144,7 +145,8 @@ export class ProGateway {
         const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
 
         const usernameRec = await this.storage.get(`pro:user:username:${accountId}`);
-        const currentUsername = usernameRec?.username || null;
+        const claimed = usernameRec?.normalizedUsername ? await this.storage.get('pro:username:map:'+usernameRec.normalizedUsername) : null;
+        const currentUsername = claimed?.accountId === accountId ? usernameRec.username : null;
 
         if (!entitlement) {
             return json({
@@ -178,8 +180,8 @@ export class ProGateway {
         const monthlyUsed = (await this.storage.get(`pro:usage:${accountId}:month:${monthStr}`)) || 0;
 
         // Owner requirements: 45 daily and 1,000 monthly credits
-        const dailyLimit = entitlement.credits_daily_limit || 45;
-        const monthlyLimit = entitlement.credits_monthly_limit || 1000;
+        const dailyLimit = POLICY.daily;
+        const monthlyLimit = POLICY.monthly;
         const useByok = Boolean(entitlement.use_byok);
 
         return json({
@@ -191,6 +193,7 @@ export class ProGateway {
             activated_at: entitlement.activated_at,
             expires_at: entitlement.expires_at,
             policy_version: entitlement.policy_version || '2.0',
+            hosted_policy: POLICY.version,
             credits: {
                 daily_limit: dailyLimit,
                 daily_used: dailyUsed,
@@ -359,220 +362,6 @@ export class ProGateway {
         return { valid: false, code: 'MALFORMED_KEY', reason: 'Keyo license keys must be 16 characters (excluding hyphens).' };
     }
 
-    // --- Phase 2: Single & Multi-File Proof Review ---
-
-    async executeHostedReview(accountId, body) {
-        const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
-        const now = Date.now();
-        if (!entitlement || entitlement.status !== 'active' || (entitlement.expires_at && now > entitlement.expires_at)) {
-            return json({
-                error: 'Active Taskitator Pro entitlement required for hosted AI proof review.',
-                code: 'PRO_REQUIRED'
-            }, 403);
-        }
-
-        let filesList = [];
-        if (Array.isArray(body.files)) {
-            filesList = body.files;
-        } else if (body.file) {
-            filesList = [body.file];
-        }
-
-        if (filesList.length > 5) {
-            return json({ error: 'Multi-file review accepts a maximum of 5 files per task.', code: 'TOO_MANY_FILES' }, 400);
-        }
-
-        let totalBytes = 0;
-        const validatedFiles = [];
-        for (const f of filesList) {
-            if (!f) continue;
-            const mimeType = (f.mime_type || f.mimeType || '').toLowerCase();
-            const data = f.data || f.base64 || '';
-            if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
-                return json({ error: `Unsupported file format '${mimeType}'. Supported formats: JPEG, PNG, WebP, and PDF.`, code: 'UNSUPPORTED_MEDIA_TYPE' }, 415);
-            }
-            if (data.length > 7 * 1024 * 1024) {
-                return json({ error: 'An evidence file exceeds the 5 MiB individual size limit.', code: 'PAYLOAD_TOO_LARGE' }, 413);
-            }
-            totalBytes += data.length;
-            validatedFiles.push({ mimeType, data });
-        }
-
-        if (totalBytes > 28 * 1024 * 1024) { // ~20 MiB decoded
-            return json({ error: 'Total evidence files exceed the 20 MiB combined limit.', code: 'PAYLOAD_TOO_LARGE' }, 413);
-        }
-
-        // Accounting: 1 credit for single file, 2 credits for multi-file (2-5 files)
-        const creditCost = validatedFiles.length > 1 ? 2 : 1;
-
-        const { dateStr, monthStr } = getRiyadhDateStrings(now);
-        const dailyLimit = entitlement.credits_daily_limit || 45;
-        const monthlyLimit = entitlement.credits_monthly_limit || 1000;
-
-        const dailyUsed = (await this.storage.get(`pro:usage:${accountId}:day:${dateStr}`)) || 0;
-        const monthlyUsed = (await this.storage.get(`pro:usage:${accountId}:month:${monthStr}`)) || 0;
-
-        if (dailyUsed + creditCost > dailyLimit || monthlyUsed + creditCost > monthlyLimit) {
-            return json({
-                error: 'Hosted AI review credit quota exhausted. Quota resets at 00:00 Asia/Riyadh.',
-                code: 'QUOTA_EXHAUSTED',
-                credits: {
-                    daily_remaining: Math.max(0, dailyLimit - dailyUsed),
-                    monthly_remaining: Math.max(0, monthlyLimit - monthlyUsed),
-                    reset_timezone: 'Asia/Riyadh'
-                }
-            }, 429);
-        }
-
-        // Idempotency check
-        const operationId = body.operation_id || body.operationId;
-        const inputHash = await sha256(JSON.stringify({
-            task_id: body.task_id || body.taskId,
-            criteria: body.criteria || '',
-            file_count: validatedFiles.length,
-            file_sample: validatedFiles.map(f => f.data.slice(0, 50)).join(':')
-        }));
-
-        if (operationId) {
-            const cachedOp = await this.storage.get(`pro:op:${accountId}:${operationId}`);
-            if (cachedOp) {
-                if (cachedOp.inputHash === inputHash) return json(cachedOp.result);
-                return json({ error: 'Operation ID reused with conflicting input payload.', code: 'OPERATION_CONFLICT' }, 409);
-            }
-        }
-
-        // Execute Review via Claude Haiku 5.5
-        let reviewResult = null;
-        try {
-            reviewResult = await this.callClaudeReview({
-                title: body.task_title || 'Task',
-                criteria: body.criteria || '',
-                files: validatedFiles
-            });
-        } catch (err) {
-            return json({
-                error: `Hosted AI review failed: ${err.message}`,
-                code: 'AI_PROVIDER_ERROR',
-                retryable: true
-            }, 502);
-        }
-
-        // Commit credit charge
-        await this.storage.put(`pro:usage:${accountId}:day:${dateStr}`, dailyUsed + creditCost);
-        await this.storage.put(`pro:usage:${accountId}:month:${monthStr}`, monthlyUsed + creditCost);
-
-        const responsePayload = {
-            success: true,
-            verdict: reviewResult.verdict,
-            confidence: reviewResult.confidence,
-            critique: reviewResult.critique,
-            model_used: PRIMARY_CLAUDE_MODEL,
-            credits_charged: creditCost,
-            credits_remaining: {
-                daily: Math.max(0, dailyLimit - (dailyUsed + creditCost)),
-                monthly: Math.max(0, monthlyLimit - (monthlyUsed + creditCost))
-            },
-            operation_id: operationId
-        };
-
-        if (operationId) {
-            await this.storage.put(`pro:op:${accountId}:${operationId}`, {
-                inputHash,
-                result: responsePayload,
-                timestamp: now
-            });
-        }
-
-        return json(responsePayload);
-    }
-
-    // --- Phase 2: Batch Proof Review ---
-
-    async executeBatchReview(accountId, body) {
-        const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
-        const now = Date.now();
-        if (!entitlement || entitlement.status !== 'active' || (entitlement.expires_at && now > entitlement.expires_at)) {
-            return json({ error: 'Active Taskitator Pro entitlement required for batch review.', code: 'PRO_REQUIRED' }, 403);
-        }
-
-        const tasks = Array.isArray(body.tasks) ? body.tasks : [];
-        if (!tasks.length) {
-            return json({ error: 'At least one task is required for batch review.', code: 'INVALID_INPUT' }, 400);
-        }
-        if (tasks.length > 20) {
-            return json({ error: 'Batch review supports up to 20 tasks per run.', code: 'TOO_MANY_TASKS' }, 400);
-        }
-
-        const filesList = Array.isArray(body.files) ? body.files : (body.file ? [body.file] : []);
-        if (filesList.length > 5) {
-            return json({ error: 'Batch review accepts up to 5 evidence files.', code: 'TOO_MANY_FILES' }, 400);
-        }
-
-        const validatedFiles = [];
-        for (const f of filesList) {
-            if (!f) continue;
-            const mimeType = (f.mime_type || f.mimeType || '').toLowerCase();
-            const data = f.data || f.base64 || '';
-            if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
-                return json({ error: `Unsupported file format '${mimeType}'.`, code: 'UNSUPPORTED_MEDIA_TYPE' }, 415);
-            }
-            validatedFiles.push({ mimeType, data });
-        }
-
-        // Accounting: 1 credit per task reviewed (capped at 10 credits for pilot)
-        const creditCost = Math.min(10, tasks.length);
-
-        const { dateStr, monthStr } = getRiyadhDateStrings(now);
-        const dailyLimit = entitlement.credits_daily_limit || 45;
-        const monthlyLimit = entitlement.credits_monthly_limit || 1000;
-        const dailyUsed = (await this.storage.get(`pro:usage:${accountId}:day:${dateStr}`)) || 0;
-        const monthlyUsed = (await this.storage.get(`pro:usage:${accountId}:month:${monthStr}`)) || 0;
-
-        if (dailyUsed + creditCost > dailyLimit || monthlyUsed + creditCost > monthlyLimit) {
-            return json({
-                error: 'Credit quota exhausted for batch review. Quota resets at 00:00 Asia/Riyadh.',
-                code: 'QUOTA_EXHAUSTED'
-            }, 429);
-        }
-
-        const jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-
-        let batchResults = [];
-        try {
-            batchResults = await this.callClaudeBatchReview({ tasks, files: validatedFiles });
-        } catch (err) {
-            return json({ error: `Batch review failed: ${err.message}`, code: 'AI_PROVIDER_ERROR' }, 502);
-        }
-
-        // Commit credits
-        await this.storage.put(`pro:usage:${accountId}:day:${dateStr}`, dailyUsed + creditCost);
-        await this.storage.put(`pro:usage:${accountId}:month:${monthStr}`, monthlyUsed + creditCost);
-
-        // Save server attestation for confirmation (expires in 24 hours)
-        const eligibleTaskIds = batchResults.filter(r => r.status === 'eligible').map(r => r.task_id);
-        const attestation = {
-            job_id: jobId,
-            account_id: accountId,
-            eligible_task_ids: eligibleTaskIds,
-            created_at: now,
-            expires_at: now + DAY_MS,
-            consumed: false
-        };
-        await this.storage.put(`pro:attestation:${jobId}`, attestation);
-
-        return json({
-            success: true,
-            job_id: jobId,
-            model_used: PRIMARY_CLAUDE_MODEL,
-            tasks: batchResults,
-            credits_charged: creditCost,
-            credits_remaining: {
-                daily: Math.max(0, dailyLimit - (dailyUsed + creditCost)),
-                monthly: Math.max(0, monthlyLimit - (monthlyUsed + creditCost))
-            }
-        });
-    }
-
     async confirmBatchReview(accountId, body) {
         const jobId = body.job_id || body.jobId;
         const requestedTaskIds = Array.isArray(body.task_ids) ? body.task_ids : [];
@@ -610,168 +399,6 @@ export class ProGateway {
         });
     }
 
-    // --- Claude Haiku 5.5 AI Gateway ---
-
-    async callClaudeReview({ title, criteria, files }) {
-        const apiKey = this.env?.CLAUDE_API_KEY || this.env?.ANTHROPIC_API_KEY;
-
-        if (!apiKey) {
-            throw new Error('Claude API key (CLAUDE_API_KEY) is not configured in Cloudflare Worker secrets. Add CLAUDE_API_KEY in Cloudflare Dashboard > Workers & Pages > taskitator-sync > Settings > Variables and Secrets.');
-        }
-
-        const system = "You are Taskitator Pro's forensic task audit AI, powered by Claude Haiku 5.5. " +
-                       "Your job is to strictly evaluate whether evidence (images or PDFs) demonstrates that the user completed the work according to their proof criteria. " +
-                       "Be skeptical, objective, and rigorous. Do not accept ambiguous or incomplete proof. " +
-                       "You MUST respond ONLY with a raw JSON object with these fields:\n" +
-                       "{\"verdict\": \"approved\" | \"rejected\", \"confidence\": number (0.0 to 1.0), \"critique\": string}\n" +
-                       "Do not use markdown code blocks.";
-
-        const contentBlocks = [];
-        contentBlocks.push({
-            type: 'text',
-            text: `TASK TITLE: ${title}\nPROOF CRITERIA: ${criteria}\n\nPlease audit the attached ${files.length} evidence file(s) against the criteria.`
-        });
-
-        for (const file of files) {
-            if (file.mimeType === 'application/pdf') {
-                contentBlocks.push({
-                    type: 'document',
-                    source: {
-                        type: 'base64',
-                        media_type: 'application/pdf',
-                        data: file.data
-                    }
-                });
-            } else {
-                contentBlocks.push({
-                    type: 'image',
-                    source: {
-                        type: 'base64',
-                        media_type: file.mimeType,
-                        data: file.data
-                    }
-                });
-            }
-        }
-
-        const payload = {
-            model: 'claude-3-5-haiku-20241022',
-            max_tokens: 1024,
-            system,
-            messages: [{ role: 'user', content: contentBlocks }]
-        };
-
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': apiKey,
-                'anthropic-version': ANTHROPIC_API_VERSION
-            },
-            body: JSON.stringify(payload)
-        });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Claude API returned status ${res.status}: ${errText.slice(0, 200)}`);
-        }
-
-        const data = await res.json();
-        const textBlock = data.content?.find(b => b.type === 'text')?.text || '';
-        try {
-            const parsed = JSON.parse(textBlock.replace(/^```(?:json)?\s*|\s*```$/gi, ''));
-            return {
-                verdict: parsed.verdict === 'approved' ? 'approved' : 'rejected',
-                confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.95,
-                critique: parsed.critique || 'Audited against criteria.'
-            };
-        } catch {
-            return {
-                verdict: textBlock.includes('"approved"') ? 'approved' : 'rejected',
-                confidence: 0.9,
-                critique: textBlock.slice(0, 300)
-            };
-        }
-    }
-
-    async callClaudeBatchReview({ tasks, files }) {
-        const apiKey = this.env?.CLAUDE_API_KEY || this.env?.ANTHROPIC_API_KEY;
-
-        if (!apiKey) {
-            throw new Error('Claude API key (CLAUDE_API_KEY) is not configured in Cloudflare Worker secrets. Add CLAUDE_API_KEY in Cloudflare Dashboard > Workers & Pages > taskitator-sync > Settings > Variables and Secrets.');
-        }
-
-        const taskManifest = tasks.map(t => `- ID: ${t.id}\n  Title: ${t.title}\n  Criteria: ${t.criteria}`).join('\n\n');
-
-        const system = "You are Taskitator Pro's Batch Audit AI. Evaluate whether the attached evidence satisfies each of the listed tasks.\n" +
-                       "Respond ONLY with a JSON array where each item has:\n" +
-                       "{\"task_id\": string, \"status\": \"eligible\" | \"rejected\" | \"partial\" | \"uncertain\", \"verdict\": \"approved\" | \"rejected\", \"reason\": string}";
-
-        const contentBlocks = [];
-        contentBlocks.push({
-            type: 'text',
-            text: `BATCH AUDIT REQUEST:\n\nTASKS TO AUDIT:\n${taskManifest}\n\nPlease audit the evidence against each task independently.`
-        });
-
-        for (const file of files) {
-            if (file.mimeType === 'application/pdf') {
-                contentBlocks.push({
-                    type: 'document',
-                    source: {
-                        type: 'base64',
-                        media_type: 'application/pdf',
-                        data: file.data
-                    }
-                });
-            } else {
-                contentBlocks.push({
-                    type: 'image',
-                    source: {
-                        type: 'base64',
-                        media_type: file.mimeType,
-                        data: file.data
-                    }
-                });
-            }
-        }
-
-        const payload = {
-            model: 'claude-3-5-haiku-20241022',
-            max_tokens: 2048,
-            system,
-            messages: [{ role: 'user', content: contentBlocks }]
-        };
-
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': apiKey,
-                'anthropic-version': ANTHROPIC_API_VERSION
-            },
-            body: JSON.stringify(payload)
-        });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Claude API returned status ${res.status}: ${errText.slice(0, 200)}`);
-        }
-
-        const data = await res.json();
-        const textBlock = data.content?.find(b => b.type === 'text')?.text || '';
-        try {
-            const list = JSON.parse(textBlock.replace(/^```(?:json)?\s*|\s*```$/gi, ''));
-            if (Array.isArray(list)) return list;
-        } catch {}
-
-        return tasks.map(t => ({
-            task_id: t.id,
-            status: 'uncertain',
-            verdict: 'rejected',
-            reason: 'Could not reliably parse batch evaluation.'
-        }));
-    }
-
     // --- Phase 2.5: Unique Username & Resolution System ---
 
     async checkUsername(username, currentAccountId = null) {
@@ -807,87 +434,37 @@ export class ProGateway {
             return json({ error: 'This username is reserved.' }, 400);
         }
 
-        const existing = await this.storage.get(`pro:username:map:${norm}`);
-        if (existing && existing.accountId !== accountId) {
-            return json({ error: 'Username is already taken.' }, 409);
-        }
-
-        // Release old username if user already had one
-        const prev = await this.storage.get(`pro:user:username:${accountId}`);
-        if (prev && prev.normalizedUsername && prev.normalizedUsername !== norm) {
-            await this.storage.delete(`pro:username:map:${prev.normalizedUsername}`);
-        }
-
-        const now = Date.now();
-        await this.storage.put(`pro:username:map:${norm}`, {
-            accountId,
-            username: raw,
-            createdAt: now
+        return await this.storage.transaction(async tx => {
+            const existing = await tx.get(`pro:username:map:${norm}`);
+            if (existing && existing.accountId !== accountId) {
+                return json({ error: 'Username is already taken. Choose another name.', code:'USERNAME_TAKEN' },409);
+            }
+            const prev = await tx.get(`pro:user:username:${accountId}`);
+            if (prev?.normalizedUsername && prev.normalizedUsername !== norm) {
+                const old = await tx.get(`pro:username:map:${prev.normalizedUsername}`);
+                if (old?.accountId === accountId) await tx.delete(`pro:username:map:${prev.normalizedUsername}`);
+            }
+            const now = Date.now();
+            await tx.put(`pro:username:map:${norm}`,{accountId,username:raw,createdAt:existing?.createdAt || now});
+            await tx.put(`pro:user:username:${accountId}`,{username:raw,normalizedUsername:norm,updatedAt:now});
+            const link = await tx.get('identity:'+accountId);
+            if (link) { link.username=raw; await tx.put('identity:'+accountId,link); }
+            return json({success:true,username:raw,normalized:norm});
         });
-        await this.storage.put(`pro:user:username:${accountId}`, {
-            username: raw,
-            normalizedUsername: norm,
-            updatedAt: now
-        });
-
-        const link = await this.storage.get('identity:' + accountId);
-        if (link) {
-            link.username = raw;
-            await this.storage.put('identity:' + accountId, link);
-        }
-
-        return json({ success: true, username: raw, normalized: norm });
     }
 
     async getUsernameProfile(accountId) {
-        const usernameRec = await this.storage.get(`pro:user:username:${accountId}`);
+        const rec = await this.storage.get(`pro:user:username:${accountId}`);
+        const owner = rec?.normalizedUsername ? await this.storage.get('pro:username:map:'+rec.normalizedUsername) : null;
         const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
-        const isPro = entitlement?.status === 'active';
-        // Note: Strict privacy rule - members see usernames, never email!
-        return json({
-            username: usernameRec?.username || null,
-            isPro,
-            tier: entitlement?.tier || 'free'
-        });
+        return json({username:owner?.accountId === accountId ? rec.username : null,
+            isPro:entitlement?.status === 'active' && (!entitlement.expires_at || entitlement.expires_at > Date.now()),
+            tier:entitlement?.tier || 'free'});
     }
 
-    async resolveUsername(body) {
-        const raw = String(body.username || '').trim();
-        const norm = raw.toLowerCase();
-        if (!norm || !/^[a-zA-Z0-9_]{3,20}$/.test(norm)) {
-            return json({ error: 'Username must be 3-20 characters long and contain only letters, numbers, and underscores.' }, 400);
-        }
-        const entry = await this.storage.get(`pro:username:map:${norm}`);
-        if (!entry) {
-            return json({ error: 'Username not found. Check spelling or sign in using your email address.' }, 404);
-        }
-
-        // Check if user account was created via Google OAuth only
-        let clerkUser = null;
-        if (this.env && typeof clerkAPI === 'function') {
-            try {
-                clerkUser = await clerkAPI(this.env, 'users/' + encodeURIComponent(entry.accountId));
-            } catch {}
-        }
-
-        if (clerkUser) {
-            const hasGoogle = clerkUser.external_accounts?.some(acc => acc.provider === 'oauth_google' || acc.provider === 'google');
-            const hasPassword = Boolean(clerkUser.password_enabled);
-            // Strict constraint: Google sign-in disallowed from username login
-            if (hasGoogle && !hasPassword) {
-                return json({
-                    error: 'Google sign-in accounts cannot log in using a username. Please sign in using your email address or Google Sign-In button.',
-                    disallow_google: true
-                }, 403);
-            }
-            const email = clerkUser.email_addresses?.find(e => e.id === clerkUser.primary_email_address_id)?.email_address
-                || clerkUser.email_addresses?.[0]?.email_address;
-            return json({ success: true, username: entry.username, email, requires_password: true });
-        }
-
-        // Fallback for mock environment or stored identity
-        const link = await this.storage.get('identity:' + entry.accountId);
-        const email = (link?.display_name && link.display_name.includes('@')) ? link.display_name : (entry.email || `${norm}@example.com`);
-        return json({ success: true, username: entry.username, email, requires_password: true });
+    async resolveUsername() {
+        // Public handle-to-email lookup exposed private addresses and was not a usable login flow.
+        return json({error:'Sign in with your email or Google. Your Taskitator username is your public display name.',
+            code:'USE_SECURE_SIGN_IN'},410);
     }
 }

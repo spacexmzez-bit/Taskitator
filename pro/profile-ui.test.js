@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const root = new URL('../', import.meta.url);
 const source = fs.readFileSync(new URL('pro/profile-ui.js',root),'utf8');
-function profile({username=null,metadata={},modern=true,fail=false}={}) {
+function profile({username=null,metadata={},fail=false}={}) {
     const nodes=new Map(),events=new Map(),requests=[];
     class Node {
         constructor(){this.events=new Map();this.value='';this.disabled=false;this.textContent='';}
@@ -17,61 +17,54 @@ function profile({username=null,metadata={},modern=true,fail=false}={}) {
         focus(){this.focused=true}
     }
     const button=new Node();nodes.set('accountUsernameBtn',button);
-    const user={id:'user_A',username,unsafeMetadata:metadata};
-    const save=async body=>{
-        requests.push(body);
-        if(fail)throw new Error('Network unavailable');
-        user.unsafeMetadata={...user.unsafeMetadata,...body.unsafeMetadata};return user;
-    };
-    user[modern?'updateMetadata':'update']=save;
-    const window={Clerk:{user,session:{id:'sess_A'}},addEventListener(name,fn){events.set(name,fn)}};
-    const document={getElementById:id=>nodes.get(id)||null,createElement:()=>new Node(),
-        body:{appendChild(node){nodes.set(node.id,node)}}};
+    const user={id:'user_A',username:'UntrustedClerkName',unsafeMetadata:metadata};
+    const api={async getUsernameProfile(){return {username}},async setUsername(name){
+        requests.push(name);if(fail)throw new Error('Username is already taken. Choose another name.');
+        username=name;return {username};
+    }};
+    const window={Clerk:{user,session:{id:'sess_A'}},TaskitatorPro:api,addEventListener(name,fn){events.set(name,fn)}};
+    const document={getElementById:id=>nodes.get(id)||null,createElement:()=>new Node(),body:{appendChild(node){nodes.set(node.id,node)}}};
     vm.runInContext(source,vm.createContext({window,document}));
     events.get('taskitator-auth-ready')();
-    return {window,nodes,events,requests,button,user,
+    return {window,nodes,events,requests,button,user,api,
+        ready:()=>window.TaskitatorProfile.refresh(),
         open(){button.events.get('click')()},
         submit(){return nodes.get('taskitatorUsernameForm').events.get('submit')({preventDefault(){}})}};
 }
 
-test('Taskitator editor saves an account display name without Clerk username configuration or profile UI',async()=>{
-    const f=profile();assert.equal(f.button.textContent,'Set username');f.open();
-    assert.equal(f.nodes.get('taskitatorUsernameDialog').open,true);
+test('username editor claims the server registry and displays it on both devices',async()=>{
+    const f=profile();await f.ready();assert.equal(f.button.textContent,'Set username');f.open();
     f.nodes.get('taskitatorUsernameInput').value='Hogkla';await f.submit();
-    assert.equal(f.requests.length,1);assert.equal(f.requests[0].unsafeMetadata.taskitator_username,'Hogkla');
-    assert.equal(f.button.textContent,'@Hogkla');assert.equal(f.nodes.has('taskitatorUsernameDialog'),false);
-    const otherDevice=profile({metadata:f.user.unsafeMetadata});assert.equal(otherDevice.button.textContent,'@Hogkla');
+    assert.deepEqual(f.requests,['Hogkla']);assert.equal(f.button.textContent,'@Hogkla');
+    assert.equal(f.nodes.has('taskitatorUsernameDialog'),false);
+    const second=profile({username:'Hogkla'});await second.ready();assert.equal(second.button.textContent,'@Hogkla');
 });
-test('ClerkJS fallback preserves unrelated metadata and Taskitator name overrides Clerk login name',async()=>{
-    const f=profile({username:'LoginName',metadata:{theme:'dark',preferences:{retained:true}},modern:false});
-    assert.equal(f.button.textContent,'@LoginName');f.open();f.nodes.get('taskitatorUsernameInput').value='NewName';await f.submit();
-    assert.equal(f.user.unsafeMetadata.theme,'dark');assert.equal(f.user.unsafeMetadata.preferences.retained,true);
-    assert.equal(f.button.textContent,'@NewName');assert.equal(f.user.username,'LoginName');
+test('unclaimed Clerk metadata never masquerades as a unique username',async()=>{
+    const f=profile({metadata:{taskitator_username:'DuplicateName'}});await f.ready();
+    assert.equal(f.button.textContent,'Set username');assert.equal(f.user.username,'UntrustedClerkName');
 });
-test('cancel and X close the username editor without changing the account',()=>{
+test('cancel and X close the username editor without a write',()=>{
     for(const id of ['usernameCancelBtn','usernameCloseBtn']){
         const f=profile();f.open();f.nodes.get(id).events.get('click')();
         assert.equal(f.nodes.has('taskitatorUsernameDialog'),false);assert.equal(f.requests.length,0);
     }
 });
-test('invalid input or failed save preserves the previous username and allows retry/cancel',async()=>{
-    const invalid=profile({metadata:{taskitator_username:'OldName'}});invalid.open();invalid.nodes.get('taskitatorUsernameInput').value='<script>';await invalid.submit();
-    assert.equal(invalid.requests.length,0);assert.equal(invalid.button.textContent,'@OldName');
-    const f=profile({metadata:{taskitator_username:'OldName'},fail:true});f.open();f.nodes.get('taskitatorUsernameInput').value='NewName';await f.submit();
-    assert.equal(f.button.textContent,'@OldName');assert.match(f.nodes.get('usernameFeedback').textContent,/Network unavailable/);
-    assert.equal(f.nodes.get('usernameSaveBtn').disabled,false);assert.equal(f.nodes.get('usernameCancelBtn').disabled,false);
+test('invalid or duplicate username keeps the dialog retryable and the last confirmed name',async()=>{
+    const f=profile({username:'OldName',fail:true});await f.ready();f.open();
+    f.nodes.get('taskitatorUsernameInput').value='bad.name';await f.submit();assert.equal(f.requests.length,0);
+    f.nodes.get('taskitatorUsernameInput').value='TakenName';await f.submit();
+    assert.equal(f.button.textContent,'@OldName');assert.match(f.nodes.get('usernameFeedback').textContent,/already taken/);
+    assert.equal(f.nodes.get('usernameCancelBtn').disabled,false);assert.equal(f.nodes.get('usernameSaveBtn').disabled,false);
 });
-test('a session change during save cannot paint the prior account username into the current account UI',async()=>{
-    const f=profile();f.open();let finish;
-    f.user.updateMetadata=()=>new Promise(resolve=>{finish=resolve});
+test('session changes during a save or refresh cannot paint the previous account name',async()=>{
+    const f=profile();await f.ready();f.open();let finish;
+    f.api.setUsername=()=>new Promise(resolve=>{finish=resolve});
     f.nodes.get('taskitatorUsernameInput').value='OtherName';const pending=f.submit();
-    f.window.Clerk.session={id:'sess_B'};finish({id:'user_A',unsafeMetadata:{taskitator_username:'OtherName'}});await pending;
+    f.window.Clerk.session={id:'sess_B'};finish({username:'OtherName'});await pending;
     assert.equal(f.button.textContent,'Set username');assert.match(f.nodes.get('usernameFeedback').textContent,/account changed/);
-});
-test('refresh paints the updated account name safely as text',()=>{
-    const f=profile({metadata:{taskitator_username:'<img src=x onerror=bad()>'}});
-    assert.equal(f.button.textContent,'@<img src=x onerror=bad()>');
-    f.user.unsafeMetadata.taskitator_username='Renamed';f.window.TaskitatorProfile.refresh();assert.equal(f.button.textContent,'@Renamed');
+    let resolveProfile;f.api.getUsernameProfile=()=>new Promise(resolve=>{resolveProfile=resolve});
+    const refresh=f.ready();f.window.Clerk.user.id='user_B';resolveProfile({username:'OldAccount'});await refresh;
+    assert.notEqual(f.button.textContent,'@OldAccount');
 });
 
 test('service worker refreshes Pro scripts and styles before using cached copies',async()=>{

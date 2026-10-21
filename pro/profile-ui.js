@@ -1,20 +1,28 @@
 // Display-only Taskitator username. It is never used for identity or permissions.
 (function (global) {
     'use strict';
-    const metadataKey = 'taskitator_username';
-    let bound = false;
+    let bound = false, currentName = '', currentOwner = '', serial = 0;
     const button = () => document.getElementById('accountUsernameBtn');
-    function nameFor(user) {
-        const value = user?.unsafeMetadata?.[metadataKey] || user?.username;
-        return typeof value === 'string' ? value : '';
-    }
-    function refresh(user = global.Clerk?.user) {
-        const node = button();
-        if (!node) return;
-        const name = nameFor(user);
+    const owner = () => (global.Clerk?.user?.id || '') + ':' + (global.Clerk?.session?.id || '');
+    function nameFor() { return currentOwner === owner() ? currentName : ''; }
+    function paint(name) {
+        const node = button(); if (!node) return;
         node.textContent = name ? '@' + name : 'Set username';
-        node.title = name ? 'Edit Taskitator username: @' + name : 'Set your Taskitator username';
-        node.setAttribute('aria-label', node.title);
+        node.title = name ? 'Edit Taskitator username: @' + name : 'Choose a unique Taskitator username';
+        node.setAttribute('aria-label',node.title);
+    }
+    async function refresh() {
+        const ticket = ++serial, startOwner = owner();
+        if (currentOwner !== startOwner) { currentName = ''; paint(''); }
+        if (!global.Clerk?.session || !global.TaskitatorPro) return;
+        try {
+            const result = await global.TaskitatorPro.getUsernameProfile();
+            if (ticket !== serial || startOwner !== owner()) return;
+            currentOwner = startOwner; currentName = result.username || ''; paint(currentName);
+        } catch {
+            // Keep a name only when it was verified for this account and session.
+            if (ticket === serial && startOwner === owner()) paint(nameFor());
+        }
     }
     function open() {
         if (document.getElementById('taskitatorUsernameDialog')) return;
@@ -32,8 +40,8 @@
                 </div>
                 <p id="usernameHelp">Choose the name shown beside your task list. It follows your signed-in account across devices.</p>
                 <label for="taskitatorUsernameInput">Username</label>
-                <input id="taskitatorUsernameInput" name="username" type="text" required minlength="3" maxlength="24" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="usernameHelp usernameFormat" autofocus>
-                <p id="usernameFormat">3–24 letters, numbers, underscores, dots or dashes. This display name does not change how you sign in.</p>
+                <input id="taskitatorUsernameInput" name="username" type="text" required minlength="3" maxlength="20" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="usernameHelp usernameFormat" autofocus>
+                <p id="usernameFormat">3–20 letters, numbers or underscores. Names are unique without regard to letter case. This display name does not change how you sign in.</p>
                 <p id="usernameFeedback" role="status" aria-live="polite"></p>
                 <div class="username-dialog-actions">
                     <button type="button" class="icon-btn" id="usernameCancelBtn">Cancel</button>
@@ -58,23 +66,17 @@
             event.preventDefault();
             if (busy) return;
             const name = input.value.trim().replace(/^@/, '');
-            if (!/^[A-Za-z0-9_.-]{3,24}$/.test(name)) {
-                feedback.textContent = 'Use 3–24 letters, numbers, underscores, dots or dashes.';
+            if (!/^[A-Za-z0-9_]{3,20}$/.test(name)) {
+                feedback.textContent = 'Use 3–20 letters, numbers or underscores. Names are unique without regard to letter case.';
                 input.focus(); return;
             }
             busy = true; save.disabled = cancel.disabled = closeButton.disabled = input.disabled = true;
             save.textContent = 'Saving…'; feedback.textContent = '';
             try {
                 if (global.Clerk?.user?.id !== user.id || global.Clerk?.session?.id !== session) throw new Error('Your account changed. Close this editor and try again.');
-                let updated;
-                if (typeof user.updateMetadata === 'function') {
-                    updated = await user.updateMetadata({unsafeMetadata:{[metadataKey]:name}});
-                } else if (typeof user.update === 'function') {
-                    // ClerkJS v5 supports update(); preserve all unrelated metadata.
-                    updated = await user.update({unsafeMetadata:{...user.unsafeMetadata,[metadataKey]:name}});
-                } else throw new Error('Account updates are unavailable. Reload the page and try again.');
+                const updated = await global.TaskitatorPro.setUsername(name);
                 if (global.Clerk?.user?.id !== user.id || global.Clerk?.session?.id !== session) throw new Error('Your account changed. Reload to see the current username.');
-                refresh(updated || user);
+                ++serial; currentOwner = owner(); currentName = updated.username; paint(currentName);
                 busy = false;
                 dialog.close();
             } catch (error) {
@@ -95,7 +97,6 @@
         global.addEventListener('focus', async () => {
             const user = global.Clerk?.user;
             if (!user) return;
-            try { await user.reload?.(); } catch { /* Keep the last known display name when offline. */ }
             refresh();
         });
     }

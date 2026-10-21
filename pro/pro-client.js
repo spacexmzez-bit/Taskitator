@@ -7,6 +7,7 @@
         constructor(options = {}) {
             this.baseUrl = options.baseUrl || null;
             this.getToken = options.getToken || this.defaultTokenProvider;
+            this.pendingAudits = new Map();
         }
 
         async defaultTokenProvider() {
@@ -100,7 +101,7 @@
         /**
          * Submit single or multi-file proof review to hosted Claude Haiku 5.5 gateway.
          */
-        async reviewProof({ taskId, title, criteria, file, files, operationId }) {
+        async reviewProof({ taskId, title, criteria, file, files, operationId, exemplar }) {
             if (!taskId) throw new Error('taskId is required for proof review.');
             if (!criteria) throw new Error('Criteria must be defined for AI-audited review.');
 
@@ -110,7 +111,8 @@
                 task_id: taskId,
                 task_title: title || 'Task',
                 criteria,
-                operation_id: opId
+                operation_id: opId,
+                exemplar: exemplar || null
             };
 
             if (Array.isArray(files) && files.length) {
@@ -125,10 +127,7 @@
                 };
             }
 
-            return await this.request('/pro/ai/review', {
-                method: 'POST',
-                body: JSON.stringify(payload)
-            });
+            return await this.quotedReview(payload,false);
         }
 
         /**
@@ -142,14 +141,40 @@
 
             const opId = operationId || (crypto?.randomUUID ? crypto.randomUUID() : `op_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
 
-            return await this.request('/pro/ai/batch-review', {
-                method: 'POST',
-                body: JSON.stringify({
-                    tasks: tasks.map(t => ({ id: t.id, title: t.title, criteria: t.criteria || t.resolved_criteria || '' })),
-                    files: files.map(f => ({ mime_type: f.mimeType || f.mime_type, data: f.data || f.base64 })),
-                    operation_id: opId
-                })
-            });
+            return await this.quotedReview({
+                tasks:tasks.map(t => ({id:t.id,title:t.title,criteria:t.criteria || t.resolved_criteria || '',exemplar:t.exemplar || null})),
+                files:files.map(f => ({mime_type:f.mimeType || f.mime_type,data:f.data || f.base64})),
+                operation_id:opId
+            },true);
+        }
+
+        async quotedReview(payload,batch) {
+            const owner = global.Clerk?.session?.id;
+            const {operation_id:ignored,...input} = payload;
+            const hashed = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({owner,input,batch})));
+            const fingerprint = Array.from(new Uint8Array(hashed),b=>b.toString(16).padStart(2,'0')).join('');
+            payload = {...payload,operation_id:this.pendingAudits.get(fingerprint) || payload.operation_id};
+            this.pendingAudits.set(fingerprint,payload.operation_id);
+            try {
+                const quote = await this.request('/pro/ai/quote', {method:'POST',body:JSON.stringify({...payload,batch})});
+                if (global.Clerk?.session?.id !== owner) throw new Error('Your session changed. Start a new audit.');
+                if (quote.completed) { this.pendingAudits.delete(fingerprint); return quote.result; }
+                if (!Number.isFinite(quote.maximum_credits) || quote.maximum_credits <= 0 || !quote.quote_id)
+                    throw new Error('Could not obtain a valid audit price. No paid audit was started.');
+                const perTask = quote.tasks.map(t => `${t.task_id}: up to ${t.credits.toFixed(3)} credits${t.exemplar ? ' (exemplar ×2)' : ''}`).join('\n');
+                const text = `Hosted audit: estimated up to ${quote.estimated_credits.toFixed(3)} credits; maximum ${quote.maximum_credits.toFixed(3)} credits reserved.\n` +
+                    (batch && payload.tasks.length >= 2 ? 'Includes the 25% batch discount for each task.\n' : '') +
+                    perTask + '\nThe final charge uses actual provider token usage. Continue?';
+                if (!global.confirm(text)) throw Object.assign(new Error('Audit cancelled. No paid review was started.'),{code:'AUDIT_CANCELLED'});
+                if (global.Clerk?.session?.id !== owner) throw new Error('Your session changed. Start a new audit.');
+                const result = await this.request(batch ? '/pro/ai/batch-review' : '/pro/ai/review',{
+                    method:'POST',body:JSON.stringify({...payload,quote_id:quote.quote_id})});
+                this.pendingAudits.delete(fingerprint); return result;
+            } catch (error) {
+                // A lost browser response may already have been billed. Keep that operation for the next retry.
+                if ((error.status && error.code !== 'AUDIT_PENDING') || error.code === 'AUDIT_CANCELLED') this.pendingAudits.delete(fingerprint);
+                throw error;
+            }
         }
 
         /**

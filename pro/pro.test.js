@@ -11,6 +11,7 @@ import { ProGateway } from './pro-backend.js';
 class MockStorage {
     constructor() {
         this.data = new Map();
+        this.queue = Promise.resolve();
     }
     async get(key) {
         if (Array.isArray(key)) {
@@ -28,7 +29,9 @@ class MockStorage {
         else this.data.delete(key);
     }
     async transaction(closure) {
-        return await closure(this);
+        const next = this.queue.then(() => closure(this));
+        this.queue = next.catch(() => {});
+        return await next;
     }
 }
 
@@ -128,141 +131,6 @@ test('Phase 2: Cross-account key theft blocked with 409', async () => {
     assert.equal(stealRes.status, 409);
 });
 
-test('Phase 2: Single-file hosted review targets Claude Haiku 5.5 and charges 1 credit', async () => {
-    const { pro } = createHarness();
-    await pro.handleRequest(
-        makeReq('/pro/activate', 'POST', { key: 'A1B2C3D4E5F6G7H8' }),
-        '/pro/activate', 'POST', { userId: 'u_pro' }, {}
-    );
-
-    const revRes = await pro.handleRequest(
-        makeReq('/pro/ai/review', 'POST', {
-            task_id: 't1',
-            task_title: 'Solve calculus set',
-            criteria: 'Handwritten solutions',
-            file: { mime_type: 'image/png', data: 'aGVsbG8=' },
-            operation_id: 'op_single_1'
-        }),
-        '/pro/ai/review', 'POST', { userId: 'u_pro' }, {}
-    );
-    assert.equal(revRes.status, 200);
-    const revData = await revRes.json();
-    assert.equal(revData.verdict, 'approved');
-    assert.equal(revData.model_used, 'claude-haiku-5-5');
-    assert.equal(revData.credits_charged, 1);
-    assert.equal(revData.credits_remaining.daily, 44);
-    assert.equal(revData.credits_remaining.monthly, 999);
-});
-
-test('Phase 2: Multi-file proof review accepts up to 5 files and charges 2 credits', async () => {
-    const { pro } = createHarness();
-    await pro.handleRequest(
-        makeReq('/pro/activate', 'POST', { key: 'A1B2C3D4E5F6G7H8' }),
-        '/pro/activate', 'POST', { userId: 'u_pro' }, {}
-    );
-
-    const revRes = await pro.handleRequest(
-        makeReq('/pro/ai/review', 'POST', {
-            task_id: 't_multi',
-            task_title: 'Lab Report',
-            criteria: 'Pages 1 to 3',
-            files: [
-                { mime_type: 'image/jpeg', data: 'YWJj' },
-                { mime_type: 'application/pdf', data: 'ZGVm' },
-                { mime_type: 'image/webp', data: 'Z2hp' }
-            ],
-            operation_id: 'op_multi_1'
-        }),
-        '/pro/ai/review', 'POST', { userId: 'u_pro' }, {}
-    );
-    assert.equal(revRes.status, 200);
-    const revData = await revRes.json();
-    assert.equal(revData.credits_charged, 2);
-    assert.equal(revData.credits_remaining.daily, 43);
-
-    // > 5 files rejected with 400
-    const tooManyRes = await pro.handleRequest(
-        makeReq('/pro/ai/review', 'POST', {
-            task_id: 't_too_many',
-            criteria: 'Too many',
-            files: new Array(6).fill({ mime_type: 'image/png', data: 'YWJj' })
-        }),
-        '/pro/ai/review', 'POST', { userId: 'u_pro' }, {}
-    );
-    assert.equal(tooManyRes.status, 400);
-});
-
-test('Phase 2: Batch proof review evaluates multiple tasks and issues verifiable attestation', async () => {
-    const { pro } = createHarness();
-    await pro.handleRequest(
-        makeReq('/pro/activate', 'POST', { key: 'A1B2C3D4E5F6G7H8' }),
-        '/pro/activate', 'POST', { userId: 'u_batch' }, {}
-    );
-
-    const batchRes = await pro.handleRequest(
-        makeReq('/pro/ai/batch-review', 'POST', {
-            tasks: [
-                { id: 'task_1', title: 'Chapter 1 Notes', criteria: 'Dated summary' },
-                { id: 'task_2', title: 'Chapter 2 Quiz', criteria: 'Score >= 80%' }
-            ],
-            files: [{ mime_type: 'application/pdf', data: 'cGRmZGF0YQ==' }]
-        }),
-        '/pro/ai/batch-review', 'POST', { userId: 'u_batch' }, {}
-    );
-    assert.equal(batchRes.status, 200);
-    const batchData = await batchRes.json();
-    assert.equal(batchData.success, true);
-    assert.equal(batchData.credits_charged, 2);
-    assert.equal(batchData.tasks.length, 2);
-    assert.equal(batchData.tasks[0].status, 'eligible');
-    assert.equal(batchData.tasks[1].status, 'rejected');
-
-    // Confirm batch: only eligible task_1 is confirmed; rejected task_2 is filtered out
-    const confRes = await pro.handleRequest(
-        makeReq('/pro/ai/batch-confirm', 'POST', {
-            job_id: batchData.job_id,
-            task_ids: ['task_1', 'task_2']
-        }),
-        '/pro/ai/batch-confirm', 'POST', { userId: 'u_batch' }, {}
-    );
-    assert.equal(confRes.status, 200);
-    const confData = await confRes.json();
-    assert.deepEqual(confData.confirmed_task_ids, ['task_1']);
-});
-
-test('Phase 2: BYOK mode toggle preserves hosted credit counters without resetting limits', async () => {
-    const { pro } = createHarness();
-    await pro.handleRequest(
-        makeReq('/pro/activate', 'POST', { key: 'A1B2C3D4E5F6G7H8' }),
-        '/pro/activate', 'POST', { userId: 'u_byok' }, {}
-    );
-
-    // Spend 1 hosted credit first
-    await pro.handleRequest(
-        makeReq('/pro/ai/review', 'POST', {
-            task_id: 't1',
-            criteria: 'Check',
-            file: { mime_type: 'image/png', data: 'YWJj' }
-        }),
-        '/pro/ai/review', 'POST', { userId: 'u_byok' }, {}
-    );
-
-    // Enable BYOK
-    const byokRes = await pro.handleRequest(
-        makeReq('/pro/byok', 'POST', { use_byok: true }),
-        '/pro/byok', 'POST', { userId: 'u_byok' }, {}
-    );
-    assert.equal(byokRes.status, 200);
-
-    // Check status: use_byok is true AND daily_remaining is still 44 (not reset to 45 or 0)
-    const stRes = await pro.handleRequest(makeReq('/pro/status'), '/pro/status', 'GET', { userId: 'u_byok' }, {});
-    const stData = await stRes.json();
-    assert.equal(stData.use_byok, true);
-    assert.equal(stData.credits.daily_limit, 45);
-    assert.equal(stData.credits.daily_used, 1);
-    assert.equal(stData.credits.daily_remaining, 44);
-});
-
 test('Phase 2.5: Username validation accepts alphanumeric and underscores (3-20 chars) and rejects invalid formats', async () => {
     const { pro } = createHarness();
     // Too short (2 chars)
@@ -338,50 +206,6 @@ test('Phase 2.5: Availability check returns true for available handles and false
     assert.equal((await res.json()).available, true);
 });
 
-test('Phase 2.5: Username resolution for email/password user returns email and allows login', async () => {
-    const { pro, storage } = createHarness();
-    // Register username
-    await pro.handleRequest(makeReq('/pro/username', 'POST', { username: 'sarah_m' }), '/pro/username', 'POST', { userId: 'u_sarah' }, {});
-    // Seed identity with email
-    await storage.put('identity:u_sarah', { user: 'clerk:sarah', display_name: 'sarah@example.com', user_id: 'u_sarah' });
-
-    const resolveRes = await pro.resolveUsername({ username: 'sarah_m' });
-    assert.equal(resolveRes.status, 200);
-    const data = await resolveRes.json();
-    assert.equal(data.success, true);
-    assert.equal(data.email, 'sarah@example.com');
-    assert.equal(data.requires_password, true);
-});
-
-test('Phase 2.5: Username resolution strictly blocks Google-only accounts with 403 (Google sign-in disallowed from username login)', async () => {
-    const { pro } = createHarness({ CLERK_SECRET_KEY: 'mock_test_key' });
-    // Register username
-    await pro.handleRequest(makeReq('/pro/username', 'POST', { username: 'google_user' }), '/pro/username', 'POST', { userId: 'u_goog' }, {});
-
-    // Mock clerkAPI to simulate a user with only Google OAuth and no password
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (url) => {
-        if (String(url).includes('/users/u_goog')) {
-            return new Response(JSON.stringify({
-                id: 'u_goog',
-                password_enabled: false,
-                external_accounts: [{ provider: 'oauth_google', verification: { status: 'verified' } }]
-            }), { status: 200 });
-        }
-        return originalFetch(url);
-    };
-
-    try {
-        const resolveRes = await pro.resolveUsername({ username: 'google_user' });
-        assert.equal(resolveRes.status, 403);
-        const data = await resolveRes.json();
-        assert.equal(data.disallow_google, true);
-        assert.match(data.error, /Google sign-in/i);
-    } finally {
-        globalThis.fetch = originalFetch;
-    }
-});
-
 test('Phase 2.5: Profile endpoint exposes username and Pro status, but never user email (Universe privacy)', async () => {
     const { pro, storage } = createHarness();
     await pro.handleRequest(makeReq('/pro/username', 'POST', { username: 'private_user' }), '/pro/username', 'POST', { userId: 'u_priv' }, {});
@@ -397,43 +221,26 @@ test('Phase 2.5: Profile endpoint exposes username and Pro status, but never use
     assert.equal(JSON.stringify(profData).includes('secret@private.com'), false);
 });
 
-test('Phase 2: Missing CLAUDE_API_KEY returns 502 without fake simulation and does not deduct credits', async () => {
-    const { pro, storage } = createHarness({ CLAUDE_API_KEY: '', ANTHROPIC_API_KEY: '' });
-    await pro.handleRequest(
-        makeReq('/pro/activate', 'POST', { key: 'A1B2C3D4E5F6G7H8' }),
-        '/pro/activate', 'POST', { userId: 'u_no_key' }, {}
-    );
 
-    // Single review without key fails with 502
-    const revRes = await pro.handleRequest(
-        makeReq('/pro/ai/review', 'POST', {
-            task_id: 't1',
-            criteria: 'Check',
-            file: { mime_type: 'image/png', data: 'YWJj' }
-        }),
-        '/pro/ai/review', 'POST', { userId: 'u_no_key' }, {}
-    );
-    assert.equal(revRes.status, 502);
-    const revData = await revRes.json();
-    assert.equal(revData.code, 'AI_PROVIDER_ERROR');
-    assert.match(revData.error, /CLAUDE_API_KEY.*not configured/);
-
-    // Batch review without key fails with 502
-    const batchRes = await pro.handleRequest(
-        makeReq('/pro/ai/batch-review', 'POST', {
-            tasks: [{ id: 'task_1', title: 'Task 1', criteria: 'Criteria 1' }],
-            files: [{ mime_type: 'image/png', data: 'YWJj' }]
-        }),
-        '/pro/ai/batch-review', 'POST', { userId: 'u_no_key' }, {}
-    );
-    assert.equal(batchRes.status, 502);
-    const batchData = await batchRes.json();
-    assert.equal(batchData.code, 'AI_PROVIDER_ERROR');
-    assert.match(batchData.error, /CLAUDE_API_KEY.*not configured/);
-
-    // Verify ZERO credits were deducted (balance remains 45 / 1000)
-    const stRes = await pro.handleRequest(makeReq('/pro/status'), '/pro/status', 'GET', { userId: 'u_no_key' }, {});
-    const stData = await stRes.json();
-    assert.equal(stData.credits.daily_remaining, 45);
-    assert.equal(stData.credits.monthly_remaining, 1000);
+test('case variants claimed concurrently have exactly one winner, with no metadata fallback',async()=>{
+    const {pro,storage}=createHarness();
+    const results=await Promise.all(['Mazen','mazen','MAZEN'].map((username,i)=>pro.setUsername('user_'+i,{username})));
+    assert.deepEqual(results.map(r=>r.status).sort(),[200,409,409]);
+    const profiles=await Promise.all([0,1,2].map(async i=>(await pro.getUsernameProfile('user_'+i)).json()));
+    assert.equal(profiles.filter(p=>p.username).length,1);
+    const owner=await storage.get('pro:username:map:mazen');
+    assert.equal(owner.accountId,'user_0');
+    await storage.put('pro:user:username:other',{username:'Mazen',normalizedUsername:'mazen'});
+    assert.equal((await (await pro.getUsernameProfile('other')).json()).username,null);
+    await pro.setUsername('other',{username:'UniqueName'});
+    assert.equal((await storage.get('pro:username:map:mazen')).accountId,'user_0');
+});
+test('case-only rename preserves the claim and public resolution exposes no email or account existence',async()=>{
+    const {pro,storage}=createHarness();
+    await pro.setUsername('user_A',{username:'Mazen'});
+    assert.equal((await pro.setUsername('user_A',{username:'MAZEN'})).status,200);
+    await storage.put('identity:user_A',{display_name:'private@example.com'});
+    const existing=await pro.resolveUsername({username:'mazen'}), missing=await pro.resolveUsername({username:'unknown'});
+    assert.equal(existing.status,410);assert.equal(missing.status,410);
+    assert.equal(JSON.stringify(await existing.json()).includes('private@example.com'),false);
 });

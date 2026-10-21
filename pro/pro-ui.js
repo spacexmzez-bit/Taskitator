@@ -90,7 +90,7 @@
                     <button type="button" class="icon-btn" id="proBatchCloseBtn">✕</button>
                 </div>
                 <p style="font-size: 0.88rem; color: #94a3b8; margin: 8px 0 16px 0;">
-                    ${scope ? 'Only your selected active AI-audited tasks are shown. ' : ''}Select up to 20 tasks and upload up to 5 proof files. Claude Haiku 5.5 will independently evaluate each task.
+                    ${scope ? 'Only your selected active AI-audited tasks are shown. ' : ''}Select up to 20 tasks and upload up to 5 proof files. Claude Haiku 5.5 will independently evaluate each task. Charges use actual tokens, with exemplar audits ×2 and a 25% discount per task when reviewing two or more. Preview the charge before continuing.
                 </p>
 
                 <div class="pro-batch-section-title">1. Select Target Tasks (<span id="proBatchSelectedCount">0</span> selected)</div>
@@ -113,7 +113,7 @@
                     <div id="proBatchFeedback" style="font-size: 0.85rem; color: #f87171;"></div>
                     <div style="display: flex; gap: 10px;">
                         <button type="button" class="icon-btn" id="proBatchCancelBtn">Cancel</button>
-                        <button type="button" class="pro-btn" id="proBatchSubmitBtn" disabled>Run Batch Audit (1 cr / task)</button>
+                        <button type="button" class="pro-btn" id="proBatchSubmitBtn" disabled>Preview Batch Audit</button>
                     </div>
                 </div>
             </div>
@@ -206,7 +206,7 @@
             feedback.textContent = '';
             submitBtn.disabled = selectedTasks.length === 0 || stagedFiles.length === 0;
             if (selectedTasks.length > 0) {
-                submitBtn.textContent = `Run Batch Audit (${selectedTasks.length} cr)`;
+                submitBtn.textContent = `Preview Batch Audit (${selectedTasks.length} tasks)`;
             } else {
                 submitBtn.textContent = 'Run Batch Audit';
             }
@@ -220,7 +220,15 @@
             const client = getClient();
             try {
                 const res = await client.batchReview({
-                    tasks: selectedTasks,
+                    tasks: await Promise.all(selectedTasks.map(async item => {
+                        const task = allTasks.find(t => t.id === item.id);
+                        let part = task?.reference_inline_data || global.TaskitatorRecurrenceUI?.state()?.reference_files?.[task?.reference_id];
+                        const stored = await global.ExemplarStore?.getExemplar(item.id);
+                        if (stored?.inline_data) part = stored.inline_data;
+                        part = part?.inline_data || part;
+                        if (task?.reference_id && !part) throw new Error('The reference exemplar for "'+item.title+'" is unavailable. Restore it before reviewing.');
+                        return {...item,exemplar:part ? {mime_type:part.mime_type,data:part.data} : null};
+                    })),
                     files: stagedFiles
                 });
 
@@ -228,7 +236,7 @@
             } catch (err) {
                 feedback.textContent = err.message || 'Batch audit failed.';
                 submitBtn.disabled = false;
-                submitBtn.textContent = `Run Batch Audit (${selectedTasks.length} cr)`;
+                submitBtn.textContent = `Preview Batch Audit (${selectedTasks.length} tasks)`;
             }
         };
 
@@ -349,13 +357,14 @@
                         <div class="pro-quota-card">
                             <div class="pro-quota-label">Monthly Hosted AI Credits</div>
                             <div class="pro-quota-val"><span id="pro-monthly-remaining">--</span> / <span id="pro-monthly-limit">1000</span></div>
-                            <div class="pro-quota-sub">Monthly reset window</div>
+                            <div class="pro-quota-sub">Resets on the first, Asia/Riyadh</div>
                             <div class="pro-progress-bar">
                                 <div class="pro-progress-fill" id="pro-monthly-fill" style="width: 0%;"></div>
                             </div>
                         </div>
                     </div>
 
+                    <p class="pro-quota-sub">Credits vary with actual audit tokens. Exemplar audits cost ×2. Batches of two or more receive 25% off each task. Each request has a size limit and a price preview; a monthly hosted allowance also applies.</p>
                     <div class="pro-byok-box">
                         <label class="pro-switch-wrap">
                             <input type="checkbox" id="proByokToggle" />
