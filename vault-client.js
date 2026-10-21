@@ -142,7 +142,7 @@
         el.textContent=message;
         const isErr=/needs one-time setup|misconfigured|Connect your Google|expired|failed|error|invalid/i.test(message);
         const isOk=/confirmed/i.test(message);
-        if(el.style)el.style.cssText=isErr?'padding:10px 12px;border-radius:8px;background:rgba(239,68,68,0.16);border:1px solid #ef4444;color:#fca5a5;font-weight:600;margin:10px 0;':
+        el.style.cssText=isErr?'padding:10px 12px;border-radius:8px;background:rgba(239,68,68,0.16);border:1px solid #ef4444;color:#fca5a5;font-weight:600;margin:10px 0;':
                          isOk?'padding:10px 12px;border-radius:8px;background:rgba(16,185,129,0.16);border:1px solid #10b981;color:#34d399;font-weight:600;margin:10px 0;':
                          'padding:8px 0;color:#cbd5e1;';
     }
@@ -177,22 +177,27 @@
         }catch(error){dialogMessage(error.message);}
         finally{byId('vaultPassword').value='';busy=false;updateDialog();}
     }
+    function googleAuthorizationUrl(value) {
+        let url;
+        try {
+            if (typeof value !== 'string' || !value.trim()) throw new Error();
+            url = new URL(value);
+            if (url.origin !== 'https://accounts.google.com' || url.pathname !== '/o/oauth2/v2/auth' ||
+                url.username || url.password || url.hash) throw new Error();
+        } catch {
+            throw new Error('Google confirmation URL is missing or invalid. Check the Worker Google OAuth settings in pro/verification-setup.html, then retry or cancel.');
+        }
+        return url.href;
+    }
     async function google(){
         if(busy)return;busy=true;verified=false;updateDialog();
         try{
             const result=await start('google');
-            if(result.verified){
-                verified=true;
-                dialogMessage('Google identity confirmed via your active Clerk session. Click Continue below.');
-                busy=false;
-                updateDialog();
-                return;
-            }
-            if(!result.authorization_url)throw new Error('Google verification URL missing.');
+            const authorizationUrl = googleAuthorizationUrl(result.authorization_url);
             // Only action metadata survives navigation; no API key or password.
             sessionStorage.setItem(pendingKey,JSON.stringify({...operation,proofId,user:auth().account.user,session:window.Clerk.session.id}));
             byId('vaultNewKey').value='';byId('vaultPassword').value='';
-            location.assign(result.authorization_url);
+            location.assign(authorizationUrl);
         }catch(error){dialogMessage(error.message);busy=false;updateDialog();}
     }
     async function confirm(){

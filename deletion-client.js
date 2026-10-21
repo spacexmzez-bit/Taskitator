@@ -73,12 +73,25 @@
         } catch (error) { verified = false; feedback(error.message || 'Verification failed. Try again.'); }
         finally { input.value = ''; busy = false; update(); }
     }
+    function googleAuthorizationUrl(value) {
+        let url;
+        try {
+            if (typeof value !== 'string' || !value.trim()) throw new Error();
+            url = new URL(value);
+            if (url.origin !== 'https://accounts.google.com' || url.pathname !== '/o/oauth2/v2/auth' ||
+                url.username || url.password || url.hash) throw new Error();
+        } catch {
+            throw new Error('Google confirmation URL is missing or invalid. Check the Worker Google OAuth settings in pro/verification-setup.html, then retry or cancel.');
+        }
+        return url.href;
+    }
     async function google() {
         if (busy) return;
         busy = true; update();
         try {
             const result = await start('google');
-            location.assign(result.authorization_url);
+            const authorizationUrl = googleAuthorizationUrl(result.authorization_url);
+            location.assign(authorizationUrl);
         } catch (error) { feedback(error.message); busy = false; update(); }
     }
     async function confirmDeletion() {
