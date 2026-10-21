@@ -214,10 +214,17 @@ test('client price rejection does not send paid inference; approval carries payl
             if(path==='/pro/ai/quote')return {quote_id:'q',estimated_credits:.4,maximum_credits:1.5,tasks:[{task_id:'a',credits:1.5,exemplar:true}]};
             return {verdict:'approved'};
         };
-        const operation=window.TaskitatorPro.reviewProof({taskId:'a',criteria:'completed',files:[image],exemplar:image,operationId:'operation_approved'});
+        const operation=window.TaskitatorPro.reviewProof({taskId:'a',title:'Biology worksheet',criteria:'completed',files:[image],exemplar:image,operationId:'operation_approved'});
         if(approve){await operation;assert.equal(calls[1].body.quote_id,'q');assert.equal(calls[1].body.exemplar.data,image.data)}
         else await assert.rejects(operation,/cancelled/);
-        assert.equal(calls.length,approve?2:1);assert.match(prompts[0],/exemplar ×2/);
+        assert.equal(calls.length,approve?2:1);
+        assert.match(prompts[0],/Biology worksheet: up to 1.5 credits/);
+        assert.match(prompts[0],/reference comparison: double charge/);
+        assert.match(prompts[0],/Estimated charge: 0.4 credits/);
+        assert.match(prompts[0],/Maximum held temporarily: 1.5 credits/);
+        assert.match(prompts[0],/Unused held credits return to your balance/);
+        assert.match(prompts[0],/even if the proof is not approved/);
+        assert.match(prompts[0],/Cancelling now starts no paid review/);
     }
 });
 
@@ -249,3 +256,27 @@ test('personal-key mode toggles retain hosted spending and fractional credit bal
     await h.gateway.toggleByok('user_A',{use_byok:false});
     assert.deepEqual((await (await h.gateway.getStatus('user_A')).json()).credits,before.credits);
 }));
+
+test('batch price preview uses task titles, hides IDs and applies discount wording only for multiple tasks',async()=>{
+    const source=fs.readFileSync(new URL('pro-client.js',import.meta.url),'utf8');
+    for(const count of [1,2]) {
+        const calls=[],prompts=[],window={Clerk:{session:{id:'session_A'}},confirm:text=>{prompts.push(text);return true}};
+        vm.runInContext(source,vm.createContext({window,crypto,TextEncoder,Uint8Array}));
+        const tasks=[{id:'internal_task_942',title:'Lab\nnotes',criteria:'complete'},
+            {id:'internal_task_765',title:'',criteria:'complete'}].slice(0,count);
+        window.TaskitatorPro.request=async(path,options)=>{
+            const body=JSON.parse(options.body);calls.push({path,body});
+            if(path==='/pro/ai/quote')return {quote_id:'quote_batch',estimated_credits:.25,maximum_credits:1,
+                tasks:[...tasks].reverse().map(task=>({task_id:task.id,credits:.5,exemplar:false}))};
+            return {success:true,credits_charged:.25};
+        };
+        const result=await window.TaskitatorPro.batchReview({tasks,files:[image],operationId:'batch_price_wording'});
+        assert.equal(result.credits_charged,.25);assert.equal(calls.length,2);
+        assert.match(prompts[0],/Lab notes: up to 0.5 credits/);
+        assert.doesNotMatch(prompts[0],/internal_task_|actual provider token|exemplar/);
+        if(count===2) {assert.match(prompts[0],/Task 2: up to 0.5 credits/);assert.match(prompts[0],/Each task includes a 25% batch discount/)}
+        else assert.doesNotMatch(prompts[0],/25% batch discount/);
+        assert.deepEqual(calls[1].body.tasks.map(task=>task.id),tasks.map(task=>task.id));
+        assert.equal(calls[1].body.quote_id,'quote_batch');
+    }
+});

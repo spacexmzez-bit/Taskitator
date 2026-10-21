@@ -161,10 +161,22 @@
                 if (quote.completed) { this.pendingAudits.delete(fingerprint); return quote.result; }
                 if (!Number.isFinite(quote.maximum_credits) || quote.maximum_credits <= 0 || !quote.quote_id)
                     throw new Error('Could not obtain a valid audit price. No paid audit was started.');
-                const perTask = quote.tasks.map(t => `${t.task_id}: up to ${t.credits.toFixed(3)} credits${t.exemplar ? ' (exemplar ×2)' : ''}`).join('\n');
-                const text = `Hosted audit: estimated up to ${quote.estimated_credits.toFixed(3)} credits; maximum ${quote.maximum_credits.toFixed(3)} credits reserved.\n` +
-                    (batch && payload.tasks.length >= 2 ? 'Includes the 25% batch discount for each task.\n' : '') +
-                    perTask + '\nThe final charge uses actual provider token usage. Continue?';
+                const tasks = batch ? payload.tasks : [{id:payload.task_id,title:payload.task_title}];
+                const names = new Map(tasks.map((task,index) => {
+                    const title = typeof task.title === 'string' ? task.title.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,120) : '';
+                    return [task.id,title || (batch ? `Task ${index+1}` : 'Task')];
+                }));
+                const credits = value => Number(value.toFixed(3)).toString();
+                const perTask = quote.tasks.map((task,index) =>
+                    `${names.get(task.task_id) || (batch ? `Task ${index+1}` : 'Task')}: up to ${credits(task.credits)} credits` +
+                    (task.exemplar ? ' (reference comparison: double charge)' : '')).join('\n');
+                const text = 'Review price\n\n' +
+                    `Estimated charge: ${credits(quote.estimated_credits)} credits\n` +
+                    `Maximum held temporarily: ${credits(quote.maximum_credits)} credits\n\n` +
+                    perTask + '\n\n' +
+                    (batch && payload.tasks.length >= 2 ? 'Each task includes a 25% batch discount.\n\n' : '') +
+                    'We temporarily hold the maximum shown. Your final charge depends on the amount of proof and review work, and will not exceed that maximum. Unused held credits return to your balance.\n\n' +
+                    'You pay for the review even if the proof is not approved. Cancelling now starts no paid review.\n\nStart review?';
                 if (!global.confirm(text)) throw Object.assign(new Error('Audit cancelled. No paid review was started.'),{code:'AUDIT_CANCELLED'});
                 if (global.Clerk?.session?.id !== owner) throw new Error('Your session changed. Start a new audit.');
                 const result = await this.request(batch ? '/pro/ai/batch-review' : '/pro/ai/review',{

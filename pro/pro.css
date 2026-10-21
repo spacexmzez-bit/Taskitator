@@ -394,3 +394,20 @@
 .username-modal-card {
     max-width: 440px !important;
 }
+
+/* Readable credit rules in Settings, including narrow phone screens. */
+.pro-credit-help {
+    margin: 18px 0;
+    padding: 16px;
+    border: 1px solid var(--border-color, #33333f);
+    border-radius: 10px;
+    font-size: .9rem;
+    line-height: 1.65;
+    color: var(--text-muted, #94a3b8);
+    overflow-wrap: anywhere;
+}
+.pro-credit-help h4 { margin: 0 0 10px; font-size: 1rem; color: var(--text-color, #f0f0f5); }
+.pro-credit-help ul { margin: 0; padding-inline-start: 20px; }
+.pro-credit-help li + li { margin-top: 8px; }
+.pro-credit-help strong { color: var(--text-color, #f0f0f5); }
+.pro-credit-help p { margin: 12px 0 0; }

@@ -90,7 +90,7 @@
                     <button type="button" class="icon-btn" id="proBatchCloseBtn">✕</button>
                 </div>
                 <p style="font-size: 0.88rem; color: #94a3b8; margin: 8px 0 16px 0;">
-                    ${scope ? 'Only your selected active AI-audited tasks are shown. ' : ''}Select up to 20 tasks and upload up to 5 proof files. Claude Haiku 5.5 will independently evaluate each task. Charges use actual tokens, with exemplar audits ×2 and a 25% discount per task when reviewing two or more. Preview the charge before continuing.
+                    ${scope ? 'Only your selected active AI-audited tasks are shown. ' : ''}Select up to 20 tasks and attach up to 5 proof files. Each task is reviewed and charged separately. Reviewing two or more tasks together gives each task a 25% discount. Comparing proof with a reference example doubles that task’s charge. You can check the price before starting.
                 </p>
 
                 <div class="pro-batch-section-title">1. Select Target Tasks (<span id="proBatchSelectedCount">0</span> selected)</div>
@@ -364,7 +364,18 @@
                         </div>
                     </div>
 
-                    <p class="pro-quota-sub">Credits vary with actual audit tokens. Exemplar audits cost ×2. Batches of two or more receive 25% off each task. Each request has a size limit and a price preview; a monthly hosted allowance also applies.</p>
+                    <section class="pro-credit-help" aria-labelledby="pro-credit-help-title">
+                        <h4 id="pro-credit-help-title">How credits work</h4>
+                        <ul>
+                            <li><strong>Larger files and longer reviews use more credits.</strong> Each task has its own charge.</li>
+                            <li>Comparing your proof with a <strong>reference example doubles that task’s charge</strong>.</li>
+                            <li>Reviewing <strong>two or more tasks together gives each task 25% off</strong>.</li>
+                            <li>Before starting, you’ll see the <strong>estimated charge and maximum credits temporarily held</strong>.</li>
+                            <li>After the review, you pay for actual usage. <strong>Unused held credits return to your balance.</strong> Your charge will not exceed the maximum shown.</li>
+                        </ul>
+                        <p>You pay for a completed review even if the proof is not approved. Cancelling at the price preview starts no paid review.</p>
+                        <p>Large uploads may need splitting into smaller files. Daily and monthly credit limits, plus a separate monthly hosted allowance, apply.</p>
+                    </section>
                     <div class="pro-byok-box">
                         <label class="pro-switch-wrap">
                             <input type="checkbox" id="proByokToggle" />
