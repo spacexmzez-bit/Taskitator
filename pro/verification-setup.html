@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Taskitator verification fix — setup</title>
+<style>
+:root{color-scheme:light dark;font:16px/1.6 system-ui,sans-serif}body{max-width:900px;margin:40px auto;padding:0 20px}h1,h2{line-height:1.25}h2{margin-top:2em}code,pre{font-size:.9em}code{overflow-wrap:anywhere}pre{white-space:pre-wrap;padding:16px;background:#8882;border-radius:8px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #8886;padding:10px;text-align:left;vertical-align:top}.note{border-left:4px solid #cf8c21;padding:12px 16px;background:#cf8c2115}a{color:#398bdb}
+</style>
+</head>
+<body>
+<h1>Taskitator verification fix</h1>
+<p>Patch for the supplied Taskitator-main-7(2).zip baseline. Replace files at their existing repository paths, deploy the website, and redeploy the existing Worker. No live Clerk or Google account, deployed Worker, or real browser was used to validate this patch.</p>
+<h2>1. Replace these files</h2>
+<table>
+<tr><th>Repository path</th><th>Change</th></tr>
+<tr><td><code>cloudflare/verification.js</code></td><td>Checks Clerk's backend reverification object, account/session, completed first-factor or multi-factor level, and millisecond timestamps against the current attempt. Removes Google approval without OAuth configuration. Uses version 2 grants and rejects older records.</td></tr>
+<tr><td><code>cloudflare/vault.js</code></td><td>Imports the grant version and checks it in the transaction that consumes key approvals. This additional two-line change is necessary because reveal/delete consume grants directly without calling the shared verification getter. It closes the old-grant bypass at those endpoints.</td></tr>
+<tr><td><code>vault-client.js</code></td><td>Always redirects Google confirmation to a validated Google OAuth URL. Preserves pending action/provider/session and callback recovery.</td></tr>
+<tr><td><code>deletion-client.js</code></td><td>Validates Google's authorization URL and shows a setup/retry message on failure, releasing the busy state. Deletion still needs separate manual confirmation.</td></tr>
+<tr><td><code>tests/security.test.js</code><br><code>tests/client.test.js</code></td><td>Uses the Backend API response format and adds verification, replay, scope, failure, URL and password-privacy regressions. Repairs the existing client DOM mock's missing style property.</td></tr>
+<tr><td><code>pro/verification-setup.html</code></td><td>This setup page, the only new application-repository file.</td></tr>
+</table>
+<p>Extract the patch at the repository root; do not create another Taskitator-main folder. Retain every other repository file. Both Worker files above must be deployed together. Existing grants, including pending confirmations, are deliberately invalid after this deployment; start a fresh confirmation.</p>
+<h2>2. Check Clerk password confirmation</h2>
+<ol>
+<li>Open the Clerk production instance used by this website. Under Sessions → Customize session token, preserve existing custom claims and add:<pre>{"taskitator_reverification_id":"{{session.reverification_id}}"}</pre></li>
+<li>Keep the standard <code>fva</code> claim. After a new password reverification, a fresh signed session token must contain a new nonempty <code>taskitator_reverification_id</code> and a nonnegative first-factor age of at most two minutes. Inspect locally; do not share bearer tokens or passwords.</li>
+<li>Keep <code>CLERK_SECRET_KEY</code>, <code>CLERK_JWT_KEY</code>, and <code>CLERK_ISSUER</code> configured on the same Worker and for the same Clerk instance. The issuer must match session tokens; the JWT key is Clerk's PEM public key. Keep <code>ALLOWED_ORIGINS</code> set to <code>https://taskitator.mazendev.com</code> unless your deployment intentionally uses another allowed origin.</li>
+<li>Use a password-enabled account to test the password option. Password entry and verification stay in ClerkJS. Taskitator receives only a signed session token and the action proof ID. The backend response does not expose the browser SDK's password strategy; the Worker validates completed first-factor evidence.</li>
+</ol>
+<p>The Worker rejects baseline/reused IDs, wrong accounts/sessions, incomplete responses, expired attempts, and timestamps before the attempt or in the future. A grant lasts five minutes and authorizes one action. Clerk and Worker clocks must agree; retry a new confirmation if timestamp validation fails. Missing claims fail closed.</p>
+<p>Reference: <a href="https://clerk.com/docs/guides/secure/reverification#correlate-a-reverification-with-a-specific-action">Clerk: action-specific reverification and signed claims</a>; <a href="https://github.com/clerk/openapi-specs/blob/main/bapi/2025-11-10.yml">Clerk's Backend API schema (Reverification)</a>.</p>
+<h2>3. Configure real Google OAuth confirmation</h2>
+<p>In Google Cloud → Google Auth Platform → Clients, open the web OAuth client for Taskitator. Add this exact authorized redirect URI:</p>
+<pre>https://taskitator-sync.spacexmzez.workers.dev/auth/verification/google/callback</pre>
+<p>This matches the Worker base URL in <code>auth-config.js</code>, Worker name <code>taskitator-sync</code> in <code>cloudflare/wrangler.toml</code>, the existing <code>PHASE-1-SETUP.txt</code> instructions, and the callback route in <code>cloudflare/worker.js</code>. The account subdomain comes from <code>auth-config.js</code>; it is not specified by wrangler.toml. The deployed Cloudflare settings were not inspected.</p>
+<p><strong>Keep Clerk's existing Google login callback registered as well.</strong> Copy its exact value from Clerk's Google connection settings; do not replace it with this Worker callback. These callbacks serve separate flows.</p>
+<p>On Cloudflare → Workers &amp; Pages → taskitator-sync → Settings → Variables and Secrets, set:</p>
+<table>
+<tr><th>Setting</th><th>Value/type</th></tr>
+<tr><td><code>GOOGLE_OAUTH_CLIENT_ID</code></td><td>The Google web OAuth client ID, Text.</td></tr>
+<tr><td><code>GOOGLE_OAUTH_CLIENT_SECRET</code></td><td>That same client's Google client secret, Secret. Never put it in browser files or GitHub.</td></tr>
+<tr><td><code>GOOGLE_VERIFICATION_REDIRECT_URI</code></td><td>Text: the exact HTTPS Worker callback above, with no trailing slash, query or fragment.</td></tr>
+</table>
+<p>Save/deploy the settings. Confirm your Google consent configuration permits your test account if the OAuth app is in testing. The Google identity must already be linked and verified in Clerk. All three Worker settings are required; missing or partial settings now produce a setup error and never approve the action. Google determines whether its existing session suffices or credentials are needed; an existing Taskitator session or linked Google identity cannot approve the action.</p>
+<p>If your Worker intentionally uses a custom domain, register its exact callback with Google and use that same URI in the Worker setting. Do not change website or Worker addresses solely to install this patch.</p>
+<h2>4. Deploy the website and Worker</h2>
+<ol>
+<li>Commit/upload the patched files to the existing repository and deploy through your normal website publishing process. Confirm <code>vault-client.js</code>, <code>deletion-client.js</code>, and this page are published. The existing service worker fetches both client scripts from the network; reopen or reload Settings after publication.</li>
+<li>Redeploy the Worker through GitHub Actions → <strong>Deploy Taskitator security Worker</strong> → Run workflow. The attached workflow is manual; pushing files alone does not trigger it. It runs <code>npm test</code> before deployment. Preserve its existing Cloudflare repository secrets and bindings.</li>
+<li>Alternatively, from the complete updated repository with Cloudflare credentials configured, run <code>npm run deploy:worker</code>. This deploys using <code>cloudflare/wrangler.toml</code>; no standalone Worker text file is needed. Run tests first.</li>
+<li>Keep existing vault encryption settings intact. Account deletion also requires the existing <code>ACCOUNT_DELETION_ENABLED=true</code> and deletion-storage setup from <code>PHASE-1-SETUP.txt</code>. Do not regenerate keys, recreate storage, or alter other feature settings for this patch.</li>
+</ol>
+<h2>5. Automated results and remaining live checks</h2>
+<p><strong>Full configured suite: 91 passed, 0 failed, 0 skipped</strong> with Node 24.19.0 and a runtime compatibility adjustment for the unchanged Pro test's assignment to the getter-only <code>globalThis.crypto</code>. The actual test command was:</p>
+<pre>NODE_OPTIONS='--import=data:text/javascript,Object.defineProperty(globalThis,%22crypto%22,%7Bvalue:globalThis.crypto,writable:true,configurable:true%7D)' npm test</pre>
+<p>This adjustment makes the existing Web Crypto global writable in test processes; it does not replace Web Crypto, skip tests, or change deployed code. Plain <code>npm test</code> on this Node 24 runtime fails to load the existing <code>pro/pro.test.js</code> because of that pre-existing assignment. The repository's workflow selects Node 22; it was not executed here. If your runner reports the same TypeError, rerun the tests with the command above or use a compatible test runtime before deploying. No unrelated Pro implementation or test file was changed.</p>
+<p>The suite uses signed local JWTs and mocked Clerk/Google HTTP, storage, and DOM objects. It covers fresh and invalid password proof responses, expiration/reuse, missing Google settings, old grants at consumption endpoints, unsafe redirect URLs, password failures and privacy, Google token validation, one-use callbacks and account/session/action/provider scope, and callback recovery without automatic deletion.</p>
+<p>After setup, manually check:</p>
+<ol>
+<li>For both Gemini and Claude, save/replace, reveal/copy and delete a disposable key using password and Google separately. Cancel or enter an incorrect password and verify that confirmation remains blocked. A used approval must not work a second time.</li>
+<li>With Google settings deliberately missing in a test deployment, verify an actionable setup error and working retry/cancel controls; restore settings afterward. Confirm Google navigation and return to the selected provider/action.</li>
+<li>On a disposable account, verify the account-deletion password and Google options. Returning from Google must only open the dialog. The blocker checkbox and manually typed <code>Macrodroid disabled</code> phrase must still be required before a separate final deletion click.</li>
+</ol>
+<p class="note">Live provider/browser verification and production deployment remain manual. Automated results do not establish that your Clerk claims, Google console settings, OAuth consent screen, or deployed credentials are correct. Test permanent deletion only on an account whose data you intend to erase.</p>
+</body>
+</html>
