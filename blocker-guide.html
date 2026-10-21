@@ -284,6 +284,22 @@
             border-radius: 4px;
             margin-right: 6px;
         }
+        .setup-choices { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+        .setup-choice { display:flex; flex-direction:column; gap:8px; padding:16px; border:1px solid var(--primary,#3b82f6); border-radius:10px; color:var(--text-color,#f8fafc); text-decoration:none; }
+        .setup-choice span, .download-note { font-size:.85rem; color:var(--text-muted,#94a3b8); }
+        .setup-choice:hover { background:rgba(59,130,246,.12); }
+        .macro-download { display:inline-flex; align-items:center; min-height:44px; padding:8px 18px; border-radius:8px; background:var(--primary,#3b82f6); color:#fff; text-decoration:none; font-weight:700; box-sizing:border-box; }
+        .guide-container section[id], #app-blocker-manual, #bridge-manual { scroll-margin-top:20px; }
+        .import-steps { padding-left:22px; }
+        .import-steps li { margin-bottom:14px; }
+        .download-url { display:block; overflow-wrap:anywhere; margin:8px 0; font-size:.85rem; }
+        .bridge-state-table-wrap { overflow-x:auto; }
+        .bridge-state-table { border-collapse:collapse; width:100%; font-size:.85rem; }
+        .bridge-state-table th, .bridge-state-table td { padding:10px; border:1px solid var(--border-color,#334155); text-align:left; vertical-align:top; }
+        .bridge-state-table caption { text-align:left; font-weight:700; margin-bottom:8px; }
+        .guide-container summary { cursor:pointer; }
+        .guide-container a:focus-visible { outline:2px solid var(--primary,#3b82f6); outline-offset:4px; }
+        @media(max-width:520px) { .setup-choices { grid-template-columns:minmax(0,1fr); } .step-card { padding:16px; } .guide-container { padding:12px; } }
     </style>
 </head>
 <body>
@@ -291,7 +307,7 @@
 <div class="guide-container">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <a href="settings.html" class="back-nav" style="margin-bottom: 0;">&larr; Back to Settings</a>
-        <button type="button" class="icon-btn" id="openCopilotNavBtn" title="Focus Copilot" style="font-size: 0.85rem; font-weight: 600; padding: 6px 12px;">💬 Copilot</button>
+        <button type="button" class="icon-btn" id="openCopilotNavBtn" title="Focus Copilot" aria-label="Open Focus Copilot"><span aria-hidden="true">💬</span><span class="nav-copilot-label">Copilot</span></button>
     </div>
     
     <header style="margin-bottom: 24px;">
@@ -301,13 +317,34 @@
         </p>
     </header>
 
+    <section class="step-card" aria-labelledby="setup-choice-title">
+        <h2 id="setup-choice-title" style="margin-top:0;font-size:1.15rem">Choose your Cloud Bridge setup</h2>
+        <p>Build the App Blocker manually first. Then choose one way to add the bridge that turns it on and off.</p>
+        <div class="setup-choices">
+            <a class="setup-choice" href="#bridge-download"><strong>↓ Download macro</strong><span>Import the ready-made Cloud Bridge, then add your token and select your App Blocker.</span></a>
+            <a class="setup-choice" href="#bridge-manual"><strong>Build manually</strong><span>Use the existing step-by-step instructions and screenshots.</span></a>
+        </div>
+        <p style="margin-bottom:0"><a href="#app-blocker-manual">Start with the manual App Blocker setup →</a></p>
+    </section>
+
     <!-- PHASE 1: App Blocker Macro (Interactive Sequential Engine) -->
-    <div class="step-card">
+    <div class="step-card" id="app-blocker-manual">
         <span class="step-badge">Phase 1: Macro 1</span>
         <h2 style="margin: 4px 0 10px 0; font-size: 1.2rem;">Building the App Blocker</h2>
         <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 16px;">
             This macro monitors your device and immediately terminates distracting apps whenever tasks remain unfinished. Complete the checkpoints below.
         </p>
+
+        <details class="recommendation-box" id="change-blocked-apps">
+            <summary><strong>Change which apps are blocked</strong></summary>
+            <ol>
+                <li>In MacroDroid → Macros, open your <strong>App Blocker</strong> macro.</li>
+                <li>Tap its <strong>Application Launched/Closed</strong> trigger and choose <strong>Configure</strong> or <strong>Edit</strong> (wording varies by version).</li>
+                <li>Keep <strong>Application Launched</strong> selected. Tick apps to add them, untick apps to remove them, confirm the selection and save the macro with the checkmark.</li>
+                <li>When App Blocker is enabled, launch a selected app to check that it returns you to the home screen. A removed app should open normally.</li>
+            </ol>
+            <p>Keep MacroDroid and the browser you use for Taskitator out of the blocked-app list so you can manage the setup. The Cloud Bridge does not choose or change blocked apps.</p>
+        </details>
 
         <!-- Progress Tracker -->
         <div class="progress-header">
@@ -475,12 +512,53 @@
 
     </div>
 
+    <section class="step-card" id="bridge-download" aria-labelledby="bridge-download-title">
+        <span class="step-badge">Phase 2 · Download option</span>
+        <h2 id="bridge-download-title" style="margin:4px 0 10px;font-size:1.2rem">Import the Cloud Bridge</h2>
+        <p>The download contains only the bridge. Your App Blocker stays manual. This template starts <strong>disabled</strong> and contains a token placeholder.</p>
+        <a class="macro-download" href="pro/taskitator-cloud-bridge.macro" download="Taskitator-Cloud-Bridge.macro">↓ Download macro</a>
+        <p class="download-note">After downloading, open MacroDroid → Export/Import → Import (or Storage under Import), then choose <strong>Taskitator-Cloud-Bridge.macro</strong> from Downloads. You can also try opening the file with MacroDroid from your file manager. Menu labels vary by version.</p>
+        <h3>Change these settings after import</h3>
+        <ol class="import-steps">
+            <li><strong>Keep it disabled while configuring.</strong> Open the imported <strong>Taskitator Cloud Bridge</strong>. If you already have a working bridge, keep only one bridge enabled after setup.</li>
+            <li><strong>Add your phone token.</strong> In Taskitator → Settings → Account, find <strong>Authorization Header Token</strong>. Use your existing saved phone token, or generate a new one if you no longer have it. New tokens are shown once and replace the old phone token immediately; pause blocking first and update every device using the old token. In the imported macro's <strong>HTTP Request → Header Params</strong>, edit <code>Authorization</code> to <code>Bearer YOUR_PHONE_TOKEN</code> (one space). Replace the placeholder; never use a Clerk session token, account password or AI API key.</li>
+            <li><strong>Confirm the Status URL.</strong> HTTP Request should use <strong>GET</strong> and the exact <strong>Status URL</strong> shown in Taskitator Settings. This template uses:<code class="download-url">https://taskitator-sync.spacexmzez.workers.dev/?action=status&amp;format=text</code>Keep <strong>Block next actions until complete</strong> on. Leave certificate validation enabled.</li>
+            <li><strong>Select your App Blocker in both branches.</strong> Tap each <strong>Enable/Disable Macro</strong> action and configure it to target the App Blocker you built on this phone. Re-select it even if the imported name already says App Blocker; the original file includes another device's macro reference. Under <strong>If</strong>, choose <strong>Disable App Blocker</strong>. Under <strong>Else</strong>, choose <strong>Enable App Blocker</strong>.</li>
+            <li><strong>Keep the response variable consistent.</strong> The download uses a <strong>local String</strong> named <code>http_response</code> for both the HTTP response and the If condition. No global response variable is needed for this download option. If MacroDroid asks you to choose a variable, select that same local String in both places. The condition must match <code>device_unlocked = true</code>. The manual option below uses its own global-variable instructions instead.</li>
+            <li><strong>Check the triggers.</strong> The template checks every <strong>5 minutes</strong> and when the <strong>screen turns on</strong>. Keep these defaults, or edit Regular Interval if you want a different polling interval.</li>
+            <li><strong>Save, test, then enable.</strong> Save the macro, use its <strong>Test actions</strong> option (or your version's equivalent), and check <code>http_response</code>. Confirm both states below before leaving the bridge enabled. Grant the Android permissions requested by your chosen triggers and App Blocker actions.</li>
+        </ol>
+        <div class="bridge-state-table-wrap">
+            <table class="bridge-state-table">
+                <caption>Expected behavior</caption>
+                <thead><tr><th>HTTP response</th><th>Bridge action</th><th>Phone check</th></tr></thead>
+                <tbody>
+                    <tr><td><code>device_unlocked = true</code></td><td>Disable App Blocker</td><td>A selected app opens normally.</td></tr>
+                    <tr><td><code>device_unlocked = false</code></td><td>Enable App Blocker</td><td>A selected app returns to the home screen.</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>Use Taskitator's normal task/break controls to test both states, syncing any task changes first. The bridge reads the server's saved state; a screen-on trigger or the next interval starts a new check.</p>
+        <details class="recommendation-box">
+            <summary><strong>Import or connection not working?</strong></summary>
+            <ul>
+                <li><strong>The browser shows file text:</strong> use its Download / Save link option and keep the <code>.macro</code> extension. Import the saved file from MacroDroid. If your host returns a missing-file page, upload <code>pro/taskitator-cloud-bridge.macro</code> alongside this guide.</li>
+                <li><strong>Import fails:</strong> update MacroDroid and select the actual downloaded <code>.macro</code> file, not an HTML error page. You can always use the manual guide below.</li>
+                <li><strong>401 / Unauthorized:</strong> check the phone token and <code>Bearer </code> prefix. Replacing or revoking a phone token invalidates the old one.</li>
+                <li><strong>UnknownHostException / unable to resolve host:</strong> check the URL, internet connection and DNS. This is a connection error, not a Taskitator unlock response.</li>
+                <li><strong>Response is correct but blocking is wrong:</strong> reselect your local App Blocker in both actions, confirm Disable under If and Enable under Else, and confirm that App Blocker's launched-app trigger contains the apps you intend to block.</li>
+            </ul>
+        </details>
+        <p class="download-note">The template was checked as JSON and against this project's status response. Import and execution on Android still need a device test. See <a href="https://macrodroidforum.com/wiki/index.php/Overview" target="_blank" rel="noopener noreferrer">MacroDroid's import/export overview</a>.</p>
+        <p><a href="#bridge-manual">Prefer manual setup? Continue to the full guide below →</a></p>
+    </section>
+
     <!-- PHASE 2: Cloud Bridge Macro (Interactive Sequential Engine) -->
-    <div class="step-card">
+    <div class="step-card" id="bridge-manual">
         <span class="step-badge">Phase 2: Macro 2</span>
         <h2 style="margin: 4px 0 10px 0; font-size: 1.2rem;">Building the Cloud Bridge</h2>
         <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 16px;">
-            This macro monitors your Taskitator status in the background and automatically toggles the <strong>App Blocker</strong> macro on or off. Complete the checkpoints below.
+            Manual alternative: build the Cloud Bridge from scratch with the checkpoints below. If you imported and configured the download above, skip this section; do not create a second bridge.
         </p>
 
         <!-- Progress Tracker -->
