@@ -66,7 +66,7 @@ export class AccountDeletion {
     }
     async page(job,prefix,match) {
         const entries=await this.storage.list({prefix,limit:100,...(job.cursor?{startAfter:job.cursor}:{})});
-        const keys=[...entries].filter(([,value])=>!match || match(value)).map(([key])=>key);
+        const keys=[...entries].filter(([key,value])=>!match || match(value,key)).map(([key])=>key);
         if (keys.length) await this.storage.delete(keys);
         job.cursor=entries.size ? [...entries.keys()].pop() : null;
         return entries.size<100;
@@ -115,6 +115,11 @@ export class AccountDeletion {
                     else if (job.stage==='proofs') next=await this.page(job,'action-proof:',value=>value?.userId===job.userId);
                     else if (job.stage==='vault') next=await this.page(job,'vault:'+await sha256(job.userId)+':');
                     else if (job.stage==='vault-stages') next=await this.page(job,'vault-stage:'+await sha256(job.userId)+':');
+                    else if (job.stage==='hosted') next=await this.page(job,'pro:',(value,key)=>
+                        ['pro:usage:','pro:spend:','pro:op:'].some(prefix=>key.startsWith(prefix+job.userId+':')) ||
+                        key==='pro:user:username:'+job.userId ||
+                        (key.startsWith('pro:username:map:') && value?.accountId===job.userId) ||
+                        (key.startsWith('pro:attestation:') && value?.account_id===job.userId));
                     else if (job.stage==='legacy') next=await this.legacy(job);
                     else if (job.stage==='clerk') {
                         await this.deleteClerk(job.userId);
@@ -134,7 +139,7 @@ export class AccountDeletion {
                         continue;
                     }
                     if (next) {
-                        job.stage=({snapshots:'credentials',credentials:'proofs',proofs:'vault',vault:'vault-stages','vault-stages':'legacy',legacy:'clerk'})[job.stage];
+                        job.stage=({snapshots:'credentials',credentials:'proofs',proofs:'vault',vault:'vault-stages','vault-stages':'hosted',hosted:'legacy',legacy:'clerk'})[job.stage];
                         job.cursor=null;
                     }
                     await this.storage.put(key,job);

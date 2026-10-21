@@ -392,7 +392,11 @@ export class TaskitatorSync {
         const meta = await this.storage.get(accountKey(link.user));
         if (!meta || meta.deleting || meta.owner_id !== identity.userId) throw new HTTPError(403, 'Account ownership could not be verified.');
         const usernameRec = await this.storage.get('pro:user:username:' + identity.userId);
-        if (usernameRec?.username) link.username = usernameRec.username;
+        if (usernameRec?.normalizedUsername) {
+            const owner=await this.storage.get('pro:username:map:'+usernameRec.normalizedUsername);
+            if (owner?.accountId===identity.userId) link.username=usernameRec.username;
+            else delete link.username;
+        }
         return link;
     }
 
