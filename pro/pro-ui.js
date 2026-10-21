@@ -30,28 +30,7 @@
 
     // --- Phase 2: Batch Proof Review Modal & Trigger ---
 
-    function initBatchReviewTrigger() {
-        if (document.getElementById('proOpenBatchBtn')) return;
-
-        // Locate task action controls on index.html (.page-title-actions)
-        const toolbar = document.querySelector('.page-title-actions') ||
-                        document.querySelector('.filters-group') ||
-                        document.querySelector('.task-list-controls');
-
-        if (!toolbar) return;
-
-        const btn = document.createElement('button');
-        btn.id = 'proOpenBatchBtn';
-        btn.type = 'button';
-        btn.className = 'icon-btn pro-batch-trigger-btn';
-        btn.innerHTML = `<span style="font-size: 1rem;">⚡</span> <span>Batch Review</span>`;
-        btn.setAttribute('title', 'Review multiple AI-audited tasks with shared proof');
-        btn.onclick = openBatchReviewModal;
-
-        toolbar.appendChild(btn);
-    }
-
-    function openBatchReviewModal() {
+    function openBatchReviewModal(selectedIds = null) {
         if (document.getElementById('proBatchModalRoot')) return;
 
         let allTasks = [];
@@ -61,7 +40,9 @@
             allTasks = [];
         }
 
-        const eligibleTasks = allTasks.filter(t => t.status === 'active' && (t.require_ai_proof || t.proof_criteria));
+        const scope = Array.isArray(selectedIds) ? new Set(selectedIds) : null;
+        const eligibleTasks = allTasks.filter(t => t.status === 'active' && (t.ai_locked || t.require_ai_proof || t.proof_criteria) && (!scope || scope.has(t.id)));
+        const preselect = Boolean(scope && eligibleTasks.length <= 20);
 
         const modal = document.createElement('div');
         modal.id = 'proBatchModalRoot';
@@ -72,23 +53,25 @@
                 <div class="pro-modal-box">
                     <div class="pro-modal-header">
                         <h3 style="margin: 0;">⚡ Batch Proof Review</h3>
-                        <button type="button" class="icon-btn" onclick="document.getElementById('proBatchModalRoot').remove()">✕</button>
+                        <button type="button" class="icon-btn" id="proBatchCloseBtn">✕</button>
                     </div>
                     <p style="color: #94a3b8; font-size: 0.95rem; margin: 20px 0;">
-                        No active AI-audited tasks found. Create a task with <em>Require AI Proof Verification</em> enabled first!
+                        ${scope ? 'None of the selected tasks are active AI-audited tasks. Select an active task with' : 'No active AI-audited tasks found. Create a task with'} <em>Require AI Proof Verification</em> enabled first!
                     </p>
                     <div style="text-align: right;">
-                        <button type="button" class="pro-btn" onclick="document.getElementById('proBatchModalRoot').remove()">Close</button>
+                        <button type="button" class="pro-btn" id="proBatchCancelBtn">Close</button>
                     </div>
                 </div>
             `;
             document.body.appendChild(modal);
+            document.getElementById('proBatchCloseBtn').addEventListener('click', () => modal.remove());
+            document.getElementById('proBatchCancelBtn').addEventListener('click', () => modal.remove());
             return;
         }
 
         const taskRowsHtml = eligibleTasks.map(t => `
             <label class="pro-batch-task-row">
-                <input type="checkbox" class="pro-batch-task-cb" value="${t.id}" data-title="${escapeHtml(t.title)}" data-criteria="${escapeHtml(t.proof_criteria || '')}" />
+                <input type="checkbox" class="pro-batch-task-cb" value="${escapeHtml(t.id)}" ${preselect ? 'checked' : ''} data-title="${escapeHtml(t.title)}" data-criteria="${escapeHtml(t.proof_criteria || '')}" />
                 <div style="flex: 1; min-width: 0;">
                     <div style="font-weight: 600; color: #f8fafc; font-size: 0.9rem;">${escapeHtml(t.title)}</div>
                     <div style="font-size: 0.78rem; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
@@ -107,7 +90,7 @@
                     <button type="button" class="icon-btn" id="proBatchCloseBtn">✕</button>
                 </div>
                 <p style="font-size: 0.88rem; color: #94a3b8; margin: 8px 0 16px 0;">
-                    Select up to 20 tasks and upload up to 5 proof files. Claude Haiku 5.5 will independently evaluate each task.
+                    ${scope ? 'Only your selected active AI-audited tasks are shown. ' : ''}Select up to 20 tasks and upload up to 5 proof files. Claude Haiku 5.5 will independently evaluate each task.
                 </p>
 
                 <div class="pro-batch-section-title">1. Select Target Tasks (<span id="proBatchSelectedCount">0</span> selected)</div>
@@ -152,7 +135,7 @@
         closeBtn.onclick = close;
         cancelBtn.onclick = close;
 
-        const selectedTasks = [];
+        const selectedTasks = preselect ? eligibleTasks.map(t => ({id:t.id, title:t.title, criteria:t.proof_criteria || ''})) : [];
         let stagedFiles = [];
 
         modal.querySelectorAll('.pro-batch-task-cb').forEach(cb => {
@@ -175,6 +158,9 @@
                 updateSubmitState();
             });
         });
+
+        countSpan.textContent = selectedTasks.length;
+        updateSubmitState();
 
         pickBtn.onclick = () => fileInput.click();
 
@@ -524,8 +510,6 @@
         if (document.getElementById('pro-settings-container')) {
             renderProSection('pro-settings-container');
         }
-        initBatchReviewTrigger();
-        initNavbarUserBadge();
     }
 
     if (typeof document !== 'undefined') {
@@ -537,189 +521,7 @@
         global.addEventListener('taskitator-auth-ready', autoInit);
     }
 
-
-    // --- Phase 2.5: Navbar User Badge & Username Management Modal ---
-
-    async function initNavbarUserBadge() {
-        const navRight = document.querySelector('.top-navbar .nav-right') || document.getElementById('navbarUserBadgeContainer');
-        if (!navRight) return;
-
-        let badgeContainer = document.getElementById('navbarUserBadge');
-        if (!badgeContainer) {
-            badgeContainer = document.createElement('div');
-            badgeContainer.id = 'navbarUserBadge';
-            badgeContainer.className = 'navbar-user-badge-wrap';
-            navRight.insertBefore(badgeContainer, navRight.firstChild);
-        }
-
-        const client = getClient();
-        if (!client) return;
-
-        try {
-            const data = await client.getStatus().catch(() => null);
-            if (!data) return;
-
-            const username = data.username;
-            const isPro = Boolean(data.isPro);
-            badgeContainer.innerHTML = '';
-
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = `pro-user-badge-btn ${isPro ? 'pro' : 'free'}`;
-            
-            if (username) {
-                btn.title = `${isPro ? '⭐ Taskitator Pro' : 'Taskitator User'} · @${username}`;
-                btn.innerHTML = `<span class="badge-icon">${isPro ? '⭐' : '👤'}</span> <span class="badge-username">@${escapeHtml(username)}</span>`;
-                btn.onclick = () => openUsernameModal(username);
-            } else {
-                btn.className = 'pro-user-badge-btn unconfigured';
-                btn.title = 'Choose your unique Taskitator username';
-                btn.innerHTML = `<span class="badge-icon">✨</span> <span>Set Username</span>`;
-                btn.onclick = () => openUsernameModal('');
-            }
-
-            badgeContainer.appendChild(btn);
-        } catch (e) {
-            console.debug('[ProUI] Navbar badge init skipped:', e);
-        }
-    }
-
-    function openUsernameModal(currentUsername = '') {
-        const existing = document.getElementById('proUsernameModalRoot');
-        if (existing) existing.remove();
-
-        const root = document.createElement('div');
-        root.id = 'proUsernameModalRoot';
-        root.className = 'pro-modal-overlay';
-
-        root.innerHTML = `
-            <div class="pro-modal-content username-modal-card">
-                <div class="pro-modal-header">
-                    <div class="pro-modal-title">
-                        <span style="font-size: 1.4rem;">👤</span>
-                        <div>
-                            <h2 style="font-size: 1.15rem; margin: 0; color: #fff;">${currentUsername ? 'Update Unique Username' : 'Choose Your Unique Username'}</h2>
-                            <p style="font-size: 0.82rem; color: #94a3b8; margin: 2px 0 0 0;">Visible to Universe members instead of your email</p>
-                        </div>
-                    </div>
-                    <button type="button" class="pro-modal-close" id="closeUsernameModalBtn" aria-label="Close">✕</button>
-                </div>
-                <div class="pro-modal-body">
-                    <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 0.85rem; color: #cbd5e1; line-height: 1.45;">
-                        🔒 <strong>Privacy Guarantee:</strong> In Universes and public workspaces, other members will only see your username. Your personal email address is never exposed.
-                    </div>
-                    <label for="usernameModalInput" style="display: block; font-size: 0.85rem; color: #94a3b8; margin-bottom: 6px; font-weight: 600;">Username handle</label>
-                    <div style="position: relative; display: flex; align-items: center;">
-                        <span style="position: absolute; left: 12px; color: #818cf8; font-weight: 700; font-size: 1rem;">@</span>
-                        <input id="usernameModalInput" type="text" autocomplete="off" spellcheck="false" maxlength="20" placeholder="e.g. alex_99" value="${escapeHtml(currentUsername)}" style="width: 100%; padding: 10px 10px 10px 32px; border-radius: 8px; border: 1px solid #334155; background: #0b0f19; color: #f8fafc; font-size: 0.95rem; font-weight: 600;">
-                    </div>
-                    <div id="usernameModalFeedback" style="font-size: 0.82rem; margin-top: 8px; min-height: 20px; color: #94a3b8;">
-                        3 to 20 characters (letters, numbers, underscores)
-                    </div>
-                </div>
-                <div class="pro-modal-footer">
-                    <button type="button" class="pro-btn-secondary" id="cancelUsernameModalBtn">Cancel</button>
-                    <button type="button" class="pro-btn-primary" id="saveUsernameBtn" disabled>Save Username</button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(root);
-
-        const input = document.getElementById('usernameModalInput');
-        const feedback = document.getElementById('usernameModalFeedback');
-        const saveBtn = document.getElementById('saveUsernameBtn');
-        const closeBtn = document.getElementById('closeUsernameModalBtn');
-        const cancelBtn = document.getElementById('cancelUsernameModalBtn');
-
-        const close = () => root.remove();
-        closeBtn.onclick = close;
-        cancelBtn.onclick = close;
-
-        let debounceTimer = null;
-        const validate = () => {
-            const val = input.value.trim();
-            const norm = val.toLowerCase();
-            clearTimeout(debounceTimer);
-
-            if (!val) {
-                feedback.textContent = '3 to 20 characters (letters, numbers, underscores)';
-                feedback.style.color = '#94a3b8';
-                saveBtn.disabled = true;
-                return;
-            }
-
-            if (!/^[a-zA-Z0-9_]{3,20}$/.test(norm)) {
-                feedback.textContent = 'Must be 3-20 characters long and contain only letters, numbers, and underscores.';
-                feedback.style.color = '#f87171';
-                saveBtn.disabled = true;
-                return;
-            }
-
-            if (currentUsername && norm === currentUsername.toLowerCase()) {
-                feedback.textContent = 'Current username';
-                feedback.style.color = '#94a3b8';
-                saveBtn.disabled = true;
-                return;
-            }
-
-            feedback.textContent = 'Checking availability…';
-            feedback.style.color = '#94a3b8';
-
-            debounceTimer = setTimeout(async () => {
-                const client = getClient();
-                if (!client) return;
-                try {
-                    const res = await client.checkUsername(norm);
-                    if (res.available) {
-                        feedback.textContent = `✓ @${val} is available!`;
-                        feedback.style.color = '#34d399';
-                        saveBtn.disabled = false;
-                    } else {
-                        feedback.textContent = `✗ ${res.error || 'Username is already taken.'}`;
-                        feedback.style.color = '#f87171';
-                        saveBtn.disabled = true;
-                    }
-                } catch (e) {
-                    feedback.textContent = e.message || 'Error checking availability.';
-                    feedback.style.color = '#f87171';
-                    saveBtn.disabled = true;
-                }
-            }, 300);
-        };
-
-        input.oninput = validate;
-
-        saveBtn.onclick = async () => {
-            const val = input.value.trim();
-            saveBtn.disabled = true;
-            saveBtn.textContent = 'Saving…';
-            try {
-                const client = getClient();
-                await client.setUsername(val);
-                feedback.textContent = `✓ Saved as @${val}!`;
-                feedback.style.color = '#34d399';
-                setTimeout(() => {
-                    close();
-                    initNavbarUserBadge();
-                    if (document.getElementById('pro-settings-container')) {
-                        renderProSection('pro-settings-container');
-                    }
-                }, 600);
-            } catch (err) {
-                feedback.textContent = err.message || 'Failed to save username.';
-                feedback.style.color = '#f87171';
-                saveBtn.disabled = false;
-                saveBtn.textContent = 'Save Username';
-            }
-        };
-
-        input.focus();
-    }
-
     global.renderProSection = renderProSection;
     global.refreshProStatus = refreshProStatus;
     global.openBatchReviewModal = openBatchReviewModal;
-    global.initNavbarUserBadge = initNavbarUserBadge;
-    global.openUsernameModal = openUsernameModal;
 })(typeof window !== 'undefined' ? window : globalThis);
