@@ -2503,9 +2503,6 @@ window.TaskitatorApp = (() => {
         const emergencyConfirmModal = document.getElementById('emergencyConfirmModal');
         const cancelEmergencyBtn = document.getElementById('cancelEmergencyBtn');
         const confirmEmergencyBtn = document.getElementById('confirmEmergencyBtn');
-        const emergencyInfoBtn = document.getElementById('emergencyInfoBtn');
-        const emergencyInfoModal = document.getElementById('emergencyInfoModal');
-        const closeEmergencyInfoModalBtn = document.getElementById('closeEmergencyInfoModalBtn');
 
         if (emergencyTriggerBtn) {
             emergencyTriggerBtn.addEventListener('click', () => {
@@ -2542,17 +2539,6 @@ window.TaskitatorApp = (() => {
                 }
             });
         }
-        if (emergencyInfoBtn && emergencyInfoModal) {
-            emergencyInfoBtn.addEventListener('click', () => {
-                emergencyInfoModal.classList.add('open');
-            });
-        }
-        if (closeEmergencyInfoModalBtn && emergencyInfoModal) {
-            closeEmergencyInfoModalBtn.addEventListener('click', () => {
-                emergencyInfoModal.classList.remove('open');
-            });
-        }
-
         const syncStatusDot = document.getElementById('syncStatusDot');
         const syncInfoModal = document.getElementById('syncInfoModal');
         const closeSyncInfoModalBtn = document.getElementById('closeSyncInfoModalBtn');

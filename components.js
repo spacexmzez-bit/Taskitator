@@ -1933,6 +1933,8 @@ window.TaskitatorComponents = Object.freeze({
                             }
                         }
 
+                        if (task.reference_id && !refExemplarPart) throw new Error('This task’s reference exemplar is missing on this device. Restore the reference file before submitting proof.');
+
                         result = await TaskitatorEngine.AuditEngine.verifyProof({
                             taskId: task.id,
                             file: file,

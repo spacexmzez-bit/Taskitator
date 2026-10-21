@@ -627,8 +627,10 @@ Return strictly valid JSON with this exact schema:
 
             // Taskitator Pro Hosted Claude Haiku 5.5 Hook (when active Pro & not in BYOK mode)
             if (window.TaskitatorPro) {
+                let hostedSelected = false;
                 try {
                     const proStatus = await window.TaskitatorPro.getStatus();
+                    hostedSelected = proStatus && proStatus.isPro && !proStatus.use_byok;
                     if (proStatus && proStatus.isPro && !proStatus.use_byok) {
                         const encodedFiles = [];
                         for (const f of fileList) {
@@ -645,7 +647,8 @@ Return strictly valid JSON with this exact schema:
                             taskId: taskId || ('task_' + Date.now()),
                             title: taskTitle,
                             criteria: combinedCriteria,
-                            files: encodedFiles
+                            files: encodedFiles,
+                            exemplar: exemplarPart ? {mime_type:(exemplarPart.inline_data || exemplarPart).mime_type, data:(exemplarPart.inline_data || exemplarPart).data} : null
                         });
                         return {
                             success: true,
@@ -657,7 +660,7 @@ Return strictly valid JSON with this exact schema:
                         };
                     }
                 } catch (proErr) {
-                    if (proErr.status === 429 || proErr.status === 413 || proErr.status === 415) {
+                    if (hostedSelected || proErr.code === 'AUDIT_CANCELLED' || proErr.status === 429 || proErr.status === 413 || proErr.status === 415) {
                         return { success: false, status: proErr.status, error: proErr.message };
                     }
                     console.warn('[AuditEngine] Pro gateway fallback check:', proErr.message);

@@ -51,12 +51,29 @@
         } finally { entering = false; continueButton.disabled = false; }
     }
     const redirect = location.origin + '/login.html';
+    const signInNode = document.getElementById('secureSignIn');
+    const choices = document.getElementById('loginChoices');
+    const heading = document.getElementById('loginHeading'), intro = document.getElementById('loginIntro');
     if (!window.Clerk.session) {
-        window.Clerk.mountSignIn(document.getElementById('secureSignIn'), {
-            routing: 'hash', withSignUp: true, forceRedirectUrl: redirect, signUpForceRedirectUrl: redirect
-        });
-        return;
+        let mode = 'signIn';
+        const render = next => {
+            if (mode === 'signUp') window.Clerk.unmountSignUp?.(signInNode);
+            else window.Clerk.unmountSignIn?.(signInNode);
+            mode = next;
+            const options = {routing:'hash',forceRedirectUrl:redirect,signInForceRedirectUrl:redirect,signUpForceRedirectUrl:redirect};
+            if (next === 'signUp') window.Clerk.mountSignUp(signInNode,options);
+            else window.Clerk.mountSignIn(signInNode,{...options,withSignUp:true});
+            document.getElementById('showSignInBtn')?.setAttribute('aria-pressed',String(next === 'signIn'));
+            document.getElementById('showSignUpBtn')?.setAttribute('aria-pressed',String(next === 'signUp'));
+        };
+        const inButton=document.getElementById('showSignInBtn'), upButton=document.getElementById('showSignUpBtn');
+        if (inButton) inButton.onclick=()=>render('signIn');
+        if (upButton) upButton.onclick=()=>render('signUp');
+        render('signIn'); return;
     }
+    if (choices) choices.hidden=true;
+    if (heading) heading.textContent='Your Taskitator account';
+    if (intro) intro.textContent='You are signed in. Your tasks stay with this account.';
     document.getElementById('signedInPanel').hidden = false;
     if (TaskitatorAuth.storageWarnings.length) show([...new Set(TaskitatorAuth.storageWarnings)].join('\n'));
     document.getElementById('signedInEmail').textContent = window.Clerk.user?.primaryEmailAddress?.emailAddress || 'Signed in';
@@ -86,7 +103,7 @@
         } catch (err) { show(err.message); } finally { password.value = ''; button.disabled = false; }
     };
     document.getElementById('newAccountBtn').onclick = async event => {
-        if (!confirm('Create a new, empty Taskitator account? Choose Connect existing account to keep your existing cloud tasks.')) return;
+        if (!confirm('Start with an empty workspace? If you have an older Taskitator account, cancel and choose Import an older Taskitator account to keep its cloud tasks. Local drafts remain protected.')) return;
         event.target.disabled = true;
         try {
             const account = await TaskitatorAuth.connect({ mode: 'create' });
@@ -96,61 +113,4 @@
     };
 
     
-    // Phase 2.5: Unique username sign-in
-    const toggleBtn = document.getElementById('toggleUsernameLoginBtn');
-    const uForm = document.getElementById('usernameLoginForm');
-    const uSubmit = document.getElementById('submitUsernameLoginBtn');
-    const uInput = document.getElementById('loginUsernameInput');
-    const pInput = document.getElementById('loginPasswordInput');
-
-    if (toggleBtn && uForm) {
-        toggleBtn.onclick = () => {
-            uForm.hidden = !uForm.hidden;
-            toggleBtn.textContent = uForm.hidden ? 'Sign in with unique username instead' : 'Hide username sign-in';
-        };
-    }
-
-    if (uSubmit && uInput && pInput) {
-        uSubmit.onclick = async () => {
-            const username = uInput.value.trim();
-            const password = pInput.value;
-            if (!username) { show('Enter your username.'); return; }
-            if (!password) { show('Enter your account password.'); return; }
-            uSubmit.disabled = true;
-            try {
-                const workerUrl = (window.TASKITATOR_AUTH_CONFIG?.workerUrl || '').replace(/\/+$/, '');
-                const res = await fetch(workerUrl + '/pro/username/resolve', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username })
-                });
-                const data = await res.json().catch(() => ({}));
-                if (!res.ok) {
-                    if (data.disallow_google) {
-                        show(data.error || 'Google sign-in accounts cannot log in using a username. Please use your email address or Google Sign-In button.');
-                    } else {
-                        show(data.error || 'Username login failed.');
-                    }
-                    return;
-                }
-                if (!data.email) throw new Error('Email identifier could not be resolved for this username.');
-
-                // Complete sign in via Clerk password strategy
-                const attempt = await window.Clerk.client.signIn.create({
-                    identifier: data.email,
-                    password: password
-                });
-                if (attempt.status === 'complete') {
-                    await window.Clerk.setActive({ session: attempt.createdSessionId });
-                    location.replace('login.html');
-                } else {
-                    show('Additional verification required. Please sign in with your email directly.');
-                }
-            } catch (err) {
-                show(err.message || 'Incorrect password or authentication failed.');
-            } finally {
-                uSubmit.disabled = false;
-            }
-        };
-    }
 })();

@@ -342,12 +342,12 @@
 <div class="app-container">
     <header class="top-navbar">
         <div class="nav-left">
-            <button class="icon-btn icon-only-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer">☰</button>
+            <button class="icon-btn icon-only-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer">☰<span class="wide-label">Menu</span></button>
         </div>
 
         <div class="nav-center">
             <button class="icon-only-btn" id="openCompletedModalBtn" title="Completed Tasks" aria-label="View Completed Tasks">
-                <span style="font-size: 0.95rem; font-weight: bold; color: var(--success);">✓</span>
+                <span style="font-size: 0.95rem; font-weight: bold; color: var(--success);">✓</span><span class="wide-label">Completed</span>
             </button>
             
             <button id="breakStatusPill" class="break-status-pill" title="Daily Breaks" aria-label="Manage Daily Breaks">
@@ -357,16 +357,15 @@
 
             <!-- Distraction Dump Trigger (Muted Grayscale Light Bulb) -->
             <button type="button" class="dump-trigger-btn" id="openDistractionDumpBtn" title="Distraction Dump Scratchpad" aria-label="Distraction Dump Scratchpad">
-                <span class="dump-bulb-icon" id="dumpBulbIcon">💡</span>
+                <span class="dump-bulb-icon" id="dumpBulbIcon">💡</span><span class="wide-label">Scratchpad</span>
                 <span class="dump-active-dot" id="dumpActiveIndicator"></span>
             </button>
             
             <span class="sync-dot local-only" id="syncStatusDot" title="Click to view Sync Status details"></span>
             
             <button class="emergency-icon-btn" id="emergencyTriggerBtn" title="Emergency Bypass" aria-label="Emergency Bypass">
-                <span>🚨</span>
+                <span>🚨</span><span class="wide-label">Emergency bypass</span>
             </button>
-            <button class="info-tiny-btn" id="emergencyInfoBtn" title="Emergency Rules">!</button>
         </div>
 
         <div class="nav-right">
@@ -384,14 +383,14 @@
         <div class="page-title-actions">
             <!-- Compact Icon-Only Selection Mode Toggle Button -->
             <button type="button" class="icon-only-btn select-mode-btn" id="toggleSelectModeBtn" aria-pressed="false" title="Toggle Multi-Selection Mode" aria-label="Toggle Multi-Selection Mode">
-                <span style="font-size: 0.95rem; line-height: 1;">☑</span>
+                <span style="font-size: 0.95rem; line-height: 1;">☑</span><span class="wide-label">Multiselect</span>
             </button>
 
             <button class="icon-only-btn" id="openFilterModalBtn" title="Filter Tasks" aria-label="Filter Tasks" style="position: relative;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M3 4c0-.55.45-1 1-1h16c.55 0 1 .45 1 1s-.45 1-1 1h-1.5l-6.5 8.67V20c0 .38-.21.73-.55.91l-3 1.5c-.52.26-1.12-.1-1.12-.68v-7.06L3.5 5H3c-.55 0-1-.45-1-1z"/>
                 </svg>
-                <span class="filter-active-dot" id="filterActiveDot"></span>
+                <span class="wide-label">Filter</span><span class="filter-active-dot" id="filterActiveDot"></span>
             </button>
         </div>
     </div>
@@ -415,8 +414,8 @@
 </div>
 
 <!-- Floating Action Buttons -->
-<button class="fab-add" id="openRootAddModalBtn" title="Create Task">+</button>
-<button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot">🤖</button>
+<button class="fab-add" id="openRootAddModalBtn" title="Create Task">+<span class="wide-label">New task</span></button>
+<button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot">🤖<span class="wide-label">Copilot</span></button>
 
 <!-- Floating Multi-Select Batch Action Bar -->
 <div class="batch-action-bar" id="batchActionBar">
@@ -1094,26 +1093,11 @@
             Activating this consumes <strong>1 of your 4 weekly tokens</strong>.<br>
             It temporarily unfreezes editing, deletion, and criteria locks on AI-locked tasks for exactly <strong>15 minutes</strong>.
         </p>
+        <p style="font-size:.875rem;line-height:1.6">Your four weekly uses reset at <strong>00:00 on the day after your configured weekend</strong>. Scheduled breaks release device locks; they do not unlock AI task deletion.</p>
         <p id="emergencyModalRemainingUses" style="font-size: 0.85rem; font-weight: 600;"></p>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
             <button class="icon-btn" id="cancelEmergencyBtn">Cancel</button>
             <button class="icon-btn" id="confirmEmergencyBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 600;">Activate 15m</button>
-        </div>
-    </div>
-</div>
-
-<!-- Modal: Emergency Rules Info -->
-<div class="modal-overlay" id="emergencyInfoModal">
-    <div class="modal-box">
-        <h3 style="margin-top: 0; color: var(--primary);">ℹ️ Emergency Rules</h3>
-        <p style="font-size: 0.85rem; line-height: 1.5;">
-            • Maximum <strong>4 bypass uses</strong> per week.<br>
-            • Each use grants a <strong>15-minute unlock window</strong> to delete or edit locked task criteria.<br>
-            • Tokens reset automatically at <strong>00:00 on the day after your configured weekend</strong>.<br>
-            • Scheduled breaks release device locks, but never unlock AI task deletion.
-        </p>
-        <div style="text-align: right; margin-top: 16px;">
-            <button class="icon-btn" id="closeEmergencyInfoModalBtn" style="background: var(--primary); color: #fff; border: none;">Got it</button>
         </div>
     </div>
 </div>
