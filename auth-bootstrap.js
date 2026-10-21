@@ -17,7 +17,7 @@
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-mobile-ui-v2');
+                    resolve(event.data?.version === 'taskitator-profile-ui-v3');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
@@ -37,6 +37,10 @@
                     navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
                         .then(registration => registration.update()).then(check).catch(finish);
                 });
+                // Styles and deferred scripts may already have come from the old
+                // controller. Rebuild the page under the new cache before init.
+                location.reload();
+                return;
             }
         } else if ('serviceWorker' in navigator) {
             // A first visit has no old worker intercepting scripts. Installation
@@ -65,20 +69,6 @@
                 });
             } else { script.textContent = original.textContent; document.body.append(script); }
         }
-        // Keep profile controls in the title row, outside the crowded navbar.
-        const usernameButton = document.getElementById('accountUsernameBtn');
-        const refreshUsername = () => {
-            if (!usernameButton) return;
-            const username = window.Clerk?.user?.username;
-            usernameButton.textContent = username ? '@'+username : 'Set username';
-            usernameButton.title = username ? '@'+username+' — manage username' : 'Set username in your account profile';
-            usernameButton.setAttribute('aria-label', usernameButton.title);
-        };
-        refreshUsername();
-        usernameButton?.addEventListener('click', async () => {
-            try { await TaskitatorAuth.manageAccount(); }
-            catch { usernameButton.textContent = 'Try again'; }
-        });
         // Initialize existing page controls after asynchronous authentication.
         window.dispatchEvent(new Event('taskitator-auth-ready'));
         document.documentElement.classList.remove('auth-pending');
@@ -86,7 +76,7 @@
         if (window.Clerk) {
             const initialSession = window.Clerk.session?.id;
             window.Clerk.addListener(({ session }) => {
-                refreshUsername();
+                window.TaskitatorProfile?.refresh();
                 if (initialSession && session?.id !== initialSession) {
                     if (window.TaskitatorDeletionAccepted) return;
                     window.TaskitatorVault?.clear();

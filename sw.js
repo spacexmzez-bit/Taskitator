@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-mobile-ui-v2';
+const CACHE_NAME = 'taskitator-profile-ui-v3';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -19,6 +19,10 @@ const STATIC_ASSETS = [
     './blocker-guide.html',
     './login.html',
     './style.css',
+    './pro/pro.css',
+    './pro/pro-client.js',
+    './pro/pro-ui.js',
+    './pro/profile-ui.js',
     './manifest.json',
     './SYSTEM_PROMPT.md',
     './CRITERIA_TEMPLATES.json',
@@ -99,8 +103,18 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    if (/\/(?:auth-config|auth-client|vault-client|auth-bootstrap|sync-engine|deletion-client|deletion-status)\.js$/.test(url.pathname)) {
-        event.respondWith(fetch(request, { cache: 'no-cache' }));
+    // Refresh UI code before use, including Pro scripts and stylesheets.
+    if (/\.(?:js|css)$/.test(url.pathname)) {
+        event.respondWith((async () => {
+            const cache = await caches.open(CACHE_NAME);
+            try {
+                const response = await fetch(request, { cache: 'no-cache' });
+                if (response.ok) event.waitUntil(cache.put(cacheKey, response.clone()));
+                return response;
+            } catch {
+                return (await cache.match(cacheKey)) || new Response('App file unavailable. Reconnect and reload.', {status:503});
+            }
+        })());
         return;
     }
 
