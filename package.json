@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/*.test.js pro/*.test.js",
+    "test": "node --experimental-global-webcrypto --test tests/*.test.js pro/*.test.js",
     "deploy:worker": "npx wrangler@4 deploy --config cloudflare/wrangler.toml"
   }
 }

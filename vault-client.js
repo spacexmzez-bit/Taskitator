@@ -9,7 +9,20 @@
     let providers={gemini:metadata,claude:{ready:false,saved:false,pending:[]}},activeProvider='gemini',viewedProvider='gemini',inflight=0;
     let operation = null, proofId = null, verified = false, busy = false;
     const api = (path,body,method='POST',extra={}) => auth().api(path,{method,...extra,...(body?{body:JSON.stringify(body)}:{})});
-    function status(message) { const el=byId('vaultFeedback');if(el)el.textContent=message; }
+    function status(message, isTest = null) {
+        const el=byId('vaultFeedback');
+        if(!el)return;
+        if(isTest === true || isTest === false) {
+            el.className = 'vault-test-popup ' + (isTest ? 'success' : 'error');
+            const safeText = String(message || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            el.innerHTML = `<span style="font-size:1.15rem;line-height:1;margin-right:6px;">${isTest ? '✓' : '✕'}</span><span>${safeText}</span>`;
+            el.style.display = 'flex';
+        } else {
+            el.className = '';
+            el.style.display = 'block';
+            el.textContent = message;
+        }
+    }
     function acceptMetadata(data,follow=false){
         const previous=activeProvider+':'+(providers[activeProvider]?.version||'empty');
         if(data.providers)providers=data.providers;
@@ -256,7 +269,17 @@
             if(!revealed)return;try{await navigator.clipboard.writeText(revealed);status('Key copied. Your clipboard may retain it.');}catch{status('Clipboard access was denied. Select the displayed key and copy it manually.');}
         });
         byId('vaultRefreshBtn').addEventListener('click',async()=>{if(busy)return;busy=true;render();clearReveal();try{await vault.refresh();status('Key status refreshed.');}catch(error){status(error.message);}finally{busy=false;render();}});
-        byId('vaultTestBtn').addEventListener('click',async()=>{if(busy)return;busy=true;render();try{status(names[viewedProvider]+': '+(await api('/ai/keys/test',{provider:viewedProvider})).message);}catch(error){status(error.message);}finally{busy=false;render();}});
+        byId('vaultTestBtn').addEventListener('click',async()=>{
+            if(busy)return;busy=true;render();
+            try{
+                const res = await api('/ai/keys/test',{provider:viewedProvider});
+                status(names[viewedProvider]+': '+(res.message || 'Key connected and verified successfully!'), true);
+            }catch(error){
+                status(error.message || 'Connection test failed.', false);
+            }finally{
+                busy=false;render();
+            }
+        });
         const match=/^#key-verification=([a-f0-9]{64})$/.exec(location.hash);
         if(match){
             history.replaceState(null,'',location.pathname+location.search);

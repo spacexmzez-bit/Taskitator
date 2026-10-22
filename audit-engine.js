@@ -659,8 +659,12 @@ Return strictly valid JSON with this exact schema:
                             approved: proRes.verdict === 'approved',
                             verdict: proRes.verdict,
                             confidence: proRes.confidence,
-                            critique: proRes.critique,
-                            model_used: proRes.model_used || 'claude-haiku-5-5'
+                            critique: proRes.critique || proRes.reason || '',
+                            reason: proRes.reason || proRes.critique || '',
+                            model_used: proRes.model_used || 'claude-haiku-5-5',
+                            credits_charged: proRes.credits_charged,
+                            discount_applied: Boolean(proRes.discount_applied),
+                            is_pro: true
                         };
                     }
                 } catch (proErr) {
@@ -716,9 +720,9 @@ Evaluation Rules:
 
 Return valid JSON matching this schema:
 {
-  "verdict": "approved" | "rejected",
+  "verdict": "approved" | "rejected" | "incomplete",
   "confidence": 0.0 to 1.0,
-  "critique": "Concise forensic explanation of the decision."
+  "critique": "Concise forensic explanation of the decision or specific additional proof needed."
 }
 `;
 
@@ -768,8 +772,10 @@ Return valid JSON matching this schema:
                     code: 200,
                     approved: parsed.verdict === 'approved',
                     verdict: parsed.verdict,
-                    critique: parsed.critique,
-                    model_used: usedModel
+                    critique: parsed.critique || parsed.reason || '',
+                    reason: parsed.reason || parsed.critique || '',
+                    model_used: usedModel,
+                    is_pro: false
                 };
             } catch (err) {
                 return {

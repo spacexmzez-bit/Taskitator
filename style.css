@@ -1505,3 +1505,25 @@ body {
     .account-session-actions {width:100%}
     .account-session-actions .icon-btn {flex:1 1 160px;min-height:44px;height:auto;white-space:normal;padding:10px}
 }
+
+.vault-test-popup {
+    margin-top: 14px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+}
+.vault-test-popup.success {
+    background: rgba(16, 185, 129, 0.15) !important;
+    border: 1.5px solid #10b981 !important;
+    color: #34d399 !important;
+}
+.vault-test-popup.error {
+    background: rgba(239, 68, 68, 0.15) !important;
+    border: 1.5px solid #ef4444 !important;
+    color: #fca5a5 !important;
+}

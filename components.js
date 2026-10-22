@@ -1210,6 +1210,24 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
+            const createAiAuditInfoBtn = document.getElementById('createAiAuditInfoBtn');
+            const createAiAuditInfoBox = document.getElementById('createAiAuditInfoBox');
+            if (createAiAuditInfoBtn && createAiAuditInfoBox) {
+                createAiAuditInfoBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    createAiAuditInfoBox.style.display = createAiAuditInfoBox.style.display === 'none' ? 'block' : 'none';
+                });
+            }
+
+            const editAiAuditInfoBtn = document.getElementById('editAiAuditInfoBtn');
+            const editAiAuditInfoBox = document.getElementById('editAiAuditInfoBox');
+            if (editAiAuditInfoBtn && editAiAuditInfoBox) {
+                editAiAuditInfoBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    editAiAuditInfoBox.style.display = editAiAuditInfoBox.style.display === 'none' ? 'block' : 'none';
+                });
+            }
+
             const addSubtaskFieldBtn = document.getElementById('addSubtaskFieldBtn');
             const subtaskBuilderList = document.getElementById('subtaskBuilderList');
             if (addSubtaskFieldBtn && subtaskBuilderList) {
@@ -2008,7 +2026,21 @@ window.TaskitatorComponents = Object.freeze({
                         if (auditFeedback) {
                             auditFeedback.className = 'audit-critique-box';
                             auditFeedback.style.display = 'block';
-                            auditFeedback.innerHTML = `<strong>Verdict: ${TaskitatorSafety.escapeHtml(result.verdict.toUpperCase())}</strong><br>${TaskitatorSafety.escapeHtml(result.critique)}`;
+                            const rawVerdict = (result.verdict || 'REJECTED').toLowerCase();
+                            const verdictUpper = TaskitatorSafety.escapeHtml(rawVerdict === 'incomplete' ? 'INSUFFICIENT PROOF' : rawVerdict.toUpperCase());
+                            const critiqueText = TaskitatorSafety.escapeHtml(result.critique || result.reason || 'Proof does not satisfy task criteria.');
+                            let noticeHtml = '';
+                            if (rawVerdict === 'incomplete') {
+                                if (result.is_pro || (window.TaskitatorPro && result.discount_applied)) {
+                                    const costMsg = (result.credits_charged === 0) ? '0 tokens (FREE audit)' : (result.credits_charged != null ? result.credits_charged + ' tokens' : '50% discount applied');
+                                    noticeHtml = `<div style="margin-top: 8px; font-size: 0.8rem; color: #34d399; font-weight: 600;">ℹ️ Insufficient proof: A 50% token discount was applied (${costMsg}).</div>`;
+                                } else {
+                                    noticeHtml = `<div style="margin-top: 8px; font-size: 0.8rem; color: #cbd5e1;">ℹ️ Insufficient proof: Free tier accounts do not receive the 50% discount on insufficient audits.</div>`;
+                                }
+                            } else {
+                                noticeHtml = `<div style="margin-top: 8px; font-size: 0.8rem; color: #fca5a5;">⚠️ Token notice: Usage was calculated and consumed for this audit. No refund issued.</div>`;
+                            }
+                            auditFeedback.innerHTML = `<strong>Verdict: ${verdictUpper}</strong><br>${critiqueText}${noticeHtml}`;
                         }
                     }
                 });
