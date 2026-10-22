@@ -219,6 +219,9 @@
 
             const client = getClient();
             try {
+                if (global.SyncEngine?.isConfigured?.() && global.SyncEngine?.isDirty?.()) {
+                    await global.SyncEngine.push().catch(() => {});
+                }
                 const res = await client.batchReview({
                     tasks: await Promise.all(selectedTasks.map(async item => {
                         const task = allTasks.find(t => t.id === item.id);
@@ -284,12 +287,16 @@
                     confirmBtn.textContent = 'Confirming...';
                     try {
                         const client = getClient();
-                        await client.batchConfirm({
+                        const confirmed = await client.batchConfirm({
                             jobId: result.job_id,
                             taskIds: eligible.map(e => e.task_id)
                         });
+                        const confirmedIds = Array.isArray(confirmed?.confirmed_task_ids) ? confirmed.confirmed_task_ids : [];
+                        if (!confirmedIds.length) {
+                            throw new Error('Server did not confirm any batch task completions.');
+                        }
 
-                        applyBatchCompletions(eligible.map(e => e.task_id));
+                        applyBatchCompletions(confirmedIds, confirmed);
                         modal.remove();
                         if (typeof window.TaskitatorApp?.refresh === 'function') window.TaskitatorApp.refresh();
                         else location.reload();
@@ -302,16 +309,30 @@
         }
     }
 
-    function applyBatchCompletions(taskIds) {
+    function applyBatchCompletions(taskIds, serverConfirmation = null) {
         try {
+            const confirmedSet = new Set(Array.isArray(taskIds) ? taskIds : []);
+            if (!confirmedSet.size) return;
+            if (Array.isArray(serverConfirmation?.tasks)) {
+                localStorage.setItem('taskitator_tasks', JSON.stringify(serverConfirmation.tasks));
+                if (serverConfirmation.recurrence_state) {
+                    localStorage.setItem('taskitator_recurrence_state', JSON.stringify(serverConfirmation.recurrence_state));
+                }
+                if (Number.isSafeInteger(serverConfirmation.version) && window.SyncEngine?.rememberRemoteVersion) {
+                    window.SyncEngine.rememberRemoteVersion(serverConfirmation.version);
+                    localStorage.removeItem('taskitator_sync_dirty');
+                    if (window.SyncEngine) window.SyncEngine.hasUnsavedChanges = false;
+                }
+                return;
+            }
             const raw = localStorage.getItem('taskitator_tasks');
             if (!raw) return;
             const tasks = JSON.parse(raw);
             let updated = false;
             tasks.forEach(t => {
-                if (taskIds.includes(t.id) && t.status !== 'completed') {
+                if (confirmedSet.has(t.id) && t.status !== 'completed') {
                     t.status = 'completed';
-                    t.completed_at = new Date().toISOString();
+                    t.completed_at = serverConfirmation?.confirmed_at || new Date().toISOString();
                     t.ai_model_used = 'claude-haiku-5-5';
                     updated = true;
                 }
@@ -387,7 +408,7 @@
                 <div class="pro-form" id="pro-activation-form">
                     <label style="font-size: 13px; font-weight: 500; color: #cbd5e1;">Activate Pro with Keyo License Key</label>
                     <div class="pro-input-group">
-                        <input type="text" class="pro-input" id="pro-license-input" placeholder="e.g. XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocorrect="off" spellcheck="false" />
+                        <input type="text" class="pro-input" id="pro-license-input" placeholder="e.g. KEYO-PRO-XXXX-XXXX" autocomplete="off" autocorrect="off" spellcheck="false" />
                         <button class="pro-btn" id="pro-activate-btn">Activate Pro</button>
                     </div>
                     <div class="pro-msg" id="pro-form-msg"></div>
@@ -479,8 +500,10 @@
                     badge.className = 'pro-badge active';
                     badge.textContent = 'PRO ACTIVE';
                 }
-                if (expiry) expiry.textContent = data.expires_at === null ? 'Lifetime license' :
-                    `Valid through ${new Date(data.expires_at).toLocaleDateString()}`;
+                if (expiry && data.expires_at) {
+                    const expDate = new Date(data.expires_at).toLocaleDateString();
+                    expiry.textContent = `Valid through ${expDate}`;
+                }
                 if (quotaBox) quotaBox.style.display = 'block';
 
                 if (byokToggle) byokToggle.checked = Boolean(data.use_byok);
@@ -512,17 +535,14 @@
                     badge.className = 'pro-badge free';
                     badge.textContent = 'FREE TIER';
                 }
-                if (expiry) expiry.textContent = data.status === 'verification_required' ?
-                    'Please enter your Keyo license key again to verify this account.' :
-                    ['revoked','invalid','expired'].includes(data.status) ? 'License verification failed. Check your license in Keyo, then reactivate.' : '';
+                if (expiry) expiry.textContent = '';
                 if (quotaBox) quotaBox.style.display = 'none';
             }
-        } catch (err) {
+        } catch {
             if (badge) {
                 badge.className = 'pro-badge free';
-                badge.textContent = 'VERIFICATION UNAVAILABLE';
+                badge.textContent = 'FREE / UNLINKED';
             }
-            if (expiry) expiry.textContent = err.message || 'Unable to check your license. Please refresh Settings and retry.';
             if (quotaBox) quotaBox.style.display = 'none';
         }
     }
