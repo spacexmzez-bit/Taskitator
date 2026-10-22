@@ -192,9 +192,9 @@ export class ProGateway {
         const dailyUsed = (await this.storage.get(`pro:usage:${accountId}:day:${dateStr}`)) || 0;
         const monthlyUsed = (await this.storage.get(`pro:usage:${accountId}:month:${monthStr}`)) || 0;
 
-        // Owner requirements: 45 daily and 1,000 monthly credits
-        const dailyLimit = POLICY.daily;
-        const monthlyLimit = POLICY.monthly;
+        // Owner requirements: 45 daily and 1,000 monthly credits (supports purchased token addons)
+        const dailyLimit = (entitlement.credits_daily_limit && entitlement.credits_daily_limit > POLICY.daily) ? entitlement.credits_daily_limit : POLICY.daily;
+        const monthlyLimit = (entitlement.credits_monthly_limit && entitlement.credits_monthly_limit > POLICY.monthly) ? entitlement.credits_monthly_limit : POLICY.monthly;
         const useByok = Boolean(entitlement.use_byok);
 
         return json({

@@ -398,13 +398,37 @@
 /* Readable credit rules in Settings, including narrow phone screens. */
 .pro-credit-help {
     margin: 18px 0;
-    padding: 16px;
+    padding: 14px 16px;
     border: 1px solid var(--border-color, #33333f);
     border-radius: 10px;
     font-size: .9rem;
     line-height: 1.65;
     color: var(--text-muted, #94a3b8);
     overflow-wrap: anywhere;
+    background: rgba(15, 23, 42, 0.4);
+}
+.pro-credit-help summary {
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-color, #f0f0f5);
+    outline: none;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.pro-credit-help summary::-webkit-details-marker {
+    display: none;
+}
+.pro-credit-help summary::after {
+    content: "▾";
+    font-size: 0.9rem;
+    transition: transform 0.2s ease;
+}
+.pro-credit-help[open] summary::after {
+    transform: rotate(180deg);
 }
 .pro-credit-help h4 { margin: 0 0 10px; font-size: 1rem; color: var(--text-color, #f0f0f5); }
 .pro-credit-help ul { margin: 0; padding-inline-start: 20px; }

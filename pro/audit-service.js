@@ -223,8 +223,21 @@ export class HostedAudits {
             result = parseResult(data,tasks,batch);
             const perTask = charges(Math.min(actualCost,rec.reservedCost),tasks,batch);
             // A preview is also a customer-price ceiling. Any unexpected overage is absorbed by the operator.
-            charged = Math.min(rec.reservedCredits,totalCredits(perTask));
+            const baseCharged = Math.min(rec.reservedCredits,totalCredits(perTask));
+
+            let discountApplied = false;
+            let discountReason = null;
+            if (result.verdict === 'incomplete') {
+                const half = baseCharged / 2;
+                charged = half < 1 ? 0 : this.round(half);
+                discountApplied = true;
+                discountReason = charged === 0 ? 'free_under_one_token' : 'half_token_incomplete';
+            } else {
+                charged = baseCharged;
+            }
+
             result = {success:true,...result,model_used:POLICY.model,credits_charged:charged,
+                base_credits:baseCharged,discount_applied:discountApplied,discount_reason:discountReason,
                 task_charges:perTask,operation_id:operation};
             if (batch) result.job_id='job_'+crypto.randomUUID();
         } catch (e) {

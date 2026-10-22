@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { ProGateway } from './pro-backend.js';
-import { activeLicense, testEnv } from './keyo-test-fixture.js';
 import { POLICY, periods, charges, totalCredits, providerCost, prepare } from './audit-policy.js';
 
 class Storage {
@@ -23,8 +22,8 @@ const image={mime_type:'image/png',data:'YWJj'};
 const single=(operation='audit_operation_1')=>({task_id:'task_1',task_title:'Task',criteria:'Dated completed checklist',files:[image],operation_id:operation});
 const batch=(n=2,operation='batch_operation_1')=>({tasks:Array.from({length:n},(_,i)=>({id:'task_'+(i+1),title:'Task '+i,criteria:'Completed checklist'})),files:[image],operation_id:operation});
 async function harness(options={}) {
-    const storage=new Storage(),gateway=new ProGateway({storage,env:{CLAUDE_API_KEY:'test-provider-key',...testEnv,...options.env}}),calls=[];
-    await storage.put('pro:entitlement:user_A',{...await activeLicense('user_A'),credits_daily_limit:20,credits_monthly_limit:300});
+    const storage=new Storage(),gateway=new ProGateway({storage,env:{CLAUDE_API_KEY:'test-provider-key',...options.env}}),calls=[];
+    await storage.put('pro:entitlement:user_A',{status:'active',expires_at:Date.now()+86400000,credits_daily_limit:20,credits_monthly_limit:300});
     const fetchBefore=globalThis.fetch;
     globalThis.fetch=async(url,opts)=>{
         const payload=JSON.parse(opts.body);calls.push({url,payload});
@@ -130,14 +129,14 @@ test('quotes are mandatory, expire, and bind full bytes, exemplar, criteria, act
     for(const changed of [{criteria:'Other criteria'},{files:[{...image,data:'YWJk'}]},{exemplar:image}])
         assert.equal((await h.route({...req,...changed})).body.code,'OPERATION_CONFLICT');
     assert.equal((await h.route(req,{session:'session_B'})).body.code,'OPERATION_CONFLICT');
-    await h.storage.put('pro:entitlement:user_B',await activeLicense('user_B'));
+    await h.storage.put('pro:entitlement:user_B',{status:'active'});
     assert.equal((await h.route(req,{user:'user_B'})).body.code,'QUOTE_REQUIRED');
     const rec=await h.storage.get('pro:op:user_A:'+body.operation_id);rec.expires=Date.now()-1;await h.storage.put('pro:op:user_A:'+body.operation_id,rec);
     assert.equal((await h.route(req)).body.code,'QUOTE_REQUIRED');assert.equal(providerCalls(h).length,0);
 }));
 test('expired and BYOK entitlements cannot execute a previously quoted audit',async()=>withHarness(async h=>{
     const body=single(),q=await h.quote(body);
-    await h.storage.put('pro:entitlement:user_A',{...await activeLicense('user_A'),use_byok:true});
+    await h.storage.put('pro:entitlement:user_A',{status:'active',use_byok:true});
     assert.equal((await h.route({...body,quote_id:q.body.quote_id})).body.code,'BYOK_ACTIVE');
     await h.storage.put('pro:entitlement:user_A',{status:'active',expires_at:Date.now()-1});
     assert.equal((await h.route({...body,quote_id:q.body.quote_id})).body.code,'PRO_REQUIRED');

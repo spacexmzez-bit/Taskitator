@@ -385,18 +385,23 @@
                         </div>
                     </div>
 
-                    <section class="pro-credit-help" aria-labelledby="pro-credit-help-title">
-                        <h4 id="pro-credit-help-title">How credits work</h4>
-                        <ul>
-                            <li><strong>Larger files and longer reviews use more credits.</strong> Each task has its own charge.</li>
-                            <li>Comparing your proof with a <strong>reference example doubles that task’s charge</strong>.</li>
-                            <li>Reviewing <strong>two or more tasks together gives each task 25% off</strong>.</li>
-                            <li>Before starting, you’ll see the <strong>estimated charge and maximum credits temporarily held</strong>.</li>
-                            <li>After the review, you pay for actual usage. <strong>Unused held credits return to your balance.</strong> Your charge will not exceed the maximum shown.</li>
-                        </ul>
-                        <p>You pay for a completed review even if the proof is not approved. Cancelling at the price preview starts no paid review.</p>
-                        <p>Large uploads may need splitting into smaller files. Daily and monthly credit limits, plus a separate monthly hosted allowance, apply.</p>
-                    </section>
+                    <details class="pro-credit-help" id="pro-credit-help-details">
+                        <summary id="pro-credit-help-title" style="cursor: pointer; font-weight: 600; font-size: 0.95rem; color: #f8fafc; padding: 4px 0; outline: none; user-select: none;">
+                            How credits work
+                        </summary>
+                        <div style="margin-top: 12px; font-size: 0.88rem; line-height: 1.6; color: #cbd5e1;">
+                            <p style="margin: 0 0 10px 0;">Credits measure the work required to inspect your proof with AI. Here is how usage is calculated:</p>
+                            <ul style="padding-left: 20px; margin: 0 0 12px 0;">
+                                <li style="margin-bottom: 8px;"><strong>Document Page Count:</strong> Documents and PDFs are evaluated page by page. Each page inspected uses approximately 1 credit. For example, a 3-page worksheet uses about 3 credits.</li>
+                                <li style="margin-bottom: 8px;"><strong>Photo Quality & Resolution:</strong> Clear, regular snapshots use standard credits (~1 credit). Extra high-resolution photos, panoramic images, or very dense multi-part pictures contain more visual detail and use up to 2 credits to examine.</li>
+                                <li style="margin-bottom: 8px;"><strong>Reference Examples:</strong> Attaching an answer guide or example for the AI to compare against doubles that task's inspection because the AI reviews both files side by side.</li>
+                                <li style="margin-bottom: 8px;"><strong>Batch Reviews:</strong> Proving multiple tasks at once shares evidence files and gives 25% off each task.</li>
+                                <li style="margin-bottom: 8px;"><strong>Audit Rejections:</strong> When an audit is rejected because it fails criteria or is invalid, credits are consumed for the inspection. No refund is issued.</li>
+                                <li><strong>System Errors:</strong> If an audit fails due to a system or server error, zero credits are consumed and the system covers the cost.</li>
+                            </ul>
+                            <p style="margin: 0; font-size: 0.82rem; color: #94a3b8;">Before starting any review, you will always see the maximum credits temporarily held. Unused held credits immediately return to your balance.</p>
+                        </div>
+                    </details>
                     <div class="pro-byok-box">
                         <label class="pro-switch-wrap">
                             <input type="checkbox" id="proByokToggle" />
@@ -414,9 +419,7 @@
                     <div class="pro-msg" id="pro-form-msg"></div>
                 </div>
 
-                <div class="pro-info-note">
-                    <strong>Hosted Personal AI:</strong> Pro accounts receive automated single, multi-file, and batch proof audits powered by personal <strong>Claude Haiku 5.5</strong> without needing a personal API key.
-                </div>
+
             </div>
         `;
 
