@@ -387,7 +387,7 @@
                 <div class="pro-form" id="pro-activation-form">
                     <label style="font-size: 13px; font-weight: 500; color: #cbd5e1;">Activate Pro with Keyo License Key</label>
                     <div class="pro-input-group">
-                        <input type="text" class="pro-input" id="pro-license-input" placeholder="e.g. KEYO-PRO-XXXX-XXXX" autocomplete="off" autocorrect="off" spellcheck="false" />
+                        <input type="text" class="pro-input" id="pro-license-input" placeholder="e.g. XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocorrect="off" spellcheck="false" />
                         <button class="pro-btn" id="pro-activate-btn">Activate Pro</button>
                     </div>
                     <div class="pro-msg" id="pro-form-msg"></div>
@@ -479,10 +479,8 @@
                     badge.className = 'pro-badge active';
                     badge.textContent = 'PRO ACTIVE';
                 }
-                if (expiry && data.expires_at) {
-                    const expDate = new Date(data.expires_at).toLocaleDateString();
-                    expiry.textContent = `Valid through ${expDate}`;
-                }
+                if (expiry) expiry.textContent = data.expires_at === null ? 'Lifetime license' :
+                    `Valid through ${new Date(data.expires_at).toLocaleDateString()}`;
                 if (quotaBox) quotaBox.style.display = 'block';
 
                 if (byokToggle) byokToggle.checked = Boolean(data.use_byok);
@@ -514,14 +512,17 @@
                     badge.className = 'pro-badge free';
                     badge.textContent = 'FREE TIER';
                 }
-                if (expiry) expiry.textContent = '';
+                if (expiry) expiry.textContent = data.status === 'verification_required' ?
+                    'Please enter your Keyo license key again to verify this account.' :
+                    ['revoked','invalid','expired'].includes(data.status) ? 'License verification failed. Check your license in Keyo, then reactivate.' : '';
                 if (quotaBox) quotaBox.style.display = 'none';
             }
-        } catch {
+        } catch (err) {
             if (badge) {
                 badge.className = 'pro-badge free';
-                badge.textContent = 'FREE / UNLINKED';
+                badge.textContent = 'VERIFICATION UNAVAILABLE';
             }
+            if (expiry) expiry.textContent = err.message || 'Unable to check your license. Please refresh Settings and retry.';
             if (quotaBox) quotaBox.style.display = 'none';
         }
     }

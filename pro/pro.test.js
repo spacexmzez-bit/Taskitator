@@ -7,6 +7,7 @@ if (!globalThis.crypto) Object.defineProperty(globalThis, 'crypto', { value: cry
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ProGateway } from './pro-backend.js';
+import { signedToken, testEnv } from './keyo-test-fixture.js';
 
 class MockStorage {
     constructor() {
@@ -38,6 +39,10 @@ class MockStorage {
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (url, opts) => {
     const urlStr = String(url);
+    if (urlStr.startsWith('https://keyo.mazendev.com/api/v1/')) {
+        const {accountId}=JSON.parse(opts.body);
+        return Response.json({entitlement:await signedToken(accountId)});
+    }
     if (urlStr.includes('api.anthropic.com/v1/messages')) {
         const body = JSON.parse(opts?.body || '{}');
         const text = body.messages?.[0]?.content?.[0]?.text || '';
@@ -71,6 +76,7 @@ function createHarness(envOverrides = {}) {
     const env = {
         ALLOWED_ORIGINS: 'https://taskitator.mazendev.com',
         CLAUDE_API_KEY: 'mock_claude_api_key_test',
+        ...testEnv,
         ...envOverrides
     };
     const parent = { storage, env };
@@ -118,17 +124,21 @@ test('Phase 2: Keyo activation elevates account to Pro with 45 daily and 1,000 m
     assert.equal(stData.credits.monthly_remaining, 1000);
 });
 
-test('Phase 2: Cross-account key theft blocked with 409', async () => {
+test('Phase 2: Keyo account limits reject cross-account key theft', async () => {
     const { pro } = createHarness();
     await pro.handleRequest(
         makeReq('/pro/activate', 'POST', { key: 'KEY1-KEY2-KEY3-KEY4' }),
         '/pro/activate', 'POST', { userId: 'u_owner1' }, {}
     );
-    const stealRes = await pro.handleRequest(
-        makeReq('/pro/activate', 'POST', { key: 'KEY1-KEY2-KEY3-KEY4' }),
-        '/pro/activate', 'POST', { userId: 'u_owner2' }, {}
-    );
-    assert.equal(stealRes.status, 409);
+    const before=globalThis.fetch;
+    globalThis.fetch=async()=>Response.json({error:'KEY_UNAVAILABLE'},{status:403});
+    try {
+        const stealRes = await pro.handleRequest(
+            makeReq('/pro/activate', 'POST', { key: 'KEY1-KEY2-KEY3-KEY4' }),
+            '/pro/activate', 'POST', { userId: 'u_owner2' }, {}
+        );
+        assert.equal(stealRes.status, 403);
+    } finally { globalThis.fetch=before; }
 });
 
 test('Phase 2.5: Username validation accepts alphanumeric and underscores (3-20 chars) and rejects invalid formats', async () => {

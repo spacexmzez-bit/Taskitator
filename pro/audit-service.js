@@ -1,7 +1,7 @@
 import { POLICY, periods, fail, digest, providerCost, charges, totalCredits, prepare, parseResult } from './audit-policy.js';
 
 export class HostedAudits {
-    constructor(gateway) { this.storage = gateway.storage; this.env = gateway.env; }
+    constructor(gateway) { this.licenses = gateway.licenses; this.storage = gateway.storage; this.env = gateway.env; }
     headers() {
         const key = this.env.CLAUDE_API_KEY || this.env.ANTHROPIC_API_KEY;
         if (!key) throw fail(503,'AI_PROVIDER_ERROR','CLAUDE_API_KEY is not configured. Ask the operator to configure and redeploy the Worker.');
@@ -9,7 +9,9 @@ export class HostedAudits {
     }
     async entitled(store, account) {
         const e = await store.get('pro:entitlement:'+account);
-        if (!e || e.status !== 'active' || (e.expires_at && e.expires_at <= Date.now()))
+        if (!e || e.status !== 'active' || e.account_id !== account || e.keyo_version !== 1 ||
+            !e.signed_token || !Number.isSafeInteger(e.valid_until) || e.valid_until <= Date.now() ||
+            (e.expires_at !== null && (!Number.isSafeInteger(e.expires_at) || e.expires_at <= Date.now())))
             throw fail(403,'PRO_REQUIRED','Active Taskitator Pro is required for hosted proof audits.');
         if (e.use_byok) throw fail(409,'BYOK_ACTIVE','Hosted review is disabled while personal-key mode is selected.');
     }
@@ -37,6 +39,7 @@ export class HostedAudits {
             if (rec.version !== POLICY.version || rec.hash !== hash || rec.session !== session)
                 throw fail(409,'OPERATION_CONFLICT','This operation belongs to a different payload or session. Start a new audit.');
         };
+        await this.licenses.resolve(account);
         await this.entitled(this.storage,account);
         const previous = await this.storage.get(opKey);
         if (previous) {

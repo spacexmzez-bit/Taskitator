@@ -1,11 +1,11 @@
 import { HostedAudits } from './audit-service.js';
 import { POLICY } from './audit-policy.js';
+import { KeyoLicenses } from './keyo-license.js';
 // File: pro/pro-backend.js
 // Taskitator Pro Phase 2: Pro Gateway, Keyo Entitlement, Hosted Claude Haiku 5.5 AI Review,
 // Multi-File Proof Review, Batch Proof Review, and BYOK Mode Toggle.
 
 const OFFSET_RIYADH = 3 * 3600000; // Asia/Riyadh UTC+3
-const DAY_MS = 86400000;
 
 const CORS = {
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
@@ -13,17 +13,6 @@ const CORS = {
     'Access-Control-Max-Age': '86400',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff'
-};
-
-// Default Keyo Public Configuration from Integration Guide
-const DEFAULT_KEYO_ORIGIN = 'https://keyo-api.spacexmzez.workers.dev';
-const DEFAULT_KEYO_JWK = {
-    kty: 'EC',
-    crv: 'P-256',
-    x: '12kmFYFug4HYBs-ZTpRleElP9Q8kpQaI5aVyG9CqVOc',
-    y: 'Up7x4X65FL-LaRweIptSkCZsXN4A3mZM7XIIHRzNndY',
-    ext: true,
-    key_ops: ['verify']
 };
 
 function json(value, status = 200) {
@@ -47,24 +36,22 @@ function getRiyadhDateStrings(now = Date.now()) {
     return { dateStr, monthStr };
 }
 
-function base64UrlDecode(str) {
-    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-    while (base64.length % 4) base64 += '=';
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new TextDecoder().decode(bytes);
-}
-
 export class ProGateway {
     constructor(parent) {
         this.parent = parent;
         this.storage = parent.storage;
         this.env = parent.env;
+        this.licenses = new KeyoLicenses(this);
         this.audits = new HostedAudits(this);
     }
 
     async handleRequest(request, path, method, identity, account) {
+        try { return await this.routeRequest(request,path,method,identity,account); }
+        catch (e) { return json({error:e.status ? e.message : 'License verification is temporarily unavailable. Please retry.',
+            code:e.code || 'KEYO_UNAVAILABLE'},e.status || 503); }
+    }
+
+    async routeRequest(request, path, method, identity, account) {
         if (!identity || !identity.userId) {
             return json({ error: 'Authentication required for Pro operations.' }, 401);
         }
@@ -142,7 +129,7 @@ export class ProGateway {
     // --- Entitlement & Status ---
 
     async getStatus(accountId) {
-        const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
+        const entitlement = await this.licenses.resolve(accountId);
 
         const usernameRec = await this.storage.get(`pro:user:username:${accountId}`);
         const claimed = usernameRec?.normalizedUsername ? await this.storage.get('pro:username:map:'+usernameRec.normalizedUsername) : null;
@@ -168,12 +155,7 @@ export class ProGateway {
         }
 
         const now = Date.now();
-        let status = entitlement.status;
-        if (status === 'active' && entitlement.expires_at && now > entitlement.expires_at) {
-            status = 'expired';
-            entitlement.status = 'expired';
-            await this.storage.put(`pro:entitlement:${accountId}`, entitlement);
-        }
+        const status = entitlement.status === 'active' && entitlement.valid_until <= now ? 'expired' : entitlement.status;
 
         const { dateStr, monthStr } = getRiyadhDateStrings(now);
         const dailyUsed = (await this.storage.get(`pro:usage:${accountId}:day:${dateStr}`)) || 0;
@@ -207,14 +189,21 @@ export class ProGateway {
     }
 
     async toggleByok(accountId, body) {
-        const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
+        const entitlement = await this.licenses.resolve(accountId);
         if (!entitlement || entitlement.status !== 'active') {
             return json({ error: 'Pro entitlement required to configure BYOK mode.', code: 'PRO_REQUIRED' }, 403);
         }
 
-        // Pro users can choose to use BYOK but their limits do not reset
-        entitlement.use_byok = Boolean(body.use_byok);
-        await this.storage.put(`pro:entitlement:${accountId}`, entitlement);
+        // Change only the preference, without overwriting a concurrent refresh or activation.
+        const updated = await this.storage.transaction(async tx => {
+            const current = await tx.get(`pro:entitlement:${accountId}`);
+            if (!current || current.status !== 'active' || current.signed_token !== entitlement.signed_token || current.valid_until <= Date.now()) return null;
+            current.use_byok = Boolean(body.use_byok);
+            await tx.put(`pro:entitlement:${accountId}`, current);
+            return current;
+        });
+        if (!updated) return json({error:'Your license changed. Refresh and retry.',code:'LICENSE_CHANGED'},409);
+        entitlement.use_byok = updated.use_byok;
 
         return json({
             success: true,
@@ -224,142 +213,35 @@ export class ProGateway {
     }
 
     async activateLicense(accountId, body) {
-        const rawKey = typeof body.key === 'string' ? body.key.trim() : (typeof body.license_key === 'string' ? body.license_key.trim() : '');
-        if (!rawKey || rawKey.length < 8) {
-            return json({ error: 'Please provide a valid license key.', code: 'INVALID_KEY' }, 400);
-        }
-
+        const rawKey = typeof body.key === 'string' ? body.key : (typeof body.license_key === 'string' ? body.license_key : '');
         const normalizedKey = rawKey.toUpperCase().replace(/[\s-]/g, '');
+        if (!/^[A-Z0-9]{16}$/.test(normalizedKey)) {
+            return json({error:'Keyo license keys must contain 16 letters or numbers, excluding spaces and hyphens.',code:'MALFORMED_KEY'},400);
+        }
+        const verified = await this.licenses.request('activate',accountId,{key:normalizedKey});
         const keyFingerprint = await sha256(normalizedKey);
-
-        const existingBinding = await this.storage.get(`pro:binding:${keyFingerprint}`);
-        if (existingBinding && existingBinding.account_id !== accountId) {
-            return json({
-                error: 'This license key is already linked to another Taskitator account.',
-                code: 'KEY_ALREADY_BOUND'
-            }, 409);
-        }
-
-        const validation = await this.verifyKeyoKey(normalizedKey, accountId, rawKey);
-        if (!validation.valid) {
-            return json({
-                error: validation.reason || 'License key validation failed.',
-                code: validation.code || 'ACTIVATION_FAILED'
-            }, 400);
-        }
-
-        const now = Date.now();
-        const expiresAt = validation.expires_at || (now + 365 * DAY_MS);
-
-        const entitlement = {
-            account_id: accountId,
-            tier: validation.tier || 'pro',
-            status: 'active',
-            key_fingerprint: keyFingerprint,
-            signed_token: validation.signed_token || null,
-            activated_at: now,
-            expires_at: expiresAt,
-            last_verified_at: now,
-            policy_version: '2.0',
-            credits_daily_limit: 45,
-            credits_monthly_limit: 1000,
-            use_byok: false
-        };
-
-        await this.storage.put(`pro:entitlement:${accountId}`, entitlement);
-        await this.storage.put(`pro:binding:${keyFingerprint}`, {
-            account_id: accountId,
-            key_fingerprint: keyFingerprint,
-            bound_at: now
+        // Keyo owns account limits and reassignment. An old local fingerprint cannot override it.
+        const entitlement = await this.storage.transaction(async tx => {
+            const previous = await tx.get(`pro:entitlement:${accountId}`);
+            const record = this.licenses.record(accountId,verified,previous,{key_fingerprint:keyFingerprint,
+                activated_at:previous?.activated_at || Date.now()});
+            await tx.put(`pro:entitlement:${accountId}`,record);
+            return record;
         });
-
+        // Retain the existing optional D1 reporting mirror; authorization uses DO storage.
         if (this.env?.TASKITATOR_DB) {
             try {
                 await this.env.TASKITATOR_DB.prepare(
                     `INSERT INTO entitlements (account_id, key_fingerprint, tier, status, activated_at, expires_at, policy_version)
                      VALUES (?, ?, ?, 'active', ?, ?, '2.0')
-                     ON CONFLICT(account_id) DO UPDATE SET
-                     key_fingerprint = excluded.key_fingerprint,
-                     status = 'active',
-                     expires_at = excluded.expires_at,
-                     last_verified_at = ?`
-                ).bind(accountId, keyFingerprint, entitlement.tier, now, expiresAt, now).run();
-            } catch (err) {
-                console.warn('[Pro] D1 sync warning:', err.message);
-            }
+                     ON CONFLICT(account_id) DO UPDATE SET key_fingerprint = excluded.key_fingerprint,
+                     tier = excluded.tier, status = 'active', expires_at = excluded.expires_at, last_verified_at = ?`
+                ).bind(accountId,keyFingerprint,entitlement.tier,entitlement.activated_at,entitlement.expires_at,entitlement.last_verified_at).run();
+            } catch { console.warn('[Pro] Optional D1 entitlement mirror could not be updated.'); }
         }
-
-        return json({
-            success: true,
-            isPro: true,
-            tier: entitlement.tier,
-            status: 'active',
-            expires_at: expiresAt,
-            credits_daily_limit: 45,
-            credits_monthly_limit: 1000,
-            message: 'Taskitator Pro successfully activated.'
-        });
-    }
-
-    async verifyKeyoKey(normalizedKey, accountId, rawInput) {
-        if (normalizedKey.includes('EXPIRED') || rawInput.includes('EXPIRED')) {
-            return { valid: false, code: 'KEY_EXPIRED', reason: 'This license key has expired.' };
-        }
-        if (normalizedKey.includes('INVALID') || normalizedKey.includes('REVOKED') || rawInput.includes('INVALID') || rawInput.includes('REVOKED')) {
-            return { valid: false, code: 'KEY_REVOKED', reason: 'This license key has been revoked or is invalid.' };
-        }
-
-        const keyoOrigin = this.env?.KEYO_API_ORIGIN || this.env?.KEYO_API_URL;
-        const projectId = this.env?.KEYO_PROJECT_ID || this.env?.KEYO_CLIENT_ID;
-
-        if (keyoOrigin && projectId) {
-            try {
-                const url = `${keyoOrigin.replace(/\/+$/, '')}/api/v1/activate?projectId=${encodeURIComponent(projectId)}`;
-                const resp = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ accountId, key: normalizedKey })
-                });
-
-                if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({}));
-                    return {
-                        valid: false,
-                        code: err.error || 'KEY_UNAVAILABLE',
-                        reason: err.error ? `Keyo rejected key: ${err.error}` : `Keyo responded with status ${resp.status}`
-                    };
-                }
-
-                const data = await resp.json();
-                if (!data.entitlement) {
-                    return { valid: false, code: 'INVALID_ENTITLEMENT', reason: 'Missing signed entitlement in Keyo response.' };
-                }
-
-                const parts = data.entitlement.split('.');
-                if (parts.length === 3) {
-                    const payload = JSON.parse(base64UrlDecode(parts[1]));
-                    const tier = (payload.tier || 'PRO').toLowerCase();
-                    return {
-                        valid: true,
-                        tier: tier === 'max' ? 'max' : 'pro',
-                        expires_at: payload.expiresAt || null,
-                        signed_token: data.entitlement
-                    };
-                }
-            } catch (err) {
-                return { valid: false, code: 'KEYO_NETWORK_ERROR', reason: `Keyo service communication error: ${err.message}` };
-            }
-        }
-
-        if (normalizedKey.length === 16 || /^(KEYOPRO|PRO)[A-Z0-9]{8,32}$/.test(normalizedKey) || normalizedKey.length >= 12) {
-            return {
-                valid: true,
-                tier: 'pro',
-                expires_at: Date.now() + 365 * DAY_MS
-            };
-        }
-
-        return { valid: false, code: 'MALFORMED_KEY', reason: 'Keyo license keys must be 16 characters (excluding hyphens).' };
+        return json({success:true,isPro:true,tier:entitlement.tier,status:'active',
+            expires_at:entitlement.expires_at,credits_daily_limit:POLICY.daily,credits_monthly_limit:POLICY.monthly,
+            message:'Taskitator Pro successfully activated.'});
     }
 
     async confirmBatchReview(accountId, body) {
@@ -456,7 +338,7 @@ export class ProGateway {
     async getUsernameProfile(accountId) {
         const rec = await this.storage.get(`pro:user:username:${accountId}`);
         const owner = rec?.normalizedUsername ? await this.storage.get('pro:username:map:'+rec.normalizedUsername) : null;
-        const entitlement = await this.storage.get(`pro:entitlement:${accountId}`);
+        const entitlement = await this.licenses.resolve(accountId);
         return json({username:owner?.accountId === accountId ? rec.username : null,
             isPro:entitlement?.status === 'active' && (!entitlement.expires_at || entitlement.expires_at > Date.now()),
             tier:entitlement?.tier || 'free'});
