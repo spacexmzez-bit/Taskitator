@@ -1636,7 +1636,8 @@ window.TaskitatorComponents = Object.freeze({
                         });
                     }
 
-                    if (exemplarFile && host.tasks.getAll().find(t=>t.id===parentId)?.recurrence_series_id) {
+                    if (exemplarFile) {
+                        newTask.has_exemplar = true;
                         newTask.reference_inline_data = await TaskitatorEngine.AuditEngine.fileToBase64(exemplarFile);
                     }
                     try { await window.TaskitatorRecurrenceUI?.attachCreated(newTaskId, host.tasks.getAll()); }
@@ -1816,6 +1817,8 @@ window.TaskitatorComponents = Object.freeze({
                     if (pendingEditExemplarFile && willBeAiLocked && window.ExemplarStore) {
                         try {
                             await window.ExemplarStore.saveExemplar(task.id, pendingEditExemplarFile);
+                            task.has_exemplar = true;
+                            task.reference_inline_data = await TaskitatorEngine.AuditEngine.fileToBase64(pendingEditExemplarFile);
                             pendingEditExemplarFile = null;
                         } catch (err) {
                             alert(`Failed to save reference exemplar: ${err.message}`);
@@ -1965,27 +1968,6 @@ window.TaskitatorComponents = Object.freeze({
                     if (is503Outage) {
                         const count = (consecutive503Tracker.get(pendingAuditTaskId) || 0) + 1;
                         consecutive503Tracker.set(pendingAuditTaskId, count);
-
-                        if (count >= 5 && !task.recurrence_series_id) {
-                            consecutive503Tracker.delete(pendingAuditTaskId);
-                            task.verified_model = 'gemini-fallback-auto-503';
-                            host.tasks.setStatus(pendingAuditTaskId, 'completed', new Date().toISOString());
-                            host.effects.auditSuccess();
-                            host.tasks.save();
-                            
-                            const completedTaskId = pendingAuditTaskId;
-                            host.tasks.finalize(completedTaskId).then(() => {
-                                if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
-                                    const breaks = host.breaks.today();
-                                    SyncEngine.scheduleAutoPush();
-                                }
-                            });
-
-                            if (auditModal) auditModal.classList.remove('open');
-                            pendingAuditTaskId = null;
-                            host.view.refresh();
-                            return;
-                        }
                     } else if (result.success) {
                         consecutive503Tracker.delete(pendingAuditTaskId);
                     } else {

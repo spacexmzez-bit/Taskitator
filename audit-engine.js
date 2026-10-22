@@ -463,9 +463,10 @@ const TaskitatorEngine = {
             });
         },
 
-        async callGeminiWithParts(modelName, apiKey, partsArray, format='proof', selection=this.selection()) {
+        async callGeminiWithParts(modelName, apiKey, partsArray, format='proof', selection=this.selection(), taskMeta=null) {
             const payload = {
                 taskitatorFormat:format,
+                ...(taskMeta ? { taskitatorTask: taskMeta } : {}),
                 contents: [{
                     // Older saved exemplars contain the blob fields directly.
                     // Gemini requires those fields inside an inline_data Part.
@@ -642,11 +643,14 @@ Return strictly valid JSON with this exact schema:
                                 data: part.inline_data.data
                             });
                         }
-                        const combinedCriteria = (criteria || '') + (userContext ? (' - Note: ' + userContext) : '');
+                        if (window.SyncEngine?.isConfigured?.() && window.SyncEngine?.isDirty?.()) {
+                            await window.SyncEngine.push().catch(() => {});
+                        }
                         const proRes = await window.TaskitatorPro.reviewProof({
                             taskId: taskId || ('task_' + Date.now()),
                             title: taskTitle,
-                            criteria: combinedCriteria,
+                            criteria: criteria || '',
+                            ...(userContext ? { userContext } : {}),
                             files: encodedFiles,
                             exemplar: exemplarPart ? {mime_type:(exemplarPart.inline_data || exemplarPart).mime_type, data:(exemplarPart.inline_data || exemplarPart).data} : null
                         });
@@ -725,13 +729,22 @@ Return valid JSON matching this schema:
             parts.push(proofPart);
 
             try {
+                if (window.SyncEngine?.isConfigured?.() && window.SyncEngine?.isDirty?.()) {
+                    await window.SyncEngine.push().catch(() => {});
+                }
+                const taskMeta = taskId ? {
+                    id: taskId,
+                    title: taskTitle || '',
+                    criteria: criteria || '',
+                    exemplar: exemplarPart ? { mime_type: (exemplarPart.inline_data || exemplarPart).mime_type, data: (exemplarPart.inline_data || exemplarPart).data } : null
+                } : null;
                 let usedModel = selection.primary;
-                let res = await this.callGeminiWithParts(usedModel, apiKey, parts, 'proof', selection);
+                let res = await this.callGeminiWithParts(usedModel, apiKey, parts, 'proof', selection, taskMeta);
 
                 if (selection.fallback && (res.status === 429 || res.status === 503)) {
                     console.warn(`[AuditEngine] Model ${usedModel} returned ${res.status}. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
                     usedModel = selection.fallback;
-                    res = await this.callGeminiWithParts(usedModel, apiKey, parts, 'proof', selection);
+                    res = await this.callGeminiWithParts(usedModel, apiKey, parts, 'proof', selection, taskMeta);
                 }
 
                 if (!res.ok) {

@@ -200,6 +200,7 @@ const SyncEngine = {
         let ledger = [];
         let settings = {};
         let savedCriteria = [];
+        let emergencyState = null;
 
         try { tasks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_TASKS) || '[]'); } catch (e) {}
         try { projects = JSON.parse(localStorage.getItem(this.STORAGE_KEY_PROJECTS) || '[]'); } catch (e) {}
@@ -207,6 +208,7 @@ const SyncEngine = {
         try { breaks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_BREAKS) || '[]'); } catch (e) {}
         try { ledger = JSON.parse(localStorage.getItem(this.STORAGE_KEY_LEDGER) || '[]'); } catch (e) {}
         try { savedCriteria = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SAVED_CRITERIA) || '[]'); } catch (e) {}
+        try { emergencyState = JSON.parse(localStorage.getItem('taskitator_emergency_state') || 'null'); } catch (e) {}
 
         const todayBreaks = breaks; // Preserve dates and lock state across devices.
 
@@ -230,6 +232,7 @@ const SyncEngine = {
             completed_audit_ledger: ledger,
             saved_criteria: savedCriteria,
             last_login: lastLogin,
+            ...(emergencyState ? { emergency_state: emergencyState } : {}),
             ...extraData
         };
     },
