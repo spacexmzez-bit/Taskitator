@@ -1,6 +1,7 @@
 import {SecurityError} from './auth.js';
 import {validatePayload} from './vault.js';
 import {PROVIDERS,providerId} from './ai-models.js';
+import {checkFile, loadStoredSnapshot, validateAgainstStoredTask, taskRevision} from '../pro/audit-policy.js';
 
 const object=value=>value!==null && typeof value==='object' && !Array.isArray(value);
 const jsonSchema=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
@@ -100,7 +101,7 @@ export function fromClaudeResponse(data){
         usageMetadata:{promptTokenCount:data.usage?.input_tokens||0,candidatesTokenCount:data.usage?.output_tokens||0}};
 }
 function validateOutput(data,format){
-    if(!format)return;
+    if(!format)return null;
     const parts=data.candidates?.[0]?.content?.parts||[];
     if(parts.some(part=>part.functionCall) || data.candidates?.[0]?.finishReason==='MAX_TOKENS')throw new SecurityError(502,'AI output was incomplete. No approval was accepted.');
     let parsed;try{parsed=JSON.parse(parts.map(part=>part.text||'').join('').replace(/^```(?:json)?\s*|\s*```$/gi,''));}catch{throw new SecurityError(502,'AI returned invalid JSON. No approval was accepted.');}
@@ -108,6 +109,7 @@ function validateOutput(data,format){
         format==='criteria'?Number.isInteger(parsed.score) && parsed.score>=1 && parsed.score<=10 && parsed.passed===(parsed.score>=7) && typeof parsed.critique==='string' && typeof parsed.suggested_rewrite==='string':
         Array.isArray(parsed.notes) && parsed.notes.every(note=>object(note) && ['string','number'].includes(typeof note.id) && typeof note.title==='string' && typeof note.clean_text==='string'));
     if(!valid)throw new SecurityError(502,'AI returned an invalid result. No approval was accepted.');
+    return parsed;
 }
 async function responseJSON(response,key){
     if(!response.body)throw new SecurityError(502,'AI returned an empty response.');
@@ -126,8 +128,30 @@ export class AIGateway {
         const payload=validatePayload(body.payload);
         await this.service.vault.assertOwner(this.service.storage,identity);
         if(await this.service.vault.selectedProvider(identity)!==provider)throw new SecurityError(409,'AI provider changed. Refresh AI status in Settings and start a new request.');
+
+        const taskMeta=payload.taskitatorFormat==='proof' ? (payload.taskitatorTask || (body.task_id || body.taskId ? {id:body.task_id||body.taskId,title:body.title,criteria:body.criteria,exemplar:body.exemplar} : null)) : null;
+        const targetTaskId=taskMeta?.id ? String(taskMeta.id).trim() : '';
+        if(targetTaskId){
+            try{
+                const stored=await loadStoredSnapshot(this.service.storage,identity.userId);
+                if(stored?.snapshot?.tasks){
+                    const storedTask=stored.snapshot.tasks.find(t=>t && t.id===targetTaskId);
+                    if(taskMeta.exemplar)checkFile(taskMeta.exemplar);
+                    validateAgainstStoredTask(storedTask,{
+                        id:targetTaskId,
+                        title:String(taskMeta.title||storedTask?.title||'').trim(),
+                        criteria:String(taskMeta.criteria??storedTask?.proof_criteria??'').trim()
+                    },taskMeta.exemplar,stored.snapshot);
+                }
+            }catch(err){
+                if(err?.status)throw new SecurityError(err.status,err.message);
+                throw err;
+            }
+        }
+
         const forward=provider==='claude'?toClaudeRequest(payload):{...payload};
         delete forward.taskitatorFormat;
+        delete forward.taskitatorTask;
         await this.service.rateBucket('ai-user:'+identity.userId,30);
         const count=this.inflight.get(identity.userId)||0;
         if(count>=2)throw new SecurityError(429,'Two AI requests are already running. Wait for one to finish.');
@@ -154,10 +178,29 @@ export class AIGateway {
                 if(raw.promptFeedback?.blockReason || (reason && reason!=='STOP'))throw new SecurityError(502,'Gemini did not return a complete accepted answer. No partial approval or tool action was accepted.');
             }
             const data=provider==='claude'?fromClaudeResponse(raw):raw;
-            validateOutput(data,payload.taskitatorFormat);
+            const parsed=validateOutput(data,payload.taskitatorFormat);
             await this.service.vault.assertOwner(this.service.storage,identity);
             const current=await this.service.storage.get(await this.service.vault.recordKey(identity,provider));
             if(current?.version!==record.version || await this.service.vault.selectedProvider(identity)!==provider)throw new SecurityError(409,'AI settings changed during the request. No result was applied.');
+            if(payload.taskitatorFormat==='proof' && parsed?.verdict==='approved' && targetTaskId){
+                const stored=await loadStoredSnapshot(this.service.storage,identity.userId);
+                const st=stored?.snapshot?.tasks?.find(t=>t && t.id===targetTaskId);
+                const rev=await taskRevision(st||{id:targetTaskId,proof_criteria:taskMeta?.criteria||''},stored?.snapshot||null);
+                await this.service.storage.transaction(async tx=>{
+                    await this.service.vault.assertOwner(tx,identity);
+                    await tx.put(`pro:approval:${identity.userId}:${targetTaskId}`,{
+                        account_id:identity.userId,
+                        task_id:targetTaskId,
+                        session_id:identity.sessionId||null,
+                        revision:rev,
+                        model_used:body.model,
+                        created_at:Date.now(),
+                        expires_at:Date.now()+86400000,
+                        consumed:false,
+                        consumed_mutation_id:null
+                    });
+                });
+            }
             return data;
         }finally{const remaining=(this.inflight.get(identity.userId)||1)-1;if(remaining)this.inflight.set(identity.userId,remaining);else this.inflight.delete(identity.userId);}
     }

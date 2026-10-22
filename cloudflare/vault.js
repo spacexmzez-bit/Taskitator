@@ -256,9 +256,12 @@ export class KeyVault {
 export function validatePayload(payload){
     if(!payload || typeof payload!=='object' || Array.isArray(payload) || !Array.isArray(payload.contents) ||
         !payload.contents.length || payload.contents.length>100)throw new SecurityError(400,'Invalid AI conversation.');
-    const allowed=new Set(['contents','systemInstruction','system_instruction','generationConfig','tools','toolConfig','tool_config','safetySettings','taskitatorFormat']);
+    const allowed=new Set(['contents','systemInstruction','system_instruction','generationConfig','tools','toolConfig','tool_config','safetySettings','taskitatorFormat','taskitatorTask']);
     if(Object.keys(payload).some(key=>!allowed.has(key)))throw new SecurityError(400,'Unsupported AI request options.');
     if(payload.taskitatorFormat && !['criteria','proof','notes'].includes(payload.taskitatorFormat))throw new SecurityError(400,'Unsupported AI output format.');
+    if(payload.taskitatorTask !== undefined && (!payload.taskitatorTask || typeof payload.taskitatorTask !== 'object' || Array.isArray(payload.taskitatorTask))) {
+        throw new SecurityError(400,'Invalid taskitatorTask metadata.');
+    }
     const inspect=part=>{
         if(!part || typeof part!=='object')throw new SecurityError(400,'Invalid AI content.');
         const allowedParts=new Set(['text','inline_data','inlineData','functionCall','function_call','functionResponse','function_response','thoughtSignature','thought_signature','thought']);

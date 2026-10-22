@@ -6,6 +6,7 @@ import { AccountDeletion } from './deletion.js';
 import { KeyVault, scrubSettings } from './vault.js';
 import { AIGateway } from './ai-gateway.js';
 import { ProGateway } from '../pro/pro-backend.js';
+import { isProtectedTask, taskRevision, collectTaskDescendants } from '../pro/audit-policy.js';
 const Recurrence = globalThis.TaskitatorRecurrence;
 // Taskitator transactional sync. Required: TASKITATOR_SYNC (Durable Object).
 // Keep TASKITATOR_KV bound for one-time migration of existing accounts.
@@ -109,6 +110,7 @@ function publicRecord(record) {
     delete result.new_token;
     delete result.rotation_id;
     delete result.snapshot;
+    delete result.emergency_state;
     return result;
 }
 
@@ -178,6 +180,143 @@ function validateSnapshot(body, user) {
         catch (err) { throw new HTTPError(400, err.message); }
     }
     return publicRecord({ ...body, username: user });
+}
+
+function validateEmergencyBypass(meta, emergencyState, nowMs = Date.now()) {
+    if (!object(emergencyState)) return false;
+    const until = timestamp(emergencyState.active_until);
+    if (!Number.isFinite(until) || until <= nowMs || until > nowMs + 16 * 60 * 1000) return false;
+    if (emergencyState.uses_left !== undefined && (!Number.isInteger(emergencyState.uses_left) || emergencyState.uses_left < 0 || emergencyState.uses_left > 3)) {
+        return false;
+    }
+    const cycleId = typeof emergencyState.cycle_id === 'string' && emergencyState.cycle_id.trim() && emergencyState.cycle_id.trim().length <= 64
+        ? emergencyState.cycle_id.trim()
+        : new Date(nowMs).toISOString().slice(0, 10);
+    if (!meta.emergency || meta.emergency.cycle_id !== cycleId) {
+        meta.emergency = { cycle_id: cycleId, used: 0, active_until: 0 };
+    }
+    if (Math.abs((meta.emergency.active_until || 0) - until) > 60000) {
+        if (meta.emergency.used >= 4) return false;
+        meta.emergency.used += 1;
+        meta.emergency.active_until = until;
+    }
+    return true;
+}
+
+async function enforceTaskProtection(tx, identity, meta, previous, snapshot, body) {
+    if (!previous || !Array.isArray(previous.tasks) || !previous.tasks.length) return;
+    const accountId = identity?.userId || meta.owner_id || meta.user;
+    const nextById = new Map((snapshot.tasks || []).map(t => [t.id, t]));
+    const prevHistIds = new Set((previous.recurrence_state?.history || []).map(h => h?.id).filter(Boolean));
+    const newHistByKey = new Map();
+    for (const h of (snapshot.recurrence_state?.history || [])) {
+        if (h?.id && !prevHistIds.has(h.id)) {
+            newHistByKey.set(h.id, h);
+            if (h.series_id) newHistByKey.set(h.series_id, h);
+        }
+    }
+
+    let bypassChecked = false, bypassValid = false;
+    const hasBypass = () => {
+        if (!bypassChecked) {
+            bypassChecked = true;
+            bypassValid = validateEmergencyBypass(meta, body.emergency_state, Date.now());
+        }
+        return bypassValid;
+    };
+
+    const completingIds = new Set();
+    for (const prevTask of previous.tasks) {
+        if (!prevTask || prevTask.status !== 'active') continue;
+        const nextTask = nextById.get(prevTask.id);
+        const hist = !nextTask && prevTask.recurrence_series_id
+            ? (newHistByKey.get(`${prevTask.recurrence_series_id}:${prevTask.recurrence_occurrence ?? 0}`) || newHistByKey.get(prevTask.recurrence_series_id))
+            : null;
+        if ((nextTask && nextTask.status === 'completed') || hist?.outcome === 'completed') {
+            completingIds.add(prevTask.id);
+        }
+    }
+
+    const nowMs = Date.now();
+    for (const prevTask of previous.tasks) {
+        if (!prevTask || typeof prevTask !== 'object') continue;
+        const nextTask = nextById.get(prevTask.id);
+        const locked = isProtectedTask(prevTask);
+
+        if (prevTask.status === 'active' && locked) {
+            const hist = !nextTask && prevTask.recurrence_series_id
+                ? (newHistByKey.get(`${prevTask.recurrence_series_id}:${prevTask.recurrence_occurrence ?? 0}`) || newHistByKey.get(prevTask.recurrence_series_id))
+                : null;
+            const isCompleting = (nextTask && nextTask.status === 'completed') || hist?.outcome === 'completed';
+
+            if (isCompleting) {
+                const prevDescendants = collectTaskDescendants(previous.tasks, prevTask.id);
+                if (prevDescendants.some(d => d.status === 'active' && isProtectedTask(d) && !completingIds.has(d.id))) {
+                    throw new HTTPError(403, 'Submit proof for unfinished AI-audited subtasks before completing this parent.');
+                }
+                for (const node of [prevTask, ...prevDescendants]) {
+                    if (node.strict_prerequisites && !hasBypass()) {
+                        const subDesc = collectTaskDescendants(previous.tasks, node.id);
+                        if (subDesc.some(d => !d.is_bonus && d.status !== 'completed' && !completingIds.has(d.id))) {
+                            throw new HTTPError(403, 'Complete required core subtasks before completing this shielded task.');
+                        }
+                    }
+                }
+                if (nextTask) {
+                    if (!isProtectedTask(nextTask) ||
+                        String(nextTask.proof_criteria ?? '').trim() !== String(prevTask.proof_criteria ?? '').trim()) {
+                        throw new HTTPError(403, 'Protected task requirements cannot be altered during completion.');
+                    }
+                }
+                const appKey = `pro:approval:${accountId}:${prevTask.id}`;
+                const approval = await tx.get(appKey);
+                const expectedRev = await taskRevision(prevTask, previous);
+                if (!approval || approval.account_id !== accountId || !approval.expires_at || approval.expires_at <= nowMs ||
+                    (approval.consumed && approval.consumed_mutation_id !== body.mutation_id) ||
+                    approval.revision !== expectedRev) {
+                    throw new HTTPError(403, 'AI proof approval is required before completing a protected task.');
+                }
+                approval.consumed = true;
+                approval.consumed_at = nowMs;
+                approval.consumed_mutation_id = body.mutation_id;
+                await tx.put(appKey, approval);
+                if (nextTask) {
+                    nextTask.verified_model = approval.model_used || nextTask.verified_model || 'claude-haiku-5-5';
+                }
+            } else if (!nextTask || nextTask.status === 'trash' || nextTask.status !== 'active') {
+                if (!hasBypass()) {
+                    throw new HTTPError(403, 'Protected AI-locked tasks cannot be deleted without an active Emergency Bypass.');
+                }
+            } else {
+                const startingRecurrence = !prevTask.recurrence_series_id && Boolean(nextTask.recurrence_series_id);
+                const criteriaChanged = String(nextTask.proof_criteria ?? '').trim() !== String(prevTask.proof_criteria ?? '').trim() ||
+                    String(nextTask.raw_proof_criteria ?? '').trim() !== String(prevTask.raw_proof_criteria ?? '').trim();
+                const unlocked = !isProtectedTask(nextTask) || (prevTask.strict_prerequisites && !nextTask.strict_prerequisites);
+                const titleOrDateChanged = String(nextTask.title ?? '').trim() !== String(prevTask.title ?? '').trim() ||
+                    (!startingRecurrence && String(nextTask.due_date ?? '').trim() !== String(prevTask.due_date ?? '').trim());
+                const exemplarChanged = !startingRecurrence && (
+                    String(nextTask.reference_id ?? '') !== String(prevTask.reference_id ?? '') ||
+                    JSON.stringify(nextTask.reference_inline_data ?? null) !== JSON.stringify(prevTask.reference_inline_data ?? null) ||
+                    Boolean(nextTask.has_exemplar) !== Boolean(prevTask.has_exemplar) ||
+                    String(nextTask.reference_sha256 ?? '') !== String(prevTask.reference_sha256 ?? '')
+                );
+                if ((criteriaChanged || unlocked || titleOrDateChanged || exemplarChanged) && !hasBypass()) {
+                    throw new HTTPError(403, 'Protected AI-locked task requirements cannot be modified without an active Emergency Bypass.');
+                }
+            }
+        } else if (prevTask.status === 'completed' && locked) {
+            if (nextTask && nextTask.status === 'active' && !hasBypass()) {
+                throw new HTTPError(403, 'Completed AI-checked tasks cannot be uncompleted without an active Emergency Bypass.');
+            }
+        } else if (prevTask.status === 'active' && prevTask.strict_prerequisites) {
+            if (nextTask && nextTask.status === 'completed' && !hasBypass()) {
+                const subDesc = collectTaskDescendants(previous.tasks, prevTask.id);
+                if (subDesc.some(d => !d.is_bonus && d.status !== 'completed' && !completingIds.has(d.id))) {
+                    throw new HTTPError(403, 'Complete required core subtasks before completing this shielded task.');
+                }
+            }
+        }
+    }
 }
 
 async function loadSnapshot(storage, user, meta) {
@@ -361,11 +500,12 @@ export class TaskitatorSync {
     async alarm() {
         await this.vault.cleanupLegacy();
         await this.deletion.run();
+        const now = Date.now();
         let after;
         while (true) {
             const entries = await this.storage.list({ prefix: 'rate:', limit: 1000, ...(after ? {startAfter: after} : {}) });
             if (!entries.size) break;
-            const expired = [...entries].filter(([, value]) => value.expires <= Date.now()).map(([key]) => key);
+            const expired = [...entries].filter(([, value]) => value.expires <= now).map(([key]) => key);
             if (expired.length) await this.storage.delete(expired);
             after = [...entries.keys()].pop();
             if (entries.size < 1000) break;
@@ -374,11 +514,100 @@ export class TaskitatorSync {
             let cursor;
             while (true) {
                 const entries = await this.storage.list({prefix,limit:1000,...(cursor?{startAfter:cursor}:{})});
-                const expired = [...entries].filter(([,value]) => value?.expires && value.expires <= Date.now()).map(([key]) => key);
+                const expired = [...entries].filter(([,value]) => value?.expires && value.expires <= now).map(([key]) => key);
                 if (expired.length) await this.storage.delete(expired);
                 if (entries.size < 1000) break;
                 cursor = [...entries.keys()].pop();
             }
+        }
+        for (const prefix of ['pro:attestation:', 'pro:approval:', 'pro:preview-rate:']) {
+            let cursor;
+            while (true) {
+                const entries = await this.storage.list({ prefix, limit: 1000, ...(cursor ? { startAfter: cursor } : {}) });
+                if (!entries.size) break;
+                const expired = [];
+                for (const [key, value] of entries) {
+                    const exp = value?.expires_at ?? value?.expires;
+                    if (typeof exp === 'number' && exp <= now) expired.push(key);
+                }
+                if (expired.length) await this.storage.delete(expired);
+                if (entries.size < 1000) break;
+                cursor = [...entries.keys()].pop();
+            }
+        }
+        let opCursor;
+        while (true) {
+            const entries = await this.storage.list({ prefix: 'pro:op:', limit: 500, ...(opCursor ? { startAfter: opCursor } : {}) });
+            if (!entries.size) break;
+            const expiredKeys = [];
+            const updates = {};
+            for (const [key, value] of entries) {
+                if (!value || typeof value !== 'object') {
+                    expiredKeys.push(key);
+                    continue;
+                }
+                if (value.state === 'quoted') {
+                    if (typeof value.expires === 'number' && value.expires <= now) expiredKeys.push(key);
+                } else if (value.state === 'done' || value.state === 'failed') {
+                    const tombExp = value.tombstone_expires ?? ((value.settled_at || value.created_at || now) + 7 * DAY);
+                    if (tombExp <= now || (value.expires && value.expires <= now && !value.settled_at)) {
+                        expiredKeys.push(key);
+                    } else if (!value.compact) {
+                        updates[key] = {
+                            version: value.version,
+                            state: value.state,
+                            account_id: value.account_id,
+                            batch: value.batch,
+                            hash: value.hash,
+                            session: value.session,
+                            period: value.period,
+                            provider_cost: value.provider_cost || 0,
+                            ...(value.state === 'done' ? { response: value.response } : { error: value.error }),
+                            settled_at: value.settled_at || now,
+                            tombstone_expires: tombExp,
+                            compact: true
+                        };
+                    }
+                } else if (value.state === 'pending') {
+                    const pendingAt = value.pending_at || value.created_at || 0;
+                    if (now - pendingAt > 10 * 60 * 1000 || (value.expires && value.expires <= now)) {
+                        const accountId = value.account_id || key.split(':')[2];
+                        if (accountId && value.period) {
+                            await this.storage.transaction(async tx => {
+                                const cur = await tx.get(key);
+                                if (!cur || cur.state !== 'pending') return;
+                                const dKey = `pro:usage:${accountId}:day:${value.period.day}`;
+                                const mKey = `pro:usage:${accountId}:month:${value.period.month}`;
+                                const sKey = `pro:spend:${accountId}:${value.period.month}`;
+                                const round = n => Math.round(n * 1000) / 1000;
+                                await tx.put(dKey, round(Math.max(0, (Number(await tx.get(dKey)) || 0) - (Number(cur.reservedCredits) || 0))));
+                                await tx.put(mKey, round(Math.max(0, (Number(await tx.get(mKey)) || 0) - (Number(cur.reservedCredits) || 0))));
+                                await tx.put(sKey, Math.max(0, (Number(await tx.get(sKey)) || 0) - (Number(cur.reservedCost) || 0)));
+                                await tx.put(key, {
+                                    version: cur.version,
+                                    state: 'failed',
+                                    account_id: accountId,
+                                    batch: cur.batch,
+                                    hash: cur.hash,
+                                    session: cur.session,
+                                    period: cur.period,
+                                    provider_cost: 0,
+                                    error: { status: 503, code: 'AUDIT_INTERRUPTED', message: 'Audit interrupted before completion; reserved credits were restored.' },
+                                    settled_at: now,
+                                    tombstone_expires: now + DAY,
+                                    compact: true
+                                });
+                            });
+                        } else {
+                            expiredKeys.push(key);
+                        }
+                    }
+                }
+            }
+            if (expiredKeys.length) await this.storage.delete(expiredKeys);
+            if (Object.keys(updates).length) await this.storage.put(updates);
+            if (entries.size < 500) break;
+            opCursor = [...entries.keys()].pop();
         }
         const pending = await this.storage.list({prefix:'deletion-job:',limit:1});
         const cleanup = await this.storage.list({prefix:'vault-cleanup:',limit:1});
@@ -625,6 +854,7 @@ export class TaskitatorSync {
                     if (previous?.recurrence_state?.series?.length && body.recurrence_schema !== 1) {
                         throw new HTTPError(428, 'Refresh Taskitator on this device before syncing recurring tasks.');
                     }
+                    await enforceTaskProtection(tx, identity, meta, previous, snapshot, body);
                     try { Recurrence.reconcile(snapshot); }
                     catch (err) { throw new HTTPError(400, err.message); }
                     // Preserve array dates before replacing the client timestamp.
