@@ -7,10 +7,6 @@ keep_vars = true
 
 [vars]
 ALLOWED_ORIGINS = "https://taskitator.mazendev.com"
-# Public Taskitator settings exported by Keyo. No administrator/signing secrets.
-KEYO_API_ORIGIN = "https://keyo.mazendev.com"
-KEYO_PROJECT_ID = "prj_3ebe1ea2ab5948fd98bca332fad2e5c5"
-KEYO_PUBLIC_JWK = '{"kty":"EC","crv":"P-256","x":"12kmFYFug4HYBs-ZTpRleElP9Q8kpQaI5aVyG9CqVOc","y":"Up7x4X65FL-LaRweIptSkCZsXN4A3mZM7XIIHRzNndY","ext":true,"key_ops":["verify"]}'
 # Add Clerk secret/public key, issuer, and migration settings in the Cloudflare
 # dashboard as described in SECURITY-SETUP.txt. Do not commit secret keys.
 
