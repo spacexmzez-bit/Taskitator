@@ -334,7 +334,7 @@ window.TaskitatorApp = (() => {
             listEl.innerHTML = '';
 
             if (notes.length === 0) {
-                listEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px 0;">No active ideas in escrow.</div>';
+                listEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px 0;">No distraction notes yet.</div>';
             } else {
                 notes.forEach((n, idx) => {
                     const card = document.createElement('div');
@@ -1326,10 +1326,10 @@ window.TaskitatorApp = (() => {
                 headerBox.innerHTML = `
                     <div style="background: rgba(59, 130, 246, 0.08); border: 1.5px dashed var(--primary); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; text-align: center;">
                         <p style="margin: 0 0 10px 0; font-size: 0.84rem; color: var(--text-color); line-height: 1.45;">
-                            Breaks are open for this cycle. Starting planning initiates a strict <strong>10-minute window</strong> to adjust and lock your daily schedule.
+                            You have <strong>10 minutes</strong> to set your breaks.
                         </p>
                         <button type="button" id="startBreakPlanningBtn" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 9px 18px; font-size: 0.88rem; width: 100%;">
-                            ▶ Start 10m Planning Window
+                            ▶ Set breaks (10 minutes)
                         </button>
                     </div>
                 `;
@@ -2399,7 +2399,7 @@ window.TaskitatorApp = (() => {
         const escrowArchiveInfoBtn = document.getElementById('escrowArchiveInfoBtn');
         if (escrowArchiveInfoBtn) {
             escrowArchiveInfoBtn.addEventListener('click', () => {
-                alert("Notes extracted from the Distraction Escrow are permanently saved to your 'Distraction Archive' located at the bottom of the Stats page.");
+                alert("Saved notes are in the Distraction Archive on the Stats page.");
             });
         }
 
@@ -2517,7 +2517,7 @@ window.TaskitatorApp = (() => {
                     return;
                 }
                 const remUses = document.getElementById('emergencyModalRemainingUses');
-                if (remUses) remUses.textContent = `Remaining tokens this week: ${state.uses_left}/4`;
+                if (remUses) remUses.textContent = `Uses remaining this week: ${state.uses_left}/4`;
                 if (emergencyConfirmModal) emergencyConfirmModal.classList.add('open');
             });
         }
@@ -2528,18 +2528,20 @@ window.TaskitatorApp = (() => {
         }
         if (confirmEmergencyBtn && emergencyConfirmModal) {
             confirmEmergencyBtn.addEventListener('click', async () => {
-                let res = { success: false, error: 'Emergency manager uninitialized' };
-                if (window.TaskitatorEngine?.EmergencyManager?.activateBypass) {
-                    res = await TaskitatorEngine.EmergencyManager.activateBypass();
-                }
-                emergencyConfirmModal.classList.remove('open');
-                if (res.success) {
+                if (confirmEmergencyBtn.disabled) return;
+                confirmEmergencyBtn.disabled = true;
+                try {
+                    const res = await TaskitatorEngine.EmergencyManager.activateBypass();
+                    if (!res.success) { alert(res.error || 'Could not activate Emergency Bypass. Try again.'); return; }
+                    emergencyConfirmModal.classList.remove('open');
                     updateEmergencyUI();
-                } else {
-                    alert(res.error);
-                }
+                } catch (error) {
+                    alert(error.message || 'Could not activate Emergency Bypass. Try again.');
+                } finally { confirmEmergencyBtn.disabled = false; }
             });
         }
+        window.addEventListener('taskitator-emergency-updated', updateEmergencyUI);
+
         const syncStatusDot = document.getElementById('syncStatusDot');
         const syncInfoModal = document.getElementById('syncInfoModal');
         const closeSyncInfoModalBtn = document.getElementById('closeSyncInfoModalBtn');

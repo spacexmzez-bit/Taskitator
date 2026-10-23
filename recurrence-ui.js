@@ -58,7 +58,6 @@
             const label = element('label', name, weekdays); label.style.cssText = 'display:inline-flex;gap:4px;margin:7px';
             const cb = element('input', undefined, label); cb.type = 'checkbox'; cb.checked = (initial.weekdays || [1]).includes(index); return cb;
         });
-        element('p', 'Only one unfinished occurrence. Missing dates use the month’s last day. Missed occurrences never pile up.', box);
         const change = () => { box.hidden = select.value === 'none'; day.parentElement.hidden = select.value !== 'month_day'; weekdays.hidden = select.value !== 'weekdays'; };
         select.onchange = change; change();
         return { get: () => select.value === 'none' ? null : Core.schedule({ kind: select.value, start: start.value, end: end.value, day: Number(day.value), weekdays: checks.flatMap((cb,i) => cb.checked ? [i] : []) }), reset: () => { select.value = 'none'; start.value = today(); end.value = ''; change(); } };
@@ -83,7 +82,7 @@
         const config = createControl?.get(); if (!config) return;
         if (parentId) {
             let p = tasks().find(t => t.id === parentId); const seen = new Set();
-            while (p && !seen.has(p.id)) { seen.add(p.id); if (p.recurrence_series_id) throw new Error('This child follows its recurring parent; it cannot have a separate schedule.'); p = tasks().find(t => t.id === p.parent_id); }
+            while (p && !seen.has(p.id)) { seen.add(p.id); if (p.recurrence_series_id) throw new Error('This subtask uses its parent’s repeat schedule.'); p = tasks().find(t => t.id === p.parent_id); }
         }
     }
     function bindTask(id) {
@@ -95,13 +94,13 @@
         const actions=document.getElementById('saveTaskDetailsBtn')?.parentElement;if(actions?.parentElement===parent)parent.insertBefore(wrap,actions);
         wrap.replaceChildren();
         const series = Core.seriesFor(state(), task);
-        element('p', series ? (series.enabled ? 'Repeating branch: '+series.schedule.kind.replace(/_/g,' ') : 'Future repetition stopped. Current task remains active.') : 'This task does not repeat.', wrap);
+        element('p', series ? (series.enabled ? 'Repeating branch: '+series.schedule.kind.replace(/_/g,' ') : 'Repetition stopped. You can still finish the current task.') : 'This task does not repeat.', wrap);
         button(series ? 'Recurrence & future criteria' : 'Set up recurrence', wrap, () => open(id));
         if (series) {
             const label = element('label', 'Apply ordinary task edits to:', wrap);
             const scope = element('select', undefined, label); scope.id = 'recurrenceEditScope'; scope.style.cssText='display:block;padding:8px;margin:6px 0;width:100%';
             [['one','This occurrence'],['future','This and future occurrences']].forEach(([v,t]) => { const o = element('option',t,scope);o.value=v; });
-            element('small','Proof criteria and future schedule dates are changed separately. Due-date edits in this form affect this occurrence. Parent moves affect this branch; nested repeating branches are not allowed.',wrap);
+            element('small','Due-date changes apply to this occurrence. Use “Recurrence & future criteria” to change future dates or requirements.',wrap);
         }
     }
     async function applyEdit(task) {
@@ -130,7 +129,7 @@
             }); return;
         }
         const isRoot = s.current_root_id === id;
-        element('p', isRoot ? 'This task and its descendants repeat. Ancestors and siblings stay unchanged.' : 'This task follows the schedule of its recurring branch. Finishing this child alone does not renew the branch.',d);
+        element('p', isRoot ? 'This task and its subtasks repeat together.' : 'This subtask repeats with its parent. Complete the whole repeating task to start the next occurrence.',d);
         if (isRoot) {
             const form = scheduleForm(d,s.schedule);
             button('Save schedule for future occurrences',d,() => {
@@ -146,7 +145,7 @@
         if (task.ai_locked && node) {
             element('h3','Proof criteria - future occurrences only',d);
             const area=element('textarea',undefined,d);area.value=node.task.proof_criteria||'';area.rows=5;area.style.cssText='width:100%;box-sizing:border-box;padding:9px';
-            element('p','The current occurrence keeps its original criteria. Saving always runs a new AI validation and requires at least 7/10. Write concrete criteria without unresolved placeholders.',d);
+            element('p','Changes apply to future occurrences. Criteria must pass a new check with a score of at least 7/10.',d);
             const file=input('Replace future reference (optional, photo or PDF, up to 5 MB)','file','',d);file.accept='image/jpeg,image/png,image/webp,image/heic,application/pdf';
             const removeLabel=element('label','Remove future reference',d);const remove=element('input',undefined,removeLabel);remove.type='checkbox';
             const saveButton=button('Validate & save future criteria',d,async () => {
@@ -182,7 +181,7 @@
         for(const s of data.series){const root=tasks().find(t=>t.id===s.current_root_id);element('h3',root?.title||s.nodes[0]?.task.title||'Recurring task',d);element('p',(s.enabled?'Repeating':'Stopped')+' · '+s.schedule.kind.replace(/_/g,' ')+' · Current date: '+s.current_date,d);if(root)button('Manage branch',d,()=>{d.close();open(root.id);});}
         element('h3','Occurrence history (latest 500)',d);
         for(const h of [...data.history].reverse()){element('p',h.title+' · '+h.due_date+' · '+h.outcome+' · '+new Date(h.ended_at).toLocaleString(),d);}
-        if(!data.history.length)element('p','No retired occurrences yet.',d);
+        if(!data.history.length)element('p','No recurring-task history yet.',d);
     }
     window.addEventListener('taskitator-auth-ready',()=>{
         const form=document.getElementById('taskCreateForm');if(form){const wrap=element('fieldset',undefined,form);wrap.style.cssText='margin:14px 0;border:1px solid var(--border-color);border-radius:8px;padding:12px';element('legend','Recurrence',wrap);const actions=document.getElementById('submitTaskCreateBtn')?.parentElement;if(actions?.parentElement===form)form.insertBefore(wrap,actions);createControl=scheduleForm(wrap,undefined,true);}

@@ -134,7 +134,7 @@ window.TaskitatorAgent = (() => {
             contextDirectives += (
                 "CURRENT PAGE: Settings (settings.html).\n" +
                 "ROLE: Technical Configuration Assistant.\n" +
-                "Explain Gemini (Google AI Studio) and Claude (Claude Console) API keys, separate encrypted provider keys, password/Google confirmation, the Use provider activation button, zero-generation metadata tests, Privacy/Terms links under System, Cloudflare sync, MacroDroid status authorization, weekend cycles, emergency tokens and the daily break window. Never ask a user to send an API key or password in chat.\n" +
+                "Explain Gemini (Google AI Studio) and Claude (Claude Console) API keys, separate encrypted provider keys, password/Google confirmation, the Use provider activation button, zero-generation metadata tests, Privacy/Terms links under System, Cloudflare sync, MacroDroid status authorization, weekend cycles, Emergency Bypass uses and the daily break window. Never ask a user to send an API key or password in chat.\n" +
                 "CRITICAL RESTRICTION: You DO NOT have task manipulation tools on this page. If the user asks you to create, update, complete, or trash a task, you MUST explicitly refuse and instruct them to switch to the Today or General Tasks page first."
             );
         } else if (page === 'blocker_guide') {
@@ -638,7 +638,6 @@ ${formattedInput}`;
     // =========================================================================
     function refreshSystemNames() {
         const name = getCopilotName();
-        const page = getPageContext();
 
         const titleSpan = document.querySelector('.copilot-title-group span:first-child');
         if (titleSpan) {
@@ -648,21 +647,6 @@ ${formattedInput}`;
         const standbyTitle = document.querySelector('.copilot-standby-title');
         if (standbyTitle) {
             standbyTitle.textContent = name;
-        }
-
-        const standbyDesc = document.querySelector('.copilot-standby-card p');
-        if (standbyDesc) {
-            if (page === 'stats') {
-                standbyDesc.textContent = 'Ask me to analyze your study patterns, velocity, or completion history.';
-            } else if (page === 'settings') {
-                standbyDesc.textContent = 'Ask me about configuring keys, emergency tokens, or break windows.';
-            } else if (page === 'blocker_guide') {
-                standbyDesc.textContent = 'Ask me for step-by-step guidance configuring MacroDroid phone lock.';
-            } else if (page === 'trash') {
-                standbyDesc.textContent = 'Ask me how soft-deletion, restoration, and data retention work.';
-            } else {
-                standbyDesc.textContent = 'Ready. Tell me what tasks you need to organize, breakdown, or check.';
-            }
         }
 
         const navLabel = document.getElementById('copilotNavNameLabel');

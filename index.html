@@ -318,18 +318,12 @@
         <div class="copilot-standby-view" id="copilotStandbyView">
             <div class="copilot-standby-icon">🎯</div>
             <div class="copilot-standby-title">Focus Copilot</div>
-            <div class="copilot-standby-desc">
-                On-call task orchestrator and setup guide. Ask for subtask breakdowns, scheduling, or MacroDroid lock verification.
-            </div>
             <button class="icon-btn" id="startCopilotBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 10px 22px;">
                 Start Conversation
             </button>
         </div>
         <div class="copilot-chat-view" id="copilotChatView">
             <div class="copilot-messages" id="copilotMessages">
-                <div class="chat-bubble bot">
-                    Ready. Tell me what tasks you need to organize, breakdown, or check.
-                </div>
             </div>
             <form class="copilot-input-bar" id="copilotForm">
                 <input type="text" id="copilotInput" placeholder="Ask Copilot..." autocomplete="off" required>
@@ -533,14 +527,14 @@
         </div>
 
         <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 10px 0; line-height: 1.35;">
-            Jot down intrusive ideas quickly so you can return to focus. When the timer hits 0:00, the pad force-saves and closes. Notes expire automatically in 48 hours.
+            Write down distractions here. Notes save when the timer ends and expire after 48 hours.
         </p>
 
         <textarea id="distractionNoteInput" class="dump-textarea-raw" placeholder="Write whatever distracting thought is in your head..."></textarea>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;">
             <button type="button" class="icon-btn" id="openDumpEscrowBtn" style="font-size: 0.8rem; color: #94a3b8; border-color: rgba(148, 163, 184, 0.3);">
-                📦 View Escrow (<span id="dumpEscrowCountDisplay">0</span>)
+                📦 View notes (<span id="dumpEscrowCountDisplay">0</span>)
             </button>
             <button type="button" class="icon-btn" id="saveDumpNoteBtn" style="background: #475569; color: #fff; border: none; font-weight: 700; padding: 7px 16px; font-size: 0.85rem;">
                 Dump & Return ↵
@@ -555,7 +549,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <div style="display: flex; align-items: center; gap: 8px;">
                 <span style="font-size: 1.2rem;">📦</span>
-                <h3 style="margin: 0; color: var(--primary);">Idea Escrow</h3>
+                <h3 style="margin: 0; color: var(--primary);">Distraction notes</h3>
                 <span class="mrstudy-info-badge" id="escrowArchiveInfoBtn" title="Archived notes are stored locally in the Stats page.">?</span>
             </div>
             <button type="button" class="icon-btn" id="closeDumpEscrowModalBtn" style="padding: 2px 8px;">✕</button>
@@ -565,7 +559,7 @@
         <div id="escrowGateLockBanner" style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; margin-bottom: 12px;">
             <span style="font-size: 1.1rem; line-height: 1;">🔒</span>
             <div style="font-size: 0.8rem; color: #fca5a5; line-height: 1.4;">
-                <strong>Extraction Locked:</strong> You have active tasks requiring AI proof verification. Complete and verify all locked tasks for today to release this escrow.
+                <strong>Extraction Locked:</strong> Verify today’s AI-locked tasks to export these notes.
             </div>
         </div>
 
@@ -605,7 +599,7 @@
             <button class="icon-btn" id="closeFilterModalBtn" style="padding: 2px 8px;">✕</button>
         </div>
         <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;">
-            Matched tasks isolate their active branches. Non-matching parents remain as muted structural breadcrumbs.
+            Show matching tasks. Parent tasks remain visible for context.
         </p>
 
         <div class="filter-section-title">Projects</div>
@@ -659,13 +653,13 @@
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--primary);">🌐 Sync Status Guide</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
-            The indicator dot represents the sync state between your local storage and the universal Cloudflare Worker bridge.
+            The dot shows whether your changes are synced.
         </p>
         <div class="sync-legend-item">
             <span class="sync-dot local-only" style="cursor: default;"></span>
             <div style="font-size: 0.85rem;">
                 <strong style="color: #94a3b8;">Gray: Local Only</strong>
-                <div style="color: var(--text-muted); font-size: 0.8rem;">No secret passkey configured in Settings. Tasks reside solely on this device.</div>
+                <div style="color: var(--text-muted); font-size: 0.8rem;">Not connected to cloud sync.</div>
             </div>
         </div>
         <div class="sync-legend-item">
@@ -679,7 +673,7 @@
             <span class="sync-dot synced" style="cursor: default;"></span>
             <div style="font-size: 0.85rem;">
                 <strong style="color: #4ade80;">Green: Synced Up to Date</strong>
-                <div style="color: var(--text-muted); font-size: 0.8rem;">All local changes are fully saved and matched with the automation bridge.</div>
+                <div style="color: var(--text-muted); font-size: 0.8rem;">Your changes are synced.</div>
             </div>
         </div>
         <div class="sync-legend-item">
@@ -709,7 +703,7 @@
             </div>
 
             <div class="form-group">
-                <label for="taskDescInput">Description (Mutable anytime)</label>
+                <label for="taskDescInput">Description</label>
                 <textarea id="taskDescInput" rows="2" placeholder="Add optional details..."></textarea>
             </div>
 
@@ -819,7 +813,7 @@
                 </div>
                 
                 <div class="guidance-note" id="exemplarGuidanceNote" style="display: none;">
-                    ℹ️ <strong>Tip:</strong> Attaching an exemplar takes longer to verify and requires the AI to inspect strict visual details. Use only when text criteria alone cannot describe the proof.
+                    Attach a reference file when the proof needs to match an example.
                 </div>
 
                 <div id="createExemplarChip" class="exemplar-chip" style="display: none;">
@@ -881,7 +875,7 @@
         <!-- Pane 1: Templates (Default) -->
         <div id="paneTemplates" class="tab-pane active">
             <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 10px;">
-                Select a pre-verified template. Templates automatically score 10/10 and prevent lockouts.
+                Select a pre-verified template. These templates are already validated.
             </p>
             <div class="template-picker-list" id="templatesListContainer"></div>
         </div>
@@ -910,7 +904,7 @@
         </div>
 
         <div class="form-group">
-            <label for="editTaskDesc">Description (Always Editable)</label>
+            <label for="editTaskDesc">Description</label>
             <textarea id="editTaskDesc" rows="2"></textarea>
         </div>
 
@@ -998,7 +992,7 @@
                     <option value="">Select a sibling with verified criteria...</option>
                 </select>
                 <small style="color: var(--text-muted); font-size: 0.72rem; display: block; margin-top: 4px;">
-                    Copies raw proof criteria text and clones the attached reference exemplar file directly.
+                    Copy this task’s criteria and reference file.
                 </small>
             </div>
 
@@ -1092,8 +1086,8 @@
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--danger);">🚨 Activate Emergency Bypass?</h3>
         <p style="font-size: 0.875rem; line-height: 1.5;">
-            Activating this consumes <strong>1 of your 4 weekly tokens</strong>.<br>
-            It temporarily unfreezes editing, deletion, and criteria locks on AI-locked tasks for exactly <strong>15 minutes</strong>.
+            This uses <strong>1 of your 4 weekly bypasses</strong>.<br>
+            For <strong>15 minutes</strong>, you can edit or delete protected tasks and change their criteria.
         </p>
         <p style="font-size:.875rem;line-height:1.6">Your four weekly uses reset at <strong>00:00 on the day after your configured weekend</strong>. Scheduled breaks release device locks; they do not unlock AI task deletion.</p>
         <p id="emergencyModalRemainingUses" style="font-size: 0.85rem; font-weight: 600;"></p>

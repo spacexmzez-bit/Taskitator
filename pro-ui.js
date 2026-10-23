@@ -51,7 +51,7 @@
                 </div>
 
                 <div class="pro-info-note">
-                    <strong>Hosted Personal AI:</strong> Pro accounts receive automated proof audits powered by hosted Gemini Flash models without needing a personal API key. (Lite and Flash families only; Pro models strictly excluded).
+                    Review proof with hosted AI. No personal API key required.
                 </div>
             </div>
         `;

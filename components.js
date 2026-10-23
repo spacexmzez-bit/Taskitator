@@ -2052,7 +2052,7 @@ window.TaskitatorComponents = Object.freeze({
                 if (feedbackEl) {
                     feedbackEl.style.display = 'block';
                     feedbackEl.className = 'criteria-feedback-box loading';
-                    feedbackEl.textContent = 'Auditing criteria with forensic model...';
+                    feedbackEl.textContent = 'Checking criteria…';
                 }
 
                 let res = { success: false, error: 'Audit engine missing' };
@@ -2223,7 +2223,7 @@ window.TaskitatorComponents = Object.freeze({
                                 stateTarget.isTemplate = true;
                                 stateTarget.isSavedCriteria = false;
                                 feedbackEl.className = 'criteria-feedback-box pass';
-                                feedbackEl.innerHTML = `<strong>✓ Verified (9/10)</strong>: Applied forensic suggestion.`;
+                                feedbackEl.innerHTML = `<strong>✓ Verified (9/10)</strong>: Suggestion applied.`;
                             });
                         }
                     }
