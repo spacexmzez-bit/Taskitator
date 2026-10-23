@@ -115,21 +115,19 @@ export class AccountDeletion {
                     else if (job.stage==='proofs') next=await this.page(job,'action-proof:',value=>value?.userId===job.userId);
                     else if (job.stage==='vault') next=await this.page(job,'vault:'+await sha256(job.userId)+':');
                     else if (job.stage==='vault-stages') next=await this.page(job,'vault-stage:'+await sha256(job.userId)+':');
-                    else if (job.stage==='hosted') {
-                        next=await this.page(job,'pro:',(value,key)=>
-                            ['pro:usage:','pro:spend:','pro:op:','pro:approval:'].some(prefix=>key.startsWith(prefix+job.userId+':')) ||
-                            key==='pro:entitlement:'+job.userId ||
-                            key==='pro:preview-rate:'+job.userId ||
-                            key==='pro:user:username:'+job.userId ||
-                            (key.startsWith('pro:binding:') && value?.account_id===job.userId) ||
-                            (key.startsWith('pro:username:map:') && value?.accountId===job.userId) ||
-                            (key.startsWith('pro:attestation:') && value?.account_id===job.userId));
-                        if (next && this.env?.TASKITATOR_DB && typeof this.env.TASKITATOR_DB.prepare === 'function') {
-                            await this.env.TASKITATOR_DB.prepare('DELETE FROM entitlements WHERE account_id = ?').bind(job.userId).run().catch(()=>{});
-                        }
-                    }
+                    else if (job.stage==='hosted') next=await this.page(job,'pro:',(value,key)=>
+                        ['pro:usage:','pro:spend:','pro:op:'].some(prefix=>key.startsWith(prefix+job.userId+':')) ||
+                        key==='pro:user:username:'+job.userId || key==='pro:entitlement:'+job.userId ||
+                        key==='pro:emergency:'+job.userId || key==='pro:preview:'+job.userId || key==='pro:quote-index:'+job.userId ||
+                        (key.startsWith('pro:binding:') && value?.account_id===job.userId) ||
+                        (key.startsWith('pro:username:map:') && value?.accountId===job.userId) ||
+                        (key.startsWith('pro:attestation:') && value?.account_id===job.userId));
                     else if (job.stage==='legacy') next=await this.legacy(job);
                     else if (job.stage==='clerk') {
+                        if(this.env.TASKITATOR_DB){
+                            try{await this.env.TASKITATOR_DB.prepare('DELETE FROM entitlements WHERE account_id = ?').bind(job.userId).run();}
+                            catch(error){if(!/no such table: entitlements/i.test(error.message||''))throw error;}
+                        }
                         await this.deleteClerk(job.userId);
                         const completed=Date.now(), expires=completed+RECOVERY_MS;
                         await this.storage.transaction(async tx=>{
