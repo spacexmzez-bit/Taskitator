@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import worker, { TaskitatorSync, evaluateStatus } from '../cloudflare/worker.js';
 import { sha256 } from '../cloudflare/auth.js';
 import { RECOVERY_MS } from '../cloudflare/deletion.js';
+import {testEnv,activeLicense,signedToken} from '../pro/keyo-test-fixture.js';
+import {newOperation} from '../pro/audit-policy.js';
 
 // Real RSA signatures exercise Web Crypto; only provider HTTP and DO storage
 // are substituted. This never contacts the user's deployed service.
@@ -752,293 +754,112 @@ test('account deletion removes hosted operations, spending and username claims w
 });
 
 
-test('F1: server enforces AI proof approvals and blocks unapproved completion, tampering or deletion of protected tasks while preserving normal edits, recurring tasks and Emergency Bypass', async () => {
-    const f = fixture(), a = await create(f);
-    f.env.CLAUDE_API_KEY = 'sk-ant-hosted-secret';
-    await f.call('/pro/activate', a.token, 'POST', { key: 'KEY1-KEY2-KEY3-KEY4' });
-    const exemplar = { mime_type: 'image/png', data: 'YWJj' };
-    const proof = { mime_type: 'image/png', data: 'ZGVm' };
-    const initialTasks = [
-        {
-            id: 'locked_task',
-            title: 'Solve worksheet',
-            status: 'active',
-            due_date: 'today',
-            ai_locked: true,
-            proof_criteria: 'Upload solved worksheet matching reference exemplar',
-            has_exemplar: true,
-            reference_inline_data: exemplar
-        },
-        {
-            id: 'normal_task',
-            title: 'Read chapter',
-            status: 'active',
-            due_date: 'today',
-            ai_locked: false
-        }
-    ];
-    assert.equal((await f.call('/sync/push', a.token, 'POST', {
-        tasks: initialTasks, settings: {}, base_version: 0, mutation_id: 'mut_init_1'
-    })).status, 200);
-    assert.equal((await f.call('/status', a.token)).body.device_unlocked, false);
-
-    // 1. Attempting to complete the AI-locked task via /sync/push without AI approval must fail with 403.
-    const spoofComplete = structuredClone(initialTasks);
-    spoofComplete[0].status = 'completed';
-    assert.equal((await f.call('/sync/push', a.token, 'POST', {
-        tasks: spoofComplete, settings: {}, base_version: 1, mutation_id: 'mut_spoof_complete'
-    })).status, 403);
-    assert.equal(f.providerCalls.length, 0);
-    assert.equal((await f.call('/status', a.token)).body.device_unlocked, false);
-
-    // 2. Attempting to delete/trash or weaken criteria without Emergency Bypass must fail with 403.
-    const spoofCriteria = structuredClone(initialTasks);
-    spoofCriteria[0].proof_criteria = 'Easy criteria';
-    assert.equal((await f.call('/sync/push', a.token, 'POST', {
-        tasks: spoofCriteria, settings: {}, base_version: 1, mutation_id: 'mut_spoof_criteria'
-    })).status, 403);
-    assert.equal((await f.call('/sync/push', a.token, 'POST', {
-        tasks: [initialTasks[1]], settings: {}, base_version: 1, mutation_id: 'mut_spoof_delete'
-    })).status, 403);
-
-    // 3. Normal task completion and allowed metadata edits (description/tags) on AI-locked task succeed.
-    const normalEdit = structuredClone(initialTasks);
-    normalEdit[0].description = 'Updated notes';
-    normalEdit[0].tags = ['math'];
-    normalEdit[1].status = 'completed';
-    assert.equal((await f.call('/sync/push', a.token, 'POST', {
-        tasks: normalEdit, settings: {}, base_version: 1, mutation_id: 'mut_normal_edit'
-    })).status, 200);
-
-    // 4. Hosted audit with substituted easier criteria or omitted exemplar is rejected before provider calls.
-    const callsBefore = f.providerCalls.length;
-    const badQuote1 = await f.call('/pro/ai/quote', a.token, 'POST', {
-        operation_id: 'op_bad_criteria',
-        task_id: 'locked_task',
-        task_title: 'Solve worksheet',
-        criteria: 'Easier substituted criteria',
-        exemplar,
-        files: [proof]
+// These integration checks exercise the current canonical-task / one-use attestation API.
+async function hostedSetup() {
+    const f=fixture(),a=await create(f);
+    Object.assign(f.env,testEnv,{CLAUDE_API_KEY:'test-hosted'});
+    await f.storage.put('pro:entitlement:user_A',await activeLicense('user_A'));
+    return {f,a};
+}
+function hostedResponse(f,batch=false) {
+    f.setClaudeResponse(async options=>{
+        if(f.providerCalls.at(-1).url.endsWith('/count_tokens'))return {input_tokens:800};
+        return {model:'claude-haiku-5-5',stop_reason:'end_turn',usage:{input_tokens:800,output_tokens:120},
+            content:[{type:'text',text:JSON.stringify(batch ? [
+                {task_id:'t1',status:'eligible',verdict:'approved',reason:'Good'},
+                {task_id:'t2',status:'rejected',verdict:'rejected',reason:'Missing'}
+            ] : {verdict:'approved',confidence:.96,critique:'Matches exemplar'})}]};
     });
-    assert.equal(badQuote1.status, 403);
-    assert.equal(badQuote1.body.code, 'CRITERIA_MISMATCH');
+}
 
-    const badQuote2 = await f.call('/pro/ai/quote', a.token, 'POST', {
-        operation_id: 'op_missing_ex',
-        task_id: 'locked_task',
-        task_title: 'Solve worksheet',
-        criteria: initialTasks[0].proof_criteria,
-        files: [proof]
-    });
-    assert.equal(badQuote2.status, 403);
-    assert.equal(badQuote2.body.code, 'EXEMPLAR_REQUIRED');
-    assert.equal(f.providerCalls.length, callsBefore);
-
-    // 5. Hosted audit with exact stored criteria and exemplar succeeds and authorizes one completion.
-    f.setClaudeResponse(async (options) => {
-        const url = f.providerCalls.at(-1).url;
-        if (url.endsWith('/count_tokens')) return { input_tokens: 800 };
-        return {
-            model: 'claude-haiku-5-5',
-            stop_reason: 'end_turn',
-            usage: { input_tokens: 800, output_tokens: 120 },
-            content: [{ type: 'text', text: JSON.stringify({ verdict: 'approved', confidence: 0.96, critique: 'Matches exemplar' }) }]
-        };
-    });
-    const goodQuote = await f.call('/pro/ai/quote', a.token, 'POST', {
-        operation_id: 'op_good_audit',
-        task_id: 'locked_task',
-        task_title: 'Solve worksheet',
-        criteria: initialTasks[0].proof_criteria,
-        exemplar,
-        files: [proof]
-    });
-    assert.equal(goodQuote.status, 200);
-    const goodReview = await f.call('/pro/ai/review', a.token, 'POST', {
-        operation_id: 'op_good_audit',
-        quote_id: goodQuote.body.quote_id,
-        task_id: 'locked_task',
-        task_title: 'Solve worksheet',
-        criteria: initialTasks[0].proof_criteria,
-        exemplar,
-        files: [proof]
-    });
-    assert.equal(goodReview.status, 200);
-
-    const approvedPush = structuredClone(normalEdit);
-    approvedPush[0].status = 'completed';
-    assert.equal((await f.call('/sync/push', a.token, 'POST', {
-        tasks: approvedPush, settings: {}, base_version: 2, mutation_id: 'mut_approved_complete'
-    })).status, 200);
-    assert.equal((await f.call('/status', a.token)).body.device_unlocked, true);
-
-    // 6. Intended Emergency Bypass permits emergency task deletion/uncompletion, but never unapproved completion.
-    const activeBypass = {
-        cycle_id: '2026-W43',
-        uses_left: 3,
-        active_until: new Date(Date.now() + 10 * 60 * 1000).toISOString()
-    };
-    const reopened = structuredClone(approvedPush);
-    reopened[0].status = 'active';
-    assert.equal((await f.call('/sync/push', a.token, 'POST', {
-        tasks: reopened, settings: {}, emergency_state: activeBypass, base_version: 3, mutation_id: 'mut_bypass_reopen'
-    })).status, 200);
-
-    // Even with active Emergency Bypass, completing an AI-locked task without a fresh AI approval is rejected.
-    const bypassCompleteAttempt = structuredClone(reopened);
-    bypassCompleteAttempt[0].status = 'completed';
-    assert.equal((await f.call('/sync/push', a.token, 'POST', {
-        tasks: bypassCompleteAttempt, settings: {}, emergency_state: activeBypass, base_version: 4, mutation_id: 'mut_bypass_complete_fail'
-    })).status, 403);
+test('F1: saved requirements bind audits, direct completion is blocked, and only server Emergency Bypass unlocks edits',async()=>{
+    const {f,a}=await hostedSetup(),exemplar={mime_type:'image/png',data:'YWJj'};
+    const tasks=[{id:'locked_task',title:'Solve worksheet',status:'active',due_date:'today',ai_locked:true,
+        proof_criteria:'Match the saved worksheet',reference_inline_data:exemplar},
+        {id:'normal_task',title:'Read chapter',status:'active',due_date:'today'}];
+    const save=(list,version,extra={})=>f.call('/sync/push',a.token,'POST',{tasks:list,settings:{},base_version:version,mutation_id:crypto.randomUUID(),...extra});
+    assert.equal((await save(tasks,0)).status,200);
+    assert.equal((await f.call('/status',a.token)).body.device_unlocked,false);
+    const fake=structuredClone(tasks);fake[0].status='completed';
+    assert.equal((await save(fake,1)).status,403);
+    const weaker=structuredClone(tasks);weaker[0].proof_criteria='Easy';assert.equal((await save(weaker,1)).status,403);
+    assert.equal((await save([tasks[1]],1)).status,403);
+    tasks[0].description='Allowed notes';tasks[0].tags=['math'];tasks[1].status='completed';
+    assert.equal((await save(tasks,1)).status,200);
+    hostedResponse(f);
+    const body={operation_id:newOperation(),task_id:'locked_task',criteria:'Caller tries easier criteria',files:[{mime_type:'image/png',data:'ZGVm'}]};
+    const quote=await f.call('/pro/ai/quote',a.token,'POST',body);assert.equal(quote.status,200);
+    const sent=JSON.stringify(JSON.parse(f.providerCalls.at(-1).options.body));
+    assert.ok(sent.includes('Match the saved worksheet'));assert.ok(!sent.includes(body.criteria));assert.ok(sent.includes(exemplar.data));
+    const review=await f.call('/pro/ai/review',a.token,'POST',{...body,quote_id:quote.body.quote_id});assert.equal(review.status,200);
+    // An approved response is not permission to forge a task snapshot.
+    assert.equal((await save(fake,2)).status,403);
+    const confirmed=await f.call('/pro/ai/batch-confirm',a.token,'POST',{job_id:review.body.job_id,task_ids:['locked_task'],operation_id:'confirm_single_F1',batch:false});
+    assert.equal(confirmed.status,200);assert.equal((await f.call('/status',a.token)).body.device_unlocked,true);
+    const completed=(await f.call('/sync/pull',a.token)).body;
+    const reopened=structuredClone(completed.tasks);reopened[0].status='active';
+    assert.equal((await save(reopened,completed.version,{emergency_state:{active_until:Date.now()+900000}})).status,403);
+    const bypass=await f.call('/emergency',a.token,'POST',{});assert.equal(bypass.status,200);assert.equal(bypass.body.uses_left,3);
+    assert.equal((await save(reopened,completed.version)).status,200);
+    const state=await f.storage.get('pro:emergency:user_A');state.active_until_ms=0;await f.storage.put('pro:emergency:user_A',state);
+    const current=(await f.call('/sync/pull',a.token)).body;
+    assert.equal((await save(fake,current.version)).status,403);
 });
 
-test('F2: batch approvals bind to session and task revisions, are single-use with idempotent operation retry, and commit server-side', async () => {
-    const f = fixture(), a = await create(f);
-    f.env.CLAUDE_API_KEY = 'sk-ant-hosted-secret';
-    await f.call('/pro/activate', a.token, 'POST', { key: 'KEY1-KEY2-KEY3-KEY4' });
-    const tasks = [
-        { id: 't1', title: 'Task 1', status: 'active', due_date: 'today', ai_locked: true, proof_criteria: 'Criteria 1' },
-        { id: 't2', title: 'Task 2', status: 'active', due_date: 'today', ai_locked: true, proof_criteria: 'Criteria 2' }
-    ];
-    assert.equal((await f.call('/sync/push', a.token, 'POST', {
-        tasks, settings: {}, base_version: 0, mutation_id: 'mut_batch_init'
-    })).status, 200);
-
-    f.setClaudeResponse(async () => {
-        const url = f.providerCalls.at(-1).url;
-        if (url.endsWith('/count_tokens')) return { input_tokens: 900 };
-        return {
-            model: 'claude-haiku-5-5',
-            stop_reason: 'end_turn',
-            usage: { input_tokens: 900, output_tokens: 200 },
-            content: [{
-                type: 'text',
-                text: JSON.stringify([
-                    { task_id: 't1', status: 'eligible', verdict: 'approved', reason: 'Good' },
-                    { task_id: 't2', status: 'rejected', verdict: 'rejected', reason: 'Missing' }
-                ])
-            }]
-        };
-    });
-
-    const batchPayload = {
-        operation_id: 'batch_op_f2_1',
-        tasks: [
-            { id: 't1', title: 'Task 1', criteria: 'Criteria 1' },
-            { id: 't2', title: 'Task 2', criteria: 'Criteria 2' }
-        ],
-        files: [{ mime_type: 'image/png', data: 'YWJj' }]
-    };
-    const q = await f.call('/pro/ai/quote', a.token, 'POST', { ...batchPayload, batch: true });
-    assert.equal(q.status, 200);
-    const rev = await f.call('/pro/ai/batch-review', a.token, 'POST', { ...batchPayload, quote_id: q.body.quote_id });
-    assert.equal(rev.status, 200);
-    const jobId = rev.body.job_id;
-
-    // 1. Different session token for the same user cannot confirm the batch approval.
-    f.sessionOwners.set('sess_other', 'user_A');
-    const otherSessionToken = await jwt('user_A', { sid: 'sess_other' });
-    const crossSession = await f.call('/pro/ai/batch-confirm', otherSessionToken, 'POST', {
-        job_id: jobId, task_ids: ['t1'], operation_id: 'confirm_op_other'
-    });
-    assert.equal(crossSession.status, 403);
-    assert.equal(crossSession.body.code, 'SESSION_MISMATCH');
-    assert.equal((await f.storage.get('pro:attestation:' + jobId)).consumed, false);
-
-    // 2. First confirmation from original session succeeds, consumes attestation, and updates server snapshot.
-    const firstConfirm = await f.call('/pro/ai/batch-confirm', a.token, 'POST', {
-        job_id: jobId, task_ids: ['t1'], operation_id: 'confirm_op_1'
-    });
-    assert.equal(firstConfirm.status, 200);
-    assert.deepEqual(firstConfirm.body.confirmed_task_ids, ['t1']);
-    assert.equal((await f.storage.get('pro:attestation:' + jobId)).consumed, true);
-    const pulled = await f.call('/sync/pull', a.token);
-    assert.equal(pulled.body.tasks.find(t => t.id === 't1').status, 'completed');
-    assert.equal(pulled.body.tasks.find(t => t.id === 't2').status, 'active');
-    const versionAfterFirst = pulled.body.version;
-
-    // 3. Idempotent retry with the same operation_id returns previous result without completing anything twice.
-    const retryConfirm = await f.call('/pro/ai/batch-confirm', a.token, 'POST', {
-        job_id: jobId, task_ids: ['t1'], operation_id: 'confirm_op_1'
-    });
-    assert.equal(retryConfirm.status, 200);
-    assert.deepEqual(retryConfirm.body.confirmed_task_ids, ['t1']);
-    assert.equal((await f.call('/sync/pull', a.token)).body.version, versionAfterFirst);
-
-    // 4. Replay with a different operation_id is rejected with 409.
-    const replayConfirm = await f.call('/pro/ai/batch-confirm', a.token, 'POST', {
-        job_id: jobId, task_ids: ['t1'], operation_id: 'confirm_op_2'
-    });
-    assert.equal(replayConfirm.status, 409);
-    assert.equal(replayConfirm.body.code, 'ATTESTATION_CONSUMED');
+test('F2: batch approvals bind to session, are single-use, and commit server-side with idempotent retry',async()=>{
+    const {f,a}=await hostedSetup();
+    const tasks=['t1','t2'].map(id=>({id,title:id,status:'active',ai_locked:true,proof_criteria:'Saved '+id}));
+    assert.equal((await f.call('/sync/push',a.token,'POST',{tasks,settings:{},base_version:0,mutation_id:'batch_initial'})).status,200);
+    hostedResponse(f,true);
+    const body={operation_id:newOperation(),tasks:tasks.map(t=>({id:t.id})),files:[{mime_type:'image/png',data:'YWJj'}]};
+    const q=await f.call('/pro/ai/quote',a.token,'POST',{...body,batch:true});assert.equal(q.status,200);
+    const review=await f.call('/pro/ai/batch-review',a.token,'POST',{...body,quote_id:q.body.quote_id});assert.equal(review.status,200);
+    const confirmation={job_id:review.body.job_id,task_ids:['t1'],operation_id:'confirm_batch_F2'};
+    f.sessionOwners.set('sess_other','user_A');const other=await jwt('user_A',{sid:'sess_other'});
+    assert.equal((await f.call('/pro/ai/batch-confirm',other,'POST',confirmation)).status,403);
+    assert.equal((await f.storage.get('pro:attestation:'+review.body.job_id)).consumed,false);
+    assert.equal((await f.call('/pro/ai/batch-confirm',a.token,'POST',confirmation)).status,200);
+    const snapshot=(await f.call('/sync/pull',a.token)).body;
+    assert.equal(snapshot.tasks.find(t=>t.id==='t1').status,'completed');assert.equal(snapshot.tasks.find(t=>t.id==='t2').status,'active');
+    assert.equal((await f.call('/pro/ai/batch-confirm',a.token,'POST',confirmation)).status,200);
+    assert.equal((await f.call('/sync/pull',a.token)).body.version,snapshot.version);
+    const replay=await f.call('/pro/ai/batch-confirm',a.token,'POST',{...confirmation,operation_id:'another_confirmation'});
+    assert.equal(replay.status,409);assert.equal(replay.body.code,'APPROVAL_USED');
 });
 
-test('F3: account deletion removes pro:entitlement and pro:binding records and blocks in-flight activation writes', async () => {
-    const f = fixture(), a = await create(f), b = await create(f, 'user_B');
-    assert.equal((await f.call('/pro/activate', a.token, 'POST', { key: 'AAAA-BBBB-CCCC-DDDD' })).status, 200);
-    assert.equal((await f.call('/pro/activate', b.token, 'POST', { key: 'EEEE-FFFF-GGGG-HHHH' })).status, 200);
-
-    const fpA = await sha256('AAAABBBBCCCCDDDD');
-    const fpB = await sha256('EEEEFFFFGGGGHHHH');
-    assert.ok(await f.storage.get('pro:entitlement:user_A'));
-    assert.ok(await f.storage.get('pro:binding:' + fpA));
-
-    const body = await verifiedDeletion(f, a.token);
-    assert.equal((await f.call('/auth/account', body.token, 'DELETE', body)).status, 200);
-    // Immediately after deletion acceptance, /pro/activate is blocked with 410.
-    assert.equal((await f.call('/pro/activate', a.token, 'POST', { key: 'AAAA-BBBB-CCCC-DDDD' })).status, 410);
-    await finishDeletion(f);
-
-    assert.equal(await f.storage.get('pro:entitlement:user_A'), undefined);
-    assert.equal(await f.storage.get('pro:binding:' + fpA), undefined);
-    assert.ok(await f.storage.get('pro:entitlement:user_B'));
-    assert.ok(await f.storage.get('pro:binding:' + fpB));
-
-    // Late in-flight activation after deletion fails with 410 without recreating records, and released key can be bound by user_B.
-    assert.equal((await f.service.pro.activateLicense('user_A', { key: 'AAAA-BBBB-CCCC-DDDD' })).status, 410);
-    assert.equal(await f.storage.get('pro:entitlement:user_A'), undefined);
-    assert.equal((await f.call('/pro/activate', b.token, 'POST', { key: 'AAAA-BBBB-CCCC-DDDD' })).status, 200);
+test('F3: deletion removes licensing and legacy binding records and blocks late activation writes',async()=>{
+    const {f,a}=await hostedSetup(),b=await create(f,'user_B');
+    await f.storage.put('pro:entitlement:user_B',await activeLicense('user_B'));
+    await f.storage.put('pro:binding:old_A',{account_id:'user_A'});await f.storage.put('pro:binding:old_B',{account_id:'user_B'});
+    const before=globalThis.fetch;
+    globalThis.fetch=async(url,options)=>String(url).includes('/api/v1/activate')?
+        Response.json({entitlement:await signedToken(JSON.parse(options.body).accountId)}):before(url,options);
+    try {
+        const body=await verifiedDeletion(f,a.token);assert.equal((await f.call('/auth/account',body.token,'DELETE',body)).status,200);
+        assert.equal((await f.call('/pro/activate',a.token,'POST',{key:'AAAA-BBBB-CCCC-DDDD'})).status,410);
+        await finishDeletion(f);
+        assert.equal(await f.storage.get('pro:entitlement:user_A'),undefined);assert.equal(await f.storage.get('pro:binding:old_A'),undefined);
+        assert.ok(await f.storage.get('pro:entitlement:user_B'));assert.ok(await f.storage.get('pro:binding:old_B'));
+        await assert.rejects(()=>f.service.pro.activateLicense('user_A',{key:'AAAA-BBBB-CCCC-DDDD'}),{status:410});
+        assert.equal(await f.storage.get('pro:entitlement:user_A'),undefined);
+        assert.equal((await f.call('/pro/activate',b.token,'POST',{key:'AAAA-BBBB-CCCC-DDDD'})).status,200);
+    } finally {globalThis.fetch=before;}
 });
 
-test('F4: exhausted allowance stops preview before count_tokens or storage writes, and alarm cleans expired quotes and attestations', async () => {
-    const f = fixture(), a = await create(f);
-    f.env.CLAUDE_API_KEY = 'sk-ant-hosted-secret';
-    await f.call('/pro/activate', a.token, 'POST', { key: 'KEY1-KEY2-KEY3-KEY4' });
-    const day = new Date(Date.now() + 3 * 3600000).toISOString().slice(0, 10);
-    await f.storage.put(`pro:usage:user_A:day:${day}`, 45);
-
-    const callsBefore = f.providerCalls.length;
-    for (const opId of ['preview_over_1', 'preview_over_2', 'preview_over_3']) {
-        const res = await f.call('/pro/ai/quote', a.token, 'POST', {
-            operation_id: opId,
-            task_id: 't1',
-            task_title: 'Task',
-            criteria: 'Criteria',
-            files: [{ mime_type: 'image/png', data: 'YWJj' }]
-        });
-        assert.equal(res.status, 429);
-        assert.equal(res.body.code, 'QUOTA_EXHAUSTED');
+test('F4: exhausted allowance prevents provider calls and cleanup retains retry records until their deadline',async()=>{
+    const {f,a}=await hostedSetup(),day=new Date(Date.now()+3*3600000).toISOString().slice(0,10);
+    assert.equal((await f.call('/sync/push',a.token,'POST',{tasks:[{id:'t1',title:'Task',status:'active',ai_locked:true,proof_criteria:'Saved criteria'}],settings:{},base_version:0,mutation_id:'quota_initial'})).status,200);
+    await f.storage.put(`pro:usage:user_A:day:${day}`,45);
+    const before=f.providerCalls.length;
+    for(let i=0;i<3;i++){
+        const result=await f.call('/pro/ai/quote',a.token,'POST',{operation_id:newOperation(),task_id:'t1',files:[{mime_type:'image/png',data:'YWJj'}]});
+        assert.equal(result.status,429);assert.equal(result.body.code,'QUOTA_EXHAUSTED');
     }
-    assert.equal(f.providerCalls.length, callsBefore);
-    assert.equal((await f.storage.list({ prefix: 'pro:op:user_A:' })).size, 0);
-
-    // Expired quoted operations and expired attestations are removed by alarm(), while valid completed tombstones remain.
-    await f.storage.put('pro:op:user_A:expired_quote', {
-        state: 'quoted', expires: Date.now() - 1000, period: { day, month: day.slice(0, 7) }
-    });
-    await f.storage.put('pro:op:user_A:completed_op', {
-        version: 'hosted-credits-v3', state: 'done', account_id: 'user_A', batch: false,
-        hash: 'h', session: 'sess_A', period: { day, month: day.slice(0, 7) },
-        response: { success: true }, settled_at: Date.now(), tombstone_expires: Date.now() + 86400000
-    });
-    await f.storage.put('pro:attestation:expired_job', {
-        job_id: 'expired_job', account_id: 'user_A', expires_at: Date.now() - 1000, consumed: false
-    });
-
+    assert.equal(f.providerCalls.length,before);assert.equal((await f.storage.list({prefix:'pro:op:user_A:'})).size,0);
+    await f.storage.put('pro:op:user_A:expired_quote',{state:'quoted',expires:Date.now()-1});
+    await f.storage.put('pro:op:user_A:completed_op',{state:'done',response:{success:true},settled_at:Date.now(),retain_until:Date.now()+86400000});
+    await f.storage.put('pro:attestation:expired_job',{account_id:'user_A',expires_at:Date.now()-1});
     await f.service.alarm();
-    assert.equal(await f.storage.get('pro:op:user_A:expired_quote'), undefined);
-    assert.equal(await f.storage.get('pro:attestation:expired_job'), undefined);
-    const retained = await f.storage.get('pro:op:user_A:completed_op');
-    assert.ok(retained);
-    assert.equal(retained.compact, true);
+    assert.equal(await f.storage.get('pro:op:user_A:expired_quote'),undefined);assert.equal(await f.storage.get('pro:attestation:expired_job'),undefined);
+    assert.deepEqual((await f.storage.get('pro:op:user_A:completed_op')).response,{success:true});
 });
