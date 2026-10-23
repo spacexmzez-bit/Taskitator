@@ -839,13 +839,14 @@
 
             <!-- Subtask Creation with Enter-Commit & Auto-Increment -->
             <div class="form-group">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <div class="pro-subtask-heading" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                     <label style="margin: 0;">Quick Subtasks</label>
                     <label style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; color: var(--text-muted); cursor: pointer;">
-                        <input type="checkbox" id="createConsecutiveToggle" style="width: 14px; height: 14px; cursor: pointer;">
-                        <span>Consecutive {num==X}</span>
+                        <input type="checkbox" id="createConsecutiveToggle" aria-describedby="createConsecutiveToggleHelp" style="width: 14px; height: 14px; cursor: pointer;">
+                        <span>Consecutive {num==X} <span class="pro-feature-label">Pro</span></span>
                     </label>
                 </div>
+                <p class="pro-feature-help" id="createConsecutiveToggleHelp" role="status">Active Pro is required for automatic numbering. Manual creation is always available.</p>
                 
                 <div style="margin-bottom: 8px;">
                     <input type="text" id="createQuickSubtaskInput" placeholder="+ Add subtask title (press Enter)..." style="width: 100%; padding: 7px 10px; border-radius: 6px; border: 1.5px solid var(--border-color); background: var(--card-subtle); color: var(--text-color); font-size: 0.85rem; outline: none;" autocomplete="off">
@@ -1030,17 +1031,18 @@
 
         <!-- Subtasks Section with Inline Rapid-Entry Input & Consecutive Auto-Increment -->
         <div class="form-group" style="margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div class="pro-subtask-heading" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                 <label style="margin: 0;">Subtasks Under This Task</label>
-                <div style="display: flex; align-items: center; gap: 8px;">
+                <div class="pro-subtask-options" style="display: flex; align-items: center; gap: 8px;">
                     <label style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; color: var(--text-muted); cursor: pointer;">
-                        <input type="checkbox" id="detailConsecutiveToggle" style="width: 14px; height: 14px; cursor: pointer;">
-                        <span>Consecutive {num==X}</span>
+                        <input type="checkbox" id="detailConsecutiveToggle" aria-describedby="detailConsecutiveToggleHelp" style="width: 14px; height: 14px; cursor: pointer;">
+                        <span>Consecutive {num==X} <span class="pro-feature-label">Pro</span></span>
                     </label>
                     <button type="button" class="icon-btn" id="openChildAddModalBtn" style="padding: 4px 10px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">+ Add Subtask</button>
                 </div>
             </div>
 
+            <p class="pro-feature-help" id="detailConsecutiveToggleHelp" role="status">Active Pro is required for automatic numbering. Manual creation is always available.</p>
             <!-- Inline Sequential Quick-Subtask Field (Todoist Style: Enter commits & keeps focus) -->
             <div style="margin-bottom: 10px;">
                 <input type="text" id="detailQuickSubtaskInput" placeholder="+ Add quick subtask (press Enter)... Use $$ for bonus" style="width: 100%; padding: 8px 12px; border: 1.5px solid var(--border-color); border-radius: 8px; background: var(--card-subtle); color: var(--text-color); font-size: 0.88rem; outline: none;" autocomplete="off">

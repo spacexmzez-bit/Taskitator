@@ -194,6 +194,49 @@ window.TaskitatorComponents = Object.freeze({
             }
         };
 
+        const quickSubtaskChecks = new WeakMap();
+        const consecutiveChecks = new WeakMap();
+        function consecutiveMessage(toggle, message, restricted = false) {
+            const help = document.getElementById(toggle.id + 'Help');
+            if (help) help.textContent = message;
+            toggle.closest('label')?.classList.toggle('pro-feature-restricted', restricted);
+        }
+        async function checkConsecutiveOption(toggle) {
+            const owner = window.Clerk?.session?.id;
+            const check = {};
+            consecutiveChecks.set(toggle, check);
+            if (!toggle.checked) return false;
+            toggle.setAttribute('aria-busy', 'true');
+            try {
+                if (!window.TaskitatorPro?.canCreateConsecutive) throw new Error('Pro status is unavailable.');
+                const allowed = await window.TaskitatorPro.canCreateConsecutive();
+                if (consecutiveChecks.get(toggle) !== check || !toggle.checked || window.Clerk?.session?.id !== owner) return false;
+                if (!allowed) {
+                    toggle.checked = false;
+                    consecutiveMessage(toggle, 'Consecutive numbering requires active Pro. Manual subtasks are still available.', true);
+                    return false;
+                }
+                consecutiveMessage(toggle, 'Pro active. {num==X} advances after each quick subtask.');
+                return true;
+            } catch {
+                if (consecutiveChecks.get(toggle) !== check || !toggle.checked) return false;
+                consecutiveMessage(toggle, 'Unable to check Pro. Select the option again to retry. Manual subtasks are still available.', true);
+                return false;
+            } finally { if (consecutiveChecks.get(toggle) === check) toggle.removeAttribute('aria-busy'); }
+        }
+        async function finishQuickSubtask(input, toggle, raw, stillCurrent = () => true) {
+            // Commit manually first; a provider outage must never stop ordinary creation.
+            input.value = '';
+            input.focus();
+            const check = {};
+            quickSubtaskChecks.set(input, check);
+            if (toggle?.checked && /\{num==\d+\}/i.test(raw) && await checkConsecutiveOption(toggle)) {
+                // Do not overwrite typing or another dialog opened while checking entitlement.
+                if (quickSubtaskChecks.get(input) === check && !input.value && stillCurrent() && toggle.checked)
+                    input.value = SmartCriteriaEngine.incrementConsecutiveNum(raw);
+            }
+        }
+
         function updateMrStudyRuleDropdown() {
             const container = document.getElementById('mrstudyRuleContainer');
             const select = document.getElementById('taskMrstudyRuleSelect');
@@ -714,7 +757,7 @@ window.TaskitatorComponents = Object.freeze({
             
             if (editTaskDesc) editTaskDesc.value = task.description || '';
             if (editTaskDueDate) editTaskDueDate.value = task.due_date === 'today' ? host.clock.today() : (task.due_date || '');
-            if (detailQuickSubtaskInput) detailQuickSubtaskInput.value = '';
+            if (detailQuickSubtaskInput) { detailQuickSubtaskInput.value = ''; quickSubtaskChecks.delete(detailQuickSubtaskInput); }
 
             editModalSelectedTags.clear();
             (task.tags || []).forEach(t => editModalSelectedTags.add(t));
@@ -886,7 +929,7 @@ window.TaskitatorComponents = Object.freeze({
             if (subtaskList) subtaskList.innerHTML = '';
 
             const createQuickSubInput = document.getElementById('createQuickSubtaskInput');
-            if (createQuickSubInput) createQuickSubInput.value = '';
+            if (createQuickSubInput) { createQuickSubInput.value = ''; quickSubtaskChecks.delete(createQuickSubInput); }
 
             const dueIn = document.getElementById('taskDueDateInput');
             if (dueIn) {
@@ -1046,6 +1089,20 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
+            for (const prefix of ['create', 'detail']) {
+                const toggle = document.getElementById(prefix + 'ConsecutiveToggle');
+                toggle?.addEventListener('change', () => {
+                    if (toggle.checked) checkConsecutiveOption(toggle);
+                    else {
+                        consecutiveChecks.delete(toggle);
+                        toggle.removeAttribute('aria-busy');
+                        consecutiveMessage(toggle, 'Active Pro is required for automatic numbering. Manual creation is always available.');
+                    }
+                });
+                const input = document.getElementById(prefix + 'QuickSubtaskInput');
+                input?.addEventListener('input', () => quickSubtaskChecks.delete(input));
+            }
+
             // Dual-Panel Sequential Quick-Subtask Inputs (Enter commits, maintains focus, consecutive auto-increment)
             const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
             if (detailQuickSubtaskInput) {
@@ -1106,12 +1163,8 @@ window.TaskitatorComponents = Object.freeze({
                         }
 
                         const consecutiveCb = document.getElementById('detailConsecutiveToggle');
-                        if (consecutiveCb && consecutiveCb.checked && /\{num==\d+\}/i.test(rawSubInput)) {
-                            detailQuickSubtaskInput.value = SmartCriteriaEngine.incrementConsecutiveNum(rawSubInput);
-                        } else {
-                            detailQuickSubtaskInput.value = '';
-                        }
-                        detailQuickSubtaskInput.focus();
+                        const committedParent = activeDetailTaskId;
+                        finishQuickSubtask(detailQuickSubtaskInput, consecutiveCb, rawSubInput, () => activeDetailTaskId === committedParent);
                     }
                 });
             }
@@ -1137,12 +1190,7 @@ window.TaskitatorComponents = Object.freeze({
                         }
 
                         const consecutiveCb = document.getElementById('createConsecutiveToggle');
-                        if (consecutiveCb && consecutiveCb.checked && /\{num==\d+\}/i.test(rawText)) {
-                            createQuickSubtaskInput.value = SmartCriteriaEngine.incrementConsecutiveNum(rawText);
-                        } else {
-                            createQuickSubtaskInput.value = '';
-                        }
-                        createQuickSubtaskInput.focus();
+                        finishQuickSubtask(createQuickSubtaskInput, consecutiveCb, rawText);
                     }
                 });
             }

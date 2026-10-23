@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-security-breaks-v5';
+const CACHE_NAME = 'taskitator-pro-conveniences-v6';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -22,6 +22,7 @@ const STATIC_ASSETS = [
     './pro/pro.css',
     './pro/pro-client.js',
     './pro/pro-ui.js',
+    './pro/compare.html',
     './pro/profile-ui.js',
     './manifest.json',
     './SYSTEM_PROMPT.md',

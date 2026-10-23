@@ -17,7 +17,7 @@
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-security-breaks-v5');
+                    resolve(event.data?.version === 'taskitator-pro-conveniences-v6');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
