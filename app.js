@@ -1100,15 +1100,15 @@ window.TaskitatorApp = (() => {
                 if (e.target === this.modal) this.closeModal();
             });
             this.updateStatusPill();
-            setInterval(() => this.updateStatusPill(), 20000);
+            setInterval(() => this.updateStatusPill(), 1000);
+            window.addEventListener('taskitator-breaks-changed',()=>this.updateStatusPill());
+            window.addEventListener('storage',event=>{if(event.key==='taskitator_daily_breaks'){this.updateStatusPill();if(this.modal.classList.contains('open'))this.renderModal();}});
+            document.addEventListener('visibilitychange',()=>this.updateStatusPill());
+            if(TaskitatorEngine.BreakEngine.getPlanningStatus().isRunning)this.startCountdownTimer();
         },
 
         updateStatusPill() {
             if (!this.pill) return;
-            if (currentView !== 'today') {
-                this.pill.style.display = 'none';
-                return;
-            }
             this.pill.style.display = 'inline-flex';
 
             const status = window.TaskitatorEngine?.BreakEngine?.getPlanningStatus 
@@ -1127,17 +1127,8 @@ window.TaskitatorApp = (() => {
 
             if (isCurrentlyOnBreak) {
                 const nowTime = Date.now();
-                const activeBreak = breaks.find(b => {
-                    if (!b.start || !b.end || !window.TaskitatorEngine?.BreakEngine?.getBreakTimestamps) return false;
-                    const { startTime, endTime } = TaskitatorEngine.BreakEngine.getBreakTimestamps(b, status.bounds);
-                    return nowTime >= startTime && nowTime <= endTime;
-                });
-
-                let minsLeft = 0;
-                if (activeBreak && window.TaskitatorEngine?.BreakEngine?.getBreakTimestamps) {
-                    const { endTime } = TaskitatorEngine.BreakEngine.getBreakTimestamps(activeBreak, status.bounds);
-                    minsLeft = Math.max(1, Math.round((endTime - nowTime) / (60 * 1000)));
-                }
+                const activeBreak = TaskitatorEngine.BreakEngine.getActiveBreak();
+                const minsLeft=activeBreak?Math.max(1,Math.ceil((activeBreak.endTime-nowTime)/60000)):0;
 
                 this.pill.classList.add('active-break');
                 if (this.pillIcon) this.pillIcon.textContent = '🟢';
@@ -1145,6 +1136,7 @@ window.TaskitatorApp = (() => {
                 return;
             }
 
+            if(status.isRepair){if(this.pillIcon)this.pillIcon.textContent='⚠️';if(this.pillText)this.pillText.textContent='Repair Breaks';return;}
             if (status.isRunning) {
                 const remSec = Math.ceil(status.remainingWindowMs / 1000);
                 const remMin = Math.floor(remSec / 60);
@@ -1194,11 +1186,17 @@ window.TaskitatorApp = (() => {
         },
 
         closeModal() {
-            if (this.planningTimerInterval) {
-                clearInterval(this.planningTimerInterval);
-                this.planningTimerInterval = null;
-            }
-            if (this.modal) this.modal.classList.remove('open');
+            this.captureDraft();
+            if(this.modal)this.modal.classList.remove('open');
+        },
+        captureDraft(){
+            const engine=window.TaskitatorEngine?.BreakEngine;
+            if(!engine||!engine.getPlanningStatus().canEdit)return;
+            const rows=this.getCurrentRowsData();
+            const result=engine.getPlanningStatus().isRepair?{valid:false,error:'Complete valid times, then confirm the repaired schedule.'}:engine.saveTodayBreaks(rows,false);
+            const status=engine.getPlanningStatus();
+            status.record.draft=rows;engine.saveBreakRecord(status.bounds.dateStr,status.record);
+            if(!result.valid)this.showError(result.error);else this.hideError();
         },
 
         startCountdownTimer() {
@@ -1232,17 +1230,12 @@ window.TaskitatorApp = (() => {
         },
 
         autoCommitAndLock() {
-            const currentRows = this.getCurrentRowsData();
-            if (window.TaskitatorEngine?.BreakEngine?.saveTodayBreaks) {
-                const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(currentRows, true);
-                if (!res.valid && window.TaskitatorEngine?.BreakEngine?.lockTodayBreaks) {
-                    TaskitatorEngine.BreakEngine.lockTodayBreaks();
-                }
+            const status=TaskitatorEngine.BreakEngine.getPlanningStatus();
+            if(this.modal?.classList.contains('open')){
+                if(status.isRepair)this.showError(status.reason);
+                else SoundFX.playTimeoutAlert();
+                this.renderModal();
             }
-            saveStorageAndPush();
-            SoundFX.playTimeoutAlert();
-            alert("Time's up! Your 10-minute planning window has expired. Today's break schedule has been automatically locked.");
-            this.renderModal();
             this.updateStatusPill();
         },
 
@@ -1253,7 +1246,7 @@ window.TaskitatorApp = (() => {
             rows.forEach(r => {
                 const start = r.querySelector('.b-start')?.value;
                 const end = r.querySelector('.b-end')?.value;
-                if (start && end) list.push({ start, end });
+                list.push({ start:start||'', end:end||'' });
             });
             return list;
         },
@@ -1280,7 +1273,7 @@ window.TaskitatorApp = (() => {
 
             const desc = document.getElementById('breakModalStatusDesc');
 
-            if (status.isRunning) {
+            if (status.isRunning || status.isRepair) {
                 if (desc) desc.style.display = 'none';
                 const totalMs = TaskitatorEngine.BreakEngine.PLANNING_WINDOW_MS || (10 * 60 * 1000);
                 const pct = Math.max(0, Math.min(100, (status.remainingWindowMs / totalMs) * 100));
@@ -1293,7 +1286,7 @@ window.TaskitatorApp = (() => {
                     <div style="background: rgba(59, 130, 246, 0.15); border: 1.5px solid var(--primary); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                             <strong style="color: var(--primary); font-size: 0.88rem; display: flex; align-items: center; gap: 6px;">
-                                <span>⏳</span> Planning Active
+                                <span>⏳</span> ${status.isRepair?'Repair Break Schedule':'Planning Active'}
                             </strong>
                             <span id="breakPlanningCountdown" style="font-family: monospace; font-weight: 800; font-size: 0.95rem; color: #93c5fd; background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border-color);">${formatted}</span>
                         </div>
@@ -1301,14 +1294,15 @@ window.TaskitatorApp = (() => {
                             <div id="breakPlanningProgress" style="height: 100%; width: ${pct}%; background: var(--primary); transition: width 1s linear;"></div>
                         </div>
                         <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 8px; line-height: 1.35;">
-                            Adjust up to 3 non-overlapping breaks (≤ 3 hours). The schedule will permanently lock when you save or when the timer reaches 0:00.
+                            Adjust up to 3 non-overlapping breaks (≤ 3 hours). At expiry, your last valid schedule is locked. If none is valid, enter a valid schedule once to repair it. Times use the planning device’s timezone.
                         </small>
                     </div>
                 `;
 
                 this.rowsContainer.innerHTML = '';
-                if (Array.isArray(breaks) && breaks.length > 0) {
-                    breaks.forEach(b => this.addBreakRow(b.start, b.end, false));
+                const editable=status.record?.draft?.length?status.record.draft:breaks;
+                if (Array.isArray(editable) && editable.length > 0) {
+                    editable.forEach(b => this.addBreakRow(b.start, b.end, false));
                 } else {
                     this.addBreakRow('', '', false);
                 }
@@ -1319,7 +1313,8 @@ window.TaskitatorApp = (() => {
                     this.saveBtn.textContent = 'Confirm & Lock Breaks';
                 }
 
-                this.startCountdownTimer();
+                if(status.isRunning)this.startCountdownTimer();
+                if(status.isRepair)this.showError(status.reason);
 
             } else if (status.canStart) {
                 if (this.planningTimerInterval) {
@@ -1409,6 +1404,7 @@ window.TaskitatorApp = (() => {
                 this.renderModal();
                 return;
             }
+            saveStorageAndPush();
             this.renderModal();
             this.updateStatusPill();
         },
@@ -1435,15 +1431,18 @@ window.TaskitatorApp = (() => {
             if (!disabled) {
                 row.querySelector('.del-break-row-btn').addEventListener('click', () => {
                     row.remove();
-                    this.hideError();
+                    this.captureDraft();
                 });
             }
             this.rowsContainer.appendChild(row);
+            if(!disabled)row.querySelectorAll('input').forEach(input=>{input.addEventListener('change',()=>this.captureDraft());input.addEventListener('input',()=>this.captureDraft());});
         },
 
         saveBreaks() {
             if (!this.rowsContainer) return;
             const breaksArray = this.getCurrentRowsData();
+            const check=TaskitatorBreaks.validate(breaksArray,TaskitatorEngine.BreakEngine.getLogicalDayBounds());
+            if(!check.valid){this.showError(check.error);return;}
 
             const confirmed = confirm(
                 "⚠️️ CONFIRM & LOCK DAILY SCHEDULE ⚠️\n\n" +
@@ -2015,6 +2014,7 @@ window.TaskitatorApp = (() => {
         initSyncIndicator();
         loadStorage();
         BreakUI.init();
+        window.TaskitatorPro?.emergencyStatus().then(()=>updateEmergencyUI()).catch(()=>{});
         DistractionDumpEngine.garbageCollect();
 
         getComponents().init();
@@ -2505,7 +2505,8 @@ window.TaskitatorApp = (() => {
         const confirmEmergencyBtn = document.getElementById('confirmEmergencyBtn');
 
         if (emergencyTriggerBtn) {
-            emergencyTriggerBtn.addEventListener('click', () => {
+            emergencyTriggerBtn.addEventListener('click', async () => {
+                try{await window.TaskitatorPro.emergencyStatus();}catch(error){alert(error.message);return;}
                 if (isBypassActiveSafe()) {
                     alert('Emergency bypass is already active.');
                     return;
@@ -2526,10 +2527,10 @@ window.TaskitatorApp = (() => {
             });
         }
         if (confirmEmergencyBtn && emergencyConfirmModal) {
-            confirmEmergencyBtn.addEventListener('click', () => {
+            confirmEmergencyBtn.addEventListener('click', async () => {
                 let res = { success: false, error: 'Emergency manager uninitialized' };
                 if (window.TaskitatorEngine?.EmergencyManager?.activateBypass) {
-                    res = TaskitatorEngine.EmergencyManager.activateBypass();
+                    res = await TaskitatorEngine.EmergencyManager.activateBypass();
                 }
                 emergencyConfirmModal.classList.remove('open');
                 if (res.success) {

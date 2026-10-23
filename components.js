@@ -30,6 +30,7 @@ window.TaskitatorComponents = Object.freeze({
         }
         let initialized = false;
         let pendingAuditTaskId = null;
+        const pendingProofApprovals=new Map();
         let activeDetailTaskId = null;
         let criteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
         let editCriteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
@@ -37,7 +38,6 @@ window.TaskitatorComponents = Object.freeze({
         let cachedTemplates = null;
         let activeTemplateTarget = 'create'; // 'create' | 'edit'
         let currentTemplatesTab = 'templates'; // 'templates' | 'saved'
-        const consecutive503Tracker = new Map(); // taskId -> consecutive 503 error count
 
         // Modal Selection State
         const createModalSelectedTags = new Set();
@@ -1210,24 +1210,6 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
-            const createAiAuditInfoBtn = document.getElementById('createAiAuditInfoBtn');
-            const createAiAuditInfoBox = document.getElementById('createAiAuditInfoBox');
-            if (createAiAuditInfoBtn && createAiAuditInfoBox) {
-                createAiAuditInfoBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    createAiAuditInfoBox.style.display = createAiAuditInfoBox.style.display === 'none' ? 'block' : 'none';
-                });
-            }
-
-            const editAiAuditInfoBtn = document.getElementById('editAiAuditInfoBtn');
-            const editAiAuditInfoBox = document.getElementById('editAiAuditInfoBox');
-            if (editAiAuditInfoBtn && editAiAuditInfoBox) {
-                editAiAuditInfoBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    editAiAuditInfoBox.style.display = editAiAuditInfoBox.style.display === 'none' ? 'block' : 'none';
-                });
-            }
-
             const addSubtaskFieldBtn = document.getElementById('addSubtaskFieldBtn');
             const subtaskBuilderList = document.getElementById('subtaskBuilderList');
             if (addSubtaskFieldBtn && subtaskBuilderList) {
@@ -1655,7 +1637,6 @@ window.TaskitatorComponents = Object.freeze({
                     }
 
                     if (exemplarFile) {
-                        newTask.has_exemplar = true;
                         newTask.reference_inline_data = await TaskitatorEngine.AuditEngine.fileToBase64(exemplarFile);
                     }
                     try { await window.TaskitatorRecurrenceUI?.attachCreated(newTaskId, host.tasks.getAll()); }
@@ -1834,9 +1815,8 @@ window.TaskitatorComponents = Object.freeze({
                     }
                     if (pendingEditExemplarFile && willBeAiLocked && window.ExemplarStore) {
                         try {
+                            task.reference_inline_data=await TaskitatorEngine.AuditEngine.fileToBase64(pendingEditExemplarFile);
                             await window.ExemplarStore.saveExemplar(task.id, pendingEditExemplarFile);
-                            task.has_exemplar = true;
-                            task.reference_inline_data = await TaskitatorEngine.AuditEngine.fileToBase64(pendingEditExemplarFile);
                             pendingEditExemplarFile = null;
                         } catch (err) {
                             alert(`Failed to save reference exemplar: ${err.message}`);
@@ -1944,8 +1924,9 @@ window.TaskitatorComponents = Object.freeze({
                     const auditFeedback = document.getElementById('auditFeedbackContainer');
                     if (auditFeedback) auditFeedback.style.display = 'none';
 
-                    let result = { success: false, error: 'Audit engine missing' };
-                    if (window.TaskitatorEngine?.AuditEngine?.verifyProof) {
+                    const cachedApproval=pendingProofApprovals.get(auditedId);
+                    let result = cachedApproval?.session===auditSession ? cachedApproval.result : { success: false, error: 'Audit engine missing' };
+                    if (!result.job_id && window.TaskitatorEngine?.AuditEngine?.verifyProof) {
                         let refExemplarPart = task.reference_inline_data || TaskitatorRecurrenceUI.state().reference_files?.[task.reference_id] || null;
                         if (window.ExemplarStore) {
                             const exemplarRecord = await ExemplarStore.getExemplar(task.id);
@@ -1973,75 +1954,22 @@ window.TaskitatorComponents = Object.freeze({
                     if (result.approved && TaskitatorRecurrence.subtree(host.tasks.getAll(),task.id).some(t=>t.id!==task.id && t.status==='active' && t.ai_locked)) {
                         result={success:false,error:'Submit proof for unfinished AI-audited children before completing this parent.'};
                     }
-                    const is503Outage = !result.success && (
-                        result.status === 503 ||
-                        result.code === 503 ||
-                        (typeof result.error === 'string' && (
-                            result.error.includes('503') ||
-                            result.error.includes('UNAVAILABLE') ||
-                            result.error.includes('high demand')
-                        ))
-                    );
-
-                    if (is503Outage) {
-                        const count = (consecutive503Tracker.get(pendingAuditTaskId) || 0) + 1;
-                        consecutive503Tracker.set(pendingAuditTaskId, count);
-                    } else if (result.success) {
-                        consecutive503Tracker.delete(pendingAuditTaskId);
-                    } else {
-                        consecutive503Tracker.delete(pendingAuditTaskId);
-                    }
-
-                    if (!result.success) {
-                        submitProofBtn.disabled = false;
-                        submitProofBtn.textContent = 'Submit Proof';
-                        if (auditFeedback) {
-                            auditFeedback.className = 'audit-critique-box';
-                            auditFeedback.style.display = 'block';
-                            auditFeedback.innerHTML = `<strong>Verification Halted:</strong> ${TaskitatorSafety.escapeHtml(result.error)}`;
+                    if(result.success && result.approved) {
+                        pendingProofApprovals.set(auditedId,{session:auditSession,result});
+                        try {
+                            await window.TaskitatorPro.batchConfirm({jobId:result.job_id,taskIds:[auditedId],batch:false});
+                            pendingProofApprovals.delete(auditedId);
+                            host.tasks.reload();host.effects.auditSuccess();
+                            if(auditModal)auditModal.classList.remove('open');
+                            pendingAuditTaskId=null;host.view.refresh();
+                        } catch(error){
+                            if(['TASK_CHANGED','APPROVAL_EXPIRED','APPROVAL_INVALID'].includes(error.code))pendingProofApprovals.delete(auditedId);
+                            submitProofBtn.disabled=false;submitProofBtn.textContent='Retry Confirmation';
+                            if(auditFeedback){auditFeedback.style.display='block';auditFeedback.textContent=error.message;}
                         }
-                        return;
-                    }
-
-                    if (result.approved) {
-                        task.verified_model = result.model_used;
-                        host.tasks.setStatus(pendingAuditTaskId, 'completed', new Date().toISOString());
-                        host.effects.auditSuccess();
-                        host.tasks.save();
-                        
-                        const completedTaskId = pendingAuditTaskId;
-                        host.tasks.finalize(completedTaskId).then(() => {
-                            if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
-                                const breaks = host.breaks.today();
-                                SyncEngine.scheduleAutoPush();
-                            }
-                        });
-
-                        if (auditModal) auditModal.classList.remove('open');
-                        pendingAuditTaskId = null;
-                        host.view.refresh();
                     } else {
-                        submitProofBtn.disabled = false;
-                        submitProofBtn.textContent = 'Retry Submission';
-                        if (auditFeedback) {
-                            auditFeedback.className = 'audit-critique-box';
-                            auditFeedback.style.display = 'block';
-                            const rawVerdict = (result.verdict || 'REJECTED').toLowerCase();
-                            const verdictUpper = TaskitatorSafety.escapeHtml(rawVerdict === 'incomplete' ? 'INSUFFICIENT PROOF' : rawVerdict.toUpperCase());
-                            const critiqueText = TaskitatorSafety.escapeHtml(result.critique || result.reason || 'Proof does not satisfy task criteria.');
-                            let noticeHtml = '';
-                            if (rawVerdict === 'incomplete') {
-                                if (result.is_pro || (window.TaskitatorPro && result.discount_applied)) {
-                                    const costMsg = (result.credits_charged === 0) ? '0 tokens (FREE audit)' : (result.credits_charged != null ? result.credits_charged + ' tokens' : '50% discount applied');
-                                    noticeHtml = `<div style="margin-top: 8px; font-size: 0.8rem; color: #34d399; font-weight: 600;">ℹ️ Insufficient proof: A 50% token discount was applied (${costMsg}).</div>`;
-                                } else {
-                                    noticeHtml = `<div style="margin-top: 8px; font-size: 0.8rem; color: #cbd5e1;">ℹ️ Insufficient proof: Free tier accounts do not receive the 50% discount on insufficient audits.</div>`;
-                                }
-                            } else {
-                                noticeHtml = `<div style="margin-top: 8px; font-size: 0.8rem; color: #fca5a5;">⚠️ Token notice: Usage was calculated and consumed for this audit. No refund issued.</div>`;
-                            }
-                            auditFeedback.innerHTML = `<strong>Verdict: ${verdictUpper}</strong><br>${critiqueText}${noticeHtml}`;
-                        }
+                        submitProofBtn.disabled=false;submitProofBtn.textContent='Retry Submission';
+                        if(auditFeedback){auditFeedback.style.display='block';auditFeedback.textContent=result.error||result.critique||'Proof was not approved.';}
                     }
                 });
             }

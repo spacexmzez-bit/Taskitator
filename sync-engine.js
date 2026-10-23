@@ -200,7 +200,6 @@ const SyncEngine = {
         let ledger = [];
         let settings = {};
         let savedCriteria = [];
-        let emergencyState = null;
 
         try { tasks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_TASKS) || '[]'); } catch (e) {}
         try { projects = JSON.parse(localStorage.getItem(this.STORAGE_KEY_PROJECTS) || '[]'); } catch (e) {}
@@ -208,9 +207,9 @@ const SyncEngine = {
         try { breaks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_BREAKS) || '[]'); } catch (e) {}
         try { ledger = JSON.parse(localStorage.getItem(this.STORAGE_KEY_LEDGER) || '[]'); } catch (e) {}
         try { savedCriteria = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SAVED_CRITERIA) || '[]'); } catch (e) {}
-        try { emergencyState = JSON.parse(localStorage.getItem('taskitator_emergency_state') || 'null'); } catch (e) {}
 
-        const todayBreaks = breaks; // Preserve dates and lock state across devices.
+        const todayBreaks = globalThis.TaskitatorBreaks?.normalize(breaks,window.TaskitatorEngine?.BreakEngine?.getLogicalDayBounds?.().dateStr)||breaks;
+        if(globalThis.TaskitatorBreaks)localStorage.setItem(this.STORAGE_KEY_BREAKS,JSON.stringify(todayBreaks));
 
         const lastLogin = localStorage.getItem(this.STORAGE_KEY_LAST_LOGIN) || null;
         // Record when the edit happened, not when its delayed upload started.
@@ -232,7 +231,6 @@ const SyncEngine = {
             completed_audit_ledger: ledger,
             saved_criteria: savedCriteria,
             last_login: lastLogin,
-            ...(emergencyState ? { emergency_state: emergencyState } : {}),
             ...extraData
         };
     },
@@ -284,6 +282,8 @@ const SyncEngine = {
             const data = await res.json();
             if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
             if (res.status === 409) return this.reportConflict(data);
+            if(res.status===403 && ['PROOF_REQUIRED','REQUIREMENTS_LOCKED','SHIELD_REQUIRED'].includes(data.code))
+                return this.reportConflict({...data,remote_version:payload.base_version,error:data.error+' Keep a backup of local changes, then use the cloud copy and submit proof, or activate Emergency Bypass for the intended change.'});
             if (!res.ok || data.success !== true || data.version !== payload.base_version + 1) {
                 throw new Error(data.error || 'Upload acknowledgement is invalid. Local changes were retained.');
             }
@@ -292,6 +292,7 @@ const SyncEngine = {
             settings.last_synced = data.updated_at;
             localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
             const pending = revision !== localStorage.getItem(this.STORAGE_KEY_REVISION);
+            if(!pending&&data.today_breaks){localStorage.setItem(this.STORAGE_KEY_BREAKS,JSON.stringify(data.today_breaks));window.dispatchEvent(new CustomEvent('taskitator-breaks-changed'));}
             this.hasUnsavedChanges = pending;
             localStorage.setItem(this.STORAGE_KEY_DIRTY, String(pending));
             this.notify(pending ? 'pending' : 'synced', { timestamp: settings.last_synced });
@@ -459,7 +460,7 @@ const SyncEngine = {
     isSafeToRefresh() {
         if (this.refreshGuards.some(guard => !guard())) return false;
         if (document.visibilityState === 'hidden') return false;
-        if (document.querySelector?.('.modal-overlay.open, dialog[open]')) return false;
+        if (document.querySelector?.('.modal-overlay.open, dialog[open], .pro-modal-backdrop')) return false;
         const active = document.activeElement;
         return !active?.isContentEditable && !['INPUT', 'TEXTAREA', 'SELECT'].includes(active?.tagName);
     },

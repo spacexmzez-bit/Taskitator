@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-hosted-policy-v4';
+const CACHE_NAME = 'taskitator-security-breaks-v5';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -41,6 +41,7 @@ const STATIC_ASSETS = [
     './exemplar-store.js',
     './agent-engine.js',
     './audit-engine.js',
+    './pro/break-core.js',
     './sync-engine.js',
     './recurrence-core.js',
     './recurrence-ui.js',

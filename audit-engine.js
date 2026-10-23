@@ -24,311 +24,67 @@ const TaskitatorEngine = {
     // 1. Break Engine (10m Floating Window, Day-Start Offset, 6h Cutoff Buffer)
     // =========================================================================
     BreakEngine: {
-        PLANNING_WINDOW_MS: 10 * 60 * 1000, // 10-Minute Ephemeral Planning Window
-
-        getDayStartHour() {
-            let settings = {};
-            try {
-                settings = JSON.parse(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_SETTINGS) || '{}');
-            } catch (e) {
-                settings = {};
-            }
-            const val = parseInt(settings.day_start_hour, 10);
-            return (!isNaN(val) && val >= 0 && val <= 4) ? val : 0;
+        PLANNING_WINDOW_MS:600000,
+        core(){if(!globalThis.TaskitatorBreaks)throw new Error('Refresh Taskitator to load break scheduling.');return globalThis.TaskitatorBreaks;},
+        settings(){try{return JSON.parse(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_SETTINGS)||'{}');}catch{return {}; }},
+        getDayStartHour(){return Math.max(0,Math.min(4,Number(this.settings().day_start_hour)||0));},
+        getLogicalDayBounds(dayStartHour=null){
+            const settings=this.settings();if(dayStartHour!==null)settings.day_start_hour=dayStartHour;
+            const raw=this.getAllBreakData(),now=Date.now();
+            const pinned=Object.values(raw).find(r=>r.cycle_start<=now&&now<r.cycle_end);
+            return this.core().bounds({...settings,day_start_hour:pinned?.day_start_hour??settings.day_start_hour},now,pinned?.timezone||settings.break_timezone||Intl.DateTimeFormat().resolvedOptions().timeZone);
         },
-
-        getLogicalDayBounds(dayStartHour = null) {
-            const h = dayStartHour !== null ? dayStartHour : this.getDayStartHour();
-            const now = new Date();
-            const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, 0, 0, 0);
-
-            if (now.getTime() < start.getTime()) {
-                start.setDate(start.getDate() - 1);
-            }
-
-            const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-            const cutoff6h = new Date(end.getTime() - 6 * 60 * 60 * 1000);
-            const dateStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
-
-            return { start, end, cutoff6h, dateStr, dayStartHour: h };
-        },
-
-        getAllBreakData() {
-            try {
-                const raw = localStorage.getItem(TaskitatorEngine.STORAGE_KEY_BREAKS);
-                if (!raw) return {};
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed)) {
-                    const bounds = this.getLogicalDayBounds();
-                    const converted = {};
-                    converted[bounds.dateStr] = {
-                        date: bounds.dateStr,
-                        window_started_at: null,
-                        locked: true,
-                        breaks: parsed
-                    };
-                    return converted;
-                }
-                if (typeof parsed === 'object' && parsed !== null) return parsed;
-                return {};
-            } catch (e) {
-                return {};
+        getAllBreakData(){try{
+            const key=TaskitatorEngine.STORAGE_KEY_BREAKS,raw=localStorage.getItem(key)||'{}',settings=this.settings();
+            const data=this.core().migrate(JSON.parse(raw),settings,settings.break_timezone||Intl.DateTimeFormat().resolvedOptions().timeZone);
+            const normalized=JSON.stringify(data);
+            if(raw!==normalized){localStorage.setItem(key,normalized);if(window.SyncEngine?.isConfigured?.())window.SyncEngine.markLocalModified();}
+            return data;
+        }catch{return {}; }},
+        getBreakRecord(date){return {date,window_started_at:null,locked:false,breaks:[],...this.getAllBreakData()[date]};},
+        saveBreakRecord(date,record){
+            const data=this.getAllBreakData(),settings=this.settings(),b=this.getLogicalDayBounds();
+            const previous=data[date];
+            data[date]={...record,date,timezone:record.timezone||b.timezone,day_start_hour:b.dayStartHour,cycle_start:+b.start,cycle_end:+b.end};
+            const value=JSON.stringify(this.core().normalize(data));
+            if(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_BREAKS)!==value){
+                localStorage.setItem(TaskitatorEngine.STORAGE_KEY_BREAKS,value);
+                if(window.SyncEngine?.isConfigured?.())window.SyncEngine.markLocalModified();
+                window.dispatchEvent?.(new CustomEvent('taskitator-breaks-changed'));
+                if(window.SyncEngine?.isConfigured?.() && (previous?.window_started_at!==record.window_started_at||previous?.locked!==record.locked))
+                    Promise.resolve().then(()=>window.SyncEngine.push()).catch(()=>{});
             }
         },
-
-        getBreakRecord(dateStr) {
-            const allData = this.getAllBreakData();
-            const entry = allData[dateStr];
-            if (!entry) {
-                return {
-                    date: dateStr,
-                    window_started_at: null,
-                    locked: false,
-                    breaks: []
-                };
-            }
-            if (Array.isArray(entry)) {
-                return {
-                    date: dateStr,
-                    window_started_at: null,
-                    locked: true,
-                    breaks: entry
-                };
-            }
-            return {
-                date: dateStr,
-                window_started_at: entry.window_started_at || null,
-                locked: Boolean(entry.locked),
-                breaks: Array.isArray(entry.breaks) ? entry.breaks : []
-            };
+        getPlanningStatus(){
+            const bounds=this.getLogicalDayBounds(),record=this.getBreakRecord(bounds.dateStr),now=Date.now();
+            const expired=record.window_started_at&&now-record.window_started_at>=this.PLANNING_WINDOW_MS;
+            const valid=this.core().validate(record.breaks,bounds);
+            if((expired||record.locked)&&!valid.valid){
+                if(!record.repair_required||record.locked){record.repair_required=true;record.locked=false;this.saveBreakRecord(bounds.dateStr,record);}
+            }else if(expired&&!record.locked){record.locked=true;this.saveBreakRecord(bounds.dateStr,record);}
+            const repair=!!record.repair_required&&!valid.valid;
+            const running=!!record.window_started_at&&!expired&&!record.locked;
+            const buffer=now>=+bounds.cutoff6h;
+            return {bounds,record,isRepair:repair,isRunning:running,isLocked:record.locked,isInBuffer:buffer&&!repair,
+                canStart:!record.window_started_at&&!record.locked&&!buffer&&!repair,canEdit:running||repair,
+                remainingWindowMs:running?Math.max(0,this.PLANNING_WINDOW_MS-(now-record.window_started_at)):0,
+                reason:repair?'The planning window ended without a valid schedule. Enter valid breaks once to repair and lock it.':
+                    record.locked?'The break schedule is locked until the next day cycle.':buffer?'Planning is closed during the final 6 hours of this cycle.':''};
         },
-
-        saveBreakRecord(dateStr, record) {
-            let allData = this.getAllBreakData();
-            if (Array.isArray(allData) || typeof allData !== 'object' || allData === null) {
-                allData = {};
-            }
-            allData[dateStr] = {
-                date: dateStr,
-                window_started_at: record.window_started_at || null,
-                locked: Boolean(record.locked),
-                breaks: Array.isArray(record.breaks) ? record.breaks : []
-            };
-            localStorage.setItem(TaskitatorEngine.STORAGE_KEY_BREAKS, JSON.stringify(allData));
+        startPlanningWindow(){const s=this.getPlanningStatus();if(!s.canStart)return {success:false,error:s.reason};
+            s.record.window_started_at=Date.now();s.record.locked=false;this.saveBreakRecord(s.bounds.dateStr,s.record);return {success:true,record:s.record};},
+        lockTodayBreaks(){const s=this.getPlanningStatus();const result=this.core().validate(s.record.breaks,s.bounds);if(!result.valid)return {success:false,error:result.error};s.record.locked=true;this.saveBreakRecord(s.bounds.dateStr,s.record);return {success:true,record:s.record};},
+        isSelectionWindowOpen(){const s=this.getPlanningStatus();return s.canStart||s.canEdit;},
+        getTodayBreaks(){const b=this.getLogicalDayBounds();return this.getBreakRecord(b.dateStr).breaks;},
+        getBreakTimestamps(b,bounds){return this.core().interval(b,bounds);},
+        saveTodayBreaks(list,lockImmediately=false){
+            const status=this.getPlanningStatus();if(status.isLocked||!status.canEdit)return {valid:false,error:status.reason||'Start the planning window first.'};
+            const result=this.core().validate(list,status.bounds);if(!result.valid)return result;
+            status.record.breaks=result.breaks;status.record.locked=!!lockImmediately||status.isRepair;status.record.repair_required=false;
+            this.saveBreakRecord(status.bounds.dateStr,status.record);return {valid:true,record:status.record};
         },
-
-        getPlanningStatus() {
-            const bounds = this.getLogicalDayBounds();
-            let record = this.getBreakRecord(bounds.dateStr);
-            const nowTime = Date.now();
-
-            const formatHour = (d) => {
-                return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-            };
-
-            // Auto-lock on 10-minute expiration
-            if (record.window_started_at && !record.locked) {
-                const elapsed = nowTime - record.window_started_at;
-                if (elapsed >= this.PLANNING_WINDOW_MS) {
-                    record.locked = true;
-                    this.saveBreakRecord(bounds.dateStr, record);
-                }
-            }
-
-            // 1. Cycle already planned and sealed
-            if (record.locked) {
-                return {
-                    canStart: false,
-                    canEdit: false,
-                    isRunning: false,
-                    isLocked: true,
-                    isInBuffer: false,
-                    remainingWindowMs: 0,
-                    reason: `Daily Breaks Locked: You have already planned and locked your breaks for this cycle. The window will reset tomorrow at ${formatHour(bounds.end)}.`,
-                    bounds,
-                    record
-                };
-            }
-
-            // 2. Active 10-minute window running
-            if (record.window_started_at && !record.locked) {
-                const elapsed = nowTime - record.window_started_at;
-                const remaining = this.PLANNING_WINDOW_MS - elapsed;
-                if (remaining > 0) {
-                    const remSec = Math.ceil(remaining / 1000);
-                    const remMin = Math.floor(remSec / 60);
-                    const remSecOnly = remSec % 60;
-                    const remFormatted = `${String(remMin).padStart(2, '0')}:${String(remSecOnly).padStart(2, '0')}`;
-                    return {
-                        canStart: false,
-                        canEdit: true,
-                        isRunning: true,
-                        isLocked: false,
-                        isInBuffer: false,
-                        remainingWindowMs: remaining,
-                        reason: `Planning Active: Your 10-minute window is currently running. You have ${remFormatted} remaining to adjust and lock your breaks.`,
-                        bounds,
-                        record
-                    };
-                }
-            }
-
-            // 3. Final 6-hour buffer before cycle end
-            if (nowTime >= bounds.cutoff6h.getTime()) {
-                return {
-                    canStart: false,
-                    canEdit: false,
-                    isRunning: false,
-                    isLocked: false,
-                    isInBuffer: true,
-                    remainingWindowMs: 0,
-                    reason: `Planning Closed: You are within the final 6 hours of your logical day (cycle ends at ${formatHour(bounds.end)}). Daily breaks cannot be scheduled during this final buffer.`,
-                    bounds,
-                    record
-                };
-            }
-
-            // 4. Eligible to initiate 10-minute session
-            return {
-                canStart: true,
-                canEdit: false,
-                isRunning: false,
-                isLocked: false,
-                isInBuffer: false,
-                remainingWindowMs: 0,
-                reason: '',
-                bounds,
-                record
-            };
-        },
-
-        startPlanningWindow() {
-            const status = this.getPlanningStatus();
-            if (!status.canStart) {
-                return { success: false, error: status.reason };
-            }
-            const bounds = status.bounds;
-            const record = status.record;
-            record.window_started_at = Date.now();
-            record.locked = false;
-            this.saveBreakRecord(bounds.dateStr, record);
-            return { success: true, record, remainingWindowMs: this.PLANNING_WINDOW_MS };
-        },
-
-        lockTodayBreaks() {
-            const bounds = this.getLogicalDayBounds();
-            const record = this.getBreakRecord(bounds.dateStr);
-            record.locked = true;
-            this.saveBreakRecord(bounds.dateStr, record);
-            return { success: true, record };
-        },
-
-        isSelectionWindowOpen() {
-            const status = this.getPlanningStatus();
-            return status.canStart || status.canEdit;
-        },
-
-        getTodayBreaks() {
-            const bounds = this.getLogicalDayBounds();
-            const record = this.getBreakRecord(bounds.dateStr);
-            return Array.isArray(record.breaks) ? record.breaks : [];
-        },
-
-        getBreakTimestamps(b, bounds) {
-            const [sH, sM] = b.start.split(':').map(Number);
-            const [eH, eM] = b.end.split(':').map(Number);
-            const dayStartH = bounds.start.getHours();
-
-            const startD = new Date(bounds.start);
-            if (sH < dayStartH) {
-                startD.setDate(startD.getDate() + 1);
-            }
-            startD.setHours(sH, sM, 0, 0);
-
-            const endD = new Date(bounds.start);
-            if (eH < dayStartH || (eH === dayStartH && eM <= 0)) {
-                endD.setDate(endD.getDate() + 1);
-            }
-            endD.setHours(eH, eM, 0, 0);
-
-            if (endD.getTime() <= startD.getTime()) {
-                endD.setDate(endD.getDate() + 1);
-            }
-
-            return { startTime: startD.getTime(), endTime: endD.getTime() };
-        },
-
-        saveTodayBreaks(breaksArray, lockImmediately = false) {
-            const bounds = this.getLogicalDayBounds();
-            let record = this.getBreakRecord(bounds.dateStr);
-
-            if (record.locked && !lockImmediately) {
-                return { valid: false, error: 'Breaks for today have already been locked.' };
-            }
-
-            if (!Array.isArray(breaksArray) || breaksArray.length > 3) {
-                return { valid: false, error: 'Maximum 3 breaks allowed per day.' };
-            }
-
-            let totalMinutes = 0;
-            const parsed = [];
-
-            for (const b of breaksArray) {
-                if (!b.start || !b.end) continue;
-                const { startTime, endTime } = this.getBreakTimestamps(b, bounds);
-
-                if (endTime <= startTime) {
-                    return { valid: false, error: 'Break end time must be strictly after start time.' };
-                }
-
-                if (endTime > bounds.end.getTime()) {
-                    const cutoffFormatted = `${String(bounds.end.getHours()).padStart(2, '0')}:${String(bounds.end.getMinutes()).padStart(2, '0')}`;
-                    return { valid: false, error: `Breaks cannot be scheduled past the end of your day cycle (${cutoffFormatted}).` };
-                }
-
-                if (startTime < bounds.start.getTime()) {
-                    const startFormatted = `${String(bounds.start.getHours()).padStart(2, '0')}:${String(bounds.start.getMinutes()).padStart(2, '0')}`;
-                    return { valid: false, error: `Breaks cannot be scheduled before the start of your day cycle (${startFormatted}).` };
-                }
-
-                const duration = Math.round((endTime - startTime) / (60 * 1000));
-                totalMinutes += duration;
-                parsed.push({ startTime, endTime, start: b.start, end: b.end, duration });
-            }
-
-            if (totalMinutes > 180) {
-                return { valid: false, error: `Total break time (${totalMinutes}m) exceeds 3 hours (180m) limit.` };
-            }
-
-            parsed.sort((a, b) => a.startTime - b.startTime);
-            for (let i = 0; i < parsed.length - 1; i++) {
-                if (parsed[i].endTime > parsed[i + 1].startTime) {
-                    return { valid: false, error: 'Breaks cannot overlap.' };
-                }
-            }
-
-            record.breaks = breaksArray;
-            if (lockImmediately) {
-                record.locked = true;
-            }
-            this.saveBreakRecord(bounds.dateStr, record);
-
-            return { valid: true, record };
-        },
-
-        isCurrentlyOnBreak() {
-            const bounds = this.getLogicalDayBounds();
-            const record = this.getBreakRecord(bounds.dateStr);
-            const breaks = record.breaks || [];
-            if (breaks.length === 0) return false;
-
-            const nowTime = Date.now();
-            return breaks.some(b => {
-                if (!b.start || !b.end) return false;
-                const { startTime, endTime } = this.getBreakTimestamps(b, bounds);
-                return nowTime >= startTime && nowTime <= endTime;
-            });
-        }
+        getActiveBreak(){return this.core().activeBreak(this.getAllBreakData(),{...this.settings(),break_timezone:this.getLogicalDayBounds().timezone});},
+        isCurrentlyOnBreak(){return !!this.getActiveBreak();}
     },
 
     // =========================================================================
@@ -354,7 +110,7 @@ const TaskitatorEngine = {
             const now = new Date();
             const currentCycleId = this.getCycleIdentifier(now, weekendEnd);
 
-            if (!state.cycle_id || state.cycle_id !== currentCycleId) {
+            if (!state.server_managed && (!state.cycle_id || state.cycle_id !== currentCycleId)) {
                 state = {
                     cycle_id: currentCycleId,
                     uses_left: 4,
@@ -363,6 +119,7 @@ const TaskitatorEngine = {
                 localStorage.setItem(TaskitatorEngine.STORAGE_KEY_EMERGENCY, JSON.stringify(state));
             }
 
+            if(!state.server_managed)state.active_until=null;
             return state;
         },
 
@@ -388,21 +145,9 @@ const TaskitatorEngine = {
             return diff > 0 ? diff : 0;
         },
 
-        activateBypass() {
-            const state = this.getState();
-            if (this.isBypassActive()) {
-                return { success: false, error: 'Emergency bypass is already active.' };
-            }
-            if (state.uses_left <= 0) {
-                return { success: false, error: 'All 4 emergency bypass tokens for this cycle have been exhausted.' };
-            }
-
-            state.uses_left -= 1;
-            const expires = new Date(Date.now() + 15 * 60 * 1000);
-            state.active_until = expires.toISOString();
-
-            localStorage.setItem(TaskitatorEngine.STORAGE_KEY_EMERGENCY, JSON.stringify(state));
-            return { success: true, active_until: state.active_until, uses_left: state.uses_left };
+        async activateBypass() {
+            try { return await window.TaskitatorPro.activateBypass(); }
+            catch(error) { return {success:false,error:error.message}; }
         }
     },
 
@@ -463,10 +208,9 @@ const TaskitatorEngine = {
             });
         },
 
-        async callGeminiWithParts(modelName, apiKey, partsArray, format='proof', selection=this.selection(), taskMeta=null) {
+        async callGeminiWithParts(modelName, apiKey, partsArray, format='proof', selection=this.selection()) {
             const payload = {
                 taskitatorFormat:format,
-                ...(taskMeta ? { taskitatorTask: taskMeta } : {}),
                 contents: [{
                     // Older saved exemplars contain the blob fields directly.
                     // Gemini requires those fields inside an inline_data Part.
@@ -643,14 +387,11 @@ Return strictly valid JSON with this exact schema:
                                 data: part.inline_data.data
                             });
                         }
-                        if (window.SyncEngine?.isConfigured?.() && window.SyncEngine?.isDirty?.()) {
-                            await window.SyncEngine.push().catch(() => {});
-                        }
+                        const combinedCriteria = (criteria || '') + (userContext ? (' - Note: ' + userContext) : '');
                         const proRes = await window.TaskitatorPro.reviewProof({
                             taskId: taskId || ('task_' + Date.now()),
                             title: taskTitle,
-                            criteria: criteria || '',
-                            ...(userContext ? { userContext } : {}),
+                            criteria: combinedCriteria,
                             files: encodedFiles,
                             exemplar: exemplarPart ? {mime_type:(exemplarPart.inline_data || exemplarPart).mime_type, data:(exemplarPart.inline_data || exemplarPart).data} : null
                         });
@@ -659,131 +400,25 @@ Return strictly valid JSON with this exact schema:
                             approved: proRes.verdict === 'approved',
                             verdict: proRes.verdict,
                             confidence: proRes.confidence,
-                            critique: proRes.critique || proRes.reason || '',
-                            reason: proRes.reason || proRes.critique || '',
-                            model_used: proRes.model_used || 'claude-haiku-5-5',
-                            credits_charged: proRes.credits_charged,
-                            discount_applied: Boolean(proRes.discount_applied),
-                            is_pro: true
+                            critique: proRes.critique,
+                            job_id:proRes.job_id,
+                            model_used: proRes.model_used || 'claude-haiku-5-5'
                         };
                     }
                 } catch (proErr) {
-                    if (hostedSelected || proErr.code === 'AUDIT_CANCELLED' || proErr.status === 429 || proErr.status === 413 || proErr.status === 415) {
-                        return { success: false, status: proErr.status, error: proErr.message };
-                    }
-                    console.warn('[AuditEngine] Pro gateway fallback check:', proErr.message);
+                    return {success:false,status:proErr.status||503,error:proErr.message};
                 }
             }
-            const selection=this.selection();
-            let settings = {};
             try {
-                settings = JSON.parse(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_SETTINGS) || '{}');
-            } catch (e) {
-                settings = {};
-            }
-
-            const apiKey = Boolean(window.TaskitatorVault?.available);
-            if (!apiKey) {
-                return { success: false, status: 401, error: 'Save a key for the active AI provider in Settings → Account.' };
-            }
-
-            const check = this.validateFile(file, TaskitatorEngine.MAX_FILE_SIZE_MB);
-            if (!check.valid) {
-                return { success: false, status: 400, error: check.error };
-            }
-
-            let proofPart;
-            try {
-                proofPart = await this.fileToBase64(file);
-            } catch (fileErr) {
-                return { success: false, status: 400, error: `Failed to read evidence file: ${fileErr.message}` };
-            }
-
-            let systemPrompt = `
-You are the Taskitator Forensic Audit AI. Your job is to strictly evaluate whether evidence (image or PDF document) legitimately proves completion of a task based on provided criteria.
-
-Task: "${taskTitle}"
-Proof Criteria <PC>: "${criteria || 'Clear confirmation of completed work.'}"
-User Note: "${userContext || 'None'}"
-
-Evaluation Rules:
-1. Be skeptical and rigorous. Do not accept ambiguous, staged, or generic proof.
-2. Verify specific criteria details if specified (e.g., dates, handwriting, calculated numbers, finished document structure).
-3. If criteria are met, approve. If doubtful or incomplete, reject.`;
-
-            if (exemplarPart) {
-                systemPrompt += `
-4. EXEMPLAR COMPARISON: The first attached document/image is the creator's Reference Exemplar. The second attached document/image is the User's Submitted Proof. Verify that the submitted proof satisfies the criteria and aligns with the expected format/substance demonstrated in the reference exemplar.`;
-            }
-
-            systemPrompt += `
-
-Return valid JSON matching this schema:
-{
-  "verdict": "approved" | "rejected" | "incomplete",
-  "confidence": 0.0 to 1.0,
-  "critique": "Concise forensic explanation of the decision or specific additional proof needed."
-}
-`;
-
-            const parts = [{ text: systemPrompt }];
-            if (exemplarPart) {
-                parts.push(exemplarPart);
-            }
-            parts.push(proofPart);
-
-            try {
-                if (window.SyncEngine?.isConfigured?.() && window.SyncEngine?.isDirty?.()) {
-                    await window.SyncEngine.push().catch(() => {});
+                const encoded=[];
+                for(const f of fileList){
+                    const check=this.validateFile(f);if(!check.valid)return {success:false,status:400,error:check.error};
+                    const part=(await this.fileToBase64(f)).inline_data;encoded.push({mime_type:part.mime_type,data:part.data});
                 }
-                const taskMeta = taskId ? {
-                    id: taskId,
-                    title: taskTitle || '',
-                    criteria: criteria || '',
-                    exemplar: exemplarPart ? { mime_type: (exemplarPart.inline_data || exemplarPart).mime_type, data: (exemplarPart.inline_data || exemplarPart).data } : null
-                } : null;
-                let usedModel = selection.primary;
-                let res = await this.callGeminiWithParts(usedModel, apiKey, parts, 'proof', selection, taskMeta);
+                const result=await window.TaskitatorPro.personalReview({task_id:taskId,files:encoded});
+                return {success:true,approved:result.verdict==='approved',...result};
+            } catch(error){return {success:false,status:error.status||0,error:error.message};}
 
-                if (selection.fallback && (res.status === 429 || res.status === 503)) {
-                    console.warn(`[AuditEngine] Model ${usedModel} returned ${res.status}. Cascading to ${TaskitatorEngine.FALLBACK_MODEL}...`);
-                    usedModel = selection.fallback;
-                    res = await this.callGeminiWithParts(usedModel, apiKey, parts, 'proof', selection, taskMeta);
-                }
-
-                if (!res.ok) {
-                    const errJson = await res.json().catch(() => ({}));
-                    return {
-                        success: false,
-                        status: res.status,
-                        code: res.status,
-                        error: errJson.error?.message || `Gemini HTTP ${res.status}`
-                    };
-                }
-
-                const data = await res.json();
-                let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-                rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-
-                const parsed = JSON.parse(rawText);
-                return {
-                    success: true,
-                    status: 200,
-                    code: 200,
-                    approved: parsed.verdict === 'approved',
-                    verdict: parsed.verdict,
-                    critique: parsed.critique || parsed.reason || '',
-                    reason: parsed.reason || parsed.critique || '',
-                    model_used: usedModel,
-                    is_pro: false
-                };
-            } catch (err) {
-                return {
-                    success: false,
-                    status: err.status || 0,
-                    error: `Verification error: ${err.message}`
-                };
-            }
         }
     }
 };

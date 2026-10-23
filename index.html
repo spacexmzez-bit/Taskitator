@@ -774,17 +774,6 @@
                 </div>
             </div>
 
-            <!-- Independent Subtask Shield Toggle -->
-            <div class="form-group" id="prerequisiteBoxContainer">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" id="strictPrereqCheckbox">
-                    <span>Require all subtasks first (Irreversible Shield)</span>
-                </label>
-                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
-                    Prevents completing this task until all subtasks beneath it are completely finished.
-                </small>
-            </div>
-
             <!-- Bonus Subtask Toggle (Creation) -->
             <div class="form-group" id="bonusTaskContainer">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -796,18 +785,23 @@
                 </small>
             </div>
 
+            <!-- Independent Subtask Shield Toggle -->
+            <div class="form-group" id="prerequisiteBoxContainer">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="strictPrereqCheckbox">
+                    <span>Require all subtasks first (Irreversible Shield)</span>
+                </label>
+                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                    Prevents completing this task until all subtasks beneath it are completely finished.
+                </small>
+            </div>
+
             <!-- AI Proof Verification Option -->
             <div class="form-group">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0;">
-                        <input type="checkbox" id="aiLockCheckbox">
-                        <span>Require AI Proof Verification (Irrevocable)</span>
-                    </label>
-                    <button type="button" class="icon-btn ai-audit-info-trigger" id="createAiAuditInfoBtn" title="AI Audit Usage Information" style="width: 22px; height: 22px; border-radius: 50%; font-size: 0.75rem; padding: 0; line-height: 1; font-weight: 700;">?</button>
-                </div>
-                <div class="guidance-note" id="createAiAuditInfoBox" style="display: none; margin-top: 6px; font-size: 0.8rem; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 6px; padding: 8px 10px; color: #cbd5e1;">
-                    ⚠️ <strong>Audit Token Notice:</strong> Submitting proof consumes your AI usage. If your proof is rejected because it fails the task criteria or is invalid, token usage is still calculated and consumed—no refunds are issued. Make sure your proof is clear and complete before submitting.
-                </div>
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="aiLockCheckbox">
+                    <span>Require AI Proof Verification (Irrevocable)</span>
+                </label>
             </div>
 
             <div class="form-group" id="criteriaBoxContainer" style="display: none;">
@@ -958,17 +952,6 @@
             <input type="date" id="editTaskDueDate">
         </div>
 
-        <!-- Independent Subtask Shield in Details -->
-        <div class="form-group" id="editPrerequisiteBoxContainer">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                <input type="checkbox" id="editStrictPrereqCheckbox">
-                <span>Require all subtasks first (Irreversible Shield)</span>
-            </label>
-            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
-                Prevents completing this task until all subtasks beneath it are completely finished.
-            </small>
-        </div>
-
         <!-- Bonus Subtask Toggle (Details / Edit) -->
         <div class="form-group" id="editBonusTaskContainer">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -980,18 +963,23 @@
             </small>
         </div>
 
+        <!-- Independent Subtask Shield in Details -->
+        <div class="form-group" id="editPrerequisiteBoxContainer">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="editStrictPrereqCheckbox">
+                <span>Require all subtasks first (Irreversible Shield)</span>
+            </label>
+            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                Prevents completing this task until all subtasks beneath it are completely finished.
+            </small>
+        </div>
+
         <!-- AI Proof Verification in Details -->
         <div class="form-group">
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0;">
-                    <input type="checkbox" id="editAiLockCheckbox">
-                    <span>AI Proof Required</span>
-                </label>
-                <button type="button" class="icon-btn ai-audit-info-trigger" id="editAiAuditInfoBtn" title="AI Audit Usage Information" style="width: 22px; height: 22px; border-radius: 50%; font-size: 0.75rem; padding: 0; line-height: 1; font-weight: 700;">?</button>
-            </div>
-            <div class="guidance-note" id="editAiAuditInfoBox" style="display: none; margin-top: 6px; font-size: 0.8rem; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 6px; padding: 8px 10px; color: #cbd5e1;">
-                ⚠️ <strong>Audit Token Notice:</strong> Submitting proof consumes your AI usage. If your proof is rejected because it fails the task criteria or is invalid, token usage is still calculated and consumed—no refunds are issued. Make sure your proof is clear and complete before submitting.
-            </div>
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="editAiLockCheckbox">
+                <span>AI Proof Required</span>
+            </label>
         </div>
 
         <div class="form-group" id="editCriteriaBoxContainer" style="display: none;">
@@ -1140,6 +1128,7 @@
 
 <script type="text/taskitator-script" src="safety.js"></script>
 <script type="text/taskitator-script" src="exemplar-store.js"></script>
+<script type="text/taskitator-script" src="pro/break-core.js"></script>
 <script type="text/taskitator-script" src="audit-engine.js"></script>
 <script type="text/taskitator-script" src="recurrence-core.js"></script>
 <script type="text/taskitator-script" src="recurrence-ui.js"></script>

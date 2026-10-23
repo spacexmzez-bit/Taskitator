@@ -114,7 +114,7 @@ window.TaskitatorAgent = (() => {
             let breaks = [];
             try {
                 tasks = JSON.parse(localStorage.getItem(STORAGE_KEY_TASKS) || '[]');
-                breaks = JSON.parse(localStorage.getItem(STORAGE_KEY_BREAKS) || '[]');
+                breaks = window.TaskitatorEngine?.BreakEngine?.getTodayBreaks?.() || [];
             } catch (e) {}
 
             const activeCount = tasks.filter(t => t.status === 'active').length;
