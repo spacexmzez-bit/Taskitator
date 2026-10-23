@@ -216,7 +216,7 @@ test('Riyadh day and month boundaries are shared by quotas, quotes and spend per
 test('client price rejection does not send paid inference; approval carries payload-bound quote and exemplar',async()=>{
     const source=fs.readFileSync(new URL('pro-client.js',import.meta.url),'utf8');
     for(const approve of [false,true]) {
-        const calls=[],prompts=[],window={Clerk:{session:{id:'s'}},confirm(text){prompts.push(text);return approve}};
+        const calls=[],prompts=[],window={Clerk:{session:{id:'s'}},TaskitatorProUI:{confirmReviewCost(options){prompts.push(options);return approve}}};
         vm.runInContext(source,vm.createContext({window,localStorage:{getItem:()=>null},crypto,TextEncoder,Uint8Array}));
         window.TaskitatorPro.prepareAudit=async()=>{};
         window.TaskitatorPro.prepareAudit=async()=>{};
@@ -229,19 +229,16 @@ test('client price rejection does not send paid inference; approval carries payl
         if(approve){await operation;assert.equal(calls[1].body.quote_id,'q');assert.equal(calls[1].body.exemplar.data,image.data)}
         else await assert.rejects(operation,/cancelled/);
         assert.equal(calls.length,approve?2:1);
-        assert.match(prompts[0],/Biology worksheet: up to 1.5 credits/);
-        assert.match(prompts[0],/reference comparison: double charge/);
-        assert.match(prompts[0],/Estimated charge: 0.4 credits/);
-        assert.match(prompts[0],/Maximum held temporarily: 1.5 credits/);
-        assert.match(prompts[0],/Unused held credits return to your balance/);
-        assert.match(prompts[0],/even if the proof is not approved/);
-        assert.match(prompts[0],/Cancelling now starts no paid review/);
+        assert.equal(prompts[0].names.get('a'),'Biology worksheet');
+        assert.equal(prompts[0].quote.tasks[0].exemplar,true);
+        assert.equal(prompts[0].quote.estimated_credits,.4);
+        assert.equal(prompts[0].quote.maximum_credits,1.5);
     }
 });
 
 test('a lost browser response reuses the same operation on retry instead of purchasing another audit',async()=>{
     const source=fs.readFileSync(new URL('pro-client.js',import.meta.url),'utf8'),calls=[];
-    const window={Clerk:{session:{id:'session_A'}},confirm:()=>true};
+    const window={Clerk:{session:{id:'session_A'}},TaskitatorProUI:{confirmReviewCost:async()=>true}};
     vm.runInContext(source,vm.createContext({window,crypto,TextEncoder,Uint8Array}));
     let finished=false;
     window.TaskitatorPro.prepareAudit=async()=>{};
@@ -272,7 +269,7 @@ test('personal-key mode toggles retain hosted spending and fractional credit bal
 test('batch price preview uses task titles, hides IDs and applies discount wording only for multiple tasks',async()=>{
     const source=fs.readFileSync(new URL('pro-client.js',import.meta.url),'utf8');
     for(const count of [1,2]) {
-        const calls=[],prompts=[],window={Clerk:{session:{id:'session_A'}},confirm:text=>{prompts.push(text);return true}};
+        const calls=[],prompts=[],window={Clerk:{session:{id:'session_A'}},TaskitatorProUI:{confirmReviewCost:options=>{prompts.push(options);return true}}};
         vm.runInContext(source,vm.createContext({window,crypto,TextEncoder,Uint8Array}));
         const tasks=[{id:'internal_task_942',title:'Lab\nnotes',criteria:'complete'},
             {id:'internal_task_765',title:'',criteria:'complete'}].slice(0,count);
@@ -286,10 +283,9 @@ test('batch price preview uses task titles, hides IDs and applies discount wordi
         };
         const result=await window.TaskitatorPro.batchReview({tasks,files:[image],operationId:'batch_price_wording'});
         assert.equal(result.credits_charged,.25);assert.equal(calls.length,2);
-        assert.match(prompts[0],/Lab notes: up to 0.5 credits/);
-        assert.doesNotMatch(prompts[0],/internal_task_|actual provider token|exemplar/);
-        if(count===2) {assert.match(prompts[0],/Task 2: up to 0.5 credits/);assert.match(prompts[0],/Each task includes a 25% batch discount/)}
-        else assert.doesNotMatch(prompts[0],/25% batch discount/);
+        assert.equal(prompts[0].names.get('internal_task_942'),'Lab notes');
+        if(count===2) assert.equal(prompts[0].names.get('internal_task_765'),'Task 2');
+        assert.equal(prompts[0].quote.maximum_credits,1);
         assert.deepEqual(calls[1].body.tasks.map(task=>task.id),tasks.map(task=>task.id));
         assert.equal(calls[1].body.quote_id,'quote_batch');
     }

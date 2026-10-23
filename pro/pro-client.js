@@ -75,6 +75,15 @@
             return await this.request('/pro/status', { method: 'GET' });
         }
 
+        // Check the authenticated entitlement at the point of use, never local tier flags.
+        async canCreateConsecutive() {
+            const owner = global.Clerk?.session?.id;
+            const status = await this.getStatus();
+            if (global.Clerk?.session?.id !== owner) throw new Error('Your session changed. Retry the Pro option.');
+            return status?.isPro === true && status.status === 'active' &&
+                (status.expires_at === null || (Number.isFinite(status.expires_at) && status.expires_at > Date.now()));
+        }
+
         /**
          * Activate Pro using a Keyo license key.
          * @param {string} key - The Keyo license key
@@ -207,18 +216,11 @@
                     const title = typeof task.title === 'string' ? task.title.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,120) : '';
                     return [task.id,title || (batch ? `Task ${index+1}` : 'Task')];
                 }));
-                const credits = value => Number(value.toFixed(3)).toString();
-                const perTask = quote.tasks.map((task,index) =>
-                    `${names.get(task.task_id) || (batch ? `Task ${index+1}` : 'Task')}: up to ${credits(task.credits)} credits` +
-                    (task.exemplar ? ' (reference comparison: double charge)' : '')).join('\n');
-                const text = 'Review price\n\n' +
-                    `Estimated charge: ${credits(quote.estimated_credits)} credits\n` +
-                    `Maximum held temporarily: ${credits(quote.maximum_credits)} credits\n\n` +
-                    perTask + '\n\n' +
-                    (batch && payload.tasks.length >= 2 ? 'Each task includes a 25% batch discount.\n\n' : '') +
-                    'We temporarily hold the maximum shown. Your final charge depends on the amount of proof and review work, and will not exceed that maximum. Unused held credits return to your balance.\n\n' +
-                    'You pay for the review even if the proof is not approved. Cancelling now starts no paid review.\n\nStart review?';
-                if (!global.confirm(text)) throw Object.assign(new Error('Audit cancelled. No paid review was started.'),{code:'AUDIT_CANCELLED'});
+                // Formatting belongs to the dialog. Send the original quote ID and payload unchanged.
+                const approve = global.TaskitatorProUI?.confirmReviewCost;
+                if (typeof approve !== 'function') throw new Error('Review preview is unavailable. Reload and retry. No paid review was started.');
+                if (await approve({quote, names}) !== true)
+                    throw Object.assign(new Error('Audit cancelled. No paid review was started.'),{code:'AUDIT_CANCELLED'});
                 if (global.Clerk?.session?.id !== owner) throw new Error('Your session changed. Start a new audit.');
                 const result = await this.request(batch ? '/pro/ai/batch-review' : '/pro/ai/review',{
                     method:'POST',body:JSON.stringify({...payload,quote_id:quote.quote_id})});

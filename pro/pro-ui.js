@@ -28,6 +28,67 @@
         });
     }
 
+    // Native modal dialog supplies focus containment, inert background and Escape support.
+    // All quote/task text is escaped; the quote object is never rounded or mutated.
+    function reviewCostMarkup({quote, names}) {
+        const amount = (value, places) => Number(value).toFixed(places);
+        const discount = Number(quote.batch_discount || 0);
+        const rows = quote.tasks.map((task, index) => `<li>
+            <strong>${escapeHtml(names.get(task.task_id) || `Task ${index + 1}`)}</strong>
+            <span>Maximum task charge: ${amount(task.credits, 3)} credits</span>
+            <span>Reference example multiplier: ×${task.exemplar ? '2' : '1'}</span>
+            <span>${discount ? `${amount(discount * 100, 0)}% batch discount included in this task’s charge` : 'Batch discount: none'}</span>
+        </li>`).join('');
+        return `<h2 id="pro-review-cost-title">Review cost</h2>
+            <dl class="pro-review-summary">
+                <div><dt>Estimated credit charge</dt><dd>${amount(quote.estimated_credits, 1)} credits</dd></div>
+                <div><dt>Maximum temporary hold</dt><dd>${amount(quote.maximum_credits, 1)} credits</dd></div>
+            </dl>
+            <p id="pro-review-cost-note">Unused held credits return to your balance. A completed review is charged even when proof is rejected.</p>
+            <details class="pro-review-details"><summary>View details</summary>
+                <p>Estimated charge: ${amount(quote.estimated_credits, 3)} credits<br>
+                Maximum temporary hold: ${amount(quote.maximum_credits, 3)} credits</p>
+                <ul>${rows}</ul>
+                <p>The summary is rounded for readability. Exact accounting and the quoted maximum stay unchanged. The final charge depends on review usage and will not exceed the quoted maximum.</p>
+            </details>
+            <div class="pro-review-actions">
+                <button type="button" class="pro-review-cancel">Cancel</button>
+                <button type="button" class="pro-btn pro-review-start">Start review</button>
+            </div>`;
+    }
+
+    function confirmReviewCost(options) {
+        if (document.getElementById('pro-review-cost-dialog')) return Promise.resolve(false);
+        return new Promise((resolve, reject) => {
+            const previousFocus = document.activeElement;
+            const dialog = document.createElement('dialog');
+            dialog.id = 'pro-review-cost-dialog';
+            dialog.className = 'pro-review-dialog';
+            dialog.setAttribute('aria-labelledby', 'pro-review-cost-title');
+            dialog.setAttribute('aria-describedby', 'pro-review-cost-note');
+            dialog.innerHTML = reviewCostMarkup(options);
+            let settled = false;
+            const finish = approved => {
+                if (settled) return;
+                settled = true;
+                if (dialog.open) dialog.close();
+                dialog.remove();
+                if (previousFocus?.isConnected) previousFocus.focus();
+                resolve(approved);
+            };
+            dialog.querySelector('.pro-review-cancel').onclick = () => finish(false);
+            dialog.querySelector('.pro-review-start').onclick = () => finish(true);
+            dialog.addEventListener('cancel', event => { event.preventDefault(); finish(false); });
+            dialog.addEventListener('close', () => finish(false));
+            document.body.appendChild(dialog);
+            try {
+                dialog.showModal();
+                // Opening the preview must not make Enter accidentally approve a charge.
+                dialog.querySelector('.pro-review-cancel').focus();
+            } catch (error) { dialog.remove(); reject(error); }
+        });
+    }
+
     // --- Phase 2: Batch Proof Review Modal & Trigger ---
 
     function openBatchReviewModal(selectedIds = null) {
@@ -318,6 +379,8 @@
                     <span id="pro-expiry-label" style="font-size: 12px; color: #94a3b8;"></span>
                 </div>
 
+                <p><a class="pro-compare-link" href="pro/compare.html">Compare Free and Pro</a></p>
+
                 <div id="pro-quota-container" style="display: none;">
                     <div class="pro-quota-grid">
                         <div class="pro-quota-card">
@@ -516,6 +579,7 @@
         global.addEventListener('taskitator-auth-ready', autoInit);
     }
 
+    global.TaskitatorProUI = Object.freeze({confirmReviewCost, reviewCostMarkup});
     global.renderProSection = renderProSection;
     global.refreshProStatus = refreshProStatus;
     global.openBatchReviewModal = openBatchReviewModal;
