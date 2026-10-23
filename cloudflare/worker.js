@@ -491,9 +491,11 @@ export class TaskitatorSync {
             const deletion = method === 'DELETE' && path === '/auth/account';
             const deletionStatus = method === 'POST' && path === '/auth/deletion/status';
             const keyRoute = ['/ai/keys','/ai/keys/stage','/ai/keys/reveal','/ai/keys/test','/ai/generate','/ai/provider'].includes(path);
-            const proRoute = path.startsWith('/pro/');
+            // One account feature for Free and Pro. Keep the old URL for installed clients.
+            const emergencyRoute = ['/emergency','/pro/emergency'].includes(path);
+            const proRoute = path.startsWith('/pro/') && !emergencyRoute;
             if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
-                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute) {
+                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute) {
                 return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
             }
             await this.rateLimit(request);
@@ -542,6 +544,11 @@ export class TaskitatorSync {
                 }
                 if (connect) return await this.connectAccount(request, identity);
                 const account = await this.accountFor(identity);
+                if (emergencyRoute) {
+                    if (!account) throw new HTTPError(403, 'Connect your Taskitator account on the login page first.');
+                    if (!['GET','POST'].includes(method)) throw new HTTPError(405, 'Method not allowed.');
+                    return json(await this.protection.emergency(identity, method === 'POST'));
+                }
                 if (account && this.vault.ready()) await this.migrateVault(identity);
                 if (me) return json({ account });
                 if (!account) throw new HTTPError(403, 'Connect your Taskitator account on the login page first.');

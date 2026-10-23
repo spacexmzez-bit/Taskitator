@@ -1,7 +1,6 @@
 import {SecurityError} from './auth.js';
 import {validatePayload} from './vault.js';
 import {PROVIDERS,providerId} from './ai-models.js';
-import {checkFile, loadStoredSnapshot, validateAgainstStoredTask, taskRevision} from '../pro/audit-policy.js';
 
 const object=value=>value!==null && typeof value==='object' && !Array.isArray(value);
 const jsonSchema=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
@@ -129,26 +128,9 @@ export class AIGateway {
         await this.service.vault.assertOwner(this.service.storage,identity);
         if(await this.service.vault.selectedProvider(identity)!==provider)throw new SecurityError(409,'AI provider changed. Refresh AI status in Settings and start a new request.');
 
-        const taskMeta=payload.taskitatorFormat==='proof' ? (payload.taskitatorTask || (body.task_id || body.taskId ? {id:body.task_id||body.taskId,title:body.title,criteria:body.criteria,exemplar:body.exemplar} : null)) : null;
-        const targetTaskId=taskMeta?.id ? String(taskMeta.id).trim() : '';
-        if(targetTaskId){
-            try{
-                const stored=await loadStoredSnapshot(this.service.storage,identity.userId);
-                if(stored?.snapshot?.tasks){
-                    const storedTask=stored.snapshot.tasks.find(t=>t && t.id===targetTaskId);
-                    if(taskMeta.exemplar)checkFile(taskMeta.exemplar);
-                    validateAgainstStoredTask(storedTask,{
-                        id:targetTaskId,
-                        title:String(taskMeta.title||storedTask?.title||'').trim(),
-                        criteria:String(taskMeta.criteria??storedTask?.proof_criteria??'').trim()
-                    },taskMeta.exemplar,stored.snapshot);
-                }
-            }catch(err){
-                if(err?.status)throw new SecurityError(err.status,err.message);
-                throw err;
-            }
-        }
-
+        // This gateway generates AI output only. Protected task approvals are issued
+        // by ProGateway.personalReview / HostedAudits from canonical saved requirements.
+        // Generic AI output must never create legacy task-completion grants.
         const forward=provider==='claude'?toClaudeRequest(payload):{...payload};
         delete forward.taskitatorFormat;
         delete forward.taskitatorTask;
@@ -178,29 +160,10 @@ export class AIGateway {
                 if(raw.promptFeedback?.blockReason || (reason && reason!=='STOP'))throw new SecurityError(502,'Gemini did not return a complete accepted answer. No partial approval or tool action was accepted.');
             }
             const data=provider==='claude'?fromClaudeResponse(raw):raw;
-            const parsed=validateOutput(data,payload.taskitatorFormat);
+            validateOutput(data,payload.taskitatorFormat);
             await this.service.vault.assertOwner(this.service.storage,identity);
             const current=await this.service.storage.get(await this.service.vault.recordKey(identity,provider));
             if(current?.version!==record.version || await this.service.vault.selectedProvider(identity)!==provider)throw new SecurityError(409,'AI settings changed during the request. No result was applied.');
-            if(payload.taskitatorFormat==='proof' && parsed?.verdict==='approved' && targetTaskId){
-                const stored=await loadStoredSnapshot(this.service.storage,identity.userId);
-                const st=stored?.snapshot?.tasks?.find(t=>t && t.id===targetTaskId);
-                const rev=await taskRevision(st||{id:targetTaskId,proof_criteria:taskMeta?.criteria||''},stored?.snapshot||null);
-                await this.service.storage.transaction(async tx=>{
-                    await this.service.vault.assertOwner(tx,identity);
-                    await tx.put(`pro:approval:${identity.userId}:${targetTaskId}`,{
-                        account_id:identity.userId,
-                        task_id:targetTaskId,
-                        session_id:identity.sessionId||null,
-                        revision:rev,
-                        model_used:body.model,
-                        created_at:Date.now(),
-                        expires_at:Date.now()+86400000,
-                        consumed:false,
-                        consumed_mutation_id:null
-                    });
-                });
-            }
             return data;
         }finally{const remaining=(this.inflight.get(identity.userId)||1)-1;if(remaining)this.inflight.set(identity.userId,remaining);else this.inflight.delete(identity.userId);}
     }
