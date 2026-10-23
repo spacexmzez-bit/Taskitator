@@ -40,7 +40,7 @@
             }
             const token = await this.getToken();
             if (!token) {
-                throw new Error('You must be signed in to access Taskitator Pro features.');
+                throw new Error('Sign in to continue.');
             }
 
             const headers = {
@@ -58,7 +58,7 @@
             const data = await res.json().catch(() => ({}));
 
             if (!res.ok) {
-                const err = new Error(data.error || `Pro API request failed with status ${res.status}`);
+                const err = new Error(data.error || `Taskitator request failed with status ${res.status}`);
                 err.status = res.status;
                 err.code = data.code;
                 err.details = data;
@@ -188,14 +188,26 @@
                 this.pendingAudits.delete(fingerprint);return result;
             }catch(error){if(error.status&&error.code!=='AUDIT_PENDING')this.pendingAudits.delete(fingerprint);throw error;}
         }
+        async emergencyRequest(options) {
+            const owner = global.Clerk?.session?.id;
+            try {
+                const state = await this.request('/emergency', options);
+                if (global.Clerk?.session?.id !== owner) throw new Error('Your session changed. Reopen Emergency Bypass.');
+                localStorage.setItem('taskitator_emergency_state', JSON.stringify(state));
+                if (typeof global.CustomEvent === 'function') global.dispatchEvent(new global.CustomEvent('taskitator-emergency-updated'));
+                return state;
+            } catch (error) {
+                if (error.status === 404) error.message = 'Emergency Bypass is unavailable on the server. Update the Taskitator Worker and try again.';
+                throw error;
+            }
+        }
         async emergencyStatus() {
-            const state=await this.request('/pro/emergency');
-            localStorage.setItem('taskitator_emergency_state',JSON.stringify(state));return state;
+            return this.emergencyRequest({method:'GET'});
         }
         async activateBypass() {
-            const state=await this.request('/pro/emergency',{method:'POST',body:'{}'});
-            localStorage.setItem('taskitator_emergency_state',JSON.stringify(state));return state;
+            return this.emergencyRequest({method:'POST',body:'{}'});
         }
+
 
         async quotedReview(payload,batch) {
             await this.prepareAudit();

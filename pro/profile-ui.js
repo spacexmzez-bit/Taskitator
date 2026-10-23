@@ -67,7 +67,7 @@
             if (busy) return;
             const name = input.value.trim().replace(/^@/, '');
             if (!/^[A-Za-z0-9_]{3,20}$/.test(name)) {
-                feedback.textContent = 'Use 3–20 letters, numbers or underscores. Names are unique without regard to letter case.';
+                feedback.textContent = 'Use 3–20 letters, numbers or underscores. Uppercase and lowercase versions count as the same username.';
                 input.focus(); return;
             }
             busy = true; save.disabled = cancel.disabled = closeButton.disabled = input.disabled = true;

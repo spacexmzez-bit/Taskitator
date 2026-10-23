@@ -126,7 +126,7 @@ export class TaskProtection {
             }
             if(activate){
                 if(s.active_until_ms>now)throw fail(409,'BYPASS_ACTIVE','Emergency Bypass is already active.');
-                if(!s.uses_left)throw fail(429,'BYPASS_EXHAUSTED','All 4 emergency tokens for this cycle have been exhausted.');
+                if(!s.uses_left)throw fail(429,'BYPASS_EXHAUSTED','All 4 Emergency Bypass uses for this week have been used.');
                 s.uses_left--;s.active_until_ms=now+15*60000;await tx.put(key,s);
             }
             return {...s,server_managed:true,active_until:s.active_until_ms?new Date(s.active_until_ms).toISOString():null,success:true};

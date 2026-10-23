@@ -275,7 +275,7 @@
 
         submitBtn.onclick = async () => {
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Auditing with Claude Haiku 5.5...';
+            submitBtn.textContent = 'Reviewing proof…';
             feedback.textContent = '';
 
             const client = getClient();
@@ -401,8 +401,8 @@
                         </div>
                     </div>
 
-                    <section class="pro-credit-help" aria-labelledby="pro-credit-help-title">
-                        <h4 id="pro-credit-help-title">How credits work</h4>
+                    <details class="pro-credit-help" id="pro-credit-help-details">
+                        <summary id="pro-credit-help-title">How credits work</summary>
                         <ul>
                             <li><strong>Larger files and longer reviews use more credits.</strong> Each task has its own charge.</li>
                             <li>Comparing your proof with a <strong>reference example doubles that task’s charge</strong>.</li>
@@ -412,11 +412,11 @@
                         </ul>
                         <p>You pay for a completed review even if the proof is not approved. Cancelling at the price preview starts no paid review.</p>
                         <p>Large uploads may need splitting into smaller files. Daily and monthly credit limits, plus a separate monthly hosted allowance, apply.</p>
-                    </section>
+                    </details>
                     <div class="pro-byok-box">
                         <label class="pro-switch-wrap">
                             <input type="checkbox" id="proByokToggle" />
-                            <span class="pro-switch-label"><strong>Personal BYOK Mode:</strong> Use your own saved API key for proofs. (Your hosted credit limits remain active without resetting).</span>
+                            <span class="pro-switch-label"><strong>Use your own API key.</strong> Switching modes does not reset your hosted credits.</span>
                         </label>
                     </div>
                 </div>
@@ -431,7 +431,7 @@
                 </div>
 
                 <div class="pro-info-note">
-                    <strong>Hosted Personal AI:</strong> Pro accounts receive automated single, multi-file, and batch proof audits powered by personal <strong>Claude Haiku 5.5</strong> without needing a personal API key.
+                    Review proof with hosted AI. No personal API key required.
                 </div>
             </div>
         `;
@@ -477,7 +477,7 @@
                 const client = getClient();
                 try {
                     await client.setUseByok(byokToggle.checked);
-                    showMsg(byokToggle.checked ? 'BYOK mode enabled. Limits remain active.' : 'Switched to hosted Claude Haiku 5.5 mode.', 'success');
+                    showMsg(byokToggle.checked ? 'Personal API-key mode enabled. Hosted credits are unchanged.' : 'Hosted AI enabled.', 'success');
                 } catch (err) {
                     showMsg(err.message || 'Failed to update BYOK mode.', 'error');
                     byokToggle.checked = !byokToggle.checked;
