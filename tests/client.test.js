@@ -237,7 +237,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-hosted-policy-v4'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-security-breaks-v5'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -648,4 +648,13 @@ test('login choices mount the matching Clerk screen without showing migration as
     const html=fs.readFileSync(new URL('login.html',root),'utf8');
     assert.match(html,/<details id="legacyImport">[\s\S]*id="migrationForm"/);
     assert.doesNotMatch(html,/usernameLoginForm|loginPasswordInput/);
+});
+
+
+test('an open Pro review modal defers automatic page refresh',()=>{
+    const f=client();vm.runInContext(fs.readFileSync(new URL('sync-engine.js',root),'utf8'),f.context);
+    f.context.document.querySelector=selector=>selector.includes('.pro-modal-backdrop')?{}:null;
+    assert.equal(f.window.SyncEngine.isSafeToRefresh(),false);
+    f.context.document.querySelector=()=>null;
+    assert.equal(f.window.SyncEngine.isSafeToRefresh(),true);
 });
