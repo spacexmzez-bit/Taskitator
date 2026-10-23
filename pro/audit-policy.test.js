@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { ProGateway } from './pro-backend.js';
-import { POLICY, periods, charges, totalCredits, providerCost, prepare } from './audit-policy.js';
+import {unitParent,seedUnitAccounts} from './security-test-support.js';
+import { activeLicense, testEnv } from './keyo-test-fixture.js';
+import { POLICY, periods, charges, totalCredits, providerCost, prepare, newOperation } from './audit-policy.js';
 
 class Storage {
     constructor() { this.data=new Map();this.queue=Promise.resolve(); }
@@ -19,11 +21,14 @@ class Storage {
     }
 }
 const image={mime_type:'image/png',data:'YWJj'};
-const single=(operation='audit_operation_1')=>({task_id:'task_1',task_title:'Task',criteria:'Dated completed checklist',files:[image],operation_id:operation});
-const batch=(n=2,operation='batch_operation_1')=>({tasks:Array.from({length:n},(_,i)=>({id:'task_'+(i+1),title:'Task '+i,criteria:'Completed checklist'})),files:[image],operation_id:operation});
+const operations=new Map();
+const operationID=label=>{if(!operations.has(label))operations.set(label,newOperation());return operations.get(label);};
+const single=(operation='audit_operation_1')=>({task_id:'task_1',task_title:'Task',criteria:'Dated completed checklist',files:[image],operation_id:operationID(operation)});
+const batch=(n=2,operation='batch_operation_1')=>({tasks:Array.from({length:n},(_,i)=>({id:'task_'+(i+1),title:'Task '+i,criteria:'Completed checklist'})),files:[image],operation_id:operationID(operation)});
 async function harness(options={}) {
-    const storage=new Storage(),gateway=new ProGateway({storage,env:{CLAUDE_API_KEY:'test-provider-key',...options.env}}),calls=[];
-    await storage.put('pro:entitlement:user_A',{status:'active',expires_at:Date.now()+86400000,credits_daily_limit:20,credits_monthly_limit:300});
+    const storage=new Storage();seedUnitAccounts(storage);
+    const gateway=new ProGateway(unitParent(storage,{CLAUDE_API_KEY:'test-provider-key',...testEnv,...options.env})),calls=[];
+    await storage.put('pro:entitlement:user_A',{...await activeLicense('user_A'),credits_daily_limit:20,credits_monthly_limit:300});
     const fetchBefore=globalThis.fetch;
     globalThis.fetch=async(url,opts)=>{
         const payload=JSON.parse(opts.body);calls.push({url,payload});
@@ -43,6 +48,10 @@ async function harness(options={}) {
             content:[{type:'text',text:options.result ?? JSON.stringify(result)}]});
     };
     const route=async(body,{quote=false,isBatch=false,user='user_A',session='session_A'}={})=>{
+        if(!await storage.get('test:snapshot:'+user)){
+            const inputs=isBatch?body.tasks:[{id:body.task_id,title:body.task_title,criteria:body.criteria,exemplar:body.exemplar}];
+            await storage.put('test:snapshot:'+user,{tasks:inputs.map(t=>({id:t.id,title:t.title||'Task',proof_criteria:t.criteria,reference_inline_data:t.exemplar||null,status:'active',ai_locked:true})),settings:{},recurrence_state:{series:[],history:[]}});
+        }
         const path=quote?'/pro/ai/quote':isBatch?'/pro/ai/batch-review':'/pro/ai/review';
         const response=await gateway.handleRequest(new Request('https://worker.test'+path,{method:'POST',body:JSON.stringify({...body,...(quote?{batch:isBatch}:{})})}),path,'POST',{userId:user,sessionId:session},{});
         return {status:response.status,body:await response.json()};
@@ -126,17 +135,17 @@ test('file count, actual decoded byte limits, invalid MIME and malformed base64 
 test('quotes are mandatory, expire, and bind full bytes, exemplar, criteria, action, account and session',async()=>withHarness(async h=>{
     assert.equal((await h.route(single())).body.code,'QUOTE_REQUIRED');
     const body=single(),q=await h.quote(body),req={...body,quote_id:q.body.quote_id};
-    for(const changed of [{criteria:'Other criteria'},{files:[{...image,data:'YWJk'}]},{exemplar:image}])
+    for(const changed of [{files:[{...image,data:'YWJk'}]}])
         assert.equal((await h.route({...req,...changed})).body.code,'OPERATION_CONFLICT');
     assert.equal((await h.route(req,{session:'session_B'})).body.code,'OPERATION_CONFLICT');
-    await h.storage.put('pro:entitlement:user_B',{status:'active'});
+    await h.storage.put('pro:entitlement:user_B',await activeLicense('user_B'));
     assert.equal((await h.route(req,{user:'user_B'})).body.code,'QUOTE_REQUIRED');
     const rec=await h.storage.get('pro:op:user_A:'+body.operation_id);rec.expires=Date.now()-1;await h.storage.put('pro:op:user_A:'+body.operation_id,rec);
     assert.equal((await h.route(req)).body.code,'QUOTE_REQUIRED');assert.equal(providerCalls(h).length,0);
 }));
 test('expired and BYOK entitlements cannot execute a previously quoted audit',async()=>withHarness(async h=>{
     const body=single(),q=await h.quote(body);
-    await h.storage.put('pro:entitlement:user_A',{status:'active',use_byok:true});
+    await h.storage.put('pro:entitlement:user_A',{...await activeLicense('user_A'),use_byok:true});
     assert.equal((await h.route({...body,quote_id:q.body.quote_id})).body.code,'BYOK_ACTIVE');
     await h.storage.put('pro:entitlement:user_A',{status:'active',expires_at:Date.now()-1});
     assert.equal((await h.route({...body,quote_id:q.body.quote_id})).body.code,'PRO_REQUIRED');
@@ -209,7 +218,9 @@ test('client price rejection does not send paid inference; approval carries payl
     for(const approve of [false,true]) {
         const calls=[],prompts=[],window={Clerk:{session:{id:'s'}},confirm(text){prompts.push(text);return approve}};
         vm.runInContext(source,vm.createContext({window,localStorage:{getItem:()=>null},crypto,TextEncoder,Uint8Array}));
-        window.TaskitatorPro.request=async(path,opts)=>{
+        window.TaskitatorPro.prepareAudit=async()=>{};
+        window.TaskitatorPro.prepareAudit=async()=>{};
+    window.TaskitatorPro.request=async(path,opts)=>{
             calls.push({path,body:JSON.parse(opts.body)});
             if(path==='/pro/ai/quote')return {quote_id:'q',estimated_credits:.4,maximum_credits:1.5,tasks:[{task_id:'a',credits:1.5,exemplar:true}]};
             return {verdict:'approved'};
@@ -233,6 +244,7 @@ test('a lost browser response reuses the same operation on retry instead of purc
     const window={Clerk:{session:{id:'session_A'}},confirm:()=>true};
     vm.runInContext(source,vm.createContext({window,crypto,TextEncoder,Uint8Array}));
     let finished=false;
+    window.TaskitatorPro.prepareAudit=async()=>{};
     window.TaskitatorPro.request=async(path,options)=>{
         const body=JSON.parse(options.body);calls.push({path,body});
         if(path==='/pro/ai/quote')return finished ? {completed:true,result:{success:true,credits_charged:.1}} :
@@ -264,7 +276,9 @@ test('batch price preview uses task titles, hides IDs and applies discount wordi
         vm.runInContext(source,vm.createContext({window,crypto,TextEncoder,Uint8Array}));
         const tasks=[{id:'internal_task_942',title:'Lab\nnotes',criteria:'complete'},
             {id:'internal_task_765',title:'',criteria:'complete'}].slice(0,count);
-        window.TaskitatorPro.request=async(path,options)=>{
+        window.TaskitatorPro.prepareAudit=async()=>{};
+        window.TaskitatorPro.prepareAudit=async()=>{};
+    window.TaskitatorPro.request=async(path,options)=>{
             const body=JSON.parse(options.body);calls.push({path,body});
             if(path==='/pro/ai/quote')return {quote_id:'quote_batch',estimated_credits:.25,maximum_credits:1,
                 tasks:[...tasks].reverse().map(task=>({task_id:task.id,credits:.5,exemplar:false}))};

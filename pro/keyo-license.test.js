@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ProGateway } from './pro-backend.js';
+import {unitParent,seedUnitAccounts} from './security-test-support.js';
 import { KEYO_DEFAULTS, keyoConfig, verifyKeyoToken } from './keyo-license.js';
 import { signedToken, activeLicense, testEnv, testPublicKey } from './keyo-test-fixture.js';
 
@@ -15,7 +16,8 @@ class Storage {
 }
 const config=keyoConfig(testEnv),DAY=86400000,HOUR=3600000;
 function harness(env={}) {
-    const storage=new Storage(),gateway=new ProGateway({storage,env:{...testEnv,...env}}),calls=[];
+    const storage=new Storage();seedUnitAccounts(storage);
+    const gateway=new ProGateway(unitParent(storage,{...testEnv,...env})),calls=[];
     const before=globalThis.fetch;
     let reply=async({body})=>Response.json({entitlement:await signedToken(body.accountId)});
     globalThis.fetch=async(url,options)=>{

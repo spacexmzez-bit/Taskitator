@@ -41,7 +41,7 @@
         }
 
         const scope = Array.isArray(selectedIds) ? new Set(selectedIds) : null;
-        const eligibleTasks = allTasks.filter(t => t.status === 'active' && (t.ai_locked || t.require_ai_proof || t.proof_criteria) && (!scope || scope.has(t.id)));
+        const eligibleTasks = allTasks.filter(t => t.status === 'active' && (t.ai_locked || t.require_ai_proof) && (!scope || scope.has(t.id)));
         const preselect = Boolean(scope && eligibleTasks.length <= 20);
 
         const modal = document.createElement('div');
@@ -219,9 +219,6 @@
 
             const client = getClient();
             try {
-                if (global.SyncEngine?.isConfigured?.() && global.SyncEngine?.isDirty?.()) {
-                    await global.SyncEngine.push().catch(() => {});
-                }
                 const res = await client.batchReview({
                     tasks: await Promise.all(selectedTasks.map(async item => {
                         const task = allTasks.find(t => t.id === item.id);
@@ -287,16 +284,12 @@
                     confirmBtn.textContent = 'Confirming...';
                     try {
                         const client = getClient();
-                        const confirmed = await client.batchConfirm({
+                        await client.batchConfirm({
                             jobId: result.job_id,
                             taskIds: eligible.map(e => e.task_id)
                         });
-                        const confirmedIds = Array.isArray(confirmed?.confirmed_task_ids) ? confirmed.confirmed_task_ids : [];
-                        if (!confirmedIds.length) {
-                            throw new Error('Server did not confirm any batch task completions.');
-                        }
 
-                        applyBatchCompletions(confirmedIds, confirmed);
+                        // batchConfirm downloads the server-authorized task snapshot.
                         modal.remove();
                         if (typeof window.TaskitatorApp?.refresh === 'function') window.TaskitatorApp.refresh();
                         else location.reload();
@@ -306,46 +299,6 @@
                     }
                 };
             }
-        }
-    }
-
-    function applyBatchCompletions(taskIds, serverConfirmation = null) {
-        try {
-            const confirmedSet = new Set(Array.isArray(taskIds) ? taskIds : []);
-            if (!confirmedSet.size) return;
-            if (Array.isArray(serverConfirmation?.tasks)) {
-                localStorage.setItem('taskitator_tasks', JSON.stringify(serverConfirmation.tasks));
-                if (serverConfirmation.recurrence_state) {
-                    localStorage.setItem('taskitator_recurrence_state', JSON.stringify(serverConfirmation.recurrence_state));
-                }
-                if (Number.isSafeInteger(serverConfirmation.version) && window.SyncEngine?.rememberRemoteVersion) {
-                    window.SyncEngine.rememberRemoteVersion(serverConfirmation.version);
-                    localStorage.removeItem('taskitator_sync_dirty');
-                    if (window.SyncEngine) window.SyncEngine.hasUnsavedChanges = false;
-                }
-                return;
-            }
-            const raw = localStorage.getItem('taskitator_tasks');
-            if (!raw) return;
-            const tasks = JSON.parse(raw);
-            let updated = false;
-            tasks.forEach(t => {
-                if (confirmedSet.has(t.id) && t.status !== 'completed') {
-                    t.status = 'completed';
-                    t.completed_at = serverConfirmation?.confirmed_at || new Date().toISOString();
-                    t.ai_model_used = 'claude-haiku-5-5';
-                    updated = true;
-                }
-            });
-            if (updated) {
-                localStorage.setItem('taskitator_tasks', JSON.stringify(tasks));
-                if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
-                    SyncEngine.markLocalModified();
-                    SyncEngine.scheduleAutoPush();
-                }
-            }
-        } catch (e) {
-            console.error('[ProUI] Error applying batch completions locally:', e);
         }
     }
 
@@ -385,23 +338,18 @@
                         </div>
                     </div>
 
-                    <details class="pro-credit-help" id="pro-credit-help-details">
-                        <summary id="pro-credit-help-title" style="cursor: pointer; font-weight: 600; font-size: 0.95rem; color: #f8fafc; padding: 4px 0; outline: none; user-select: none;">
-                            How credits work
-                        </summary>
-                        <div style="margin-top: 12px; font-size: 0.88rem; line-height: 1.6; color: #cbd5e1;">
-                            <p style="margin: 0 0 10px 0;">Credits measure the work required to inspect your proof with AI. Here is how usage is calculated:</p>
-                            <ul style="padding-left: 20px; margin: 0 0 12px 0;">
-                                <li style="margin-bottom: 8px;"><strong>Document Page Count:</strong> Documents and PDFs are evaluated page by page. Each page inspected uses approximately 1 credit. For example, a 3-page worksheet uses about 3 credits.</li>
-                                <li style="margin-bottom: 8px;"><strong>Photo Quality & Resolution:</strong> Clear, regular snapshots use standard credits (~1 credit). Extra high-resolution photos, panoramic images, or very dense multi-part pictures contain more visual detail and use up to 2 credits to examine.</li>
-                                <li style="margin-bottom: 8px;"><strong>Reference Examples:</strong> Attaching an answer guide or example for the AI to compare against doubles that task's inspection because the AI reviews both files side by side.</li>
-                                <li style="margin-bottom: 8px;"><strong>Batch Reviews:</strong> Proving multiple tasks at once shares evidence files and gives 25% off each task.</li>
-                                <li style="margin-bottom: 8px;"><strong>Audit Rejections:</strong> When an audit is rejected because it fails criteria or is invalid, credits are consumed for the inspection. No refund is issued.</li>
-                                <li><strong>System Errors:</strong> If an audit fails due to a system or server error, zero credits are consumed and the system covers the cost.</li>
-                            </ul>
-                            <p style="margin: 0; font-size: 0.82rem; color: #94a3b8;">Before starting any review, you will always see the maximum credits temporarily held. Unused held credits immediately return to your balance.</p>
-                        </div>
-                    </details>
+                    <section class="pro-credit-help" aria-labelledby="pro-credit-help-title">
+                        <h4 id="pro-credit-help-title">How credits work</h4>
+                        <ul>
+                            <li><strong>Larger files and longer reviews use more credits.</strong> Each task has its own charge.</li>
+                            <li>Comparing your proof with a <strong>reference example doubles that task’s charge</strong>.</li>
+                            <li>Reviewing <strong>two or more tasks together gives each task 25% off</strong>.</li>
+                            <li>Before starting, you’ll see the <strong>estimated charge and maximum credits temporarily held</strong>.</li>
+                            <li>After the review, you pay for actual usage. <strong>Unused held credits return to your balance.</strong> Your charge will not exceed the maximum shown.</li>
+                        </ul>
+                        <p>You pay for a completed review even if the proof is not approved. Cancelling at the price preview starts no paid review.</p>
+                        <p>Large uploads may need splitting into smaller files. Daily and monthly credit limits, plus a separate monthly hosted allowance, apply.</p>
+                    </section>
                     <div class="pro-byok-box">
                         <label class="pro-switch-wrap">
                             <input type="checkbox" id="proByokToggle" />
@@ -413,13 +361,15 @@
                 <div class="pro-form" id="pro-activation-form">
                     <label style="font-size: 13px; font-weight: 500; color: #cbd5e1;">Activate Pro with Keyo License Key</label>
                     <div class="pro-input-group">
-                        <input type="text" class="pro-input" id="pro-license-input" placeholder="e.g. KEYO-PRO-XXXX-XXXX" autocomplete="off" autocorrect="off" spellcheck="false" />
+                        <input type="text" class="pro-input" id="pro-license-input" placeholder="e.g. XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocorrect="off" spellcheck="false" />
                         <button class="pro-btn" id="pro-activate-btn">Activate Pro</button>
                     </div>
                     <div class="pro-msg" id="pro-form-msg"></div>
                 </div>
 
-
+                <div class="pro-info-note">
+                    <strong>Hosted Personal AI:</strong> Pro accounts receive automated single, multi-file, and batch proof audits powered by personal <strong>Claude Haiku 5.5</strong> without needing a personal API key.
+                </div>
             </div>
         `;
 
@@ -503,10 +453,8 @@
                     badge.className = 'pro-badge active';
                     badge.textContent = 'PRO ACTIVE';
                 }
-                if (expiry && data.expires_at) {
-                    const expDate = new Date(data.expires_at).toLocaleDateString();
-                    expiry.textContent = `Valid through ${expDate}`;
-                }
+                if (expiry) expiry.textContent = data.expires_at === null ? 'Lifetime license' :
+                    `Valid through ${new Date(data.expires_at).toLocaleDateString()}`;
                 if (quotaBox) quotaBox.style.display = 'block';
 
                 if (byokToggle) byokToggle.checked = Boolean(data.use_byok);
@@ -538,14 +486,17 @@
                     badge.className = 'pro-badge free';
                     badge.textContent = 'FREE TIER';
                 }
-                if (expiry) expiry.textContent = '';
+                if (expiry) expiry.textContent = data.status === 'verification_required' ?
+                    'Please enter your Keyo license key again to verify this account.' :
+                    ['revoked','invalid','expired'].includes(data.status) ? 'License verification failed. Check your license in Keyo, then reactivate.' : '';
                 if (quotaBox) quotaBox.style.display = 'none';
             }
-        } catch {
+        } catch (err) {
             if (badge) {
                 badge.className = 'pro-badge free';
-                badge.textContent = 'FREE / UNLINKED';
+                badge.textContent = 'VERIFICATION UNAVAILABLE';
             }
+            if (expiry) expiry.textContent = err.message || 'Unable to check your license. Please refresh Settings and retry.';
             if (quotaBox) quotaBox.style.display = 'none';
         }
     }

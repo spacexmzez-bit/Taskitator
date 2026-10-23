@@ -1,3 +1,4 @@
+import { liveAccount } from './account-lifecycle.js';
 // Server-only subscription verification. Public settings from the owner's configured Keyo SDK.
 export const KEYO_DEFAULTS = Object.freeze({
     endpoint: 'https://keyo.mazendev.com',
@@ -89,6 +90,7 @@ export class KeyoLicenses {
         const inactive=status=>({...old,status});
         if(!old.signed_token) return inactive('verification_required');
         if(['revoked','invalid'].includes(old.status)) return old;
+        await liveAccount(this.storage,accountId);
         const config=keyoConfig(this.env);
         let payload;
         try { payload=await verifyKeyoToken(old.signed_token,accountId,config,{allowExpired:true}); }
@@ -112,6 +114,7 @@ export class KeyoLicenses {
     }
     async updateIfCurrent(key,old,next) {
         return this.storage.transaction(async tx=>{
+            await liveAccount(tx,old.account_id);
             const current=await tx.get(key);
             if(!current || current.signed_token!==old.signed_token || current.status!==old.status) return current || null;
             // Preserve a BYOK toggle made while Keyo was responding.

@@ -8,6 +8,7 @@
             this.baseUrl = options.baseUrl || null;
             this.getToken = options.getToken || this.defaultTokenProvider;
             this.pendingAudits = new Map();
+            this.pendingConfirmations = new Map();
         }
 
         async defaultTokenProvider() {
@@ -105,7 +106,7 @@
             if (!taskId) throw new Error('taskId is required for proof review.');
             if (!criteria) throw new Error('Criteria must be defined for AI-audited review.');
 
-            const opId = operationId || (crypto?.randomUUID ? crypto.randomUUID() : `op_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
+            const opId = operationId || ('op_'+Date.now().toString(36)+'_'+crypto.randomUUID().replaceAll('-',''));
 
             const payload = {
                 task_id: taskId,
@@ -139,7 +140,7 @@
             if (!Array.isArray(tasks) || !tasks.length) throw new Error('Please select at least one task for batch review.');
             if (!Array.isArray(files) || !files.length) throw new Error('Please attach at least one proof file for batch review.');
 
-            const opId = operationId || (crypto?.randomUUID ? crypto.randomUUID() : `op_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
+            const opId = operationId || ('op_'+Date.now().toString(36)+'_'+crypto.randomUUID().replaceAll('-',''));
 
             return await this.quotedReview({
                 tasks:tasks.map(t => ({id:t.id,title:t.title,criteria:t.criteria || t.resolved_criteria || '',exemplar:t.exemplar || null})),
@@ -148,7 +149,47 @@
             },true);
         }
 
+        async prepareAudit() {
+            const sync=global.SyncEngine;
+            if(!sync?.isConfigured?.())throw new Error('Sign in and sync your Taskitator tasks before submitting proof.');
+            if(sync.needsInitialPull())throw new Error('Sync this device once before submitting proof.');
+            const revision=localStorage.getItem(sync.STORAGE_KEY_REVISION);
+            const tasks=JSON.parse(localStorage.getItem('taskitator_tasks')||'[]');let changed=false;
+            for(const task of tasks)if(task.status==='active'&&(task.ai_locked||task.require_ai_proof)&&!task.reference_id&&!task.reference_inline_data){
+                const old=await global.ExemplarStore?.getExemplar(task.id);
+                if(old?.inline_data){task.reference_inline_data=old.inline_data;changed=true;}
+            }
+            if(revision!==localStorage.getItem(sync.STORAGE_KEY_REVISION))throw new Error('Your tasks changed while preparing proof. Retry.');
+            if(changed){localStorage.setItem('taskitator_tasks',JSON.stringify(tasks));sync.markLocalModified();}
+            if(sync.isDirty()){
+                const result=await sync.push();
+                if(!result?.success || result.pending || sync.isDirty())throw new Error(result?.error||'Finish syncing your task changes before submitting proof.');
+            }
+        }
+        async personalReview(payload) {
+            await this.prepareAudit();
+            const owner=global.Clerk?.session?.id;
+            const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({owner,payload,mode:'personal'})));
+            const fingerprint='personal:'+Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
+            const operation_id=this.pendingAudits.get(fingerprint)||('op_'+Date.now().toString(36)+'_'+crypto.randomUUID().replaceAll('-',''));
+            this.pendingAudits.set(fingerprint,operation_id);
+            try{
+                const result=await this.request('/pro/ai/personal-review',{method:'POST',body:JSON.stringify({...payload,operation_id})});
+                if(global.Clerk?.session?.id!==owner)throw new Error('Your session changed. Start a new review.');
+                this.pendingAudits.delete(fingerprint);return result;
+            }catch(error){if(error.status&&error.code!=='AUDIT_PENDING')this.pendingAudits.delete(fingerprint);throw error;}
+        }
+        async emergencyStatus() {
+            const state=await this.request('/pro/emergency');
+            localStorage.setItem('taskitator_emergency_state',JSON.stringify(state));return state;
+        }
+        async activateBypass() {
+            const state=await this.request('/pro/emergency',{method:'POST',body:'{}'});
+            localStorage.setItem('taskitator_emergency_state',JSON.stringify(state));return state;
+        }
+
         async quotedReview(payload,batch) {
+            await this.prepareAudit();
             const owner = global.Clerk?.session?.id;
             const {operation_id:ignored,...input} = payload;
             const hashed = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({owner,input,batch})));
@@ -192,20 +233,20 @@
         /**
          * Phase 2: Confirm eligible batch completions with server attestation.
          */
-        async batchConfirm({ jobId, taskIds, operationId }) {
-            if (!jobId) throw new Error('jobId is required.');
-            if (!Array.isArray(taskIds) || !taskIds.length) throw new Error('taskIds array is required.');
-
-            const opId = operationId || (crypto?.randomUUID ? crypto.randomUUID() : `op_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
-
-            return await this.request('/pro/ai/batch-confirm', {
-                method: 'POST',
-                body: JSON.stringify({
-                    job_id: jobId,
-                    task_ids: taskIds,
-                    operation_id: opId
-                })
-            });
+        async batchConfirm({ jobId, taskIds, operationId, batch=true }) {
+            await this.prepareAudit();
+            if(!jobId || !Array.isArray(taskIds)||!taskIds.length)throw new Error('A review approval and selected tasks are required.');
+            const sync=global.SyncEngine,revision=localStorage.getItem(sync.STORAGE_KEY_REVISION),owner=global.Clerk?.session?.id;
+            const key=jobId+':'+[...taskIds].sort().join(',');
+            const opId=operationId || this.pendingConfirmations.get(key) || ('confirm_'+crypto.randomUUID());
+            this.pendingConfirmations.set(key,opId);
+            const result=await this.request('/pro/ai/batch-confirm',{method:'POST',body:JSON.stringify({job_id:jobId,task_ids:taskIds,operation_id:opId,batch})});
+            if(global.Clerk?.session?.id!==owner)throw new Error('Your session changed. Reopen your task list.');
+            // Download the authoritative completion; concurrent drafts are preserved by the revision check.
+            const downloaded=await sync.pull(null,{discardLocal:true,expectedRevision:revision});
+            if(!downloaded?.success)throw new Error(downloaded?.error||'Completion was saved on the server. Sync to view it; keep any new local edits.');
+            for(const id of result.confirmed_task_ids||[])await global.ExemplarStore?.deleteExemplar(id);
+            return result;
         }
 
         /**
