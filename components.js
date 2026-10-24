@@ -1,3 +1,421 @@
+// ============================================================================
+// Taskitator Consolidated Components & Recurrence Engine (components.js)
+// Combines: recurrence-core, recurrence-ui, and components.
+// ============================================================================
+
+// <<< MODULE_START: recurrence-core.js >>>
+// File: recurrence-core.js
+// Shared deterministic recurrence rules, used by the browser and Cloudflare Worker.
+(function (root) {
+    'use strict';
+    const DAY = 86400000;
+    const copy = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+    function validDate(s) {
+        return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) &&
+            Number.isFinite(Date.parse(s + 'T00:00:00Z')) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s;
+    }
+    const dateMs = s => Date.parse(s + 'T00:00:00Z');
+    const dateString = ms => new Date(ms).toISOString().slice(0, 10);
+    function today(now = Date.now(), hour = 0) {
+        return dateString(now + (3 - hour) * 3600000);
+    }
+    function schedule(input) {
+        if (!input || !['daily', 'weekdays', 'monthly', 'month_day', 'half_yearly', 'yearly'].includes(input.kind)) throw new Error('Choose a recurrence schedule.');
+        if (!validDate(input.start)) throw new Error('Choose a valid start date.');
+        if (input.end && (!validDate(input.end) || input.end < input.start)) throw new Error('End date must be on or after the start date.');
+        const result = { kind: input.kind, start: input.start, end: input.end || '' };
+        if (input.kind === 'weekdays') {
+            result.weekdays = [...new Set(input.weekdays || [])].sort();
+            if (!result.weekdays.length || result.weekdays.some(n => !Number.isInteger(n) || n < 0 || n > 6)) throw new Error('Select at least one weekday.');
+        }
+        if (input.kind === 'month_day') {
+            result.day = Number(input.day);
+            if (!Number.isInteger(result.day) || result.day < 1 || result.day > 31) throw new Error('Day of month must be between 1 and 31.');
+        }
+        return result;
+    }
+    function nextDate(config, after = null) {
+        const s = schedule(config);
+        if (after !== null && !validDate(after)) throw new Error('Invalid previous occurrence date.');
+        const floor = Math.max(dateMs(s.start), after === null ? dateMs(s.start) : dateMs(after) + DAY);
+        let candidate;
+        if (s.kind === 'daily') candidate = dateString(floor);
+        else if (s.kind === 'weekdays') {
+            for (let i = 0; i < 7; i++) {
+                const ms = floor + i * DAY;
+                if (s.weekdays.includes(new Date(ms).getUTCDay())) { candidate = dateString(ms); break; }
+            }
+        } else {
+            const anchor = new Date(dateMs(s.start));
+            const minimum = new Date(floor);
+            const step = s.kind === 'half_yearly' ? 6 : s.kind === 'yearly' ? 12 : 1;
+            const anchorMonth = anchor.getUTCFullYear() * 12 + anchor.getUTCMonth();
+            const targetMonth = minimum.getUTCFullYear() * 12 + minimum.getUTCMonth();
+            let offset = Math.max(0, Math.floor((targetMonth - anchorMonth) / step) * step);
+            const wantedDay = s.kind === 'month_day' ? s.day : anchor.getUTCDate();
+            for (let i = 0; i < 3; i++, offset += step) {
+                const m = anchorMonth + offset, year = Math.floor(m / 12), month = m % 12;
+                const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+                const ms = Date.UTC(year, month, Math.min(wantedDay, last));
+                if (ms >= floor) { candidate = dateString(ms); break; }
+            }
+        }
+        return candidate && (!s.end || candidate <= s.end) ? candidate : null;
+    }
+    function subtree(tasks, id) {
+        const ids = new Set([id]);
+        let changed = true;
+        while (changed) { changed = false; for (const task of tasks) if (ids.has(task.parent_id) && !ids.has(task.id)) { ids.add(task.id); changed = true; } }
+        return tasks.filter(task => ids.has(task.id));
+    }
+    function seriesFor(state, task) {
+        return state.series.find(s => s.id === task?.recurrence_series_id) || null;
+    }
+    function canStart(tasks, id) {
+        const branch = subtree(tasks, id);
+        if (branch.some(t => t.recurrence_series_id)) throw new Error('A recurring branch cannot contain another recurring series.');
+        let parent = tasks.find(t => t.id === id)?.parent_id; const seen = new Set();
+        while (parent && !seen.has(parent)) {
+            seen.add(parent); const p = tasks.find(t => t.id === parent);
+            if (!p || p.status !== 'active') throw new Error('The parent must be active.');
+            if (p.recurrence_series_id) throw new Error('This task already follows its recurring ancestor.');
+            parent = p.parent_id;
+        }
+    }
+    function cleanNode(task, key, parentKey, rootDate) {
+        const t = copy(task);
+        for (const field of ['id', 'parent_id', 'status', 'created_at', 'completed_at', 'verified_model', 'recurrence_series_id', 'recurrence_node_id', 'recurrence_hold_until', 'recurrence_occurrence', 'recurring', 'recurrence']) delete t[field];
+        return { key, parent_key: parentKey, date_offset: validDate(task.due_date) && validDate(rootDate) ? Math.round((dateMs(task.due_date) - dateMs(rootDate)) / DAY) : 0, task: t };
+    }
+    function start(tasks, state, id, config, seriesId, now = Date.now()) {
+        config = schedule(config); canStart(tasks, id);
+        const task = tasks.find(t => t.id === id);
+        if (!task || task.status !== 'active') throw new Error('Only an active task can start recurring.');
+        const due = nextDate(config);
+        if (!due) throw new Error('No occurrence falls within these dates.');
+        const branch = subtree(tasks, id).filter(t => t.status !== 'trash');
+        const keys = new Map(branch.map((t, i) => [t.id, String(i)]));
+        const previousDate = task.due_date;
+        const nodes = branch.map(t => cleanNode(t, keys.get(t.id), t.id === id ? null : keys.get(t.parent_id), previousDate));
+        const s = { id: seriesId, enabled: true, schedule: config, parent_id: task.parent_id || null,
+            occurrence: 0, current_root_id: id, current_date: due, nodes, created_at: new Date(now).toISOString() };
+        state.reference_files ||= {};
+        for (const t of branch) {
+            if (!t.reference_inline_data) continue;
+            const key = `${seriesId}_ref_${keys.get(t.id)}`;
+            state.reference_files[key] = t.reference_inline_data;
+            t.reference_id = key; delete t.reference_inline_data;
+            const node = nodes.find(n=>n.key===keys.get(t.id));
+            node.task.reference_id=key; delete node.task.reference_inline_data;
+        }
+        state.series.push(s);
+        branch.forEach(t => { t.recurrence_series_id = seriesId; t.recurrence_node_id = keys.get(t.id); t.recurrence_occurrence = 0; });
+        task.due_date = due;
+        for (const t of branch) if (t !== task) {
+            const node = nodes.find(n => n.key === keys.get(t.id)); t.due_date = dateString(dateMs(due) + node.date_offset * DAY);
+        }
+        return s;
+    }
+    function updateNode(state, task, fields) {
+        const s = seriesFor(state, task); const node = s?.nodes.find(n => n.key === task.recurrence_node_id);
+        if (!node) return;
+        const allowed = ['title', 'raw_title', 'description', 'tags', 'priority_id', 'project_id', 'is_bonus', 'strict_prerequisites', 'ai_locked', 'proof_criteria', 'raw_proof_criteria', 'reference_inline_data', 'reference_id'];
+        for (const key of allowed) if (Object.prototype.hasOwnProperty.call(fields, key)) node.task[key] = copy(fields[key]);
+    }
+    function validateState(state, tasks) {
+        if (!state || !Array.isArray(state.series) || !Array.isArray(state.history)) throw new Error('Recurring data is malformed. Restore a valid backup.');
+        if(state.reference_files !== undefined && (!state.reference_files || typeof state.reference_files !== 'object' || Array.isArray(state.reference_files))) throw new Error('Invalid recurring references.');
+        for(const h of state.history) if(!h || typeof h.id!=='string' || !['completed','deleted'].includes(h.outcome) || !Array.isArray(h.tasks)) throw new Error('Invalid recurrence history.');
+        const ids = new Set();
+        for (const s of state.series) {
+            if (!s || typeof s.id !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(s.id) || ids.has(s.id)) throw new Error('Invalid recurring series ID.');
+            ids.add(s.id); schedule(s.schedule);
+            if (typeof s.enabled !== 'boolean' || !Number.isSafeInteger(s.occurrence) || s.occurrence < 0 || !Array.isArray(s.nodes) || !s.nodes.length || !validDate(s.current_date)) throw new Error('Invalid recurring series.');
+            const keys = new Set();
+            for (const n of s.nodes) {
+                if (!n || typeof n.key !== 'string' || !/^[0-9]+$/.test(n.key) || keys.has(n.key) || !n.task || typeof n.task !== 'object' || Array.isArray(n.task) || !Number.isInteger(n.date_offset) || Math.abs(n.date_offset) > 36600) throw new Error('Invalid recurring template.');
+                keys.add(n.key);
+            }
+            if (s.nodes.filter(n => n.parent_key === null).length !== 1) throw new Error('Recurring template needs one root.');
+            for (const n of s.nodes) {
+                const seen = new Set([n.key]); let key = n.parent_key;
+                while (key !== null) {
+                    if (!keys.has(key) || seen.has(key)) throw new Error('Recurring template contains an invalid parent cycle.');
+                    seen.add(key); key = s.nodes.find(x => x.key === key).parent_key;
+                }
+            }
+        }
+        for (const t of tasks) if (t.recurrence_series_id && !ids.has(t.recurrence_series_id)) throw new Error('A recurring task is missing its series.');
+        return state;
+    }
+    function reconcile(snapshot, now = Date.now()) {
+        const state = snapshot.recurrence_state || { series: [], history: [] };
+        validateState(state, snapshot.tasks);
+        let tasks = snapshot.tasks; let changed = false;
+        const hour = Math.max(0, Math.min(4, Number(snapshot.settings?.day_start_hour) || 0));
+        for (const s of state.series) {
+            const current = tasks.find(t => t.id === s.current_root_id);
+            if (!current) { if (s.enabled) { s.enabled = false; s.stopped_reason = 'Current task removed'; changed = true; } continue; }
+            let parentId = current.parent_id; const seen = new Set(); let ancestorDone = false;
+            while (parentId && !seen.has(parentId)) {
+                seen.add(parentId); const p = tasks.find(t => t.id === parentId);
+                if (!p || p.status !== 'active') { ancestorDone = true; break; }
+                if (p.recurrence_series_id && p.recurrence_series_id !== s.id) throw new Error('Nested recurring series are not supported.');
+                parentId = p.parent_id;
+            }
+            if (ancestorDone && s.enabled) { s.enabled = false; s.stopped_reason = 'Parent completed or removed'; changed = true; }
+            // Newly added children become part of the future branch automatically.
+            const branch = subtree(tasks, current.id);
+            const depth = t => {let n=0,p=t.parent_id,seen=new Set();while(p&&!seen.has(p)){seen.add(p);const parent=branch.find(x=>x.id===p);if(!parent)break;n++;p=parent.parent_id;}return n;};
+            branch.sort((a,b)=>depth(a)-depth(b));
+            for (const t of branch.filter(t => t.status !== 'trash')) {
+                if (t.recurrence_series_id && t.recurrence_series_id !== s.id) throw new Error('Nested recurring series are not supported.');
+                if (!t.recurrence_node_id || t.recurrence_series_id !== s.id) {
+                    const key = String(Math.max(-1, ...s.nodes.map(n => Number(n.key))) + 1);
+                    const parent = tasks.find(p => p.id === t.parent_id);
+                    if (!parent?.recurrence_node_id) continue;
+                    t.recurrence_series_id = s.id; t.recurrence_node_id = key; t.recurrence_occurrence = s.occurrence;
+                    if(t.reference_inline_data){
+                        state.reference_files ||= {};const refId=`${s.id}_ref_${key}`;
+                        state.reference_files[refId]=t.reference_inline_data;t.reference_id=refId;delete t.reference_inline_data;
+                    }
+                    s.nodes.push(cleanNode(t, key, parent.recurrence_node_id, s.current_date)); changed = true;
+                }
+            }
+            if (current.status === 'active' || Number(current.recurrence_hold_until) > now) continue;
+            if (!['completed', 'trash'].includes(current.status)) throw new Error('Invalid recurring task status.');
+            const reason = current.status === 'completed' ? 'completed' : 'deleted';
+            const eventId = `${s.id}:${s.occurrence}`;
+            if (!state.history.some(h => h.id === eventId)) state.history.push({ id: eventId, series_id: s.id,
+                title: current.title, due_date: s.current_date, ended_at: current.completed_at || new Date(now).toISOString(),
+                outcome: reason, tasks: branch.map(t => ({ title: t.title, status: t.status, ai_locked: !!t.ai_locked, verified_model: t.verified_model || null, project_id:t.project_id || 'inbox', priority_id:t.priority_id || null, completed_at:t.completed_at || (t.status==='completed' ? new Date(now).toISOString() : null) })) });
+            state.history = state.history.slice(-500);
+            const ids = new Set(branch.map(t => t.id)); tasks = tasks.filter(t => !ids.has(t.id));
+            const finishedDate = today(Number.isFinite(Date.parse(current.completed_at)) ? Date.parse(current.completed_at) : now, hour);
+            const after = [s.current_date, finishedDate, today(now, hour)].sort().at(-1);
+            const due = s.enabled && !ancestorDone ? nextDate(s.schedule, after) : null;
+            s.current_root_id = null;
+            if (!due) { s.enabled = false; s.stopped_reason ||= 'Series stopped or end date reached'; changed = true; continue; }
+            s.occurrence++;
+            const idFor = key => `${s.id}_o${s.occurrence}_n${key}`;
+            for (const n of s.nodes) {
+                const t = copy(n.task);
+                t.id = idFor(n.key); t.parent_id = n.parent_key === null ? current.parent_id || null : idFor(n.parent_key);
+                t.status = 'active'; t.completed_at = null; t.created_at = new Date(now).toISOString(); delete t.verified_model;
+                t.recurrence_series_id = s.id; t.recurrence_node_id = n.key; t.recurrence_occurrence = s.occurrence;
+                t.due_date = n.parent_key === null ? due : (validDate(n.task.due_date) ? dateString(dateMs(due) + n.date_offset * DAY) : due);
+                tasks.push(t); if (n.parent_key === null) s.current_root_id = t.id;
+            }
+            s.parent_id = current.parent_id || null; s.current_date = due; changed = true;
+        }
+        if(state.reference_files){
+            const used=new Set([...tasks.map(t=>t.reference_id),...state.series.flatMap(s=>s.nodes.map(n=>n.task.reference_id))]);
+            for(const key of Object.keys(state.reference_files))if(!used.has(key))delete state.reference_files[key];
+        }
+        snapshot.tasks = tasks; snapshot.recurrence_state = state;
+        return { snapshot, changed };
+    }
+    const api = { schedule, nextDate, validDate, today, subtree, seriesFor, start, updateNode, validateState, reconcile };
+    root.TaskitatorRecurrence = api;
+    if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(globalThis);
+
+// <<< MODULE_END: recurrence-core.js >>>
+// <<< MODULE_START: recurrence-ui.js >>>
+// File: recurrence-ui.js
+(function () {
+    'use strict';
+    const Core = window.TaskitatorRecurrence;
+    const KEY = 'taskitator_recurrence_state';
+    const empty = () => ({ series: [], history: [] });
+    const state = () => JSON.parse(localStorage.getItem(KEY) || JSON.stringify(empty()));
+    const tasks = () => window.TaskitatorApp?.getTasks() || JSON.parse(localStorage.getItem('taskitator_tasks') || '[]');
+    const settings = () => JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
+    const today = () => Core.today(Date.now(), Number(settings().day_start_hour) || 0);
+    function persist(snapshot) {
+        const beforeState=localStorage.getItem(KEY),beforeTasks=localStorage.getItem('taskitator_tasks');
+        try {
+            localStorage.setItem(KEY,JSON.stringify(snapshot.recurrence_state));
+            localStorage.setItem('taskitator_tasks',JSON.stringify(snapshot.tasks));
+        } catch(err) {
+            localStorage.removeItem(KEY);localStorage.removeItem('taskitator_tasks');
+            if(beforeState!==null)localStorage.setItem(KEY,beforeState);
+            if(beforeTasks!==null)localStorage.setItem('taskitator_tasks',beforeTasks);
+            alert('Could not save recurring data. The previous saved copy was kept. If storage is full, reduce reference-file sizes or export a backup before cleaning old data.');
+            throw err;
+        }
+    }
+    function save(data, list = tasks()) {
+        const result = Core.reconcile({ tasks: list, recurrence_state: data, settings: settings() });
+        persist(result.snapshot);
+        window.SyncEngine?.markLocalModified();
+        window.TaskitatorApp?.loadStorage(); window.TaskitatorApp?.renderUnifiedView();
+        window.dispatchEvent(new CustomEvent('taskitator-tasks-updated'));
+    }
+    function element(tag, text, parent) {
+        const e = document.createElement(tag); if (text !== undefined) e.textContent = text;
+        if (parent) parent.append(e); return e;
+    }
+    function button(text, parent, fn) {
+        const e = element('button', text, parent); e.type = 'button'; e.className = 'icon-btn'; e.style.margin = '6px 4px 6px 0'; e.onclick = fn; return e;
+    }
+    function input(label, type, value, parent) {
+        const wrap = element('label', label, parent); wrap.style.cssText = 'display:block;margin:12px 0;color:var(--text-color)';
+        const e = element('input', undefined, wrap); e.type = type; e.value = value || ''; e.style.cssText = 'display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:9px'; return e;
+    }
+    function dialog(title) {
+        const d = document.createElement('dialog'); d.className = 'recurrence-dialog';
+        d.style.cssText = 'width:min(90vw,560px);box-sizing:border-box;max-height:88vh;overflow:auto;background:var(--card-bg,#0f1d3a);color:var(--text-color,#fff);border:1px solid #456;border-radius:14px;padding:22px;z-index:20000';
+        element('h2', title, d); button('Close', d, () => d.close()); d.addEventListener('close', () => d.remove()); document.body.append(d); d.showModal(); return d;
+    }
+    function scheduleForm(parent, initial = { kind: 'daily', start: today(), end: '' }, optional = false) {
+        const label = element('label', 'Repeat', parent); label.style.display = 'block';
+        const select = element('select', undefined, label); select.style.cssText = 'display:block;padding:9px;width:100%;margin:6px 0';
+        const kinds = [['daily','Daily'],['weekdays','Selected weekdays'],['monthly','Monthly - start-date day'],['month_day','Date of month'],['half_yearly','Every six months'],['yearly','Yearly']];
+        if (optional) kinds.unshift(['none','Does not repeat']);
+        kinds.forEach(([value,text]) => { const o = element('option', text, select); o.value = value; }); select.value = optional ? 'none' : initial.kind;
+        const box = element('div', undefined, parent);
+        const start = input('Start date', 'date', initial.start, box), end = input('End date (optional)', 'date', initial.end, box);
+        const day = input('Day of month (1-31)', 'number', initial.day || 1, box); day.min = '1'; day.max = '31';
+        const weekdays = element('div', undefined, box); element('p','Repeat on these days:', weekdays);
+        const checks = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((name, index) => {
+            const label = element('label', name, weekdays); label.style.cssText = 'display:inline-flex;gap:4px;margin:7px';
+            const cb = element('input', undefined, label); cb.type = 'checkbox'; cb.checked = (initial.weekdays || [1]).includes(index); return cb;
+        });
+        const change = () => { box.hidden = select.value === 'none'; day.parentElement.hidden = select.value !== 'month_day'; weekdays.hidden = select.value !== 'weekdays'; };
+        select.onchange = change; change();
+        return { get: () => select.value === 'none' ? null : Core.schedule({ kind: select.value, start: start.value, end: end.value, day: Number(day.value), weekdays: checks.flatMap((cb,i) => cb.checked ? [i] : []) }), reset: () => { select.value = 'none'; start.value = today(); end.value = ''; change(); } };
+    }
+    async function captureReferences(list, id) {
+        for (const t of Core.subtree(list, id)) {
+            if (!t.ai_locked || t.reference_inline_data) continue;
+            const rec = await window.ExemplarStore?.getExemplar(t.id);
+            if (rec?.inline_data) t.reference_inline_data = { inline_data: rec.inline_data };
+        }
+    }
+    let createControl;
+    async function attachCreated(id, list) {
+        const config = createControl?.get(); if (!config) return;
+        const session=localStorage.getItem('taskitator_session_id');
+        await captureReferences(list, id);
+        if(session!==localStorage.getItem('taskitator_session_id'))throw new Error('Account changed while preparing recurrence.');
+        const data = state(); Core.start(list, data, id, config, 'repeat_' + crypto.randomUUID().replace(/-/g,''));
+        persist({tasks:list,recurrence_state:data});
+    }
+    function validCreate(parentId) {
+        const config = createControl?.get(); if (!config) return;
+        if (parentId) {
+            let p = tasks().find(t => t.id === parentId); const seen = new Set();
+            while (p && !seen.has(p.id)) { seen.add(p.id); if (p.recurrence_series_id) throw new Error('This subtask uses its parent’s repeat schedule.'); p = tasks().find(t => t.id === p.parent_id); }
+        }
+    }
+    function bindTask(id) {
+        const form = document.getElementById('taskEditForm') || document.getElementById('taskDetailForm');
+        const task = tasks().find(t => t.id === id); if (!task) return;
+        let wrap = document.getElementById('recurrenceTaskControls');
+        const parent = form || document.getElementById('taskDetailModal')?.querySelector('.modal-box'); if (!parent) return;
+        if (!wrap) { wrap = element('div', undefined, parent); wrap.id = 'recurrenceTaskControls'; wrap.style.cssText='margin:16px 0;padding:12px;border:1px solid var(--border-color);border-radius:8px'; }
+        const actions=document.getElementById('saveTaskDetailsBtn')?.parentElement;if(actions?.parentElement===parent)parent.insertBefore(wrap,actions);
+        wrap.replaceChildren();
+        const series = Core.seriesFor(state(), task);
+        element('p', series ? (series.enabled ? 'Repeating branch: '+series.schedule.kind.replace(/_/g,' ') : 'Repetition stopped. You can still finish the current task.') : 'This task does not repeat.', wrap);
+        button(series ? 'Recurrence & future criteria' : 'Set up recurrence', wrap, () => open(id));
+        if (series) {
+            const label = element('label', 'Apply ordinary task edits to:', wrap);
+            const scope = element('select', undefined, label); scope.id = 'recurrenceEditScope'; scope.style.cssText='display:block;padding:8px;margin:6px 0;width:100%';
+            [['one','This occurrence'],['future','This and future occurrences']].forEach(([v,t]) => { const o = element('option',t,scope);o.value=v; });
+            element('small','Due-date changes apply to this occurrence. Use “Recurrence & future criteria” to change future dates or requirements.',wrap);
+        }
+    }
+    async function applyEdit(task) {
+        const data = state(), s = Core.seriesFor(data, task); if (!s) return;
+        if (document.getElementById('recurrenceEditScope')?.value === 'future') {
+            // Keep future-only validated criteria intact when ordinary fields are edited.
+            const {title,raw_title,description,tags,priority_id,project_id,is_bonus,strict_prerequisites} = task;
+            const fields={title,raw_title,description,tags,priority_id,project_id,is_bonus,strict_prerequisites};
+            const node=s.nodes.find(n=>n.key===task.recurrence_node_id);
+            if(task.ai_locked && !node.task.ai_locked){
+                Object.assign(fields,{ai_locked:true,proof_criteria:task.proof_criteria,raw_proof_criteria:task.raw_proof_criteria});
+                const ref=await window.ExemplarStore?.getExemplar(task.id);
+                if(ref?.inline_data){data.reference_files ||= {};const key='ref_'+crypto.randomUUID().replace(/-/g,'');data.reference_files[key]={inline_data:ref.inline_data};task.reference_id=key;fields.reference_id=key;}
+            }
+            Core.updateNode(data,task,fields);
+        }
+        localStorage.setItem(KEY,JSON.stringify(data));
+    }
+    function open(id) {
+        const list = tasks(), task = list.find(t => t.id === id); if (!task) return;
+        const data = state(), s = Core.seriesFor(data, task);
+        const d = dialog('Recurring task'); const feedback = element('p','',d); feedback.style.color='#ffbc65';
+        if (!s) {
+            const form = scheduleForm(d); button('Start repeating this branch',d,async () => {
+                try { const config=form.get(); await captureReferences(list,id); Core.start(list,data,id,config,'repeat_'+crypto.randomUUID().replace(/-/g,'')); save(data,list);d.close();bindTask(id); } catch(e){feedback.textContent=e.message;}
+            }); return;
+        }
+        const isRoot = s.current_root_id === id;
+        element('p', isRoot ? 'This task and its subtasks repeat together.' : 'This subtask repeats with its parent. Complete the whole repeating task to start the next occurrence.',d);
+        if (isRoot) {
+            const form = scheduleForm(d,s.schedule);
+            button('Save schedule for future occurrences',d,() => {
+                try { s.schedule=form.get();save(data,list);d.close();bindTask(id); }catch(e){feedback.textContent=e.message;}
+            });
+            if (s.enabled) button('Stop future repetition',d,() => {
+                if (!confirm('Stop future occurrences? The current task and its proof requirements stay active.')) return;
+                s.enabled=false;s.stopped_reason='Stopped by user';save(data,list);d.close();bindTask(id);
+            });
+            else if (task.status==='active') button('Resume future repetition',d,() => {s.enabled=true;delete s.stopped_reason;save(data,list);d.close();bindTask(id);});
+        }
+        const node=s.nodes.find(n=>n.key===task.recurrence_node_id);
+        if (task.ai_locked && node) {
+            element('h3','Proof criteria - future occurrences only',d);
+            const area=element('textarea',undefined,d);area.value=node.task.proof_criteria||'';area.rows=5;area.style.cssText='width:100%;box-sizing:border-box;padding:9px';
+            element('p','Changes apply to future occurrences. Criteria must pass a new check with a score of at least 7/10.',d);
+            const file=input('Replace future reference (optional, photo or PDF, up to 5 MB)','file','',d);file.accept='image/jpeg,image/png,image/webp,image/heic,application/pdf';
+            const removeLabel=element('label','Remove future reference',d);const remove=element('input',undefined,removeLabel);remove.type='checkbox';
+            const saveButton=button('Validate & save future criteria',d,async () => {
+                const text=area.value.trim();if (!text || /\{[^}]+\}|\[[^\]]+\]/.test(text)){feedback.textContent='Enter concrete criteria with all placeholders filled in.';return;}
+                const user=window.SyncEngine?.getConfig().username, session=localStorage.getItem('taskitator_session_id'), revision=localStorage.getItem('taskitator_local_revision');
+                saveButton.disabled=true;
+                try {
+                    let exemplar=file.files[0]||null;
+                    if (exemplar) {const check=TaskitatorEngine.AuditEngine.validateFile(exemplar);if(!check.valid)throw new Error(check.error);}
+                    if (!exemplar && !remove.checked && (node.task.reference_inline_data || data.reference_files?.[node.task.reference_id])) {
+                        const ref=(node.task.reference_inline_data || data.reference_files[node.task.reference_id]).inline_data;
+                        const bytes=Uint8Array.from(atob(ref.data),c=>c.charCodeAt(0));exemplar=new File([bytes],'reference',{type:ref.mime_type});
+                    }
+                    const engine=TaskitatorEngine.AuditEngine;
+                    // This is deliberately a fresh validation, including replacement reference content.
+                    TaskitatorEngine._criteriaValidationCache.clear();
+                    feedback.textContent='Validating future criteria…';
+                    const result=await engine.validateCriteria(text,node.task.title,exemplar);
+                    if(!result.success||!result.passed||result.score<7)throw new Error(result.error||result.critique||'Criteria must score at least 7/10.');
+                    if (user!==window.SyncEngine?.getConfig().username || session!==localStorage.getItem('taskitator_session_id') || revision!==localStorage.getItem('taskitator_local_revision')) throw new Error('Account or tasks changed during validation. Reopen this dialog and try again.');
+                    node.task.proof_criteria=text;node.task.raw_proof_criteria=text;
+                    if(remove.checked){delete node.task.reference_inline_data;delete node.task.reference_id;}
+                    if(file.files[0]){data.reference_files ||= {};const refId='ref_'+crypto.randomUUID().replace(/-/g,'');data.reference_files[refId]=await engine.fileToBase64(file.files[0]);node.task.reference_id=refId;delete node.task.reference_inline_data;}
+                    if (user!==window.SyncEngine?.getConfig().username || session!==localStorage.getItem('taskitator_session_id') || revision!==localStorage.getItem('taskitator_local_revision')) throw new Error('Account or tasks changed. Reopen this dialog.');
+                    save(data,list);feedback.textContent='Validated '+result.score+'/10. Saved for future occurrences. Current criteria unchanged.';
+                }catch(e){feedback.textContent=e.message;}finally{saveButton.disabled=false;}
+            });
+        }
+    }
+    function overview() {
+        const d=dialog('Recurring tasks & history'),data=state();
+        if(!data.series.length)element('p','Open a task’s details to set up recurrence, or choose Repeat when creating a task.',d);
+        for(const s of data.series){const root=tasks().find(t=>t.id===s.current_root_id);element('h3',root?.title||s.nodes[0]?.task.title||'Recurring task',d);element('p',(s.enabled?'Repeating':'Stopped')+' · '+s.schedule.kind.replace(/_/g,' ')+' · Current date: '+s.current_date,d);if(root)button('Manage branch',d,()=>{d.close();open(root.id);});}
+        element('h3','Occurrence history (latest 500)',d);
+        for(const h of [...data.history].reverse()){element('p',h.title+' · '+h.due_date+' · '+h.outcome+' · '+new Date(h.ended_at).toLocaleString(),d);}
+        if(!data.history.length)element('p','No recurring-task history yet.',d);
+    }
+    window.addEventListener('taskitator-auth-ready',()=>{
+        const form=document.getElementById('taskCreateForm');if(form){const wrap=element('fieldset',undefined,form);wrap.style.cssText='margin:14px 0;border:1px solid var(--border-color);border-radius:8px;padding:12px';element('legend','Recurrence',wrap);const actions=document.getElementById('submitTaskCreateBtn')?.parentElement;if(actions?.parentElement===form)form.insertBefore(wrap,actions);createControl=scheduleForm(wrap,undefined,true);}
+        const nav=document.querySelector('.sidebar nav')||document.querySelector('nav');if(nav)button('↻ Recurring tasks',nav,overview);
+    });
+    window.TaskitatorRecurrenceUI={state,save,persist,attachCreated,validCreate,bindTask,applyEdit,resetCreate:()=>createControl?.reset(),overview};
+})();
+
+// <<< MODULE_END: recurrence-ui.js >>>
+// <<< MODULE_START: components.js >>>
 // File: components.js
 /**
  * Taskitator task-editor components. Classic script; no imports or build step.
@@ -193,49 +611,6 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
         };
-
-        const quickSubtaskChecks = new WeakMap();
-        const consecutiveChecks = new WeakMap();
-        function consecutiveMessage(toggle, message, restricted = false) {
-            const help = document.getElementById(toggle.id + 'Help');
-            if (help) help.textContent = message;
-            toggle.closest('label')?.classList.toggle('pro-feature-restricted', restricted);
-        }
-        async function checkConsecutiveOption(toggle) {
-            const owner = window.Clerk?.session?.id;
-            const check = {};
-            consecutiveChecks.set(toggle, check);
-            if (!toggle.checked) return false;
-            toggle.setAttribute('aria-busy', 'true');
-            try {
-                if (!window.TaskitatorPro?.canCreateConsecutive) throw new Error('Pro status is unavailable.');
-                const allowed = await window.TaskitatorPro.canCreateConsecutive();
-                if (consecutiveChecks.get(toggle) !== check || !toggle.checked || window.Clerk?.session?.id !== owner) return false;
-                if (!allowed) {
-                    toggle.checked = false;
-                    consecutiveMessage(toggle, 'Consecutive numbering requires active Pro. Manual subtasks are still available.', true);
-                    return false;
-                }
-                consecutiveMessage(toggle, 'Pro active. {num==X} advances after each quick subtask.');
-                return true;
-            } catch {
-                if (consecutiveChecks.get(toggle) !== check || !toggle.checked) return false;
-                consecutiveMessage(toggle, 'Unable to check Pro. Select the option again to retry. Manual subtasks are still available.', true);
-                return false;
-            } finally { if (consecutiveChecks.get(toggle) === check) toggle.removeAttribute('aria-busy'); }
-        }
-        async function finishQuickSubtask(input, toggle, raw, stillCurrent = () => true) {
-            // Commit manually first; a provider outage must never stop ordinary creation.
-            input.value = '';
-            input.focus();
-            const check = {};
-            quickSubtaskChecks.set(input, check);
-            if (toggle?.checked && /\{num==\d+\}/i.test(raw) && await checkConsecutiveOption(toggle)) {
-                // Do not overwrite typing or another dialog opened while checking entitlement.
-                if (quickSubtaskChecks.get(input) === check && !input.value && stillCurrent() && toggle.checked)
-                    input.value = SmartCriteriaEngine.incrementConsecutiveNum(raw);
-            }
-        }
 
         function updateMrStudyRuleDropdown() {
             const container = document.getElementById('mrstudyRuleContainer');
@@ -709,6 +1084,25 @@ window.TaskitatorComponents = Object.freeze({
             const editTaskDueDate = document.getElementById('editTaskDueDate');
             const editAiLockCheckbox = document.getElementById('editAiLockCheckbox');
             const editStrictPrereqCheckbox = document.getElementById('editStrictPrereqCheckbox');
+            
+            const createAiAuditInfoBtn = document.getElementById('createAiAuditInfoBtn');
+            const createAiAuditInfoBox = document.getElementById('createAiAuditInfoBox');
+            if (createAiAuditInfoBtn && createAiAuditInfoBox) {
+                createAiAuditInfoBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    createAiAuditInfoBox.style.display = createAiAuditInfoBox.style.display === 'none' ? 'block' : 'none';
+                });
+            }
+
+            const editAiAuditInfoBtn = document.getElementById('editAiAuditInfoBtn');
+            const editAiAuditInfoBox = document.getElementById('editAiAuditInfoBox');
+            if (editAiAuditInfoBtn && editAiAuditInfoBox) {
+                editAiAuditInfoBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    editAiAuditInfoBox.style.display = editAiAuditInfoBox.style.display === 'none' ? 'block' : 'none';
+                });
+            }
+
             const editBonusTaskCheckbox = document.getElementById('editBonusTaskCheckbox');
             const editCriteriaBoxContainer = document.getElementById('editCriteriaBoxContainer');
             const editTaskCriteria = document.getElementById('editTaskCriteria');
@@ -757,7 +1151,7 @@ window.TaskitatorComponents = Object.freeze({
             
             if (editTaskDesc) editTaskDesc.value = task.description || '';
             if (editTaskDueDate) editTaskDueDate.value = task.due_date === 'today' ? host.clock.today() : (task.due_date || '');
-            if (detailQuickSubtaskInput) { detailQuickSubtaskInput.value = ''; quickSubtaskChecks.delete(detailQuickSubtaskInput); }
+            if (detailQuickSubtaskInput) { detailQuickSubtaskInput.value = ''; detailQuickSubtaskInput._quickGeneration = (detailQuickSubtaskInput._quickGeneration || 0) + 1; }
 
             editModalSelectedTags.clear();
             (task.tags || []).forEach(t => editModalSelectedTags.add(t));
@@ -929,7 +1323,7 @@ window.TaskitatorComponents = Object.freeze({
             if (subtaskList) subtaskList.innerHTML = '';
 
             const createQuickSubInput = document.getElementById('createQuickSubtaskInput');
-            if (createQuickSubInput) { createQuickSubInput.value = ''; quickSubtaskChecks.delete(createQuickSubInput); }
+            if (createQuickSubInput) { createQuickSubInput.value = ''; createQuickSubInput._quickGeneration = (createQuickSubInput._quickGeneration || 0) + 1; }
 
             const dueIn = document.getElementById('taskDueDateInput');
             if (dueIn) {
@@ -1089,33 +1483,28 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
-            for (const prefix of ['create', 'detail']) {
-                const toggle = document.getElementById(prefix + 'ConsecutiveToggle');
-                toggle?.addEventListener('change', () => {
-                    if (toggle.checked) checkConsecutiveOption(toggle);
-                    else {
-                        consecutiveChecks.delete(toggle);
-                        toggle.removeAttribute('aria-busy');
-                        consecutiveMessage(toggle, 'Active Pro is required for automatic numbering. Manual creation is always available.');
-                    }
-                });
-                const input = document.getElementById(prefix + 'QuickSubtaskInput');
-                input?.addEventListener('input', () => quickSubtaskChecks.delete(input));
-            }
-
             // Dual-Panel Sequential Quick-Subtask Inputs (Enter commits, maintains focus, consecutive auto-increment)
             const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
             if (detailQuickSubtaskInput) {
-                detailQuickSubtaskInput.addEventListener('keydown', (e) => {
+                detailQuickSubtaskInput.addEventListener('input', () => { detailQuickSubtaskInput._quickGeneration = (detailQuickSubtaskInput._quickGeneration || 0) + 1; });
+                detailQuickSubtaskInput.addEventListener('keydown', async (e) => {
                     if (e.key === 'Enter') {
+                        if (e.isComposing) return;
                         e.preventDefault();
+                        e.stopPropagation?.();
                         if (!activeDetailTaskId) return;
-                        
+
                         let rawSubInput = detailQuickSubtaskInput.value.trim();
                         if (!rawSubInput) return;
+                        if (detailQuickSubtaskInput._pendingConsecutiveText === rawSubInput) return;
 
                         const parentTask = host.tasks.getAll().find(t => t.id === activeDetailTaskId);
                         if (!parentTask) return;
+
+                        const generation = detailQuickSubtaskInput._quickGeneration = (detailQuickSubtaskInput._quickGeneration || 0) + 1;
+                        // Consume submitted title synchronously before any async Pro entitlement check
+                        detailQuickSubtaskInput.value = '';
+                        detailQuickSubtaskInput.focus();
 
                         const isBonusSub = rawSubInput.includes('$$');
                         const cleanedBonusInput = rawSubInput.replace(/\$\$/g, '').trim();
@@ -1163,19 +1552,52 @@ window.TaskitatorComponents = Object.freeze({
                         }
 
                         const consecutiveCb = document.getElementById('detailConsecutiveToggle');
-                        const committedParent = activeDetailTaskId;
-                        finishQuickSubtask(detailQuickSubtaskInput, consecutiveCb, rawSubInput, () => activeDetailTaskId === committedParent);
+                        const noticeEl = document.getElementById('detailConsecutiveNotice');
+                        if (consecutiveCb && consecutiveCb.checked && /\{num==\d+\}/i.test(rawSubInput)) {
+                            detailQuickSubtaskInput._pendingConsecutiveText = rawSubInput;
+                            try {
+                                const check = window.TaskitatorPro?.checkConsecutiveEntitlement
+                                    ? await window.TaskitatorPro.checkConsecutiveEntitlement()
+                                    : { allowed: false, status: 'error', message: 'Could not verify Taskitator Pro status right now. Ordinary manual subtask creation remains available — please retry the Pro consecutive option in a moment.' };
+                                if (generation !== detailQuickSubtaskInput._quickGeneration || !consecutiveCb.checked) return;
+                                if (check.allowed) {
+                                    if (noticeEl) { noticeEl.style.display = 'none'; noticeEl.textContent = ''; }
+                                    if (detailQuickSubtaskInput.value === '') {
+                                        detailQuickSubtaskInput.value = SmartCriteriaEngine.incrementConsecutiveNum(rawSubInput);
+                                    }
+                                } else {
+                                    if (check.status !== 'error') consecutiveCb.checked = false;
+                                    if (noticeEl) {
+                                        noticeEl.textContent = check.message;
+                                        noticeEl.style.display = 'block';
+                                    }
+                                }
+                            } finally {
+                                if (detailQuickSubtaskInput._pendingConsecutiveText === rawSubInput) {
+                                    delete detailQuickSubtaskInput._pendingConsecutiveText;
+                                }
+                            }
+                        }
                     }
                 });
             }
 
             const createQuickSubtaskInput = document.getElementById('createQuickSubtaskInput');
             if (createQuickSubtaskInput) {
-                createQuickSubtaskInput.addEventListener('keydown', (e) => {
+                createQuickSubtaskInput.addEventListener('input', () => { createQuickSubtaskInput._quickGeneration = (createQuickSubtaskInput._quickGeneration || 0) + 1; });
+                createQuickSubtaskInput.addEventListener('keydown', async (e) => {
                     if (e.key === 'Enter') {
+                        if (e.isComposing) return;
                         e.preventDefault();
+                        e.stopPropagation?.();
                         const rawText = createQuickSubtaskInput.value.trim();
                         if (!rawText) return;
+                        if (createQuickSubtaskInput._pendingConsecutiveText === rawText) return;
+
+                        const generation = createQuickSubtaskInput._quickGeneration = (createQuickSubtaskInput._quickGeneration || 0) + 1;
+                        // Consume submitted title synchronously before any async Pro entitlement check
+                        createQuickSubtaskInput.value = '';
+                        createQuickSubtaskInput.focus();
 
                         const subtaskBuilderList = document.getElementById('subtaskBuilderList');
                         if (subtaskBuilderList) {
@@ -1190,10 +1612,62 @@ window.TaskitatorComponents = Object.freeze({
                         }
 
                         const consecutiveCb = document.getElementById('createConsecutiveToggle');
-                        finishQuickSubtask(createQuickSubtaskInput, consecutiveCb, rawText);
+                        const noticeEl = document.getElementById('createConsecutiveNotice');
+                        if (consecutiveCb && consecutiveCb.checked && /\{num==\d+\}/i.test(rawText)) {
+                            createQuickSubtaskInput._pendingConsecutiveText = rawText;
+                            try {
+                                const check = window.TaskitatorPro?.checkConsecutiveEntitlement
+                                    ? await window.TaskitatorPro.checkConsecutiveEntitlement()
+                                    : { allowed: false, status: 'error', message: 'Could not verify Taskitator Pro status right now. Ordinary manual subtask creation remains available — please retry the Pro consecutive option in a moment.' };
+                                if (generation !== createQuickSubtaskInput._quickGeneration || !consecutiveCb.checked) return;
+                                if (check.allowed) {
+                                    if (noticeEl) { noticeEl.style.display = 'none'; noticeEl.textContent = ''; }
+                                    if (createQuickSubtaskInput.value === '') {
+                                        createQuickSubtaskInput.value = SmartCriteriaEngine.incrementConsecutiveNum(rawText);
+                                    }
+                                } else {
+                                    if (check.status !== 'error') consecutiveCb.checked = false;
+                                    if (noticeEl) {
+                                        noticeEl.textContent = check.message;
+                                        noticeEl.style.display = 'block';
+                                    }
+                                }
+                            } finally {
+                                if (createQuickSubtaskInput._pendingConsecutiveText === rawText) {
+                                    delete createQuickSubtaskInput._pendingConsecutiveText;
+                                }
+                            }
+                        }
                     }
                 });
             }
+
+            
+            const bindConsecutiveToggle = (toggleId, noticeId) => {
+                const toggleEl = document.getElementById(toggleId);
+                const noticeEl = document.getElementById(noticeId);
+                if (!toggleEl) return;
+                toggleEl.addEventListener('change', async () => {
+                    if (!toggleEl.checked) {
+                        if (noticeEl) { noticeEl.style.display = 'none'; noticeEl.textContent = ''; }
+                        return;
+                    }
+                    const check = window.TaskitatorPro?.checkConsecutiveEntitlement
+                        ? await window.TaskitatorPro.checkConsecutiveEntitlement()
+                        : { allowed: false, status: 'error', message: 'Could not verify Taskitator Pro status right now. Ordinary manual subtask creation remains available — please retry the Pro consecutive option in a moment.' };
+                    if (check.allowed) {
+                        if (noticeEl) { noticeEl.style.display = 'none'; noticeEl.textContent = ''; }
+                    } else {
+                        toggleEl.checked = false;
+                        if (noticeEl) {
+                            noticeEl.textContent = check.message;
+                            noticeEl.style.display = 'block';
+                        }
+                    }
+                });
+            };
+            bindConsecutiveToggle('createConsecutiveToggle', 'createConsecutiveNotice');
+            bindConsecutiveToggle('detailConsecutiveToggle', 'detailConsecutiveNotice');
 
             const openRootAddModalBtn = document.getElementById('openRootAddModalBtn');
             if (openRootAddModalBtn) {
@@ -1251,6 +1725,25 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
+            
+            const createAiAuditInfoBtn = document.getElementById('createAiAuditInfoBtn');
+            const createAiAuditInfoBox = document.getElementById('createAiAuditInfoBox');
+            if (createAiAuditInfoBtn && createAiAuditInfoBox) {
+                createAiAuditInfoBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    createAiAuditInfoBox.style.display = createAiAuditInfoBox.style.display === 'none' ? 'block' : 'none';
+                });
+            }
+
+            const editAiAuditInfoBtn = document.getElementById('editAiAuditInfoBtn');
+            const editAiAuditInfoBox = document.getElementById('editAiAuditInfoBox');
+            if (editAiAuditInfoBtn && editAiAuditInfoBox) {
+                editAiAuditInfoBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    editAiAuditInfoBox.style.display = editAiAuditInfoBox.style.display === 'none' ? 'block' : 'none';
+                });
+            }
+
             const editBonusTaskCheckbox = document.getElementById('editBonusTaskCheckbox');
             if (editBonusTaskCheckbox) {
                 editBonusTaskCheckbox.addEventListener('change', () => {
@@ -1258,18 +1751,19 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
-            const addSubtaskFieldBtn = document.getElementById('addSubtaskFieldBtn');
             const subtaskBuilderList = document.getElementById('subtaskBuilderList');
-            if (addSubtaskFieldBtn && subtaskBuilderList) {
-                addSubtaskFieldBtn.addEventListener('click', () => {
-                    const div = document.createElement('div');
-                    div.className = 'subtask-builder-item';
-                    div.innerHTML = `
-                        <input type="text" class="subtask-input-title" placeholder="Quick subtask title... ($$ for bonus)" style="flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" required>
-                        <button type="button" class="action-del-btn">✕</button>
-                    `;
-                    div.querySelector('.action-del-btn').addEventListener('click', () => div.remove());
-                            subtaskBuilderList.appendChild(div);
+            // Existing draft rows consume Enter locally instead of submitting the parent form.
+            subtaskBuilderList?.addEventListener('keydown', e => {
+                if (e.key !== 'Enter' || !e.target?.matches?.('.subtask-input-title')) return;
+                if (e.isComposing) return;
+                e.preventDefault(); e.stopPropagation?.();
+                document.getElementById('createQuickSubtaskInput')?.focus();
+            });
+            for (const [buttonId, inputId] of [['addSubtaskFieldBtn','createQuickSubtaskInput'], ['detailAddQuickSubtaskBtn','detailQuickSubtaskInput']]) {
+                document.getElementById(buttonId)?.addEventListener('click', () => {
+                    const input = document.getElementById(inputId);
+                    input?.focus();
+                    if (input?.value.trim()) input.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true, cancelable:true}));
                 });
             }
 
@@ -2017,7 +2511,25 @@ window.TaskitatorComponents = Object.freeze({
                         }
                     } else {
                         submitProofBtn.disabled=false;submitProofBtn.textContent='Retry Submission';
-                        if(auditFeedback){auditFeedback.style.display='block';auditFeedback.textContent=result.error||result.critique||'Proof was not approved.';}
+                        if (auditFeedback) {
+                            auditFeedback.className = 'audit-critique-box';
+                            auditFeedback.style.display = 'block';
+                            const rawVerdict = (result.verdict || 'REJECTED').toLowerCase();
+                            const verdictUpper = TaskitatorSafety.escapeHtml(rawVerdict === 'incomplete' ? 'INSUFFICIENT PROOF' : rawVerdict.toUpperCase());
+                            const critiqueText = TaskitatorSafety.escapeHtml(result.error || result.critique || result.reason || 'Proof was not approved.');
+                            let noticeHtml = '';
+                            if (rawVerdict === 'incomplete') {
+                                if (result.is_pro || result.discount_applied) {
+                                    const costMsg = (result.credits_charged === 0) ? '0 tokens (FREE audit)' : (result.credits_charged != null ? result.credits_charged + ' tokens' : '50% discount applied');
+                                    noticeHtml = `<div style="margin-top: 8px; font-size: 0.8rem; color: #34d399; font-weight: 600;">ℹ️ Insufficient proof: A 50% token discount was applied (${costMsg}).</div>`;
+                                } else {
+                                    noticeHtml = `<div style="margin-top: 8px; font-size: 0.8rem; color: #cbd5e1;">ℹ️ Insufficient proof: Free tier accounts do not receive the 50% discount on insufficient audits.</div>`;
+                                }
+                            } else if (!result.error) {
+                                noticeHtml = `<div style="margin-top: 8px; font-size: 0.8rem; color: #fca5a5;">⚠️ Token notice: Usage was calculated and consumed for this audit. No refund issued.</div>`;
+                            }
+                            auditFeedback.innerHTML = `<strong>Verdict: ${verdictUpper}</strong><br>${critiqueText}${noticeHtml}`;
+                        }
                     }
                 });
             }
@@ -2490,3 +3002,5 @@ window.TaskitatorComponents = Object.freeze({
         });
     }
 });
+
+// <<< MODULE_END: components.js >>>

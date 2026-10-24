@@ -4,9 +4,6 @@
 <html lang="en" class="auth-pending">
 <head>
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'  https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
-<script src="auth-config.js"></script>
-<script src="auth-client.js"></script>
-<script src="vault-client.js"></script>
 <style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
@@ -21,7 +18,6 @@
     <link rel="apple-touch-icon" href="icon/icon-192.png">
 
     <link rel="stylesheet" href="style.css?v=profile-ui-v3">
-    <link rel="stylesheet" href="pro/pro.css?v=profile-ui-v3">
     <style>
         .page-title-section {
             padding: 10px 0 8px 0;
@@ -295,10 +291,10 @@
     <nav class="drawer-links" id="drawerNavLinks">
         <a href="#today" id="navLinkToday" class="active">📅 Today</a>
         <a href="#general" id="navLinkGeneral">📋 General Tasks</a>
-        <a href="calendar.html">🗓️ Calendar</a>
-        <a href="projects.html">📁 Projects</a>
-        <a href="stats.html">📊 Stats</a>
-        <a href="trash.html">🗑️ Trash</a>
+        <a href="components.html?view=calendar">🗓️ Calendar</a>
+        <a href="components.html?view=projects">📁 Projects</a>
+        <a href="components.html?view=stats">📊 Stats</a>
+        <a href="components.html?view=trash">🗑️ Trash</a>
         <a href="settings.html">⚙️ Settings</a>
     </nav>
 </aside>
@@ -768,17 +764,6 @@
                 </div>
             </div>
 
-            <!-- Bonus Subtask Toggle (Creation) -->
-            <div class="form-group" id="bonusTaskContainer">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" id="bonusTaskCheckbox">
-                    <span>⭐ Bonus Subtask (Excluded from Shield)</span>
-                </label>
-                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
-                    Bonus items won't block the parent task from completion if time or energy runs out.
-                </small>
-            </div>
-
             <!-- Independent Subtask Shield Toggle -->
             <div class="form-group" id="prerequisiteBoxContainer">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -790,12 +775,29 @@
                 </small>
             </div>
 
+            <!-- Bonus Subtask Toggle (Creation) -->
+            <div class="form-group" id="bonusTaskContainer">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="bonusTaskCheckbox">
+                    <span>⭐ Bonus Subtask (Excluded from Shield)</span>
+                </label>
+                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                    Bonus items won't block the parent task from completion if time or energy runs out.
+                </small>
+            </div>
+
             <!-- AI Proof Verification Option -->
             <div class="form-group">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" id="aiLockCheckbox">
-                    <span>Require AI Proof Verification (Irrevocable)</span>
-                </label>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0;">
+                        <input type="checkbox" id="aiLockCheckbox">
+                        <span>Require AI Proof Verification (Irrevocable)</span>
+                    </label>
+                    <button type="button" class="icon-btn ai-audit-info-trigger" id="createAiAuditInfoBtn" title="AI Audit Usage Information" style="width: 22px; height: 22px; border-radius: 50%; font-size: 0.75rem; padding: 0; line-height: 1; font-weight: 700;">?</button>
+                </div>
+                <div class="guidance-note" id="createAiAuditInfoBox" style="display: none; margin-top: 6px; font-size: 0.8rem; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 6px; padding: 8px 10px; color: #cbd5e1;">
+                    ⚠️ <strong>Audit Token Notice:</strong> Submitting proof consumes your AI usage. If your proof is rejected because it fails the task criteria or is invalid, token usage is still calculated and consumed—no refunds are issued. Make sure your proof is clear and complete before submitting.
+                </div>
             </div>
 
             <div class="form-group" id="criteriaBoxContainer" style="display: none;">
@@ -833,21 +835,21 @@
 
             <!-- Subtask Creation with Enter-Commit & Auto-Increment -->
             <div class="form-group">
-                <div class="pro-subtask-heading" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                     <label style="margin: 0;">Quick Subtasks</label>
-                    <label style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; color: var(--text-muted); cursor: pointer;">
-                        <input type="checkbox" id="createConsecutiveToggle" aria-describedby="createConsecutiveToggleHelp" style="width: 14px; height: 14px; cursor: pointer;">
-                        <span>Consecutive {num==X} <span class="pro-feature-label">Pro</span></span>
+                    <label class="pro-consecutive-label" style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--text-muted); cursor: pointer;">
+                        <input type="checkbox" id="createConsecutiveToggle" style="width: 14px; height: 14px; cursor: pointer;">
+                        <span>Consecutive {num==X}</span>
+                        <span class="pro-feature-pill">PRO</span>
                     </label>
                 </div>
-                <p class="pro-feature-help" id="createConsecutiveToggleHelp" role="status">Active Pro is required for automatic numbering. Manual creation is always available.</p>
                 
+                <div id="createConsecutiveNotice" class="pro-consecutive-notice" style="display: none;" role="status" aria-live="polite"></div>
                 <div style="margin-bottom: 8px;">
-                    <input type="text" id="createQuickSubtaskInput" placeholder="+ Add subtask title (press Enter)..." style="width: 100%; padding: 7px 10px; border-radius: 6px; border: 1.5px solid var(--border-color); background: var(--card-subtle); color: var(--text-color); font-size: 0.85rem; outline: none;" autocomplete="off">
+                    <div class="quick-subtask-row"><button type="button" class="icon-btn quick-subtask-add" id="addSubtaskFieldBtn" aria-label="Add subtask" title="Add subtask">+</button><input type="text" id="createQuickSubtaskInput" placeholder="+ Add subtask title (press Enter)..." style="width: 100%; padding: 7px 10px; border-radius: 6px; border: 1.5px solid var(--border-color); background: var(--card-subtle); color: var(--text-color); font-size: 0.85rem; outline: none;" autocomplete="off"></div>
                 </div>
 
                 <div id="subtaskBuilderList"></div>
-                <button type="button" class="icon-btn" id="addSubtaskFieldBtn" style="padding: 4px 10px; font-size: 0.8rem; margin-top: 6px;">+ Quick Subtask Field</button>
             </div>
 
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
@@ -947,17 +949,6 @@
             <input type="date" id="editTaskDueDate">
         </div>
 
-        <!-- Bonus Subtask Toggle (Details / Edit) -->
-        <div class="form-group" id="editBonusTaskContainer">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                <input type="checkbox" id="editBonusTaskCheckbox">
-                <span>⭐ Bonus Subtask (Excluded from Shield)</span>
-            </label>
-            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
-                Bonus items won't block the parent task from completion if time or energy runs out.
-            </small>
-        </div>
-
         <!-- Independent Subtask Shield in Details -->
         <div class="form-group" id="editPrerequisiteBoxContainer">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -969,12 +960,29 @@
             </small>
         </div>
 
+        <!-- Bonus Subtask Toggle (Details / Edit) -->
+        <div class="form-group" id="editBonusTaskContainer">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="editBonusTaskCheckbox">
+                <span>⭐ Bonus Subtask (Excluded from Shield)</span>
+            </label>
+            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                Bonus items won't block the parent task from completion if time or energy runs out.
+            </small>
+        </div>
+
         <!-- AI Proof Verification in Details -->
         <div class="form-group">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                <input type="checkbox" id="editAiLockCheckbox">
-                <span>AI Proof Required</span>
-            </label>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0;">
+                    <input type="checkbox" id="editAiLockCheckbox">
+                    <span>AI Proof Required</span>
+                </label>
+                <button type="button" class="icon-btn ai-audit-info-trigger" id="editAiAuditInfoBtn" title="AI Audit Usage Information" style="width: 22px; height: 22px; border-radius: 50%; font-size: 0.75rem; padding: 0; line-height: 1; font-weight: 700;">?</button>
+            </div>
+            <div class="guidance-note" id="editAiAuditInfoBox" style="display: none; margin-top: 6px; font-size: 0.8rem; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 6px; padding: 8px 10px; color: #cbd5e1;">
+                ⚠️ <strong>Audit Token Notice:</strong> Submitting proof consumes your AI usage. If your proof is rejected because it fails the task criteria or is invalid, token usage is still calculated and consumed—no refunds are issued. Make sure your proof is clear and complete before submitting.
+            </div>
         </div>
 
         <div class="form-group" id="editCriteriaBoxContainer" style="display: none;">
@@ -1025,21 +1033,22 @@
 
         <!-- Subtasks Section with Inline Rapid-Entry Input & Consecutive Auto-Increment -->
         <div class="form-group" style="margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px;">
-            <div class="pro-subtask-heading" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                 <label style="margin: 0;">Subtasks Under This Task</label>
-                <div class="pro-subtask-options" style="display: flex; align-items: center; gap: 8px;">
-                    <label style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; color: var(--text-muted); cursor: pointer;">
-                        <input type="checkbox" id="detailConsecutiveToggle" aria-describedby="detailConsecutiveToggleHelp" style="width: 14px; height: 14px; cursor: pointer;">
-                        <span>Consecutive {num==X} <span class="pro-feature-label">Pro</span></span>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label class="pro-consecutive-label" style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--text-muted); cursor: pointer;">
+                        <input type="checkbox" id="detailConsecutiveToggle" style="width: 14px; height: 14px; cursor: pointer;">
+                        <span>Consecutive {num==X}</span>
+                        <span class="pro-feature-pill">PRO</span>
                     </label>
                     <button type="button" class="icon-btn" id="openChildAddModalBtn" style="padding: 4px 10px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">+ Add Subtask</button>
                 </div>
             </div>
 
-            <p class="pro-feature-help" id="detailConsecutiveToggleHelp" role="status">Active Pro is required for automatic numbering. Manual creation is always available.</p>
+            <div id="detailConsecutiveNotice" class="pro-consecutive-notice" style="display: none;" role="status" aria-live="polite"></div>
             <!-- Inline Sequential Quick-Subtask Field (Todoist Style: Enter commits & keeps focus) -->
             <div style="margin-bottom: 10px;">
-                <input type="text" id="detailQuickSubtaskInput" placeholder="+ Add quick subtask (press Enter)... Use $$ for bonus" style="width: 100%; padding: 8px 12px; border: 1.5px solid var(--border-color); border-radius: 8px; background: var(--card-subtle); color: var(--text-color); font-size: 0.88rem; outline: none;" autocomplete="off">
+                <div class="quick-subtask-row"><button type="button" class="icon-btn quick-subtask-add" id="detailAddQuickSubtaskBtn" aria-label="Add subtask" title="Add subtask">+</button><input type="text" id="detailQuickSubtaskInput" placeholder="+ Add quick subtask (press Enter)... Use $$ for bonus" style="width: 100%; padding: 8px 12px; border: 1.5px solid var(--border-color); border-radius: 8px; background: var(--card-subtle); color: var(--text-color); font-size: 0.88rem; outline: none;" autocomplete="off"></div>
             </div>
 
             <ul id="detailSubtasksList" style="list-style: none; padding: 0; margin: 0;"></ul>
@@ -1122,20 +1131,9 @@
     </div>
 </div>
 
-<script type="text/taskitator-script" src="safety.js"></script>
-<script type="text/taskitator-script" src="exemplar-store.js"></script>
-<script type="text/taskitator-script" src="pro/break-core.js"></script>
-<script type="text/taskitator-script" src="audit-engine.js"></script>
-<script type="text/taskitator-script" src="recurrence-core.js"></script>
-<script type="text/taskitator-script" src="recurrence-ui.js"></script>
-<script type="text/taskitator-script" src="sync-engine.js"></script>
-<script type="text/taskitator-script" src="agent-engine.js"></script>
-<script type="text/taskitator-script" src="components.js"></script>
-<script type="text/taskitator-script" src="app.js"></script>
-<script type="text/taskitator-script" src="./pomodoro.js"></script>
-<script type="text/taskitator-script" src="pro/pro-client.js"></script>
-<script type="text/taskitator-script" src="pro/pro-ui.js"></script>
-<script type="text/taskitator-script" src="pro/profile-ui.js"></script>
-<script defer src="auth-bootstrap.js?v=profile-ui-v3"></script>
+<script type="text/taskitator-script" src="pro.js"></script>
+    <script type="text/taskitator-script" src="components.js"></script>
+    <script type="text/taskitator-script" src="app.js"></script>
+    <script defer src="core.js"></script>
 </body>
 </html>

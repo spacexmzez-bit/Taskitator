@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Install and commit the flat-layout package over the repository FIRST.
+# Keep existing image/ and icon/ folders. Then run: bash CLEANUP-OLD-FILES.txt
+# Stages only known obsolete files. Does not commit, push or deploy.
+# No force deletion: locally modified tracked files are protected by git rm.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+for required in core.js pro.js components.html worker.js pro-backend.js wrangler.toml build.mjs client.test.js pro.test.js security.test.js SYSTEM_PROMPT.md; do
+  if [[ ! -f "$required" ]]; then
+    echo "Missing $required. Install the flat-layout package first." >&2
+    exit 1
+  fi
+done
+if ! grep -q 'taskitator-root-layout-v8' sw.js || ! grep -q 'taskitator-root-layout-v8' core.js; then
+  echo 'Install the matching flat-layout release before cleanup.' >&2
+  exit 1
+fi
+obsolete=(
+  AUDIT-FIX.md
+  CHANGES.md
+  CHECKS.md
+  CONSOLIDATION-UPDATE.md
+  PHASE-1-SETUP.txt
+  PHASE-2-CHECKS.md
+  PHASE-2-SETUP.html
+  PHASE-2-SETUP.txt
+  PHASE-3-CHECKS.md
+  PHASE-3-SETUP.html
+  PHASE-3-SETUP.txt
+  README.md
+  RECURRING-TASKS.md
+  SECURITY-REVIEW.md
+  SECURITY-SETUP.txt
+  SETUP.md
+  account-deletion.html
+  agent-engine.js
+  audit-engine.js
+  auth-bootstrap.js
+  auth-client.js
+  auth-config.js
+  blocker-guide.html
+  calendar.html
+  cloudflare/ai-gateway.js
+  cloudflare/ai-models.js
+  cloudflare/auth.js
+  cloudflare/deletion.js
+  cloudflare/vault.js
+  cloudflare/verification.js
+  cloudflare/worker.js
+  cloudflare/wrangler.toml
+  data.js
+  deletion-client.js
+  deletion-status.js
+  exemplar-store.js
+  login-page.js
+  pomodoro.js
+  privacy.html
+  pro-client.js
+  pro-ui.js
+  pro.css
+  pro/CLEANUP-OLD-FILES.txt
+  pro/CONDENSED-UPDATES.md
+  pro/Em
+  pro/account-lifecycle.js
+  pro/audit-policy.js
+  pro/audit-policy.test.js
+  pro/audit-service.js
+  pro/break-core.js
+  pro/breaks.test.js
+  pro/bridge-guide.test.js
+  pro/compare.html
+  pro/comparison.test.js
+  pro/emergency.test.js
+  pro/keyo-license.js
+  pro/keyo-license.test.js
+  pro/keyo-setup.html
+  pro/keyo-test-fixture.js
+  pro/patch-setup.html
+  pro/pro-backend.js
+  pro/pro-client.js
+  pro/pro-ui.js
+  pro/pro.css
+  pro/pro.test.js
+  pro/profile-ui.js
+  pro/profile-ui.test.js
+  pro/security-client.test.js
+  pro/security-fixes-setup.html
+  pro/security-fixes.test.js
+  pro/security-test-support.js
+  pro/security-worker-fixture.js
+  pro/task-protection.js
+  pro/taskitator-cloud-bridge.macro
+  pro/verification-setup.html
+  projects.html
+  recurrence-core.js
+  recurrence-ui.js
+  safety.js
+  stats.html
+  sync-engine.js
+  terms.html
+  tests/Em
+  tests/client.test.js
+  tests/phase3-pre-updates.test.js
+  tests/pro.test.js
+  tests/security.test.js
+  tools/Em
+  tools/build-phase2-guide.mjs
+  tools/build-phase3-guide.mjs
+  tools/build.mjs
+  tools/rebuild-csp.mjs
+  trash.html
+  vault-client.js
+  vault.js
+  verification.js
+  welcome.html
+)
+git rm --ignore-unmatch -- "${obsolete[@]}"
+printf '\nCleanup staged. Run npm test; review and commit the deletions. Deploy the Worker using root wrangler.toml.\n'

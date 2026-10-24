@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-emergency-copy-v7';
+const CACHE_NAME = 'taskitator-root-layout-v8';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -11,41 +11,17 @@ self.addEventListener('message', event => {
 const STATIC_ASSETS = [
     './',
     './index.html',
-    './calendar.html',
-    './projects.html',
-    './stats.html',
+    './components.html',
     './settings.html',
-    './trash.html',
-    './blocker-guide.html',
     './login.html',
     './style.css',
-    './pro/pro.css',
-    './pro/pro-client.js',
-    './pro/pro-ui.js',
-    './pro/compare.html',
-    './pro/profile-ui.js',
+    './core.js',
+    './pro.js',
+    './components.js',
+    './app.js',
     './manifest.json',
     './SYSTEM_PROMPT.md',
     './CRITERIA_TEMPLATES.json',
-    './app.js',
-    './components.js',
-    './safety.js',
-    './auth-client.js',
-    './vault-client.js',
-    './auth-bootstrap.js',
-    './auth-config.js',
-    './login-page.js',
-    './deletion-client.js',
-    './deletion-status.js',
-    './account-deletion.html',
-    './pomodoro.js',
-    './exemplar-store.js',
-    './agent-engine.js',
-    './audit-engine.js',
-    './pro/break-core.js',
-    './sync-engine.js',
-    './recurrence-core.js',
-    './recurrence-ui.js',
     './icon/icon-192.png',
     './icon/icon-512.png'
 ];
