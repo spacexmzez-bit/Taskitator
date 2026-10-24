@@ -1076,3 +1076,234 @@ test('both emergency URLs require a connected live account and reject phone toke
     for(const path of ['/emergency','/pro/emergency'])assert.equal((await f.call(path,a.token,'POST',{})).status,410);
 });
 
+
+// Universe foundation tests execute the production SQL and service entrypoints
+// against SQLite, not a map of expected SQL strings. D1 transport is adapted.
+import { DatabaseSync } from 'node:sqlite';
+import { readFileSync } from 'node:fs';
+class UniverseTestD1 {
+    constructor() { this.sql=new DatabaseSync(':memory:'); this.sql.exec(readFileSync(new URL('./uni/universe-schema.sql',import.meta.url),'utf8')); }
+    withSession(mode) { assert.equal(mode,'first-primary'); return this; }
+    prepare(sql) {
+        const db=this;
+        const stmt=(values=[])=>({sql,values,bind:(...args)=>stmt(args),
+            first:async()=>db.sql.prepare(sql).get(...values)??null,
+            all:async()=>({results:db.sql.prepare(sql).all(...values)}),
+            run:async()=>({meta:db.sql.prepare(sql).run(...values)})});
+        return stmt();
+    }
+    async batch(statements) {
+        await new Promise(resolve=>setImmediate(resolve));
+        if(this.beforeBatch) { const fn=this.beforeBatch; this.beforeBatch=null; await fn(); }
+        this.sql.exec('BEGIN IMMEDIATE');
+        try { const out=statements.map(s=>({meta:this.sql.prepare(s.sql).run(...s.values)}));this.sql.exec('COMMIT');return out; }
+        catch(error) {this.sql.exec('ROLLBACK');throw error;}
+    }
+}
+async function universeFixture() {
+    const f=fixture(); Object.assign(f.env,testEnv,{UNIVERSE_FOUNDATION_ENABLED:'true',TASKITATOR_DB:new UniverseTestD1()});
+    const token=await jwt();
+    async function account(id,pro=false) {
+        await f.storage.put('identity:'+id,{user:id});
+        await f.storage.put('account:'+encodeURIComponent(id),{owner_id:id,version:0});
+        if(pro)await f.storage.put('pro:entitlement:'+id,await activeLicense(id));
+        return {userId:id,sessionId:'sess_'+id.slice(5)};
+    }
+    const owner=await account('user_A',true),db=f.env.TASKITATOR_DB;
+    const handle=(id,path,body)=>f.service.universe.handle(id,path,body?'POST':'GET',body);
+    const make=(id=owner,extra={})=>handle(id,'/universe/groups',{operation_id:newOperation(),title:'Study team',purpose:'Prepare together',...extra});
+    const invite=async(group,actor=owner,role='member',extra={})=>{
+        const token=Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
+        const body={operation_id:newOperation(),token,role,...extra};
+        const result=await handle(actor,'/universe/groups/'+group+'/invitations',body);
+        return {token,body,result};
+    };
+    const accept=(id,token,extra={})=>handle(id,'/universe/invitations/accept',{operation_id:newOperation(),token,...extra});
+    return {f,db,owner,token,account,handle,make,invite,accept};
+}
+const universeReject=(promise,code)=>assert.rejects(promise,e=>e.code==='UNIVERSE_'+code);
+
+test('Universe: baseline remains usable with missing schema and feature disabled; capability contract is honest',async()=>{
+    const u=await universeFixture();
+    u.f.env.UNIVERSE_FOUNDATION_ENABLED='false';
+    const caps=await u.f.call('/universe/capabilities',u.token);
+    assert.equal(caps.status,200);assert.equal(caps.body.foundation,false);assert.equal(caps.body.ui,false);
+    assert.equal(caps.body.capabilities.hosted_ai,false);
+    assert.equal((await u.f.call('/auth/me',u.token)).status,200);
+    assert.equal((await u.f.call('/universe/groups',u.token)).status,503);
+    u.f.env.UNIVERSE_FOUNDATION_ENABLED='true';u.db.sql.exec('DROP TABLE universe_schema');
+    assert.equal((await u.f.call('/universe/groups',u.token)).status,503);
+    assert.equal((await u.f.call('/auth/me',u.token)).status,200);
+});
+test('Universe: authenticated Worker routes use signed Keyo status and real SQL; reject phone credentials',async()=>{
+    const u=await universeFixture();
+    const body={operation_id:newOperation(),title:'Team'};
+    const first=await u.f.call('/universe/groups',u.token,'POST',body);
+    assert.equal(first.status,200,JSON.stringify(first.body));
+    const again=await u.f.call('/universe/groups',u.token,'POST',body);
+    assert.equal(again.body.group_id,first.body.group_id);assert.equal(again.body.replayed,true);
+    assert.equal((await u.f.call('/universe/groups',null)).status,401);
+    assert.equal((await u.f.call('/universe/groups','phone_'+ 'a'.repeat(64))).status,401);
+    const list=await u.f.call('/universe/groups',u.token);assert.equal(list.body.groups.length,1);
+    assert.equal((await u.f.call('/universe/groups',u.token,'POST',{...body,owner_id:'user_B'})).status,400);
+    assert.equal((await u.f.call('/universe/reviews',u.token,'POST',{})).status,404);
+});
+test('Universe: Free and expired Pro cannot create or reserve; failed entitlement never becomes Pro',async()=>{
+    const u=await universeFixture(),free=await u.account('user_Free');
+    await universeReject(u.make(free),'PRO_REQUIRED');
+    await u.f.storage.put('pro:entitlement:user_A',await activeLicense('user_A',{expiresAt:Date.now()-1000}));
+    // Explicit confirmed expiration avoids any simulated provider refresh.
+    await u.f.storage.put('pro:entitlement:user_A',{...(await u.f.storage.get('pro:entitlement:user_A')),status:'revoked'});
+    await universeReject(u.make(),'PRO_REQUIRED');
+    await universeReject(u.handle(free,'/universe/reservations',{operation_id:newOperation()}),'PRO_REQUIRED');
+    u.f.service.pro.licenses.resolve=async()=>({status:'active',tier:'pro',expires_at:Date.now()-1000});
+    await universeReject(u.make(),'PRO_REQUIRED');
+    u.f.service.pro.licenses.resolve=async()=>{throw Object.assign(new Error('Verification unavailable'),{status:503,code:'KEYO_UNAVAILABLE'});};
+    await assert.rejects(u.make(),/Verification unavailable/);
+    assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_groups').get().n,0);
+});
+test('Universe: concurrent creates and reserved imports share the two owned slots; no partial operation survives rollback',async()=>{
+    const u=await universeFixture();
+    const results=await Promise.allSettled(Array.from({length:8},()=>u.make()));
+    assert.equal(results.filter(r=>r.status==='fulfilled').length,2);
+    assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_groups').get().n,2);
+    assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_operations').get().n,2);
+    const b=await u.account('user_B',true);
+    const reservation=await u.handle(b,'/universe/reservations',{operation_id:'reserve_slot_one'});
+    await u.make(b);await universeReject(u.make(b),'OWNED_CAP');
+    const replay=await u.handle(b,'/universe/reservations',{operation_id:'reserve_slot_one'});
+    assert.equal(replay.reservation_id,reservation.reservation_id);
+    u.db.sql.prepare('UPDATE universe_reservations SET expires_at=0 WHERE id=?').run(reservation.reservation_id);
+    await u.make(b);
+});
+test('Universe: invitation hashes, expiry, current issuer role, immutable owner and direct role checks',async()=>{
+    const u=await universeFixture(),g=await u.make(),member=await u.account('user_M'),outsider=await u.account('user_O');
+    const i=await u.invite(g.group_id);const a=await u.accept(member,i.token,{operation_id:'accept_member_one'});
+    assert.equal(a.role,'member');assert.equal((await u.accept(member,i.token,{operation_id:'accept_member_one'})).replayed,true);
+    await universeReject(u.accept(outsider,i.token),'INVITE_INVALID');
+    assert.equal(u.db.sql.prepare('SELECT token_hash FROM universe_invitations').get().token_hash.length,64);
+    assert.ok(!JSON.stringify(u.db.sql.prepare('SELECT * FROM universe_operations').all()).includes(i.token));
+    await universeReject(u.invite(g.group_id,member),'ACCESS_DENIED');
+    await universeReject(u.handle(outsider,'/universe/groups/'+g.group_id),'ACCESS_DENIED');
+    await universeReject(u.handle(member,'/universe/groups/uni_forged'),'ACCESS_DENIED');
+    assert.throws(()=>u.db.sql.prepare('UPDATE universe_groups SET owner_id=? WHERE id=?').run(member.userId,g.group_id),/U_OWNER_IMMUTABLE/);
+    assert.throws(()=>u.db.sql.prepare("UPDATE universe_members SET role='member' WHERE role='owner'").run(),/U_OWNER_IMMUTABLE/);
+    assert.throws(()=>u.db.sql.prepare("DELETE FROM universe_members WHERE role='owner'").run(),/U_OWNER_IMMUTABLE/);
+    const expired=await u.invite(g.group_id);u.db.sql.prepare('UPDATE universe_invitations SET expires_at=0 WHERE id=?').run(expired.result.invitation_id);
+    await universeReject(u.accept(outsider,expired.token),'INVITE_INVALID');
+    const ai=await u.invite(g.group_id,u.owner,'admin'),admin=await u.account('user_Admin');await u.accept(admin,ai.token);
+    await universeReject(u.invite(g.group_id,admin,'admin'),'ROLE_DENIED');
+    const issued=await u.invite(g.group_id,admin);
+    u.db.sql.prepare("UPDATE universe_members SET role='member' WHERE account_id=?").run(admin.userId);
+    await universeReject(u.accept(outsider,issued.token),'ROLE_DENIED');
+});
+test('Universe: parallel accepts enforce twenty participants and preserve rejected invitations',async()=>{
+    const u=await universeFixture(),g=await u.make();
+    const inputs=[];
+    for(let n=0;n<24;n++)inputs.push([await u.account('user_P'+n),(await u.invite(g.group_id)).token]);
+    const results=await Promise.allSettled(inputs.map(([a,t])=>u.accept(a,t)));
+    assert.equal(results.filter(r=>r.status==='fulfilled').length,20);
+    assert.equal(u.db.sql.prepare("SELECT count(*) n FROM universe_members WHERE role<>'owner'").get().n,20);
+    assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_invitations WHERE accepted_by IS NULL').get().n,4);
+});
+test('Universe: Free joins two and Pro joins seven additional; owned groups do not count',async()=>{
+    const u=await universeFixture(),free=await u.account('user_Free'),pro=await u.account('user_Pro',true);
+    await u.make(pro);await u.make(pro);
+    const groups=[];
+    for(let n=0;n<8;n++){const owner=await u.account('user_Owner'+n,true);groups.push([owner,(await u.make(owner)).group_id]);}
+    const freeInvites=[],proInvites=[];
+    for(const [owner,g] of groups){freeInvites.push((await u.invite(g,owner)).token);proInvites.push((await u.invite(g,owner)).token);}
+    const frees=await Promise.allSettled(freeInvites.map(t=>u.accept(free,t)));
+    const pros=await Promise.allSettled(proInvites.map(t=>u.accept(pro,t)));
+    assert.equal(frees.filter(r=>r.status==='fulfilled').length,2);assert.equal(pros.filter(r=>r.status==='fulfilled').length,7);
+    assert.equal((await u.handle(pro,'/universe/groups')).groups.length,9);
+});
+test('Universe: simultaneous duplicate acceptance creates one membership and rejects operation ID reuse',async()=>{
+    const u=await universeFixture(),g=await u.make(),m=await u.account('user_M'),i=await u.invite(g.group_id);
+    const results=await Promise.all([u.accept(m,i.token,{operation_id:'same_accept_id'}),u.accept(m,i.token,{operation_id:'same_accept_id'})]);
+    assert.equal(results.filter(r=>r.replayed).length,1);
+    const another=await u.invite(g.group_id);
+    await universeReject(u.accept(m,another.token,{operation_id:'same_accept_id'}),'OPERATION_CONFLICT');
+    assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_members WHERE account_id=?').get(m.userId).n,1);
+});
+test('Universe: deletion between authorization and commit rolls back every write and hides owned groups',async()=>{
+    const u=await universeFixture(),g=await u.make(),m=await u.account('user_M'),i=await u.invite(g.group_id);
+    await u.accept(m,i.token);
+    u.db.beforeBatch=()=>u.f.service.universe.blockAccount(u.owner.userId);
+    await universeReject(u.make(),'ACCOUNT_BLOCKED');
+    await universeReject(u.handle(m,'/universe/groups/'+g.group_id),'ACCESS_DENIED');
+    assert.equal((await u.handle(m,'/universe/groups')).groups.length,0);
+    assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_groups').get().n,1);
+    await universeReject(u.make(),'ACCOUNT_BLOCKED');
+    assert.throws(()=>u.db.sql.prepare('UPDATE universe_accounts SET blocked=0 WHERE account_id=?').run(u.owner.userId),/U_ACCOUNT_BLOCKED/);
+});
+test('Universe: real account deletion fences D1 before acceptance, even when feature is disabled',async()=>{
+    const u=await universeFixture(); await u.make();u.f.env.ACCOUNT_DELETION_ENABLED='true';
+    const proof=await verifiedDeletion(u.f,u.token,'user_A','rv_universe_delete');
+    u.f.env.UNIVERSE_FOUNDATION_ENABLED='false';
+    const result=await u.f.call('/auth/account',proof.token,'DELETE',proof);
+    assert.equal(result.status,200,JSON.stringify(result.body));
+    assert.equal(u.db.sql.prepare('SELECT blocked FROM universe_accounts WHERE account_id=?').get('user_A').blocked,1);
+});
+test('Universe: removed members and blocked invitees lose access; guards abort even after operation insert',async()=>{
+    const u=await universeFixture(),g=await u.make(),m=await u.account('user_M'),i=await u.invite(g.group_id);
+    await u.accept(m,i.token);
+    u.db.sql.prepare('DELETE FROM universe_members WHERE account_id=?').run(m.userId);
+    await universeReject(u.handle(m,'/universe/groups/'+g.group_id+'/members'),'ACCESS_DENIED');
+    const newMember=await u.account('user_New'),fresh=await u.invite(g.group_id);
+    const before=u.db.sql.prepare('SELECT count(*) n FROM universe_operations').get().n;
+    u.db.beforeBatch=()=>u.f.service.universe.blockAccount(newMember.userId);
+    await universeReject(u.accept(newMember,fresh.token),'ACCOUNT_BLOCKED');
+    assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_operations').get().n,before);
+    assert.equal(u.db.sql.prepare('SELECT accepted_by FROM universe_invitations WHERE id=?').get(fresh.result.invitation_id).accepted_by,null);
+});
+test('Universe: reapplying additive schema preserves groups, operations and deletion tombstones',async()=>{
+    const u=await universeFixture();await u.make();await u.f.service.universe.blockAccount('user_Blocked');
+    u.db.sql.exec(readFileSync(new URL('./uni/universe-schema.sql',import.meta.url),'utf8'));
+    assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_groups').get().n,1);
+    assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_operations').get().n,1);
+    assert.equal(u.db.sql.prepare('SELECT blocked FROM universe_accounts WHERE account_id=?').get('user_Blocked').blocked,1);
+});
+test('Universe: changed issuer authority at final commit and simultaneous reservation/create cannot bypass guards',async()=>{
+    const u=await universeFixture(),g=await u.make(),admin=await u.account('user_Admin');
+    await u.accept(admin,(await u.invite(g.group_id,u.owner,'admin')).token);
+    const before=u.db.sql.prepare('SELECT count(*) n FROM universe_invitations').get().n;
+    u.db.beforeBatch=()=>u.db.sql.prepare("UPDATE universe_members SET role='member' WHERE account_id=?").run(admin.userId);
+    await universeReject(u.invite(g.group_id,admin),'ROLE_DENIED');
+    assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_invitations').get().n,before);
+    const b=await u.account('user_B',true);
+    const results=await Promise.allSettled([u.make(b),u.make(b),u.handle(b,'/universe/reservations',{operation_id:newOperation()}),u.handle(b,'/universe/reservations',{operation_id:newOperation()})]);
+    assert.equal(results.filter(r=>r.status==='fulfilled').length,2);
+    const used=u.db.sql.prepare('SELECT (SELECT count(*) FROM universe_groups WHERE owner_id=?)+(SELECT count(*) FROM universe_reservations WHERE account_id=?) n').get(b.userId,b.userId).n;
+    assert.equal(used,2);
+});
+test('Universe: invalid deletion approval never fences group access; failed fencing never accepts personal deletion',async()=>{
+    const u=await universeFixture();await u.make();
+    const proof=await verifiedDeletion(u.f,u.token,'user_A','rv_universe_failure');
+    const invalid=await u.f.call('/auth/account',proof.token,'DELETE',{...proof,verification_id:'a'.repeat(64)});
+    assert.equal(invalid.status,403);
+    assert.equal(u.db.sql.prepare('SELECT blocked FROM universe_accounts WHERE account_id=?').get('user_A').blocked,0);
+    const original=u.f.service.universe.blockAccount.bind(u.f.service.universe);
+    u.f.service.universe.blockAccount=async()=>{throw Object.assign(new Error('Unavailable'),{status:503,code:'UNIVERSE_UNAVAILABLE'});};
+    const failed=await u.f.call('/auth/account',proof.token,'DELETE',proof);assert.equal(failed.status,503);
+    assert.equal(await u.f.service.deletion.marker(u.owner),undefined);
+    assert.equal((await u.f.storage.get('account:user_A')).deleting,undefined);
+    u.f.service.universe.blockAccount=original;
+    const retried=await u.f.call('/auth/account',proof.token,'DELETE',proof);assert.equal(retried.status,200);
+});
+test('Universe: a second invitation cannot alter an existing member role and remains unconsumed',async()=>{
+    const u=await universeFixture(),g=await u.make(),m=await u.account('user_M');
+    await u.accept(m,(await u.invite(g.group_id)).token);
+    const promotion=await u.invite(g.group_id,u.owner,'admin');
+    await universeReject(u.accept(m,promotion.token),'ALREADY_MEMBER');
+    assert.equal(u.db.sql.prepare('SELECT role FROM universe_members WHERE account_id=?').get(m.userId).role,'member');
+    assert.equal(u.db.sql.prepare('SELECT accepted_by FROM universe_invitations WHERE id=?').get(promotion.result.invitation_id).accepted_by,null);
+});
+test('Universe: invitation removed before final update cannot return a false success after a zero-row write',async()=>{
+    const u=await universeFixture(),g=await u.make(),m=await u.account('user_M'),i=await u.invite(g.group_id);
+    const before=u.db.sql.prepare('SELECT count(*) n FROM universe_operations').get().n;
+    u.db.beforeBatch=()=>u.db.sql.prepare('DELETE FROM universe_invitations WHERE id=?').run(i.result.invitation_id);
+    await universeReject(u.accept(m,i.token),'INVITE_INVALID');
+    assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_operations').get().n,before);
+    assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_members WHERE account_id=?').get(m.userId).n,0);
+});

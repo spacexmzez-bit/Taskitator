@@ -6,5 +6,8 @@
     "test": "node --experimental-global-webcrypto --test *.test.js",
     "build": "node build.mjs",
     "deploy:worker": "npx wrangler@4 deploy --config wrangler.toml"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

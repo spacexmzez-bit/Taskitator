@@ -3,7 +3,7 @@
 // Combines: recurrence-core, break-core, auth, ai-models, verification,
 // deletion, vault, ai-gateway, and worker router.
 // ============================================================================
-import { ProGateway, TaskProtection, liveAccount } from './pro-backend.js';
+import { ProGateway, TaskProtection, liveAccount, UniverseService } from './pro-backend.js';
 
 // File: recurrence-core.js
 // Shared deterministic recurrence rules, used by the browser and Cloudflare Worker.
@@ -627,6 +627,7 @@ export class AccountDeletion {
             const link=await tx.get('identity:'+identity.userId);
             const meta=link ? await tx.get(accountKey(link.user)) : null;
             if (!meta || meta.owner_id!==identity.userId) throw new SecurityError(403,'Account ownership could not be verified.');
+            await this.service.universe.blockAccount(identity.userId);
             meta.deleting=true; await tx.put(accountKey(link.user),meta);
             let approvalRemains=false;
             if (meta.legacy_disabled) {
@@ -1405,6 +1406,7 @@ export class TaskitatorSync {
         this.ai = new AIGateway(this);
         this.protection = new TaskProtection(this);
         this.pro = new ProGateway(this);
+        this.universe = new UniverseService(this);
     }
 
     async readTaskSnapshot(store, accountId) {
@@ -1681,8 +1683,9 @@ export class TaskitatorSync {
             const keyRoute = ['/ai/keys','/ai/keys/stage','/ai/keys/reveal','/ai/keys/test','/ai/generate','/ai/provider'].includes(path);
             const emergencyRoute = ['/emergency','/pro/emergency'].includes(path);
             const proRoute = path.startsWith('/pro/') && !emergencyRoute;
+            const universeRoute = path.startsWith('/universe/');
             if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
-                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute) {
+                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute) {
                 return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
             }
             await this.rateLimit(request);
@@ -1706,6 +1709,10 @@ export class TaskitatorSync {
                 user = access.user;
             } else {
                 identity = await verifySession(request, this.env, token);
+                if (universeRoute) {
+                    await this.rateLimit(request,'universe:'+identity.userId,60);
+                    return json(await this.universe.handle(identity,path,method,method==='GET'?{}:await readJson(request,8192)));
+                }
                 if (proRoute) {
                     const account = await this.accountFor(identity);
                     return await this.pro.handleRequest(request, path, method, identity, account || { user: identity.userId });

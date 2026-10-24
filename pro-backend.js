@@ -956,3 +956,195 @@ export class ProGateway {
             code:'USE_SECURE_SIGN_IN'},410);
     }
 }
+
+// Universe phase 1. D1 is authority for group data only; Clerk and Keyo remain
+// authoritative for identity and entitlement. No personal snapshots enter D1.
+export const UNIVERSE_VERSION = 1;
+const universeRoles = Object.freeze({member:1,reviewer:2,admin:3,owner:4});
+const universeError = (status, code, message) => fail(status, 'UNIVERSE_'+code, message);
+export class UniverseService {
+    constructor(service) { this.service=service; this.env=service.env; }
+    database() {
+        const db=this.env.TASKITATOR_DB;
+        return db?.withSession ? db.withSession('first-primary') : db;
+    }
+    statement(db, sql, ...values) { return db.prepare(sql).bind(...values); }
+    async availability() {
+        let reason=null;
+        if(this.env.UNIVERSE_FOUNDATION_ENABLED!=='true') reason='disabled';
+        else if(!this.env.TASKITATOR_DB) reason='database_missing';
+        else {
+            try { if(!(await this.database().prepare('SELECT version FROM universe_schema WHERE version=1').first())) reason='schema_missing'; }
+            catch { reason='database_or_schema_unavailable'; }
+        }
+        return {version:1,schema_version:1,foundation:!reason,reason,ui:false,
+            capabilities:{membership:!reason,tasks:false,reviews:false,hosted_ai:false,locking:false,discussion:false,portability:false}};
+    }
+    async ready() {
+        const available=await this.availability();
+        if(!available.foundation) throw universeError(503,'UNAVAILABLE','Universe foundation is unavailable. Check its feature switch, database and schema.');
+        return this.database();
+    }
+    async active(identity, db) {
+        if(!identity?.userId || identity.actor) throw universeError(403,'IDENTITY','Use your own authenticated account.');
+        await liveAccount(this.service.storage,identity.userId);
+        const row=await this.statement(db,'SELECT blocked FROM universe_accounts WHERE account_id=?',identity.userId).first();
+        if(row?.blocked) throw universeError(410,'ACCOUNT_BLOCKED','Account deletion has been accepted.');
+    }
+    async entitlement(identity) {
+        const e=await this.service.pro.licenses.resolve(identity.userId);
+        return Boolean(e?.status==='active' && e.tier==='pro' && (e.expires_at===null || Number(e.expires_at)>Date.now()));
+    }
+    async project(db, identity, pro) {
+        // Conflict updates never clear a deletion tombstone or change identity.
+        await this.statement(db,`INSERT INTO universe_accounts(account_id,joined_limit,created_at) VALUES(?,?,?)
+            ON CONFLICT(account_id) DO UPDATE SET joined_limit=excluded.joined_limit`,identity.userId,pro?7:2,Date.now()).run();
+        await this.active(identity,db);
+    }
+    async authorize(db, identity, groupId, minimum='member') {
+        await this.active(identity,db);
+        const row=await this.statement(db,`SELECT g.*,m.role FROM universe_groups g
+            JOIN universe_members m ON m.group_id=g.id JOIN universe_accounts o ON o.account_id=g.owner_id
+            JOIN universe_accounts a ON a.account_id=m.account_id
+            WHERE g.id=? AND m.account_id=? AND o.blocked=0 AND a.blocked=0`,groupId,identity.userId).first();
+        if(!row || universeRoles[row.role]<universeRoles[minimum])
+            throw universeError(403,'ACCESS_DENIED','You do not have access to this Universe action.');
+        return row;
+    }
+    async blockAccount(accountId) {
+        if(!this.env.TASKITATOR_DB) {
+            if(this.env.UNIVERSE_FOUNDATION_ENABLED==='true') throw universeError(503,'UNAVAILABLE','Universe deletion fencing is unavailable. Retry account deletion.');
+            return;
+        }
+        const db=this.database();
+        try {
+            // No dependence on the feature switch: disabling Universe must not
+            // disable tombstones for accounts that already have group data.
+            await this.statement(db,`INSERT INTO universe_accounts(account_id,blocked,joined_limit,created_at) VALUES(?,1,2,?)
+                ON CONFLICT(account_id) DO UPDATE SET blocked=1`,accountId,Date.now()).run();
+        } catch(error) {
+            if(this.env.UNIVERSE_FOUNDATION_ENABLED!=='true' && /no such table: (?:main\.)?universe_accounts/i.test(error.message)) return;
+            throw universeError(503,'UNAVAILABLE','Universe access could not be blocked. Retry account deletion.');
+        }
+    }
+    input(body, allowed) {
+        if(!body || typeof body!=='object' || Array.isArray(body) || Object.keys(body).some(k=>!allowed.includes(k)))
+            throw universeError(400,'INVALID_INPUT','Use only the fields supported by this action.');
+    }
+    operation(body) {
+        if(typeof body.operation_id!=='string'|| !/^[A-Za-z0-9_-]{8,100}$/.test(body.operation_id))
+            throw universeError(400,'INVALID_INPUT','A stable operation_id is required for retries.');
+        return body.operation_id;
+    }
+    text(value,max,required=true) {
+        if(typeof value!=='string' || value.length>max || (required&&!value.trim()))
+            throw universeError(400,'INVALID_INPUT','Enter a valid title or description within the length limit.');
+        return value.trim();
+    }
+    async mutate(db, identity, scope, body, result, statements) {
+        const operation=this.operation(body), hash=await digest({scope,body});
+        const replay=async()=>{
+            const old=await this.statement(db,'SELECT * FROM universe_operations WHERE actor_id=? AND operation_id=?',identity.userId,operation).first();
+            if(!old) return null;
+            if(old.scope!==scope || old.request_hash!==hash) throw universeError(409,'OPERATION_CONFLICT','This operation ID was used for different input.');
+            await this.active(identity,db);
+            return {...JSON.parse(old.result),replayed:true};
+        };
+        const old=await replay(); if(old)return old;
+        await this.active(identity,db);
+        try {
+            await db.batch([
+                this.statement(db,'INSERT INTO universe_operations VALUES(?,?,?,?,?,?)',identity.userId,operation,scope,hash,JSON.stringify(result),Date.now()),
+                ...statements
+            ]);
+        } catch(error) {
+            const duplicate=await replay(); if(duplicate)return duplicate;
+            const codes=['ACCOUNT_BLOCKED','OWNED_CAP','JOINED_CAP','PARTICIPANT_CAP','OWNER_IMMUTABLE','ROLE_DENIED','INVITE_INVALID','RESERVATION_EXPIRED'];
+            const code=codes.find(code=>error.message?.includes('U_'+code));
+            if(code) throw universeError(code==='ACCOUNT_BLOCKED'?410:409,code,'This action could not be completed ('+code.toLowerCase().replaceAll('_',' ')+'). Refresh and retry.');
+            if(/UNIQUE constraint failed: universe_members\.group_id, universe_members\.account_id/.test(error.message))
+                throw universeError(409,'ALREADY_MEMBER','This account already belongs to the Universe.');
+            if(/UNIQUE constraint failed: universe_invitations\.token_hash/.test(error.message))
+                throw universeError(409,'INVITE_CONFLICT','This invitation token is already in use. Generate a new token.');
+            throw universeError(503,'DATABASE','Universe storage could not complete this action. Retry with the same operation ID.');
+        }
+        await this.active(identity,db);
+        return result;
+    }
+    event(db,group,actor,kind,resource) {
+        return this.statement(db,'INSERT INTO universe_events VALUES(?,?,?,?,?,?)',crypto.randomUUID(),group,actor,kind,resource,Date.now());
+    }
+    async handle(identity, path, method, body={}) {
+        // Capabilities never claims that later phases are usable.
+        if(method==='GET'&&path==='/universe/capabilities') {
+            await liveAccount(this.service.storage,identity.userId);
+            return this.availability();
+        }
+        const db=await this.ready(); await this.active(identity,db);
+        if(method==='GET'&&path==='/universe/groups') {
+            return {version:1,groups:(await this.statement(db,`SELECT g.*,m.role FROM universe_groups g
+                JOIN universe_members m ON m.group_id=g.id JOIN universe_accounts o ON o.account_id=g.owner_id
+                JOIN universe_accounts a ON a.account_id=m.account_id
+                WHERE m.account_id=? AND o.blocked=0 AND a.blocked=0 ORDER BY g.created_at,g.id`,identity.userId).all()).results};
+        }
+        const match=path.match(/^\/universe\/groups\/([A-Za-z0-9_-]{1,100})(\/invitations|\/members)?$/);
+        if(match && method==='GET' && !match[2]) return {version:1,group:await this.authorize(db,identity,match[1])};
+        if(match && method==='GET' && match[2]==='/members') {
+            await this.authorize(db,identity,match[1]);
+            return {version:1,members:(await this.statement(db,`SELECT m.account_id,m.role,m.joined_at FROM universe_members m
+                JOIN universe_accounts a ON a.account_id=m.account_id WHERE m.group_id=? AND a.blocked=0 ORDER BY m.joined_at,m.account_id`,match[1]).all()).results};
+        }
+        if(method==='POST'&&path==='/universe/groups') {
+            this.input(body,['operation_id','title','purpose']); this.operation(body);
+            const title=this.text(body.title,120),purpose=this.text(body.purpose??'',2000,false);
+            const pro=await this.entitlement(identity);
+            if(!pro)throw universeError(403,'PRO_REQUIRED','An active Pro subscription is required to create a Universe.');
+            await this.project(db,identity,pro);
+            const id='uni_'+crypto.randomUUID(),now=Date.now();
+            return this.mutate(db,identity,'create',body,{version:1,group_id:id,revision:1},[
+                this.statement(db,'INSERT INTO universe_groups(id,owner_id,title,purpose,created_at) VALUES(?,?,?,?,?)',id,identity.userId,title,purpose,now),
+                this.event(db,id,identity.userId,'created',id)]);
+        }
+        if(match&&method==='POST'&&match[2]==='/invitations') {
+            this.input(body,['operation_id','token','role','expires_in_seconds']); this.operation(body);
+            const group=await this.authorize(db,identity,match[1],'admin');
+            const role=body.role??'member',seconds=body.expires_in_seconds??86400;
+            if(!['admin','reviewer','member'].includes(role)||(role==='admin'&&group.role!=='owner'))
+                throw universeError(403,'ROLE_DENIED','Only the owner can appoint an administrator.');
+            if(typeof body.token!=='string'||!/^[a-f0-9]{64}$/.test(body.token)||!Number.isInteger(seconds)||seconds<60||seconds>604800)
+                throw universeError(400,'INVALID_INPUT','Use a random 32-byte hex invitation token and an expiry of 60 seconds to seven days.');
+            const tokenHash=await digest(body.token),id='inv_'+crypto.randomUUID(),expires=Date.now()+seconds*1000;
+            // Never persist the bearer invitation token, including in operation records.
+            const safe={...body,token:tokenHash};
+            return this.mutate(db,identity,'invite:'+match[1],safe,{version:1,invitation_id:id,expires_at:expires},[
+                this.statement(db,'INSERT INTO universe_invitations(id,group_id,actor_id,token_hash,role,expires_at,created_at) VALUES(?,?,?,?,?,?,?)',id,match[1],identity.userId,tokenHash,role,expires,Date.now()),
+                this.event(db,match[1],identity.userId,'invited',id)]);
+        }
+        if(method==='POST'&&path==='/universe/invitations/accept') {
+            this.input(body,['operation_id','token']); this.operation(body);
+            if(typeof body.token!=='string'||!/^[a-f0-9]{64}$/.test(body.token))throw universeError(400,'INVALID_INPUT','Use a valid invitation token.');
+            const tokenHash=await digest(body.token);
+            const invite=await this.statement(db,'SELECT * FROM universe_invitations WHERE token_hash=?',tokenHash).first();
+            if(!invite)throw universeError(404,'INVITE_INVALID','This invitation is invalid or expired.');
+            const pro=await this.entitlement(identity); await this.project(db,identity,pro);
+            const result=await this.mutate(db,identity,'accept',{...body,token:tokenHash},{version:1,group_id:invite.group_id,role:invite.role},[
+                this.statement(db,`INSERT OR REPLACE INTO universe_guard(id,ok) VALUES(1,
+                    EXISTS(SELECT 1 FROM universe_invitations WHERE id=? AND token_hash=?))`,invite.id,tokenHash),
+                this.statement(db,'UPDATE universe_invitations SET accepted_by=? WHERE id=?',identity.userId,invite.id),
+                this.event(db,invite.group_id,identity.userId,'joined',invite.id)]);
+            await this.authorize(db,identity,invite.group_id); return result;
+        }
+        if(method==='POST'&&path==='/universe/reservations') {
+            this.input(body,['operation_id']); this.operation(body);
+            const pro=await this.entitlement(identity);
+            if(!pro)throw universeError(403,'PRO_REQUIRED','An active Pro subscription is required to reserve an import slot.');
+            await this.project(db,identity,pro);
+            const id='res_'+crypto.randomUUID(),expires=Date.now()+3600000-1000;
+            return this.mutate(db,identity,'reserve',body,{version:1,reservation_id:id,expires_at:expires},[
+                this.statement(db,'INSERT INTO universe_reservations VALUES(?,?,?,?)',id,identity.userId,expires,Date.now())]);
+        }
+        // Import activation is deliberately absent until phase 7. Expired slots
+        // stop counting without a cleanup job or a destructive reset.
+        throw universeError(404,'ENDPOINT_UNAVAILABLE','This Universe action is not available in phase 1.');
+    }
+}
