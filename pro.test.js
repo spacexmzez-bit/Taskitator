@@ -1859,3 +1859,65 @@ test('emergency confirmation blocks repeated clicks, reports failure and closes 
     const second=handler();activate({success:true});await second;
     assert.equal(removed,1);assert.equal(updated,1);assert.equal(confirmEmergencyBtn.disabled,false);
 });
+
+test('Keyo hotfix: failed custom-domain activation uses direct Worker and verifies signed account/project',async()=>withKeyoHarness(async h=>{
+ h.reply(async({url,body})=>{if(url.origin===KEYO_DEFAULTS.endpoint)throw new TypeError('fetch failed');return Response.json({entitlement:await signedToken(body.accountId)});});
+ const r=await h.route();assert.equal(r.status,200);assert.equal(r.body.isPro,true);assert.equal(h.calls.length,2);
+ assert.equal(h.calls[1].url.origin,'https://keyo-api.spacexmzez.workers.dev');assert.equal(h.calls[1].body.accountId,'user_A');
+ assert.equal(h.calls[1].url.searchParams.get('projectId'),KEYO_DEFAULTS.projectId);
+ assert.equal(h.calls[1].options.redirect,'error');
+}));
+test('Keyo hotfix: challenge HTML, service errors, rate limits and missing custom routes use fallback',async()=>{
+ for(const status of [200,404,429,503])await withKeyoHarness(async h=>{
+  h.reply(async({url,body})=>url.origin===KEYO_DEFAULTS.endpoint?(status===200?new Response('<html>challenge</html>'):Response.json({error:'SERVER_ERROR'},{status})):Response.json({entitlement:await signedToken(body.accountId)}));
+  assert.equal((await h.route()).status,200);assert.equal(h.calls.length,2);
+ });
+});
+test('Keyo hotfix: direct Worker cannot authorize a mismatched or forged entitlement',async()=>{
+ for(const token of ['a.b.c',await signedToken('user_B'),await signedToken('user_A',{projectId:'prj_other'})])await withKeyoHarness(async h=>{
+  h.reply(async({url})=>{if(url.origin===KEYO_DEFAULTS.endpoint)throw Error('offline');return Response.json({entitlement:token});});
+  const r=await h.route();assert.notEqual(r.status,200);assert.equal(r.body.code,'INVALID_ENTITLEMENT');assert.equal(await h.storage.get(licenseKey),undefined);
+ });
+});
+test('Keyo hotfix: authoritative denial never tries fallback or preserves cached Pro',async()=>withKeyoHarness(async h=>{
+ await h.storage.put(licenseKey,await activeLicense('user_A',{issuedAt:Date.now()-HOUR-1000,validUntil:Date.now()+HOUR}));
+ h.reply(async()=>Response.json({error:'REVOKED'},{status:403}));
+ assert.equal((await h.route('/pro/status')).body.isPro,false);assert.equal(h.calls.length,1);
+}));
+test('Keyo hotfix: valid signed cache survives outage without repeated network calls or deadline changes',async()=>withKeyoHarness(async h=>{
+ const old=await activeLicense('user_A',{issuedAt:Date.now()-HOUR-1000,validUntil:Date.now()+HOUR});await h.storage.put(licenseKey,old);
+ h.reply(async()=>{throw Error('offline');});
+ const first=await h.route('/pro/status'),second=await h.route('/pro/status');
+ assert.equal(first.body.isPro,true);assert.equal(second.body.isPro,true);assert.equal(second.body.verification_source,'signed_cache');
+ assert.equal(second.body.verification_valid_until,old.valid_until);assert.equal(h.calls.length,2);
+ assert.deepEqual(await h.storage.get(licenseKey),old);
+ // Forged flags still fail signature verification, even during retry cooldown.
+ await h.storage.put(licenseKey,{...old,signed_token:'forged.cached.value'});
+ assert.equal((await h.route('/pro/status')).body.isPro,false);
+}));
+test('Keyo hotfix: expired cache is never extended by offline cooldown',async()=>withKeyoHarness(async h=>{
+ const now=Date.now(),clock=Date.now;const old=await activeLicense('user_A',{issuedAt:now-HOUR-1000,validUntil:now+1000});await h.storage.put(licenseKey,old);
+ h.reply(async()=>{throw Error('offline');});assert.equal((await h.route('/pro/status')).body.isPro,true);
+ try{Date.now=()=>now+1001;assert.equal((await h.route('/pro/status')).status,503);}finally{Date.now=clock;}
+}));
+test('Keyo hotfix: cache expiring while refresh is in flight cannot authorize later Pro work',async()=>withKeyoHarness(async h=>{
+ const now=Date.now(),clock=Date.now;await h.storage.put(licenseKey,await activeLicense('user_A',{issuedAt:now-HOUR-1000,validUntil:now+1000}));
+ h.reply(async()=>{Date.now=()=>now+2000;throw Error('offline');});
+ try{assert.equal((await h.route('/pro/status')).status,503);}finally{Date.now=clock;}
+}));
+test('Keyo hotfix: fallback denial takes precedence over an otherwise valid signed cache',async()=>withKeyoHarness(async h=>{
+ await h.storage.put(licenseKey,await activeLicense('user_A',{issuedAt:Date.now()-HOUR-1000,validUntil:Date.now()+HOUR}));
+ h.reply(async({url})=>{if(url.origin===KEYO_DEFAULTS.endpoint)throw Error('offline');return Response.json({error:'KEY_UNAVAILABLE'},{status:403});});
+ assert.equal((await h.route('/pro/status')).body.isPro,false);assert.equal(h.calls.length,2);
+}));
+test('Keyo hotfix: late network failure cannot restore a removed entitlement',async()=>withKeyoHarness(async h=>{
+ await h.storage.put(licenseKey,await activeLicense('user_A',{issuedAt:Date.now()-HOUR-1000,validUntil:Date.now()+HOUR}));
+ let release,enter;const started=new Promise(r=>enter=r),gate=new Promise(r=>release=r);
+ h.reply(async()=>{enter();await gate;throw Error('offline');});const response=h.route('/pro/status');await started;h.storage.data.delete(licenseKey);release();
+ assert.equal((await response).body.isPro,false);assert.equal(await h.storage.get(licenseKey),undefined);
+}));
+test('Keyo hotfix: custom origins require explicit fallback and invalid fallback configuration is rejected',()=>{
+ assert.equal(keyoConfig({KEYO_API_ORIGIN:'https://different.example'}).fallbackEndpoint,null);
+ assert.equal(keyoConfig({KEYO_FALLBACK_API_ORIGIN:''}).fallbackEndpoint,null);
+ for(const fallback of ['http://keyo.example','https://u:p@keyo.example','https://keyo.example/path'])assert.throws(()=>keyoConfig({KEYO_FALLBACK_API_ORIGIN:fallback}),{code:'KEYO_SETUP_REQUIRED'});
+});
