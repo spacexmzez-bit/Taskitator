@@ -134,6 +134,7 @@ export function calculateAuditCharge(baseCredits, verdict) {
 // Server-only subscription verification. Public settings from the owner's configured Keyo SDK.
 export const KEYO_DEFAULTS = Object.freeze({
     endpoint: 'https://keyo.mazendev.com',
+    fallbackEndpoint: 'https://keyo-api.spacexmzez.workers.dev',
     projectId: 'prj_3ebe1ea2ab5948fd98bca332fad2e5c5',
     publicKey: {kty:'EC',crv:'P-256',x:'12kmFYFug4HYBs-ZTpRleElP9Q8kpQaI5aVyG9CqVOc',
         y:'Up7x4X65FL-LaRweIptSkCZsXN4A3mZM7XIIHRzNndY',ext:true,key_ops:['verify']}
@@ -157,7 +158,11 @@ export function keyoConfig(env={}) {
         if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash ||
             (typeof projectId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(projectId)) || publicKey?.kty !== 'EC' || publicKey?.crv !== 'P-256' ||
             !publicKey.x || !publicKey.y || publicKey.d) throw Error('Configuration');
-        return {endpoint:url.origin,projectId,publicKey};
+        const fallback = env.KEYO_FALLBACK_API_ORIGIN ?? (url.origin===KEYO_DEFAULTS.endpoint ? KEYO_DEFAULTS.fallbackEndpoint : null);
+        const fallbackUrl = fallback ? new URL(fallback) : null;
+        if(fallbackUrl && (fallbackUrl.protocol!=='https:' || fallbackUrl.username || fallbackUrl.password ||
+            fallbackUrl.pathname!=='/' || fallbackUrl.search || fallbackUrl.hash))throw Error('Fallback configuration');
+        return {endpoint:url.origin,projectId,publicKey,fallbackEndpoint:fallbackUrl?.origin || null};
     } catch { throw issue('KEYO_SETUP_REQUIRED','Keyo settings are invalid. Ask the operator to check KEYO_API_ORIGIN, KEYO_PROJECT_ID and KEYO_PUBLIC_JWK in the Worker.',503); }
 }
 
@@ -187,22 +192,39 @@ export async function verifyKeyoToken(token,accountId,config,{allowExpired=false
 }
 
 export class KeyoLicenses {
-    constructor(gateway) { this.storage=gateway.storage;this.env=gateway.env;this.pending=new Map(); }
+    constructor(gateway) { this.storage=gateway.storage;this.env=gateway.env;this.pending=new Map();this.retryAfter=new Map(); }
     async request(action,accountId,body,config=keyoConfig(this.env)) {
-        let response,data;
-        try {
-            const url=new URL('/api/v1/'+action,config.endpoint);url.searchParams.set('projectId',config.projectId);
-            response=await fetch(url.toString(),{method:'POST',headers:{'Content-Type':'application/json'},
-                body:JSON.stringify({accountId,...body}),redirect:'error',signal:AbortSignal.timeout(10000)});
-            data=await response.json();
-        } catch { throw issue('KEYO_NETWORK_ERROR','Keyo is temporarily unavailable. Please retry shortly.',503); }
-        if(!response.ok) {
-            const code=typeof data?.error === 'string' && DENIED.has(data.error) ? data.error : null;
-            if(code) throw issue(code,'Keyo rejected this license ('+code+'). Check its status and assigned account in Keyo.',403);
-            throw issue('KEYO_UNAVAILABLE','Keyo could not verify the license. Please retry or ask the operator to check the Keyo service.',503);
+        const endpoints=[...new Set([config.endpoint,config.fallbackEndpoint].filter(Boolean))].map((endpoint,index)=>({endpoint,label:index?'fallback':'primary'}));
+        if(this.env.KEYO_SERVICE?.fetch)endpoints.unshift({endpoint:config.endpoint,label:'internal binding',service:this.env.KEYO_SERVICE});
+        let failure;const diagnostics=[];
+        for(const {endpoint,label,service} of endpoints) {
+            let response,data;
+            try {
+                const url=new URL('/api/v1/'+action,endpoint);url.searchParams.set('projectId',config.projectId);
+                const send=service?service.fetch.bind(service):fetch;
+                response=await send(url.toString(),{method:'POST',headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({accountId,...body}),redirect:'manual',signal:AbortSignal.timeout(5000)});
+                if(response.status>=300&&response.status<400)throw issue('KEYO_REDIRECT_BLOCKED','Keyo redirected the request. Configure its direct API address; redirects are not followed.',503);
+                data=await response.json();
+            } catch(cause) {
+                if(cause?.code==='KEYO_REDIRECT_BLOCKED')throw cause;
+                diagnostics.push(label+': '+(response?'HTTP '+response.status+' / non-JSON':(['TimeoutError','AbortError'].includes(cause?.name)?'timeout':'fetch failed')));
+                failure=issue('KEYO_NETWORK_ERROR','Keyo connection failed ('+diagnostics.join('; ')+'). Check the KEYO_SERVICE binding and Keyo Worker setup.',503);
+                continue;
+            }
+            if(!response.ok) {
+                const code=typeof data?.error==='string'&&DENIED.has(data.error)?data.error:null;
+                // An authoritative rejection is final. Never hide it with another endpoint or cached access.
+                if(code)throw issue(code,'Keyo rejected this license ('+code+'). Check its status and assigned account in Keyo.',403);
+                failure=issue('KEYO_UNAVAILABLE','Keyo could not verify the license (HTTP '+response.status+'). Check its Worker setup and retry.',503);
+                if(response.status===429||response.status>=500||response.status===404)continue;
+                throw failure;
+            }
+            return {token:data?.entitlement,payload:await verifyKeyoToken(data?.entitlement,accountId,config)};
         }
-        return {token:data?.entitlement,payload:await verifyKeyoToken(data?.entitlement,accountId,config)};
+        throw failure || issue('KEYO_UNAVAILABLE','Keyo is unavailable. Check its configured addresses.',503);
     }
+
     record(accountId,verified,previous={},extra={}) {
         const {token,payload:p}=verified;
         return {...previous,...extra,account_id:accountId,tier:p.tier.toLowerCase(),status:'active',signed_token:token,
@@ -230,19 +252,37 @@ export class KeyoLicenses {
         const now=Date.now();
         const validCache=old.keyo_version===1 && old.status==='active' && payload.validUntil>now &&
             (payload.expiresAt===null || payload.expiresAt>now);
-        if(validCache && now-payload.issuedAt<HOUR) return {...this.record(accountId,{token:old.signed_token,payload},old),last_verified_at:old.last_verified_at};
+        const retry=this.retryAfter.get(accountId);
+        if(validCache && (now-payload.issuedAt<HOUR || (retry?.token===old.signed_token && retry.until>now)))
+            return {...this.record(accountId,{token:old.signed_token,payload},old),last_verified_at:old.last_verified_at,
+                verification_source:retry?.token===old.signed_token&&retry.until>now?'signed_cache':'verified_cache'};
         try {
             const verified=await this.request('verify',accountId,{entitlement:old.signed_token},config);
             // Verification refreshes the same key/binding; replacement requires explicit activation.
             if(verified.payload.keyId!==payload.keyId || verified.payload.bindingId!==payload.bindingId)
                 throw issue('INVALID_ENTITLEMENT','Keyo returned a different license binding. Reactivate your license.');
+            this.retryAfter.delete(accountId);
             return this.updateIfCurrent(key,old,this.record(accountId,verified,old));
         } catch(e) {
             if(DENIED.has(e.code)) return this.updateIfCurrent(key,old,inactive(e.code==='EXPIRED'?'expired':'revoked'));
-            if(validCache && ['KEYO_NETWORK_ERROR','KEYO_UNAVAILABLE'].includes(e.code))
-                return {...this.record(accountId,{token:old.signed_token,payload},old),last_verified_at:old.last_verified_at};
+            if(validCache && payload.validUntil>Date.now() && (payload.expiresAt===null||payload.expiresAt>Date.now()) && ['KEYO_NETWORK_ERROR','KEYO_UNAVAILABLE'].includes(e.code)) {
+                // In-memory backoff is bound to the current signed token and never
+                // extends either its refresh deadline or the subscription expiry.
+                if(this.retryAfter.size>=1024)this.retryAfter.delete(this.retryAfter.keys().next().value);
+                this.retryAfter.set(accountId,{token:old.signed_token,until:Math.min(Date.now()+60000,payload.validUntil)});
+                await liveAccount(this.storage,accountId);
+                const current=await this.storage.get(key);
+                if(!current||current.signed_token!==old.signed_token||current.status!==old.status)return this.resolveCurrent(current,accountId);
+                await verifyKeyoToken(old.signed_token,accountId,config);
+                return {...this.record(accountId,{token:old.signed_token,payload},current),last_verified_at:old.last_verified_at,verification_source:'signed_cache'};
+            }
             throw e;
         }
+    }
+    async resolveCurrent(record,accountId) {
+        if(!record||record.status!=='active')return record||null;
+        await verifyKeyoToken(record.signed_token,accountId,keyoConfig(this.env));
+        return record;
     }
     async updateIfCurrent(key,old,next) {
         return this.storage.transaction(async tx=>{
@@ -785,6 +825,8 @@ export class ProGateway {
             expires_at: entitlement.expires_at,
             policy_version: entitlement.policy_version || '2.0',
             hosted_policy: POLICY.version,
+            verification_source: entitlement.verification_source || 'online',
+            verification_valid_until: entitlement.valid_until,
             credits: {
                 daily_limit: dailyLimit,
                 daily_used: dailyUsed,
@@ -1059,7 +1101,7 @@ export class UniverseService {
             ]);
         } catch(error) {
             const duplicate=await replay(); if(duplicate)return duplicate;
-            const codes=['ACCOUNT_BLOCKED','OWNED_CAP','JOINED_CAP','PARTICIPANT_CAP','OWNER_IMMUTABLE','ROLE_DENIED','INVITE_INVALID','RESERVATION_EXPIRED','ACCESS_DENIED'];
+            const codes=['ACCOUNT_BLOCKED','OWNED_CAP','JOINED_CAP','PARTICIPANT_CAP','OWNER_IMMUTABLE','ROLE_DENIED','INVITE_INVALID','RESERVATION_EXPIRED'];
             const code=codes.find(code=>error.message?.includes('U_'+code));
             if(code) throw universeError(code==='ACCOUNT_BLOCKED'?410:409,code,'This action could not be completed ('+code.toLowerCase().replaceAll('_',' ')+'). Refresh and retry.');
             if(/UNIQUE constraint failed: universe_members\.group_id, universe_members\.account_id/.test(error.message))
