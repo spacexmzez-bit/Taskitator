@@ -1,9 +1,10 @@
+import { UniverseMembership } from './uni/universe-membership.js';
 // ============================================================================
 // Taskitator Consolidated Cloudflare Worker & Security Engine (worker.js)
 // Combines: recurrence-core, break-core, auth, ai-models, verification,
 // deletion, vault, ai-gateway, and worker router.
 // ============================================================================
-import { ProGateway, TaskProtection, liveAccount, UniverseService } from './pro-backend.js';
+import { ProGateway, TaskProtection, liveAccount } from './pro-backend.js';
 
 // File: recurrence-core.js
 // Shared deterministic recurrence rules, used by the browser and Cloudflare Worker.
@@ -1406,7 +1407,7 @@ export class TaskitatorSync {
         this.ai = new AIGateway(this);
         this.protection = new TaskProtection(this);
         this.pro = new ProGateway(this);
-        this.universe = new UniverseService(this);
+        this.universe = new UniverseMembership(this);
     }
 
     async readTaskSnapshot(store, accountId) {
@@ -1535,6 +1536,8 @@ export class TaskitatorSync {
         await this.vault.cleanupLegacy();
         await this.deletion.run();
         const moreAuditCleanup=await this.pro.audits.cleanup();
+        let moreUniverseCleanup=false;
+        try{moreUniverseCleanup=await this.universe.cleanup();}catch{moreUniverseCleanup=true;}
         let after;
         while (true) {
             const entries = await this.storage.list({ prefix: 'rate:', limit: 1000, ...(after ? {startAfter: after} : {}) });
@@ -1556,7 +1559,7 @@ export class TaskitatorSync {
         }
         const pending = await this.storage.list({prefix:'deletion-job:',limit:1});
         const cleanup = await this.storage.list({prefix:'vault-cleanup:',limit:1});
-        await this.storage.setAlarm(Date.now() + (pending.size || cleanup.size || moreAuditCleanup ? 15000 : 3600000));
+        await this.storage.setAlarm(Date.now() + (pending.size || cleanup.size || moreAuditCleanup || moreUniverseCleanup ? 15000 : 3600000));
     }
 
     async accountFor(identity) {

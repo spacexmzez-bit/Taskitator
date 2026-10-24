@@ -341,6 +341,7 @@
         <a href="index.html#today">📅 Today</a>
         <a href="index.html#general">📋 General Tasks</a>
         <a href="components.html?view=calendar">🗓 Calendar</a>
+        <a href="components.html?view=universe">Universe</a>
         <a href="components.html?view=projects">📁 Projects</a>
         <a href="components.html?view=stats">📊 Stats</a>
         <a href="components.html?view=trash">🗑️ Trash</a>
@@ -728,7 +729,8 @@
     <button type="button" class="icon-btn" id="checkAccountDeletionStatusBtn" hidden>Check deletion status</button>
     <p><strong>Step 2: Confirm permanent deletion.</strong> This removes your cloud workspace and login. Local archives in this browser will be removed where identifiable; other devices and downloaded backups remain yours to clean up.</p>
     <label style="display:flex;gap:10px;align-items:start"><input type="checkbox" id="deletionBlockerDisabled" style="width:auto;margin-top:7px"><span>I disabled every Taskitator blocking macro on every connected device.</span></label>
-    <label for="deletionPhrase" style="display:block;margin-top:15px">Manually type <strong>Macrodroid disabled</strong> exactly:</label>
+    <p>Deleting your account also deletes your owned Universes for every member. Universe export is not available in this build. Cancel deletion if you need to retain that work.</p>
+<label for="deletionPhrase" style="display:block;margin-top:15px">Manually type <strong>Macrodroid disabled</strong> exactly:</label>
     <input id="deletionPhrase" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" style="width:100%;padding:10px;margin:8px 0" aria-describedby="deletionPhraseHint">
     <p id="deletionPhraseHint" style="font-size:.8rem;color:var(--text-muted)">Pasting and dropping text are disabled. You may cancel before final confirmation.</p>
     <div style="display:flex;justify-content:space-between;gap:12px;margin-top:16px">

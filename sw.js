@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-root-layout-v8';
+const CACHE_NAME = 'taskitator-universe-phase2-v9';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -9,6 +9,7 @@ self.addEventListener('message', event => {
 });
 
 const STATIC_ASSETS = [
+    './uni/universe-ui.js',
     './',
     './index.html',
     './components.html',
@@ -68,7 +69,7 @@ self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
 
-    if (/\/(?:auth|sync|ai)(?:\/|$)/.test(url.pathname) || url.pathname === '/status' || request.headers.has('Authorization')) return;
+    if (/\/(?:auth|sync|ai|universe)(?:\/|$)/.test(url.pathname) || url.pathname === '/status' || request.headers.has('Authorization')) return;
     const cacheKey = new Request(url.origin + url.pathname);
 
     // Only intercept standard GET requests

@@ -1307,3 +1307,67 @@ test('Universe: invitation removed before final update cannot return a false suc
     assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_operations').get().n,before);
     assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_members WHERE account_id=?').get(m.userId).n,0);
 });
+
+async function universe2Fixture(){const u=await universeFixture();u.db.sql.exec(readFileSync(new URL('./uni/universe-phase2.sql',import.meta.url),'utf8'));return u;}
+const action2=(u,g,a,action,extra={})=>u.handle(a,'/universe/groups/'+g+'/'+action,{operation_id:newOperation(),revision:1,...extra});
+test('Universe phase 2: owner alone manages admins; admins manage lower roles; stale revisions and roles fail',async()=>{
+ const u=await universe2Fixture(),g=(await u.make()).group_id,a=await u.account('user_Admin'),m=await u.account('user_M');
+ await u.accept(a,(await u.invite(g,u.owner,'admin')).token);await u.accept(m,(await u.invite(g)).token);
+ await universeReject(action2(u,g,a,'role',{target_id:m.userId,role:'admin'}),'ACCESS_DENIED');
+ await action2(u,g,a,'role',{target_id:m.userId,role:'reviewer'});
+ await universeReject(action2(u,g,u.owner,'role',{target_id:a.userId,role:'member'}),'ACCESS_DENIED');
+ await action2(u,g,u.owner,'role',{revision:2,target_id:a.userId,role:'member'});
+ await universeReject(action2(u,g,a,'remove',{revision:3,target_id:m.userId}),'ACCESS_DENIED');
+ await universeReject(action2(u,g,u.owner,'remove',{revision:3,target_id:u.owner.userId}),'ACCESS_DENIED');
+});
+test('Universe phase 2: concurrent edits yield one transition; demotion at commit fences earlier authorization',async()=>{
+ const u=await universe2Fixture(),g=(await u.make()).group_id,a=await u.account('user_Admin');await u.accept(a,(await u.invite(g,u.owner,'admin')).token);
+ const results=await Promise.allSettled([action2(u,g,u.owner,'edit',{title:'A',purpose:''}),action2(u,g,a,'edit',{title:'B',purpose:''})]);assert.equal(results.filter(x=>x.status==='fulfilled').length,1);
+ u.db.beforeBatch=()=>u.db.sql.prepare("UPDATE universe_members SET role='member' WHERE account_id=?").run(a.userId);
+ await universeReject(action2(u,g,a,'edit',{revision:2,title:'Denied',purpose:''}),'ACCESS_DENIED');
+});
+test('Universe phase 2: grace persists, read-only retains exit, renewal keeps group identity',async()=>{
+ const u=await universe2Fixture(),g=(await u.make()).group_id,m=await u.account('user_M');await u.accept(m,(await u.invite(g)).token);
+ const resolve=u.f.service.pro.licenses.resolve.bind(u.f.service.pro.licenses);let expires=Date.now()-86400000;
+ u.f.service.pro.licenses.resolve=async id=>id===u.owner.userId?{status:'expired',tier:'pro',expires_at:expires}:resolve(id);
+ let state=(await u.handle(m,'/universe/groups/'+g)).group;assert.equal(state.read_only,false);const lapse=state.lapse_at;
+ expires=Date.now();state=(await u.handle(m,'/universe/groups/'+g)).group;assert.equal(state.lapse_at,lapse);
+ u.db.sql.prepare('UPDATE universe_lifecycle SET lapse_at=? WHERE account_id=?').run(Date.now()-8*86400000,u.owner.userId);
+ state=(await u.handle(m,'/universe/groups/'+g)).group;assert.equal(state.read_only,true);
+ await universeReject(action2(u,g,u.owner,'edit',{title:'No',purpose:''}),'READ_ONLY');await universeReject(u.invite(g),'READ_ONLY');await universeReject(u.make(),'PRO_REQUIRED');
+ const leave={operation_id:'leave_and_retry',revision:1};await u.handle(m,'/universe/groups/'+g+'/leave',leave);assert.equal((await u.handle(m,'/universe/groups/'+g+'/leave',leave)).replayed,true);
+ await universeReject(u.handle(m,'/universe/groups/'+g),'ACCESS_DENIED');u.f.service.pro.licenses.resolve=resolve;
+ state=(await u.handle(u.owner,'/universe/groups/'+g)).group;assert.equal(state.read_only,false);assert.equal(state.lapse_at,null);assert.equal(state.id,g);
+ assert.ok(u.db.sql.prepare("SELECT 1 FROM universe_events WHERE kind='pro_restored'").get());
+});
+test('Universe phase 2: deletion immediately ends access, supports replay and frees owned slots after cleanup',async()=>{
+ const u=await universe2Fixture(),g=(await u.make()).group_id,m=await u.account('user_M');await u.accept(m,(await u.invite(g)).token);
+ await universeReject(action2(u,g,m,'delete',{confirm:true}),'ACCESS_DENIED');const body={operation_id:'delete_group_once',revision:1,confirm:true};
+ await u.handle(u.owner,'/universe/groups/'+g+'/delete',body);assert.equal((await u.handle(u.owner,'/universe/groups/'+g+'/delete',body)).replayed,true);
+ assert.equal((await u.handle(m,'/universe/groups')).groups.length,0);await universeReject(u.handle(m,'/universe/groups/'+g),'ACCESS_DENIED');
+ await u.f.service.universe.cleanup();assert.equal(u.db.sql.prepare('SELECT purpose FROM universe_groups WHERE id=?').get(g).purpose,'');await u.make();await u.make();
+});
+test('Universe phase 2: owner cannot leave; removed members lose activity access and may rejoin with fresh invitation',async()=>{
+ const u=await universe2Fixture(),g=(await u.make()).group_id,m=await u.account('user_M');await u.accept(m,(await u.invite(g)).token);
+ await universeReject(action2(u,g,u.owner,'leave'),'ACCESS_DENIED');await action2(u,g,u.owner,'remove',{target_id:m.userId});
+ await universeReject(u.handle(m,'/universe/groups/'+g+'/activity'),'ACCESS_DENIED');await u.accept(m,(await u.invite(g)).token);
+ assert.ok((await u.handle(m,'/universe/groups/'+g+'/activity')).events.length>0);
+});
+test('Universe phase 2: account deletion fences owned groups and queues recoverable cleanup even with feature disabled',async()=>{
+ const u=await universe2Fixture(),g=(await u.make()).group_id;await u.invite(g);u.f.env.UNIVERSE_FOUNDATION_ENABLED='false';
+ await u.f.service.universe.blockAccount(u.owner.userId);assert.equal(u.db.sql.prepare('SELECT deleted FROM universe_group_state WHERE group_id=?').get(g).deleted,1);
+ await u.f.service.universe.cleanup();assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_invitations WHERE group_id=?').get(g).n,0);
+});
+test('Universe phase 2: outage preserves known grace and denies writes; additive migration is repeatable',async()=>{
+ const u=await universe2Fixture(),g=(await u.make()).group_id;await u.handle(u.owner,'/universe/groups/'+g);
+ u.f.service.pro.licenses.resolve=async()=>{throw new Error('Keyo unavailable');};const state=(await u.handle(u.owner,'/universe/groups/'+g)).group;
+ assert.equal(state.lapse_at,null);assert.equal(state.entitlement_unavailable,true);await universeReject(action2(u,g,u.owner,'edit',{title:'x',purpose:''}),'ENTITLEMENT_UNAVAILABLE');
+ u.db.sql.exec(readFileSync(new URL('./uni/universe-phase2.sql',import.meta.url),'utf8'));assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_groups').get().n,1);
+});
+test('Universe phase 2: deletion frees joined capacity immediately, before deferred cleanup',async()=>{
+ const u=await universe2Fixture(),m=await u.account('user_M');const owner2=await u.account('user_O2',true),owner3=await u.account('user_O3',true);
+ const a=(await u.make()).group_id,b=(await u.make(owner2)).group_id,c=(await u.make(owner3)).group_id;
+ await u.accept(m,(await u.invite(a)).token);await u.accept(m,(await u.invite(b,owner2)).token);
+ const third=await u.invite(c,owner3);await universeReject(u.accept(m,third.token),'JOINED_CAP');
+ await action2(u,a,u.owner,'delete',{confirm:true});await u.accept(m,third.token);assert.equal((await u.handle(m,'/universe/groups')).groups.length,2);
+});
