@@ -43,6 +43,8 @@
     button(panel,'Submit proof',async()=>{if(files.files.length>3)throw Error('Choose up to three files.');const uploaded=[];for(const f of files.files)uploaded.push(await upload(f,t,a,'proof'));await send(base+'/assignments/'+id+'/submit',{revision:a.revision,task_revision:t.revision,text:text.value,files:uploaded});await assignment(id);});
    }
    panel.append(node('h4','Submission history'));for(const s of d.submissions){const h=node('article');panel.append(h);h.append(node('p',new Date(s.created_at).toLocaleString()+' · '+s.actor_id+' · '+(s.decision||'Awaiting review')),node('p',s.text),node('p',s.reason||''));for(const fid of s.files||[])button(h,'Download proof',()=>download(fid));}
+   if(a.state==='pending'&&d.submissions.some(s=>s.id===a.submission_id&&Date.now()-s.created_at>=86400000))panel.append(node('p','Review is overdue. This assignment stays released from phone blocking while the review is pending.'));
+   for(const s of d.submissions)if(s.actor_id===window.Clerk?.user?.id)for(const fid of s.files||[]){button(panel,'Allow proof attachment '+fid+' in Universe exports',async()=>{if(confirm('Allow this attachment to be downloaded in Universe backups by an owner or admin? Withdrawing permission cannot recall files already downloaded.'))await send('/universe/groups/'+g.id+'/transfer/'+fid,{allowed:true});});button(panel,'Withdraw export permission for '+fid,()=>send('/universe/groups/'+g.id+'/transfer/'+fid,{allowed:false}));}
    if(t.ai_required){
     const aiBase='/universe/groups/'+g.id+'/ai';panel.append(node('h4','Universe AI review'),node('p',t.human_required?'AI approval is followed by a human decision.':'AI makes the completion decision.'));
     if(d.can_request_ai&&writable&&a.state==='pending'){

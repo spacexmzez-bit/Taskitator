@@ -1,0 +1,8 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+const context={window:{},TextEncoder,TextDecoder,Blob,crypto,atob,btoa,Uint8Array,DataView,Map};vm.createContext(context);vm.runInContext(readFileSync(new URL('./universe-archive.js',import.meta.url),'utf8'),context);const A=context.window.UniverseArchive;
+test('Major Phase 5 archive: flat ZIP round trip, Unicode payload and SHA-256 integrity',async()=>{const bytes=new TextEncoder().encode('Task proof — مرحبا'),files=new Map([['file_abc.bin',bytes]]),zip=A.zip(files),decoded=A.unzip(new Uint8Array(await zip.arrayBuffer()));assert.deepEqual(Array.from(decoded.get('file_abc.bin')),Array.from(bytes));assert.equal(await A.hash(bytes),await A.hash(decoded.get('file_abc.bin')));});
+test('Major Phase 5 archive: rejects path traversal, compressed entries, CRC corruption and trailing payload',async()=>{assert.throws(()=>A.zip(new Map([['../escape.bin',new Uint8Array([1])]])));const good=new Uint8Array(await A.zip(new Map([['safe.bin',new Uint8Array([1,2,3])]])).arrayBuffer());const corrupt=good.slice();corrupt[38]^=1;assert.throws(()=>A.unzip(corrupt));const compressed=good.slice();compressed[8]=8;assert.throws(()=>A.unzip(compressed));const extra=new Uint8Array(good.length+1);extra.set(good);assert.throws(()=>A.unzip(extra));});
+test('Major Phase 5 archive: empty archive is valid; incomplete ZIP is rejected',async()=>{assert.equal(A.unzip(new Uint8Array(await A.zip(new Map()).arrayBuffer())).size,0);assert.throws(()=>A.unzip(new Uint8Array(10)));});

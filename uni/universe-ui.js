@@ -17,16 +17,19 @@
   for(const g of data.groups)button(root,g.title+(g.read_only?' · Read-only':''),()=>detail(g.id));
   form(root,'Create a Universe (Pro)',[['Name','',120],['Purpose','',2000]],'Create Universe',async([title,purpose])=>{const r=await send('/universe/groups',{title,purpose});await detail(r.group_id);});
   form(root,'Join by invitation',[['Invitation token','',64]],'Join Universe',async([token])=>{const r=await send('/universe/invitations/accept',{token:token.trim()});await detail(r.group_id);});
+  const viewEpoch=epoch;
+  if(cap.capabilities?.portability&&window.UniverseReleaseUI)await window.UniverseReleaseUI.mount(root,null,{api,send,run,current:()=>viewEpoch===epoch&&owner===actor()});
  }
  async function detail(id){start();const g=(await api('/universe/groups/'+id)).group;const members=(await api('/universe/groups/'+id+'/members')).members;
   button(root,'All Universes',list);root.append(node('h2',g.title),node('p',g.purpose),node('p','Your role: '+g.role));
   if(g.read_only)root.append(node('p','Read-only: the owner needs to renew Pro. You may still leave; the owner may delete this Universe.'));
   else if(g.grace_until)root.append(node('p','Normal access continues until '+new Date(g.grace_until).toLocaleString()+'. The owner needs to renew Pro.'));
   if(g.entitlement_unavailable)root.append(node('p','Pro status could not be checked. Refresh before making changes.'));
-  root.append(node('p','Phone locking, discussion and exports are planned for later phases. Joining does not enable phone locking.'));
+  root.append(node('p','Joining a Universe does not enable phone blocking. You can choose whether to allow it below.'));
   const capabilities=await api('/universe/capabilities');
   const viewEpoch=epoch;
   if(capabilities.capabilities?.tasks&&window.UniverseTasksUI)await window.UniverseTasksUI.mount(root,g,members,{api,send,run,current:()=>viewEpoch===epoch&&owner===actor()});
+  if(capabilities.capabilities?.portability&&window.UniverseReleaseUI)await window.UniverseReleaseUI.mount(root,g,{api,send,run,current:()=>viewEpoch===epoch&&owner===actor()});
   async function change(action,extra={}){await send('/universe/groups/'+id+'/'+action,{revision:g.revision,...extra});await (['leave','delete'].includes(action)?list():detail(id));}
   if(!g.read_only&&!g.entitlement_unavailable&&['owner','admin'].includes(g.role)){
    form(root,'Group settings',[['Name',g.title,120],['Purpose',g.purpose,2000]],'Save',([title,purpose])=>change('edit',{title,purpose}));
@@ -41,7 +44,7 @@
    }
   }
   const events=(await api('/universe/groups/'+id+'/activity')).events;const history=node('details');history.append(node('summary','Recent membership activity'));for(const e of events)history.append(node('p',new Date(e.created_at).toLocaleString()+' · '+e.kind+' · '+e.actor_id));root.append(history);
-  if(g.role==='owner')button(root,'Delete Universe',async()=>{if(window.confirm('Permanently delete this Universe for every member? Export is not available in this build.'))await change('delete',{confirm:true});});
+  if(g.role==='owner')button(root,'Delete Universe',async()=>{if(window.confirm('Permanently delete this Universe for every member? Save an export first if you need one.'))await change('delete',{confirm:true});});
   else button(root,'Leave Universe',async()=>{if(window.confirm('Leave this Universe and lose access to its history?'))await change('leave');});
  }
  window.addEventListener('taskitator-universe-view',()=>run(list));if(new URLSearchParams(location.search).get('view')==='universe')run(list);
