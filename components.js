@@ -228,11 +228,12 @@
     const Core = window.TaskitatorRecurrence;
     const KEY = 'taskitator_recurrence_state';
     const empty = () => ({ series: [], history: [] });
-    const state = () => JSON.parse(localStorage.getItem(KEY) || JSON.stringify(empty()));
-    const tasks = () => window.TaskitatorApp?.getTasks() || JSON.parse(localStorage.getItem('taskitator_tasks') || '[]');
+    const state = () => window.TaskitatorEditorDraft?.recurrence || JSON.parse(localStorage.getItem(KEY) || JSON.stringify(empty()));
+    const tasks = () => window.TaskitatorEditorDraft?.tasks || window.TaskitatorApp?.getTasks() || JSON.parse(localStorage.getItem('taskitator_tasks') || '[]');
     const settings = () => JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
     const today = () => Core.today(Date.now(), Number(settings().day_start_hour) || 0);
     function persist(snapshot) {
+        if(window.TaskitatorEditorDraft&&(snapshot.tasks===window.TaskitatorEditorDraft.tasks||snapshot.recurrence_state===window.TaskitatorEditorDraft.recurrence)){Object.assign(window.TaskitatorEditorDraft,{tasks:snapshot.tasks,recurrence:snapshot.recurrence_state});return;}
         const beforeState=localStorage.getItem(KEY),beforeTasks=localStorage.getItem('taskitator_tasks');
         try {
             localStorage.setItem(KEY,JSON.stringify(snapshot.recurrence_state));
@@ -248,6 +249,7 @@
     function save(data, list = tasks()) {
         const result = Core.reconcile({ tasks: list, recurrence_state: data, settings: settings() });
         persist(result.snapshot);
+        if(window.TaskitatorEditorDraft)return;
         window.SyncEngine?.markLocalModified();
         window.TaskitatorApp?.loadStorage(); window.TaskitatorApp?.renderUnifiedView();
         window.dispatchEvent(new CustomEvent('taskitator-tasks-updated'));
@@ -315,7 +317,8 @@
         let wrap = document.getElementById('recurrenceTaskControls');
         const parent = form || document.getElementById('taskDetailModal')?.querySelector('.modal-box'); if (!parent) return;
         if (!wrap) { wrap = element('div', undefined, parent); wrap.id = 'recurrenceTaskControls'; wrap.style.cssText='margin:16px 0;padding:12px;border:1px solid var(--border-color);border-radius:8px'; }
-        const actions=document.getElementById('saveTaskDetailsBtn')?.parentElement;if(actions?.parentElement===parent)parent.insertBefore(wrap,actions);
+        const sub=document.getElementById('detailSubtasksList')?.parentElement;
+        if(sub?.parentElement===parent)parent.insertBefore(wrap,sub);
         wrap.replaceChildren();
         const series = Core.seriesFor(state(), task);
         element('p', series ? (series.enabled ? 'Repeating branch: '+series.schedule.kind.replace(/_/g,' ') : 'Repetition stopped. You can still finish the current task.') : 'This task does not repeat.', wrap);
@@ -341,7 +344,8 @@
             }
             Core.updateNode(data,task,fields);
         }
-        localStorage.setItem(KEY,JSON.stringify(data));
+        if(window.TaskitatorEditorDraft)window.TaskitatorEditorDraft.recurrence=data;
+        else localStorage.setItem(KEY,JSON.stringify(data));
     }
     function open(id) {
         const list = tasks(), task = list.find(t => t.id === id); if (!task) return;
@@ -408,7 +412,7 @@
         if(!data.history.length)element('p','No recurring-task history yet.',d);
     }
     window.addEventListener('taskitator-auth-ready',()=>{
-        const form=document.getElementById('taskCreateForm');if(form){const wrap=element('fieldset',undefined,form);wrap.style.cssText='margin:14px 0;border:1px solid var(--border-color);border-radius:8px;padding:12px';element('legend','Recurrence',wrap);const actions=document.getElementById('submitTaskCreateBtn')?.parentElement;if(actions?.parentElement===form)form.insertBefore(wrap,actions);createControl=scheduleForm(wrap,undefined,true);}
+        const form=document.getElementById('taskCreateForm');if(form){const wrap=element('fieldset',undefined,form);wrap.style.cssText='margin:14px 0;border:1px solid var(--border-color);border-radius:8px;padding:12px';element('legend','Recurrence',wrap);const sub=document.getElementById('subtaskBuilderList')?.parentElement;if(sub?.parentElement===form)form.insertBefore(wrap,sub);createControl=scheduleForm(wrap,undefined,true);}
         const nav=document.querySelector('.sidebar nav')||document.querySelector('nav');if(nav)button('↻ Recurring tasks',nav,overview);
     });
     window.TaskitatorRecurrenceUI={state,save,persist,attachCreated,validCreate,bindTask,applyEdit,resetCreate:()=>createControl?.reset(),overview};
@@ -450,6 +454,28 @@ window.TaskitatorComponents = Object.freeze({
         let pendingAuditTaskId = null;
         const pendingProofApprovals=new Map();
         let activeDetailTaskId = null;
+        const liveHost=host;
+        let draft=null,editBaseline='',removeEditReference=false;
+        const copy=v=>JSON.parse(JSON.stringify(v));
+        function controls(){const m=document.getElementById('taskDetailModal');return JSON.stringify([...(m?.querySelectorAll?.('input,textarea,select,[contenteditable]')||[])].map(e=>[e.id,e.type==='checkbox'?e.checked:e.isContentEditable?e.textContent:e.value,e.files?[...e.files].map(f=>[f.name,f.size]):null]));}
+        function dirty(){return draft&&(JSON.stringify(draft.tasks)!==draft.originalTasks||JSON.stringify(draft.recurrence)!==draft.originalRecurrence||draft.savedCriteria||draft.newTags?.length||controls()!==editBaseline||pendingEditExemplarFile||removeEditReference||JSON.stringify([...editModalSelectedTags])!==draft.tags||editModalSelectedPriority!==draft.priority||editModalSelectedProject!==draft.project||editModalIsBonus!==draft.bonus);}
+        function discardDraft(){if(dirty()&&!confirm('Changes unsaved. Discard your changes?'))return false;draft=null;window.TaskitatorEditorDraft=null;return true;}
+        async function refreshConsecutive(){for(const id of ['createConsecutiveToggle','detailConsecutiveToggle']){const e=document.getElementById(id);if(e)e.disabled=true;}const check=await window.TaskitatorPro?.checkConsecutiveEntitlement?.();for(const id of ['createConsecutiveToggle','detailConsecutiveToggle']){const e=document.getElementById(id);if(e){e.disabled=!check?.allowed;if(e.disabled)e.checked=false;e.title=e.disabled?'Activate Taskitator Pro to use consecutive numbering.':'';}}}
+        function commitDraft(){
+            if(!draft)return false;if(draft.session!==localStorage.getItem('taskitator_session_id')){alert('Your account changed. Reopen the editor.');return false;}
+            liveHost.tasks.reload();const current=liveHost.tasks.getAll(),original=JSON.parse(draft.originalTasks),changes=draft.tasks.filter(t=>JSON.stringify(t)!==JSON.stringify(original.find(o=>o.id===t.id)));
+            if(changes.some(t=>JSON.stringify(current.find(o=>o.id===t.id))!==JSON.stringify(original.find(o=>o.id===t.id)))){alert('This task changed elsewhere. Reopen the editor before saving.');return false;}
+            const changedRecurrence=JSON.stringify(draft.recurrence)!==draft.originalRecurrence;
+            if(changedRecurrence&&JSON.stringify(JSON.parse(localStorage.getItem('taskitator_recurrence_state')||'{"series":[],"history":[]}'))!==draft.originalRecurrence){alert('The repeat schedule changed elsewhere. Reopen the editor.');return false;}
+            if(changedRecurrence)localStorage.setItem('taskitator_recurrence_state',JSON.stringify(draft.recurrence));
+            for(const tag of draft.newTags||[])liveHost.catalogs.addTag(tag);
+            if(draft.savedCriteria)localStorage.setItem('taskitator_saved_criteria',JSON.stringify(draft.savedCriteria));
+            for(const t of changes){const i=current.findIndex(o=>o.id===t.id);if(i<0)current.push(t);else current[i]=t;}
+            draft=null;window.TaskitatorEditorDraft=null;liveHost.tasks.save();return true;
+        }
+        host={...host,tasks:{...host.tasks,getAll:()=>draft?draft.tasks:liveHost.tasks.getAll(),reload:()=>{if(!draft)liveHost.tasks.reload();},save:()=>{if(!draft)liveHost.tasks.save();},moveProject:(id,project)=>{if(draft){for(const t of TaskitatorRecurrence.subtree(draft.tasks,id))t.project_id=project;}else liveHost.tasks.moveProject(id,project);}}};
+        host.catalogs={...host.catalogs,tags:()=>[...liveHost.catalogs.tags(),...(draft?.newTags||[])],addTag:tag=>{if(draft){draft.newTags||=[];if(!draft.newTags.includes(tag))draft.newTags.push(tag);}else liveHost.catalogs.addTag(tag);}};
+        host.tasks.descendants=id=>draft?TaskitatorRecurrence.subtree(draft.tasks,id).filter(t=>t.id!==id):liveHost.tasks.descendants(id);
         let criteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
         let editCriteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
         let pendingEditExemplarFile = null;
@@ -481,6 +507,7 @@ window.TaskitatorComponents = Object.freeze({
         const MAX_EXEMPLAR_SIZE_BYTES = 4 * 1024 * 1024; // 4 MB limit
 
         function getSavedCriteria() {
+            if(draft?.savedCriteria)return draft.savedCriteria;
             try {
                 return JSON.parse(localStorage.getItem(SAVED_CRITERIA_KEY) || '[]');
             } catch (e) {
@@ -489,6 +516,7 @@ window.TaskitatorComponents = Object.freeze({
         }
 
         function saveSavedCriteriaList(list) {
+            if(draft){draft.savedCriteria=list;updateSavedCriteriaBadge();return;}
             localStorage.setItem(SAVED_CRITERIA_KEY, JSON.stringify(list));
             if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') {
                 SyncEngine.markLocalModified();
@@ -1060,7 +1088,6 @@ window.TaskitatorComponents = Object.freeze({
                         <button type="button" class="icon-btn" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
                     `;
                     sLi.querySelector('button').addEventListener('click', () => {
-                        if (taskDetailModal) taskDetailModal.classList.remove('open');
                         openTaskDetailModal(child.id, triggerRenderFn);
                     });
                     detailSubtasksList.appendChild(sLi);
@@ -1069,6 +1096,10 @@ window.TaskitatorComponents = Object.freeze({
         }
 
         async function openTaskDetailModal(taskId, triggerRenderFn) {
+            if(draft&&!liveHost.tasks.getAll().some(t=>t.id===taskId)){alert('Save this draft before opening its new subtask.');return;}
+            if(draft&&!discardDraft())return;
+            draft={tasks:copy(liveHost.tasks.getAll()),originalTasks:JSON.stringify(liveHost.tasks.getAll()),recurrence:copy(window.TaskitatorRecurrenceUI?.state()||{series:[],history:[]}),session:localStorage.getItem('taskitator_session_id')};
+            draft.originalRecurrence=JSON.stringify(draft.recurrence);window.TaskitatorEditorDraft=draft;removeEditReference=false;
             const task = host.tasks.getAll().find(t => t.id === taskId);
             if (!task) return;
             activeDetailTaskId = taskId;
@@ -1108,6 +1139,7 @@ window.TaskitatorComponents = Object.freeze({
             const editTaskCriteria = document.getElementById('editTaskCriteria');
             const detailLockStatusBadge = document.getElementById('detailLockStatusBadge');
             const deleteFromDetailBtn = document.getElementById('deleteFromDetailBtn');
+            if(deleteFromDetailBtn)deleteFromDetailBtn.textContent='Delete task';
             const editExemplarChip = document.getElementById('editExemplarChip');
             const editExemplarName = document.getElementById('editExemplarName');
             const editExemplarSize = document.getElementById('editExemplarSize');
@@ -1293,6 +1325,8 @@ window.TaskitatorComponents = Object.freeze({
             if (taskDetailModal) {
                 taskDetailModal._customRenderFn = triggerRenderFn;
                 taskDetailModal.classList.add('open');
+                draft.tags=JSON.stringify([...editModalSelectedTags]);draft.priority=editModalSelectedPriority;draft.project=editModalSelectedProject;draft.bonus=editModalIsBonus;editBaseline=controls();
+                void refreshConsecutive();
             }
         }
 
@@ -1300,6 +1334,8 @@ window.TaskitatorComponents = Object.freeze({
         // Task Creation Launcher
         // =========================================================================
         function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task', preselectedProjectId = null) {
+            if(draft&&!discardDraft())return;
+            void refreshConsecutive();
             const form = document.getElementById('taskCreateForm');
             if (form) form.reset();
 
@@ -1492,6 +1528,7 @@ window.TaskitatorComponents = Object.freeze({
                         if (e.isComposing) return;
                         e.preventDefault();
                         e.stopPropagation?.();
+                        e.stopImmediatePropagation?.();
                         if (!activeDetailTaskId) return;
 
                         let rawSubInput = detailQuickSubtaskInput.value.trim();
@@ -1647,6 +1684,7 @@ window.TaskitatorComponents = Object.freeze({
                 const toggleEl = document.getElementById(toggleId);
                 const noticeEl = document.getElementById(noticeId);
                 if (!toggleEl) return;
+                toggleEl.disabled=true;
                 toggleEl.addEventListener('change', async () => {
                     if (!toggleEl.checked) {
                         if (noticeEl) { noticeEl.style.display = 'none'; noticeEl.textContent = ''; }
@@ -1668,6 +1706,14 @@ window.TaskitatorComponents = Object.freeze({
             };
             bindConsecutiveToggle('createConsecutiveToggle', 'createConsecutiveNotice');
             bindConsecutiveToggle('detailConsecutiveToggle', 'detailConsecutiveNotice');
+            for(const id of ['createQuickSubtaskInput','detailQuickSubtaskInput']){const input=document.getElementById(id);if(input){input.setAttribute?.('enterkeyhint','done');input.addEventListener('beforeinput',e=>{if(e.inputType==='insertLineBreak'&&!e.isComposing){e.preventDefault();input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));}});}}
+            void refreshConsecutive();
+            let proExpiry=null;
+            window.addEventListener('taskitator-pro-status',event=>{clearTimeout(proExpiry);const s=event.detail,allowed=s?.isPro===true&&s.status==='active'&&(s.expires_at===null||s.expires_at>Date.now());for(const id of ['createConsecutiveToggle','detailConsecutiveToggle']){const e=document.getElementById(id);if(e){e.disabled=!allowed;if(!allowed)e.checked=false;}}if(allowed&&s.expires_at!==null)proExpiry=setTimeout(()=>{void refreshConsecutive();},Math.min(2147483647,s.expires_at-Date.now()));});
+            window.addEventListener('beforeunload',e=>{if(dirty()){e.preventDefault();e.returnValue='';}});
+            document.addEventListener('keydown',e=>{if(e.key==='Escape'&&draft&&document.getElementById('taskDetailModal')?.classList.contains('open')){e.preventDefault();e.stopImmediatePropagation();if(discardDraft()){document.getElementById('taskDetailModal').classList.remove('open');activeDetailTaskId=null;}}},true);
+            document.addEventListener('click',e=>{if(!draft)return;const link=e.target.closest?.('a[href]');if(link&&!discardDraft()){e.preventDefault();e.stopImmediatePropagation();}},true);
+            window.addEventListener('taskitator-auth-ready',()=>{if(draft&&draft.session!==localStorage.getItem('taskitator_session_id')){draft=null;window.TaskitatorEditorDraft=null;activeDetailTaskId=null;pendingEditExemplarFile=null;document.getElementById('taskDetailModal')?.classList.remove('open');}});
 
             const openRootAddModalBtn = document.getElementById('openRootAddModalBtn');
             if (openRootAddModalBtn) {
@@ -1964,7 +2010,7 @@ window.TaskitatorComponents = Object.freeze({
                     if (editExemplarInput) editExemplarInput.value = '';
                     pendingEditExemplarFile = null;
                     if (activeDetailTaskId && window.ExemplarStore) {
-                        await window.ExemplarStore.deleteExemplar(activeDetailTaskId);
+                        removeEditReference=true;
                     }
                     if (editExemplarChip) editExemplarChip.style.display = 'none';
                     editCriteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
@@ -2033,6 +2079,8 @@ window.TaskitatorComponents = Object.freeze({
             if (taskCreateForm) {
                 taskCreateForm.addEventListener('submit', async (e) => {
                     e.preventDefault();
+                    const quick=document.activeElement;
+                    if(quick?.id==='createQuickSubtaskInput'&&!e.submitter){if(quick.value.trim())quick.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));return;}
                     let rawTitle = NLPEngine.extractCleanTitle('taskTitleInput');
                     const desc = document.getElementById('taskDescInput')?.value.trim() || '';
                     const dueDate = document.getElementById('taskDueDateInput')?.value || '';
@@ -2208,8 +2256,11 @@ window.TaskitatorComponents = Object.freeze({
 
             const taskDetailModal = document.getElementById('taskDetailModal');
             const closeDetailModalBtn = document.getElementById('closeDetailModalBtn');
+            document.getElementById('taskDetailForm')?.addEventListener('submit',e=>e.preventDefault());
+            document.getElementById('taskEditForm')?.addEventListener('submit',e=>e.preventDefault());
             if (closeDetailModalBtn && taskDetailModal) {
                 closeDetailModalBtn.addEventListener('click', () => {
+                    if(!discardDraft())return;
                     taskDetailModal.classList.remove('open');
                     activeDetailTaskId = null;
                     pendingEditExemplarFile = null;
@@ -2390,8 +2441,9 @@ window.TaskitatorComponents = Object.freeze({
                     
                     task.strict_prerequisites = willBeStrict;
                     await window.TaskitatorRecurrenceUI?.applyEdit(task);
+                    if(removeEditReference){if(task.ai_locked&&!isBypassActive){alert('Emergency Bypass is required to remove this reference.');return;}await window.ExemplarStore?.deleteExemplar(task.id);delete task.reference_inline_data;delete task.reference_id;}
 
-                    host.tasks.save();
+                    if(!commitDraft())return;
                     if (taskDetailModal) taskDetailModal.classList.remove('open');
                     
                     const customRender = taskDetailModal?._customRenderFn;
@@ -2408,10 +2460,10 @@ window.TaskitatorComponents = Object.freeze({
                 deleteFromDetailBtn.addEventListener('click', () => {
                     if (!activeDetailTaskId) return;
                     const customRender = taskDetailModal?._customRenderFn;
-                    host.tasks.remove(activeDetailTaskId, customRender);
-                    if (taskDetailModal) taskDetailModal.classList.remove('open');
-                    activeDetailTaskId = null;
-                    pendingEditExemplarFile = null;
+                    const branch=TaskitatorRecurrence.subtree(host.tasks.getAll(),activeDetailTaskId);
+                    if(branch.some(t=>t.ai_locked||t.strict_prerequisites)&&!host.rules.bypassActive()){alert('Emergency Bypass is required to delete protected work.');return;}
+                    for(const t of branch)t.status='trash';
+                    deleteFromDetailBtn.textContent='Marked for deletion — press Save';
                 });
             }
 
@@ -2419,6 +2471,7 @@ window.TaskitatorComponents = Object.freeze({
             if (openChildAddModalBtn) {
                 openChildAddModalBtn.addEventListener('click', () => {
                     if (!activeDetailTaskId) return;
+                    if(!discardDraft())return;
                     const parentTask = host.tasks.getAll().find(t => t.id === activeDetailTaskId);
                     if (taskDetailModal) taskDetailModal.classList.remove('open');
                     activeDetailTaskId = null;

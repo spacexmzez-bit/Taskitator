@@ -271,7 +271,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-phase4-1-v11'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase4-5-v12'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -701,6 +701,24 @@ class UniElement {
  addEventListener(k,fn){this.events[k]=fn;}
  focus(){}select(){}
 }
+function focusEngine(){const window={addEventListener(){}},context={window,document:{readyState:'loading',addEventListener(){}},navigator:{},setInterval(){},Date,JSON,Number,Math};vm.runInNewContext(fs.readFileSync(new URL('uni/focus-timer.js',rootURL()),'utf8'),context);return window.TaskitatorPomodoro;}
+test('Phase 4.5 focus timer restores absolute deadlines and catches up missed transitions',()=>{
+ const engine=focusEngine(),s=engine.fresh();Object.assign(s,{running:true,target:1000000});
+ const resumed=JSON.parse(JSON.stringify(s));let r=engine.advance(resumed,1000000+60000);assert.equal(r.state.phase,'break');assert.equal(r.state.target,1300000);assert.equal(r.state.left,240000);
+ r=engine.advance(r.state,1300000+60000);assert.equal(r.state.phase,'work');assert.equal(r.state.session,2);assert.equal(r.state.left,1440000);
+ r=engine.advance(r.state,1000000+24*3600000);assert.equal(r.state.done,true);assert.equal(r.state.running,false);assert.equal(r.event,'complete');assert.equal(engine.advance(r.state,Date.now()).event,null);
+});
+test('Phase 4.5 paused timers and stored notification preferences survive restoration',()=>{
+ const engine=focusEngine(),s=engine.fresh();s.left=123456;s.config.sound=false;s.config.vibration=false;s.config.awake=true;
+ const r=engine.advance(JSON.parse(JSON.stringify(s)),Date.now()+3600000);assert.equal(r.state.left,123456);assert.equal(r.state.config.sound,false);assert.equal(r.state.config.awake,true);assert.equal(r.event,null);
+ assert.equal(engine.valid({...s,config:{...s.config,work:0}}),false);
+});
+test('Phase 4.5 tree expansion changes only local presentation and never schedules a push',()=>{
+ const source=fs.readFileSync(new URL('app.js',rootURL()),'utf8'),start=source.indexOf("toggleBtn.addEventListener('click'",source.indexOf("toggleBtn.className = 'collapse-toggle'")),end=source.indexOf('});',start)+3;
+ let click,pushes=0,renders=0;const collapsed=new Set(),saved=[];
+ vm.runInNewContext(source.slice(start,end),{toggleBtn:{addEventListener(type,fn){click=fn;}},task:{id:'task1'},collapsedNodes:collapsed,COLLAPSED_STATE_KEY:'local-tree',JSON,localStorage:{setItem:(k,v)=>saved.push(v)},saveStorageAndPush:()=>pushes++,renderUnifiedTaskTree:()=>renders++});
+ click({stopPropagation(){}});assert.equal(collapsed.has('task1'),true);click({stopPropagation(){}});assert.equal(collapsed.has('task1'),false);assert.equal(pushes,0);assert.equal(renders,2);assert.equal(saved.length,2);
+});
 function uniUI(api){
  const root=new UniElement(),listeners={};const w={TaskitatorAuth:{account:{user:'A'},api},Clerk:{session:{id:'S'},addListener(fn){this.listener=fn;}},addEventListener(k,fn){listeners[k]=fn;},confirm:()=>true};
  const doc={getElementById:()=>root,createElement:tag=>new UniElement(tag)};

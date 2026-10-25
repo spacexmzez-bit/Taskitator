@@ -690,6 +690,8 @@ ${formattedInput}`;
         const fabBtn = document.getElementById('openCopilotFabBtn');
         if (fabBtn) {
             fabBtn.title = `Open ${name}`;
+            const label=fabBtn.querySelector('.wide-label');if(label)label.textContent=name;
+            fabBtn.setAttribute('aria-label',`Open ${name}`);
         }
 
         const inputField = document.getElementById('copilotInput');
@@ -753,6 +755,8 @@ ${formattedInput}`;
     }
 
     window.addEventListener('taskitator-synced', refreshSystemNames);
+    window.addEventListener('taskitator-settings-changed',refreshSystemNames);
+    window.addEventListener('storage',e=>{if(e.key==='taskitator_settings')refreshSystemNames();});
     window.addEventListener('taskitator-ai-provider-changed',resetConversation);
 
     if (document.readyState === 'loading') {
@@ -1397,7 +1401,7 @@ window.TaskitatorApp = (() => {
 
     function saveStorageAndPush() {
         const snapshot = { tasks, settings: JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'),
-            recurrence_state: TaskitatorRecurrenceUI.state() };
+            recurrence_state: window.TaskitatorEditorDraft?JSON.parse(localStorage.getItem('taskitator_recurrence_state')||'{"series":[],"history":[]}'):TaskitatorRecurrenceUI.state() };
         TaskitatorRecurrence.reconcile(snapshot);
         tasks = snapshot.tasks;
         TaskitatorRecurrenceUI.persist(snapshot);
@@ -2457,7 +2461,7 @@ window.TaskitatorApp = (() => {
                         } else {
                             collapsedNodes.add(task.id);
                         }
-                        saveStorageAndPush();
+                        localStorage.setItem(COLLAPSED_STATE_KEY, JSON.stringify([...collapsedNodes]));
                         renderUnifiedTaskTree();
                     });
                     main.appendChild(toggleBtn);
@@ -3425,6 +3429,7 @@ if ('serviceWorker' in navigator) {
     // =========================================================================
     // 1. Audio Synthesis (Brass Desk Bell via Web Audio API)
     // =========================================================================
+    if(window.TaskitatorPomodoro)return;
     let audioCtx = null;
 
     function initAudio() {

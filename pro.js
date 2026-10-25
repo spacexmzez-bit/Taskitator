@@ -1220,7 +1220,11 @@ window.TaskitatorEngine = TaskitatorEngine;
          * Get Pro tier status and remaining daily/monthly credit balances.
          */
         async getStatus() {
-            return await this.request('/pro/status', { method: 'GET' });
+            const owner=global.Clerk?.session?.id;
+            const data=await this.request('/pro/status', { method: 'GET' });
+            if(owner!==global.Clerk?.session?.id)throw new Error('Your session changed. Retry the status check.');
+            if(typeof global.CustomEvent==='function')global.dispatchEvent(new global.CustomEvent('taskitator-pro-status',{detail:data}));
+            return data;
         }
 
         /**

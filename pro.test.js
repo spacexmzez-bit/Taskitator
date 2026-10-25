@@ -1450,7 +1450,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-universe-phase4-1-v11'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-phase4-5-v12'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);
@@ -1500,6 +1500,7 @@ test("Public comparison and legal routes never load private workspace scripts or
 
 test("Slow consecutive entitlement checks do not duplicate subtasks on double-Enter or overwrite concurrent typing", async () => {
     const f = browser();
+    let saved=0;f.context.confirm=()=>true;
     const createdTasks = [];
     const elements = new Map();
     const makeEl = (id) => ({
@@ -1515,14 +1516,16 @@ test("Slow consecutive entitlement checks do not duplicate subtasks on double-En
         addEventListener(ev, fn) { this.listeners[ev] = fn; },
         dispatchEvent(event) { return this.listeners[event.type]?.(event); },
         appendChild(child) { this.children.push(child); },
-        querySelector() { return { addEventListener() {} }; },
+        append(...children) {this.children.push(...children);},
+        replaceChildren(...children) {this.children=children;},
+        querySelector(selector) { return selector==='.modal-box'?this:{ addEventListener() {} }; },
         closest() { return null; },
         focus() {}
     });
     for (const id of [
         "detailQuickSubtaskInput", "detailConsecutiveToggle", "detailConsecutiveNotice",
         "createQuickSubtaskInput", "createConsecutiveToggle", "createConsecutiveNotice",
-        "subtaskBuilderList", "detailSubtasksList", "taskDetailModal", "addSubtaskFieldBtn", "detailAddQuickSubtaskBtn"
+        "subtaskBuilderList", "detailSubtasksList", "taskDetailModal", "addSubtaskFieldBtn", "detailAddQuickSubtaskBtn", "saveTaskDetailsBtn", "closeDetailModalBtn"
     ]) {
         elements.set(id, makeEl(id));
     }
@@ -1530,6 +1533,7 @@ test("Slow consecutive entitlement checks do not duplicate subtasks on double-En
     f.context.document = {
         getElementById: (id) => elements.get(id) || null,
         querySelectorAll: () => [],
+        addEventListener() {},
         createElement: () => makeEl("dynamic")
     };
     f.window.document = f.context.document;
@@ -1541,6 +1545,7 @@ test("Slow consecutive entitlement checks do not duplicate subtasks on double-En
         checkConsecutiveEntitlement: () => new Promise(r => { resolveCheck = r; })
     };
 
+    Object.defineProperty(f.window,'TaskitatorRecurrence',{get:()=>f.context.TaskitatorRecurrence});
     const compCode = readConsolidatedSource("components.js");
     vm.runInContext(compCode, f.context);
 
@@ -1551,7 +1556,7 @@ test("Slow consecutive entitlement checks do not duplicate subtasks on double-En
         tasks: {
             getAll: () => createdTasks,
             reload() {},
-            save() {},
+            save() {saved++;},
             sort: (arr) => arr,
             descendants: () => [],
             shieldedAncestor: () => null,
@@ -1579,7 +1584,8 @@ test("Slow consecutive entitlement checks do not duplicate subtasks on double-En
     assert.equal(detailInput.value, "", "Submitted title must be cleared synchronously before awaiting Pro status");
     // Second Enter while slow entitlement check is still in flight
     const p2 = detailInput.listeners.keydown({ key: "Enter", preventDefault() {} });
-    assert.equal(createdTasks.filter(t => t.parent_id === "parent_1").length, 1, "Double-Enter during slow check must not duplicate subtasks");
+    assert.equal(f.window.TaskitatorEditorDraft.tasks.filter(t => t.parent_id === "parent_1").length, 1, "Double-Enter must add one draft subtask");
+    assert.equal(createdTasks.length,1,'Editing must not change saved tasks before Save');
 
     // User types a new title before entitlement response arrives
     detailInput.value = "Custom next title";
@@ -1618,14 +1624,26 @@ test("Slow consecutive entitlement checks do not duplicate subtasks on double-En
     for(const [prefix,button] of [['create','addSubtaskFieldBtn'],['detail','detailAddQuickSubtaskBtn']]){
         elements.get(prefix+'ConsecutiveToggle').checked=false;
         const input=elements.get(prefix+'QuickSubtaskInput');input.value='Manual title';
-        const before=prefix==='create'?builderList.children.length:createdTasks.length;
+        const before=prefix==='create'?builderList.children.length:f.window.TaskitatorEditorDraft.tasks.length;
         elements.get(button).listeners.click();
         assert.equal(input.value,'');
-        assert.equal(prefix==='create'?builderList.children.length:createdTasks.length,before+1,'Plus adds exactly one manual subtask');
+        assert.equal(prefix==='create'?builderList.children.length:f.window.TaskitatorEditorDraft.tasks.length,before+1,'Plus adds exactly one manual subtask');
         elements.get(button).listeners.click();
-        assert.equal(prefix==='create'?builderList.children.length:createdTasks.length,before+1,'Empty plus does not create a blank required row');
+        assert.equal(prefix==='create'?builderList.children.length:f.window.TaskitatorEditorDraft.tasks.length,before+1,'Empty plus does not create a blank required row');
     }
 
+    const expected=f.window.TaskitatorEditorDraft.tasks.length;
+    assert.equal(saved,0,'Draft changes must not push');
+    await elements.get('saveTaskDetailsBtn').listeners.click();
+    assert.equal(saved,1,'Only explicit Save commits the draft');assert.equal(createdTasks.length,expected);
+    await compInstance.openDetail('parent_1',()=>{});
+    elements.get('detailConsecutiveToggle').checked=false;
+    detailInput.value='Discard this';await detailInput.listeners.keydown({key:'Enter',preventDefault(){}});
+    f.context.confirm=()=>false;elements.get('closeDetailModalBtn').listeners.click();assert.ok(f.window.TaskitatorEditorDraft,'Declining discard keeps the draft');
+    f.context.confirm=()=>true;elements.get('closeDetailModalBtn').listeners.click();assert.equal(f.window.TaskitatorEditorDraft,null);assert.equal(createdTasks.length,expected);assert.equal(saved,1);
+    f.window.TaskitatorPro.checkConsecutiveEntitlement=async()=>({allowed:false});await compInstance.openDetail('parent_1',()=>{});await Promise.resolve();
+    assert.equal(elements.get('detailConsecutiveToggle').disabled,true);assert.equal(elements.get('createConsecutiveToggle').disabled,true);
+    f.window.TaskitatorPro.checkConsecutiveEntitlement=async()=>({allowed:true});await compInstance.openDetail('parent_1',()=>{});await Promise.resolve();assert.equal(elements.get('detailConsecutiveToggle').disabled,false);
 });
 
 test("Opening another review cost preview cancels and resolves the first review promise instead of stranding it", async () => {
