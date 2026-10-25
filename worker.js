@@ -1,4 +1,4 @@
-import { UniverseAI } from './uni/universe-ai.js';
+import { UniverseRelease } from './uni/universe-release.js';
 // ============================================================================
 // Taskitator Consolidated Cloudflare Worker & Security Engine (worker.js)
 // Combines: recurrence-core, break-core, auth, ai-models, verification,
@@ -1407,7 +1407,7 @@ export class TaskitatorSync {
         this.ai = new AIGateway(this);
         this.protection = new TaskProtection(this);
         this.pro = new ProGateway(this);
-        this.universe = new UniverseAI(this);
+        this.universe = new UniverseRelease(this);
     }
 
     async readTaskSnapshot(store, accountId) {
@@ -1715,7 +1715,8 @@ export class TaskitatorSync {
                 if (universeRoute) {
                     await this.rateLimit(request,'universe:'+identity.userId,60);
                     const upload=/^\/universe\/groups\/[A-Za-z0-9_-]+\/work\/files\/[A-Za-z0-9_-]+\/upload$/.test(path);
-                    return json(await this.universe.handle(identity,path,method,method==='GET'?{}:await readJson(request,upload?8*1024*1024:16384)));
+                    const transfer=path==='/universe/imports'||/^\/universe\/(?:imports|groups\/[^/]+\/(?:transfer|archive))\/[^/]+\/file$/.test(path);
+                    return json(await this.universe.handle(identity,path,method,method==='GET'?{}:await readJson(request,upload?8*1024*1024:transfer?21*1024*1024:16384)));
                 }
                 if (proRoute) {
                     const account = await this.accountFor(identity);
@@ -1795,6 +1796,10 @@ export class TaskitatorSync {
                     }
                     if (pull) return json(record ? publicRecord(record) : { empty: true, version: meta.version });
                     const state = evaluateStatus(record);
+                    const groupState=await this.universe.lockStatus(identity?.userId||meta.owner_id);
+                    state.universe_degraded=groupState.degraded;
+                    state.universe_locks=groupState.count||0;
+                    if(groupState.locked&&!state.in_break){state.device_unlocked=false;state.finished=false;}
                     if(identity && await this.protection.bypass(tx,identity.userId)) { state.device_unlocked=true;state.emergency_bypass=true; }
                     else if(!identity) { const owner=meta.owner_id; if(owner && await this.protection.bypass(tx,owner)){state.device_unlocked=true;state.emergency_bypass=true;} }
                     return url.searchParams.get('format') === 'text'

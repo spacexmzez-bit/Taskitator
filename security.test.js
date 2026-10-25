@@ -1079,6 +1079,7 @@ test('both emergency URLs require a connected live account and reject phone toke
 
 // Universe foundation tests execute the production SQL and service entrypoints
 // against SQLite, not a map of expected SQL strings. D1 transport is adapted.
+import './uni/universe-release.test.js';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 class UniverseTestD1 {
@@ -1096,7 +1097,7 @@ class UniverseTestD1 {
         await new Promise(resolve=>setImmediate(resolve));
         if(this.beforeBatch) { const fn=this.beforeBatch; this.beforeBatch=null; await fn(); }
         this.sql.exec('BEGIN IMMEDIATE');
-        try { const out=statements.map(s=>({meta:this.sql.prepare(s.sql).run(...s.values)}));this.sql.exec('COMMIT');return out; }
+        try { const out=statements.map(s=>{const p=this.sql.prepare(s.sql);return p.columns().length?{results:p.all(...s.values)}:{meta:p.run(...s.values)};});this.sql.exec('COMMIT');return out; }
         catch(error) {this.sql.exec('ROLLBACK');throw error;}
     }
 }
@@ -1309,6 +1310,77 @@ test('Universe: invitation removed before final update cannot return a false suc
 });
 
 async function universe2Fixture(){const u=await universeFixture();u.db.sql.exec(readFileSync(new URL('./uni/universe-phase2.sql',import.meta.url),'utf8'));return u;}
+async function releaseFixture(){
+ const u=await workFixture();for(const file of ['universe-phase4.sql','universe-phase5.sql'])u.db.sql.exec(readFileSync(new URL('./uni/'+file,import.meta.url),'utf8'));
+ u.f.env.TASKITATOR_EVIDENCE.put=async(k,v)=>u.objects.set(k,typeof v==='string'?new TextEncoder().encode(v):new Uint8Array(v));
+ const route='/universe/groups/'+u.gid,svc=u.f.service.universe;
+ const call=(suffix,body,actor=u.owner)=>u.handle(actor,route+suffix,body?{operation_id:newOperation(),...body}:undefined);
+ return {...u,route,svc,call};
+}
+test('Major Phase 5: schema reapplies, capabilities do not need AI credentials',async()=>{
+ const u=await releaseFixture();u.db.sql.exec(readFileSync(new URL('./uni/universe-phase5.sql',import.meta.url),'utf8'));const c=await u.handle(u.owner,'/universe/capabilities');assert.equal(c.capabilities.locking,true);assert.equal(c.capabilities.portability,true);assert.equal(c.capabilities.personal_ai,false);
+});
+test('Major Phase 5: explicit consent, notice, pending proof release and withdrawal',async()=>{
+ const u=await releaseFixture();const d=JSON.parse(u.db.sql.prepare('SELECT data FROM universe_tasks WHERE id=?').get(u.task.id).data);d.due_at=Date.now()-1000;d.allow_late=true;u.db.sql.prepare('UPDATE universe_tasks SET data=? WHERE id=?').run(JSON.stringify(d),u.task.id);
+ assert.equal((await u.svc.lockStatus(u.member.userId)).locked,false);
+ await u.call('/locks/'+u.assignment.id,{eligible:true,revision:1,task_revision:1});await u.call('/consent',{enabled:true},u.member);
+ assert.equal((await u.svc.lockStatus(u.member.userId)).locked,false);
+ await u.call('/locks/'+u.assignment.id+'/accept',{revision:1,task_revision:1},u.member);assert.equal((await u.svc.lockStatus(u.member.userId)).locked,true);
+ await u.submit();assert.equal((await u.svc.lockStatus(u.member.userId)).locked,false);
+ await u.call('/consent',{enabled:false},u.member);assert.equal((await u.svc.lockStatus(u.member.userId)).locked,false);
+});
+test('Major Phase 5: Shared work, unauthorized eligibility and missing deadline rejected',async()=>{
+ const u=await releaseFixture();await universeReject(u.call('/locks/'+u.assignment.id,{eligible:true,revision:1,task_revision:1}),'LOCK');
+ const d={...u.data,due_at:Date.now()-1000};const t=await u.post('/tasks',d),a=u.db.sql.prepare('SELECT * FROM universe_assignments WHERE task_id=?').get(t.id);
+ await universeReject(u.call('/locks/'+a.id,{eligible:true,revision:1,task_revision:1},u.member),'ROLE_DENIED');
+ const shared=await u.post('/tasks',{...d,mode:'shared'}),s=u.db.sql.prepare('SELECT * FROM universe_assignments WHERE task_id=?').get(shared.id);await universeReject(u.call('/locks/'+s.id,{eligible:true,revision:1,task_revision:1}),'LOCK');
+});
+test('Major Phase 5: three eligible assignments cap and membership departure revoke consent',async()=>{
+ const u=await releaseFixture();for(let i=0;i<4;i++){const t=await u.post('/tasks',{...u.data,due_at:Date.now()+1000}),a=u.db.sql.prepare('SELECT * FROM universe_assignments WHERE task_id=?').get(t.id);if(i<3)await u.call('/locks/'+a.id,{eligible:true,revision:1,task_revision:1});else await universeReject(u.call('/locks/'+a.id,{eligible:true,revision:1,task_revision:1}),'LOCK_CAP');}
+ await u.call('/consent',{enabled:true},u.member);const g=(await u.handle(u.owner,u.route)).group;await u.handle(u.owner,u.route+'/remove',{operation_id:newOperation(),revision:g.revision,target_id:u.member.userId});assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_lock_consent').get().n,0);
+});
+test('Major Phase 5: group status failure releases group contribution and reports degradation',async()=>{
+ const u=await releaseFixture();u.svc.lifecycle=async()=>{throw Error('Unavailable');};assert.deepEqual(await u.svc.lockStatus(u.member.userId),{locked:false,count:0,degraded:false});
+ await u.db.prepare('DROP TABLE universe_lock_consent').run();assert.deepEqual(await u.svc.lockStatus(u.member.userId),{locked:false,degraded:true});
+});
+test('Major Phase 5: discussion plain text, deduplication, revision and author restrictions',async()=>{
+ const u=await releaseFixture(),b={operation_id:newOperation(),body:'<script>never execute</script>'};const c=await u.call('/discussion',b,u.member);assert.equal((await u.call('/discussion',b,u.member)).id,c.id);assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_comments').get().n,1);
+ await universeReject(u.call('/discussion/'+c.id+'/edit',{revision:1,body:'hijack'}),'ROLE');
+ await u.call('/discussion/'+c.id+'/edit',{revision:1,body:'Updated'},u.member);await universeReject(u.call('/discussion/'+c.id+'/edit',{revision:1,body:'stale'},u.member),'REVISION');
+ await u.call('/discussion/'+c.id+'/moderate',{revision:2,reason:'Off topic'});assert.equal((await u.call('/discussion')).comments[0].body,'[Removed by moderation]');
+});
+test('Major Phase 5: discussion replies stay in group/task and removal ends read access',async()=>{
+ const u=await releaseFixture(),c=await u.call('/discussion',{body:'Task thread',task_id:u.task.id});await universeReject(u.call('/discussion',{body:'Bad reply',parent_id:c.id},u.member),'THREAD');await u.call('/discussion',{body:'Good reply',parent_id:c.id,task_id:u.task.id},u.member);
+ const g=(await u.handle(u.owner,u.route)).group;await u.handle(u.owner,u.route+'/remove',{operation_id:newOperation(),revision:g.revision,target_id:u.member.userId});await universeReject(u.call('/discussion',undefined,u.member),'ACCESS_DENIED');
+});
+test('Major Phase 5: content backup imports fresh IDs, does not restore members or locks, finish is retryable',async()=>{
+ const u=await releaseFixture(),e=await u.call('/transfer',{full:false}),{manifest}=await u.call('/transfer/'+e.id);assert.equal(manifest.files.length,0);const stage=await u.handle(u.owner,'/universe/imports',{operation_id:newOperation(),manifest});
+ const finish=()=>u.handle(u.owner,'/universe/imports/'+stage.id+'/finish',{operation_id:newOperation()});const r=await finish();assert.notEqual(r.group_id,u.gid);assert.deepEqual(await finish(),r);const members=u.db.sql.prepare('SELECT * FROM universe_members WHERE group_id=?').all(r.group_id);assert.equal(members.length,1);assert.equal(members[0].role,'owner');
+ const t=u.db.sql.prepare('SELECT * FROM universe_tasks WHERE group_id=?').get(r.group_id),d=JSON.parse(t.data);assert.notEqual(t.id,u.task.id);assert.equal(d.due_at,null);assert.equal(d.ai_required,false);assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_lock_consent WHERE group_id=?').get(r.group_id).n,0);
+});
+test('Major Phase 5: export revision fences edits and non-managers cannot export',async()=>{
+ const u=await releaseFixture();await universeReject(u.call('/transfer',{full:true},u.member),'ROLE_DENIED');const e=await u.call('/transfer',{full:false});await u.post('/projects',{title:'New'});await universeReject(u.call('/transfer/'+e.id),'REVISION');
+});
+test('Major Phase 5: interrupted import cancellation releases the existing reservation',async()=>{
+ const u=await releaseFixture(),e=await u.call('/transfer',{full:false}),{manifest}=await u.call('/transfer/'+e.id);const r=await u.handle(u.owner,'/universe/imports',{operation_id:newOperation(),manifest});assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_reservations').get().n,1);await u.handle(u.owner,'/universe/imports/'+r.id+'/cancel',{operation_id:newOperation()});assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_reservations').get().n,0);await universeReject(u.handle(u.owner,'/universe/imports/'+r.id+'/finish',{operation_id:newOperation()}),'TRANSFER');
+});
+test('Major Phase 5: imports reject corrupt schemas, dangling IDs and duplicate resources',async()=>{
+ const u=await releaseFixture(),e=await u.call('/transfer',{full:false}),{manifest}=await u.call('/transfer/'+e.id);assert.throws(()=>u.svc.validateManifest({...manifest,version:9}));const broken=structuredClone(manifest);broken.tasks[0].project_id='missing';assert.throws(()=>u.svc.validateManifest(broken));const duplicate=structuredClone(manifest);duplicate.projects.push(duplicate.projects[0]);assert.throws(()=>u.svc.validateManifest(duplicate));assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_reservations').get().n,0);
+});
+test('Major Phase 5: phone status combines group locks and keeps Emergency Bypass and text contract',async()=>{
+ const f=fixture(),a=await create(f);f.service.universe.lockStatus=async()=>({locked:true,count:1,degraded:false});const s=await f.call('/status',a.token);assert.equal(s.body.device_unlocked,false);assert.equal(s.body.universe_locks,1);const text=await f.service.fetch(new Request('https://worker.test/status?format=text',{headers:{Authorization:'Bearer '+a.token}}));assert.equal(await text.text(),'device_unlocked = false');await f.call('/emergency',a.token,'POST',{});assert.equal((await f.call('/status',a.token)).body.device_unlocked,true);
+});
+test('Major Phase 5: group outage does not erase unfinished personal requirements',async()=>{
+ const {f,a}=await setup();f.service.universe.lockStatus=async()=>({locked:false,degraded:true});const s=await f.call('/status',a.token);assert.equal(s.body.device_unlocked,false);assert.equal(s.body.universe_degraded,true);
+});
+test('Major Phase 5: explicit author permission fences proof exports and revoked permissions invalidate snapshot',async()=>{
+ const u=await releaseFixture(),bytes=new TextEncoder().encode('Proof'),hash=Buffer.from(await crypto.subtle.digest('SHA-256',bytes)).toString('hex');const f=await u.post('/files',{task_id:u.task.id,assignment_id:u.assignment.id,task_revision:1,kind:'proof',name:'proof.txt',mime:'text/plain',size:bytes.length,hash},u.member);await u.post('/files/'+f.id+'/upload',{data:Buffer.from(bytes).toString('base64')},u.member);await u.post('/assignments/'+u.assignment.id+'/submit',{revision:1,task_revision:1,text:'Finished',files:[f.id]},u.member);
+ let e=await u.call('/transfer',{full:true}),m=await u.call('/transfer/'+e.id);assert.equal(m.manifest.files.length,0);await universeReject(u.call('/transfer/'+f.id,{allowed:true}),'EXPORT');await u.call('/transfer/'+f.id,{allowed:true},u.member);e=await u.call('/transfer',{full:true});m=await u.call('/transfer/'+e.id);assert.equal(m.manifest.files.length,1);const read=await u.call('/transfer/'+e.id+'/file',{file_id:f.id});assert.equal(Buffer.from(read.data,'base64').toString(),'Proof');await u.call('/transfer/'+f.id,{allowed:false},u.member);await universeReject(u.call('/transfer/'+e.id+'/file',{file_id:f.id}),'REVISION');
+});
+test('Major Phase 5: attachment hashes, import resume status and historical download isolation',async()=>{
+ const u=await releaseFixture(),e=await u.call('/transfer',{full:false}),{manifest}=await u.call('/transfer/'+e.id),bytes=new TextEncoder().encode('Reference');manifest.files=[{id:'file_import',name:'sample.txt',mime:'text/plain',size:bytes.length,hash:Buffer.from(await crypto.subtle.digest('SHA-256',bytes)).toString('hex'),kind:'reference',task_id:manifest.tasks[0].id}];
+ const r=await u.handle(u.owner,'/universe/imports',{operation_id:newOperation(),manifest}),path='/universe/imports/'+r.id;await universeReject(u.handle(u.owner,path+'/finish',{operation_id:newOperation()}),'FILES');await universeReject(u.handle(u.owner,path+'/file',{operation_id:newOperation(),file_id:'file_import',data:Buffer.from('bad').toString('base64')}),'HASH');await u.handle(u.owner,path+'/file',{operation_id:newOperation(),file_id:'file_import',data:Buffer.from(bytes).toString('base64')});assert.equal((await u.handle(u.owner,path)).files[0].uploaded,1);const done=await u.handle(u.owner,path+'/finish',{operation_id:newOperation()}),archives=await u.handle(u.owner,'/universe/groups/'+done.group_id+'/archive');assert.equal(archives.archives[0].id,r.id);await universeReject(u.handle(u.member,'/universe/groups/'+done.group_id+'/archive'),'ACCESS_DENIED');
+});
 async function workFixture(mode='everyone') {
  const u=await universe2Fixture();u.db.sql.exec(readFileSync(new URL('./uni/universe-phase3.sql',import.meta.url),'utf8'));
  const objects=new Map();u.f.env.TASKITATOR_EVIDENCE={put:async(k,v)=>objects.set(k,new Uint8Array(v)),get:async k=>objects.has(k)?{arrayBuffer:async()=>objects.get(k).buffer}:null,delete:async k=>objects.delete(k)};
