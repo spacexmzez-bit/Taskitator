@@ -194,13 +194,18 @@ export class KeyoLicenses {
         try {
             const url=new URL('/api/v1/'+action,config.endpoint);url.searchParams.set('projectId',config.projectId);
             response=await fetch(url.toString(),{method:'POST',headers:{'Content-Type':'application/json'},
-                body:JSON.stringify({accountId,...body}),redirect:'error',signal:AbortSignal.timeout(10000)});
+                body:JSON.stringify({accountId,...body}),redirect:'manual',signal:AbortSignal.timeout(10000)});
         } catch (error) {
             const timeout=['TimeoutError','AbortError'].includes(error?.name);
             report({stage:'fetch',action,reason:timeout?'timeout':'request_failed'});
             throw issue('KEYO_NETWORK_ERROR',timeout ?
                 'Keyo request timed out after 10 seconds. Check the Keyo Worker logs.' :
                 'Taskitator could not complete its request to Keyo. Check connectivity, TLS and redirects in the Worker logs.',503);
+        }
+        // Workers supports manual/follow, not redirect:'error'. Never forward a key to a redirect target.
+        if ((response.status>=300 && response.status<400) || response.type==='opaqueredirect') {
+            report({stage:'redirect',action,status:response.status});
+            throw issue('KEYO_UNAVAILABLE',`Keyo API returned a redirect (HTTP ${response.status}). Configure its direct API origin.`,503);
         }
         const rawType=response.headers.get('Content-Type') || '';
         // Log fixed fields only: never keys, accounts, tokens, response bodies or exception messages.

@@ -546,6 +546,8 @@ function keyoHarness(env={}) {
     const before=globalThis.fetch;
     let reply=async({body})=>Response.json({entitlement:await signedToken(body.accountId)});
     globalThis.fetch=async(url,options)=>{
+        // Match the Workers runtime constraint that Node's fetch does not enforce.
+        if(options.redirect==='error')throw new TypeError('Invalid redirect value');
         const call={url:new URL(url),options,body:JSON.parse(options.body)};calls.push(call);return reply(call);
     };
     const route=async(path='/pro/activate',body={key:'A1B2-C3D4-E5F6-G7H8'},account='user_A')=>{
@@ -601,7 +603,7 @@ test('activation uses Keyo API with signed-in account, strips formatting and pre
     assert.equal(h.calls[0].url.pathname,'/api/v1/activate');
     assert.equal(h.calls[0].url.searchParams.get('projectId'),KEYO_DEFAULTS.projectId);
     assert.deepEqual(h.calls[0].body,{accountId:'user_A',key:'A1B2C3D4E5F6G7H8'});
-    assert.equal(h.calls[0].options.redirect,'error');
+    assert.equal(h.calls[0].options.redirect,'manual');
     const saved=await h.storage.get(licenseKey);assert.equal(saved.keyo_version,1);assert.equal(saved.use_byok,true);assert.equal(saved.activated_at,123);
     assert.equal(await h.storage.get('pro:usage:user_A:month:2026-10'),12.375);
     assert.equal(saved.key,undefined);assert.equal(saved.license_key,undefined);
@@ -1859,3 +1861,16 @@ test('emergency confirmation blocks repeated clicks, reports failure and closes 
     const second=handler();activate({success:true});await second;
     assert.equal(removed,1);assert.equal(updated,1);assert.equal(confirmEmergencyBtn.disabled,false);
 });
+
+
+test('Keyo redirects never forward activation credentials or save an entitlement',async()=>withKeyoHarness(async h=>{
+    for(const status of [301,302,303,307,308]) {
+        h.reply(async()=>new Response(null,{status,headers:{Location:'https://untrusted.example/collect'}}));
+        const count=h.calls.length;
+        const result=await h.route();
+        assert.equal(result.status,503);
+        assert.match(result.body.error,/returned a redirect/);
+        assert.equal(h.calls.length,count+1);
+        assert.equal(await h.storage.get(licenseKey),undefined);
+    }
+}));
