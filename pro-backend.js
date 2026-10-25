@@ -190,16 +190,32 @@ export class KeyoLicenses {
     constructor(gateway) { this.storage=gateway.storage;this.env=gateway.env;this.pending=new Map(); }
     async request(action,accountId,body,config=keyoConfig(this.env)) {
         let response,data;
+        const report = details => console.warn('[Keyo diagnostics]', JSON.stringify(details));
         try {
             const url=new URL('/api/v1/'+action,config.endpoint);url.searchParams.set('projectId',config.projectId);
             response=await fetch(url.toString(),{method:'POST',headers:{'Content-Type':'application/json'},
                 body:JSON.stringify({accountId,...body}),redirect:'error',signal:AbortSignal.timeout(10000)});
-            data=await response.json();
-        } catch { throw issue('KEYO_NETWORK_ERROR','Keyo is temporarily unavailable. Please retry shortly.',503); }
+        } catch (error) {
+            const timeout=['TimeoutError','AbortError'].includes(error?.name);
+            report({stage:'fetch',action,reason:timeout?'timeout':'request_failed'});
+            throw issue('KEYO_NETWORK_ERROR',timeout ?
+                'Keyo request timed out after 10 seconds. Check the Keyo Worker logs.' :
+                'Taskitator could not complete its request to Keyo. Check connectivity, TLS and redirects in the Worker logs.',503);
+        }
+        const rawType=response.headers.get('Content-Type') || '';
+        // Log fixed fields only: never keys, accounts, tokens, response bodies or exception messages.
+        const contentType=/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(rawType.split(';')[0].trim()) ?
+            rawType.split(';')[0].trim().slice(0,80) : 'unknown';
+        try { data=await response.json(); }
+        catch {
+            report({stage:'response_json',action,status:response.status,contentType});
+            throw issue('KEYO_NETWORK_ERROR',`Keyo returned a non-JSON response (HTTP ${response.status}, ${contentType}). Check the Keyo route and Cloudflare logs.`,503);
+        }
         if(!response.ok) {
             const code=typeof data?.error === 'string' && DENIED.has(data.error) ? data.error : null;
+            report({stage:'http',action,status:response.status,contentType,code:code || 'UNCLASSIFIED'});
             if(code) throw issue(code,'Keyo rejected this license ('+code+'). Check its status and assigned account in Keyo.',403);
-            throw issue('KEYO_UNAVAILABLE','Keyo could not verify the license. Please retry or ask the operator to check the Keyo service.',503);
+            throw issue('KEYO_UNAVAILABLE',`Keyo API returned HTTP ${response.status}. Check the Keyo Worker logs for this activation or verification request.`,503);
         }
         return {token:data?.entitlement,payload:await verifyKeyoToken(data?.entitlement,accountId,config)};
     }
