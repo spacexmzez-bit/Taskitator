@@ -1471,6 +1471,22 @@ body {
 #usernameFeedback { color:#fca5a5; min-height:1.3em; overflow-wrap:anywhere; }
 
 /* Comfortable wide-screen layout; the compact phone layout remains below 768px. */
+#focusTimerTag {position:fixed;right:20px;bottom:160px;z-index:9990;width:auto;height:auto;min-height:44px;max-width:calc(100vw - 40px);padding:12px 16px;border-radius:14px;font:600 .85rem/1.4 inherit;white-space:nowrap;box-shadow:0 6px 24px #0005;font-variant-numeric:tabular-nums}
+#focusTimerPanel {box-sizing:border-box;width:460px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);overflow:auto;border:1.5px solid var(--border-color);border-radius:18px;padding:24px;background:var(--bg-color);color:var(--text-color);font-family:inherit;box-shadow:0 20px 70px #0008}
+#focusTimerPanel::backdrop {background:#0009}
+#focusTimerPanel h2 {margin:0 0 16px;font-size:1.25rem}
+#focusTimerPanel .focus-timer-display {padding:18px 12px;margin:0 0 12px;text-align:center;background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;font-size:1.2rem;font-weight:600;font-variant-numeric:tabular-nums}
+.focus-timer-status,.focus-timer-help {color:var(--text-muted);font-size:.8rem;line-height:1.6}
+.focus-timer-status:empty {display:none}
+.focus-timer-fields {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:20px 0}
+.focus-timer-fields label {font-size:.8rem;color:var(--text-muted)}
+.focus-timer-fields input {display:block;box-sizing:border-box;width:100%;min-height:44px;margin-top:8px;padding:10px;border:1.5px solid var(--border-color);border-radius:8px;background:var(--card-bg);color:var(--text-color);font:inherit;font-size:1rem}
+.focus-timer-options {display:grid;gap:12px;margin-bottom:20px}
+.focus-timer-options label {display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:.9rem}
+.focus-timer-options input {width:18px;height:18px;accent-color:var(--primary)}
+.focus-timer-actions {display:flex;flex-wrap:wrap;gap:10px}
+#focusTimerPanel .icon-btn {width:auto;height:auto;min-height:44px;padding:10px 14px;font-size:.85rem}
+#focusTimerPanel .focus-timer-start {background:var(--primary);color:#fff}
 .wide-label {display:none}
 @media (min-width:768px) {
     .app-container {max-width:none;width:100%;padding:24px clamp(24px,4vw,72px) 110px;overflow-x:visible}

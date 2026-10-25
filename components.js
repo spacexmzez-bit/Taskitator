@@ -318,7 +318,7 @@
         const parent = form || document.getElementById('taskDetailModal')?.querySelector('.modal-box'); if (!parent) return;
         if (!wrap) { wrap = element('div', undefined, parent); wrap.id = 'recurrenceTaskControls'; wrap.style.cssText='margin:16px 0;padding:12px;border:1px solid var(--border-color);border-radius:8px'; }
         const sub=document.getElementById('detailSubtasksList')?.parentElement;
-        if(sub?.parentElement===parent)parent.insertBefore(wrap,sub);
+        if(sub?.parentElement)sub.parentElement.insertBefore(wrap,sub);
         wrap.replaceChildren();
         const series = Core.seriesFor(state(), task);
         element('p', series ? (series.enabled ? 'Repeating branch: '+series.schedule.kind.replace(/_/g,' ') : 'Repetition stopped. You can still finish the current task.') : 'This task does not repeat.', wrap);
@@ -412,7 +412,7 @@
         if(!data.history.length)element('p','No recurring-task history yet.',d);
     }
     window.addEventListener('taskitator-auth-ready',()=>{
-        const form=document.getElementById('taskCreateForm');if(form){const wrap=element('fieldset',undefined,form);wrap.style.cssText='margin:14px 0;border:1px solid var(--border-color);border-radius:8px;padding:12px';element('legend','Recurrence',wrap);const sub=document.getElementById('subtaskBuilderList')?.parentElement;if(sub?.parentElement===form)form.insertBefore(wrap,sub);createControl=scheduleForm(wrap,undefined,true);}
+        const form=document.getElementById('taskCreateForm');if(form){const wrap=element('fieldset',undefined,form);wrap.style.cssText='margin:14px 0;border:1px solid var(--border-color);border-radius:8px;padding:12px';element('legend','Recurrence',wrap);const sub=document.getElementById('subtaskBuilderList')?.parentElement;if(sub?.parentElement)sub.parentElement.insertBefore(wrap,sub);createControl=scheduleForm(wrap,undefined,true);}
         const nav=document.querySelector('.sidebar nav')||document.querySelector('nav');if(nav)button('↻ Recurring tasks',nav,overview);
     });
     window.TaskitatorRecurrenceUI={state,save,persist,attachCreated,validCreate,bindTask,applyEdit,resetCreate:()=>createControl?.reset(),overview};
