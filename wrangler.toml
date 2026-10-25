@@ -6,6 +6,13 @@ compatibility_date = "2026-10-04"
 keep_vars = true
 
 [vars]
+UNIVERSE_FOUNDATION_ENABLED = "true"
+UNIVERSE_GEMINI_MODEL = "gemini-3.5-flash-lite"
+UNIVERSE_AI_MODEL_VERIFIED = "true"
+UNIVERSE_INPUT_NANODOLLARS_PER_TOKEN = "300"
+UNIVERSE_OUTPUT_NANODOLLARS_PER_TOKEN = "2500"
+# Enable only after testing and configuring the hosted key and spending ceiling.
+UNIVERSE_HOSTED_ENABLED = "false"
 ALLOWED_ORIGINS = "https://taskitator.mazendev.com"
 # Public Taskitator settings exported by Keyo. No administrator/signing secrets.
 KEYO_API_ORIGIN = "https://keyo-api.spacexmzez.workers.dev"
