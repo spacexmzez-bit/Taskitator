@@ -1487,6 +1487,21 @@ body {
 .focus-timer-actions {display:flex;flex-wrap:wrap;gap:10px}
 #focusTimerPanel .icon-btn {width:auto;height:auto;min-height:44px;padding:10px 14px;font-size:.85rem}
 #focusTimerPanel .focus-timer-start {background:var(--primary);color:#fff}
+#focusTimerTag {right:24px;bottom:92px;width:56px;min-width:56px;min-height:48px;padding:10px;font-family:inherit;font-size:1.45rem;line-height:1.2;border-radius:14px;z-index:100}
+#focusTimerTag.timer-active {width:88px;font-size:1.05rem}
+#focusTimerPanel .focus-timer-display {font-size:clamp(3rem,12vw,4.5rem);line-height:1.1;margin-bottom:8px;padding:20px 8px;border:0;background:transparent}
+.focus-timer-phase {text-align:center;color:var(--text-muted);margin:12px 0 0}
+.focus-timer-counter {display:table;margin:0 auto 24px;padding:5px 10px;border-radius:20px;background:var(--card-bg);color:var(--text-muted);font-size:.8rem;border:1px solid var(--border-color)}
+#focusTimerPanel details {margin-bottom:18px}
+#focusTimerPanel summary {cursor:pointer;padding:12px;border:1.5px solid var(--border-color);border-radius:8px;background:var(--card-bg);font-weight:600}
+.focus-session-stepper {display:flex;align-items:center;gap:8px;margin-bottom:18px;font-size:.85rem}
+.focus-session-stepper span {flex:1}
+.focus-session-stepper input {width:32px;text-align:center;color:var(--text-color);background:transparent;border:0;font:inherit;appearance:textfield}
+.focus-session-stepper input::-webkit-inner-spin-button {appearance:none}
+#focusTimerPanel [hidden] {display:none}
+.components-subnav {max-width:100%;overflow-x:auto}
+.top-navbar .nav-left {min-width:0;flex-wrap:wrap}
+#componentPageTitle {font-size:1.4rem;margin:8px 0}
 .wide-label {display:none}
 @media (min-width:768px) {
     .app-container {max-width:none;width:100%;padding:24px clamp(24px,4vw,72px) 110px;overflow-x:visible}

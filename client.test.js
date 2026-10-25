@@ -271,7 +271,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase4-5-v13'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase4-5-v14'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -702,6 +702,21 @@ class UniElement {
  focus(){}select(){}
 }
 function focusEngine(){const window={addEventListener(){}},context={window,document:{readyState:'loading',addEventListener(){}},navigator:{},setInterval(){},Date,JSON,Number,Math};vm.runInNewContext(fs.readFileSync(new URL('uni/focus-timer.js',rootURL()),'utf8'),context);return window.TaskitatorPomodoro;}
+test('Timer enforces duration limits and finishes with a large break',()=>{
+ const engine=focusEngine(),s=engine.fresh();s.config.sessions=1;Object.assign(s,{running:true,target:1000});
+ let r=engine.advance(s,1000);assert.equal(r.state.phase,'large');assert.equal(r.state.done,false);assert.equal(r.state.target,1201000);
+ assert.equal(engine.valid(r.state),true);r=engine.advance(s,1201000);assert.equal(r.state.done,true);assert.equal(r.event,'complete');
+ for(const [field,value]of [['work',91],['rest',16],['large',36],['sessions',5]])assert.equal(engine.valid({...engine.fresh(),config:{...engine.fresh().config,[field]:value}}),false);
+});
+test('Workspace routes initialize independently and select Universe without database access',()=>{
+ const html=fs.readFileSync(new URL('components.html',rootURL()),'utf8');
+ const scripts=[...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(m=>m[1]);const router=scripts.find(s=>s.includes('const publicViews'));
+ assert.ok(router);assert.equal(router.includes('MODULE_START:'),false);
+ const panes=['projects','calendar','stats','trash','universe'].map(v=>({id:'componentView-'+v,style:{}}));let events=[];
+ const document={querySelectorAll:selector=>selector==='.component-view-pane'?panes:[],getElementById:()=>null};
+ vm.runInNewContext(router,{document,window:{location:{search:'?view=universe',hash:''},dispatchEvent:e=>events.push(e.type)},URLSearchParams,Event});
+ assert.equal(panes.find(p=>p.id==='componentView-universe').style.display,'block');assert.equal(panes[0].style.display,'none');assert.deepEqual(events,['taskitator-universe-view']);
+});
 test('Phase 4.5 focus timer restores absolute deadlines and catches up missed transitions',()=>{
  const engine=focusEngine(),s=engine.fresh();Object.assign(s,{running:true,target:1000000});
  const resumed=JSON.parse(JSON.stringify(s));let r=engine.advance(resumed,1000000+60000);assert.equal(r.state.phase,'break');assert.equal(r.state.target,1300000);assert.equal(r.state.left,240000);
