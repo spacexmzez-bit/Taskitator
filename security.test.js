@@ -1309,6 +1309,107 @@ test('Universe: invitation removed before final update cannot return a false suc
 });
 
 async function universe2Fixture(){const u=await universeFixture();u.db.sql.exec(readFileSync(new URL('./uni/universe-phase2.sql',import.meta.url),'utf8'));return u;}
+async function workFixture(mode='everyone') {
+ const u=await universe2Fixture();u.db.sql.exec(readFileSync(new URL('./uni/universe-phase3.sql',import.meta.url),'utf8'));
+ const objects=new Map();u.f.env.TASKITATOR_EVIDENCE={put:async(k,v)=>objects.set(k,new Uint8Array(v)),get:async k=>objects.has(k)?{arrayBuffer:async()=>objects.get(k).buffer}:null,delete:async k=>objects.delete(k)};
+ const gid=(await u.make()).group_id,member=await u.account('user_M');await u.accept(member,(await u.invite(gid)).token);
+ const base='/universe/groups/'+gid+'/work';
+ const post=(path,body={},actor=u.owner)=>u.handle(actor,base+path,{operation_id:newOperation(),...body});
+ const project=await post('/projects',{title:'Project'});
+ const data={project_id:project.id,title:'Task',criteria:'Show the finished work',mode,members:[member.userId],reviewer_roles:['owner','admin','reviewer']};
+ const task=await post('/tasks',data);const assignment=u.db.sql.prepare('SELECT * FROM universe_assignments WHERE task_id=?').get(task.id);
+ const submit=()=>post('/assignments/'+assignment.id+'/submit',{revision:1,task_revision:1,text:'Completed'},member);
+ return {...u,gid,member,post,base,task,assignment,data,objects,submit};
+}
+test('Phase 3: repeatable schema, separate assignments, Shared state and no implicit late join',async()=>{
+ const u=await workFixture();u.db.sql.exec(readFileSync(new URL('./uni/universe-phase3.sql',import.meta.url),'utf8'));
+ const later=await u.account('user_Later');await u.accept(later,(await u.invite(u.gid)).token);
+ assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_assignments').get().n,1);
+ const shared=await u.post('/tasks',{...u.data,mode:'shared',members:[u.member.userId,later.userId]});
+ const assignments=u.db.sql.prepare('SELECT * FROM universe_assignments WHERE task_id=?').all(shared.id);assert.equal(assignments.length,1);assert.equal(assignments[0].account_id,null);
+ const everyone=await u.post('/tasks',{...u.data,members:[u.member.userId,later.userId]});assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_assignments WHERE task_id=?').get(everyone.id).n,2);
+ await universeReject(u.post('/tasks',{...u.data,ai_required:true}),'AI_UNAVAILABLE');
+});
+test('Phase 3: submission idempotency, concurrent decisions and history after reopening',async()=>{
+ const u=await workFixture();const body={operation_id:newOperation(),revision:1,task_revision:1,text:'Completed'};
+ const submit=()=>u.handle(u.member,u.base+'/assignments/'+u.assignment.id+'/submit',body);
+ const first=await submit();assert.equal((await submit()).id,first.id);
+ const reviews=await Promise.allSettled(['approved','rejected'].map(decision=>u.post('/assignments/'+u.assignment.id+'/review',{revision:2,task_revision:1,decision,reason:'Reviewed'})));
+ assert.equal(reviews.filter(r=>r.status==='fulfilled').length,1);
+ await u.post('/assignments/'+u.assignment.id+'/reopen',{revision:3,task_revision:1,reason:'Verify again'});
+ assert.equal(u.db.sql.prepare('SELECT state FROM universe_assignments WHERE id=?').get(u.assignment.id).state,'open');assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_submissions').get().n,1);
+});
+test('Phase 3: revision edit invalidates pending review and prevents member erasure',async()=>{
+ const u=await workFixture();await u.submit();
+ await universeReject(u.post('/assignments/'+u.assignment.id+'/review',{revision:2,task_revision:1,decision:'approved',reason:'Self'},u.member),'ROLE_DENIED');
+ await u.post('/tasks/'+u.task.id+'/edit',{...u.data,revision:1,criteria:'New criteria'});
+ await universeReject(u.post('/assignments/'+u.assignment.id+'/review',{revision:2,task_revision:1,decision:'approved',reason:'Stale'}),'REVISION');
+ assert.equal(u.db.sql.prepare('SELECT state FROM universe_assignments WHERE id=?').get(u.assignment.id).state,'cancelled');
+});
+test('Phase 3: a role change at commit rolls back task writes and acknowledgements',async()=>{
+ const u=await workFixture(),admin=await u.account('user_Admin');await u.accept(admin,(await u.invite(u.gid,u.owner,'admin')).token);
+ u.db.beforeBatch=()=>u.db.sql.prepare("UPDATE universe_members SET role='member' WHERE account_id=?").run(admin.userId);
+ await universeReject(u.post('/projects',{title:'Forbidden'},admin),'ACCESS_DENIED');assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_projects').get().n,1);
+});
+test('Phase 3: submission dates, selected assignees, and self-review are enforced',async()=>{
+ const u=await workFixture('shared');
+ await universeReject(u.post('/assignments/'+u.assignment.id+'/submit',{revision:1,task_revision:1,text:'Unassigned'},u.owner),'ROLE_DENIED');
+ const task=await u.post('/tasks',{...u.data,members:[u.owner.userId],start_at:Date.now()+3600000});
+ const a=u.db.sql.prepare('SELECT * FROM universe_assignments WHERE task_id=?').get(task.id);
+ await universeReject(u.post('/assignments/'+a.id+'/submit',{revision:1,task_revision:1,text:'Too early'}),'DATES');
+ const next=await u.post('/tasks',{...u.data,members:[u.owner.userId]});const b=u.db.sql.prepare('SELECT * FROM universe_assignments WHERE task_id=?').get(next.id);
+ await u.post('/assignments/'+b.id+'/submit',{revision:1,task_revision:1,text:'Mine'});
+ await universeReject(u.post('/assignments/'+b.id+'/review',{revision:2,task_revision:1,decision:'approved',reason:'Self'}),'SELF_REVIEW');
+});
+test('Phase 3: failed R2 upload leaves staged data recoverable and reference changes reset review',async()=>{
+ const u=await workFixture(),bytes=Buffer.from('reference'),file=await u.post('/files',{task_id:u.task.id,task_revision:1,kind:'reference',name:'ref.txt',mime:'text/plain',size:bytes.length,hash:await sha256('reference')});
+ const put=u.f.env.TASKITATOR_EVIDENCE.put;u.f.env.TASKITATOR_EVIDENCE.put=async()=>{throw Error('R2 unavailable');};
+ const body={operation_id:newOperation(),data:bytes.toString('base64')};
+ await assert.rejects(u.handle(u.owner,u.base+'/files/'+file.id+'/upload',body),/R2 unavailable/);
+ assert.equal(u.db.sql.prepare('SELECT state FROM universe_files WHERE id=?').get(file.id).state,'staged');
+ u.f.env.TASKITATOR_EVIDENCE.put=put;await u.handle(u.owner,u.base+'/files/'+file.id+'/upload',body);
+ await u.submit();await u.post('/files/'+file.id+'/attach',{task_revision:1});
+ const state=await u.handle(u.owner,u.base+'/assignments/'+u.assignment.id);assert.equal(state.task.revision,2);assert.equal(state.assignment.state,'open');assert.equal(state.references[0].id,file.id);
+ await universeReject(u.post('/assignments/'+u.assignment.id+'/review',{revision:2,task_revision:1,decision:'approved',reason:'Old'}),'REVISION');
+});
+test('Phase 3: submission deletion and expired retention scrub bytes and text',async()=>{
+ const u=await workFixture(),f=await proofUpload(u);await u.post('/assignments/'+u.assignment.id+'/submit',{revision:1,task_revision:1,text:'private text',files:[f.id]},u.member);
+ await u.post('/assignments/'+u.assignment.id+'/review',{revision:2,task_revision:1,decision:'rejected',reason:'Retry'});
+ u.db.sql.prepare('UPDATE universe_submissions SET retain_until=1').run();
+ await universeReject(u.handle(u.owner,u.base+'/files/'+f.id),'EXPIRED');
+ await u.f.service.universe.cleanup();assert.equal(u.objects.size,0);assert.equal(u.db.sql.prepare('SELECT data FROM universe_submissions').get().data,'{}');
+});
+async function proofUpload(u,kind='proof'){
+ const bytes=Buffer.from('Evidence'),hash=await sha256('Evidence');
+ const file=await u.post('/files',{task_id:u.task.id,assignment_id:u.assignment.id,task_revision:1,kind,name:'evidence.txt',mime:'text/plain',size:bytes.length,hash},kind==='proof'?u.member:u.owner);
+ await u.post('/files/'+file.id+'/upload',{data:bytes.toString('base64')},kind==='proof'?u.member:u.owner);return file;
+}
+test('Phase 3: private proof upload, hashes, finalization, group isolation and departure',async()=>{
+ const u=await workFixture(),file=await proofUpload(u),path=u.base+'/files/'+file.id;
+ await universeReject(u.handle(u.member,path),'FILE');
+ await u.post('/assignments/'+u.assignment.id+'/submit',{revision:1,task_revision:1,text:'',files:[file.id]},u.member);
+ assert.equal(Buffer.from((await u.handle(u.owner,path)).data,'base64').toString(),'Evidence');
+ const other=await u.account('user_Other');await u.accept(other,(await u.invite(u.gid)).token);await universeReject(u.handle(other,path),'ROLE_DENIED');
+ const second=(await u.make()).group_id;await universeReject(u.handle(u.owner,'/universe/groups/'+second+'/work/files/'+file.id),'NOT_FOUND');
+ const revision=u.db.sql.prepare('SELECT revision FROM universe_groups WHERE id=?').get(u.gid).revision;
+ await u.handle(u.member,'/universe/groups/'+u.gid+'/leave',{operation_id:newOperation(),revision});await universeReject(u.handle(u.member,path),'ACCESS_DENIED');
+});
+test('Phase 3: tampered uploads and abandoned objects cannot become completed submissions',async()=>{
+ const u=await workFixture(),bytes=Buffer.from('Evidence'),file=await u.post('/files',{task_id:u.task.id,assignment_id:u.assignment.id,task_revision:1,kind:'proof',name:'x.txt',mime:'text/plain',size:bytes.length,hash:await sha256('Evidence')},u.member);
+ await universeReject(u.post('/files/'+file.id+'/upload',{data:Buffer.from('Different').toString('base64')},u.member),'HASH');assert.equal(u.objects.size,0);
+ await u.post('/files/'+file.id+'/upload',{data:bytes.toString('base64')},u.member);u.db.sql.prepare('UPDATE universe_files SET expires_at=0 WHERE id=?').run(file.id);
+ await u.f.service.universe.cleanup();assert.equal(u.objects.size,0);
+ await universeReject(u.post('/assignments/'+u.assignment.id+'/submit',{revision:1,task_revision:1,text:'',files:[file.id]},u.member),'FILE');
+});
+test('Phase 3: dispute extends retention; closing restarts 30 days; deleted owner fences files',async()=>{
+ const u=await workFixture(),file=await proofUpload(u);await u.post('/assignments/'+u.assignment.id+'/submit',{revision:1,task_revision:1,text:'proof',files:[file.id]},u.member);
+ await u.post('/assignments/'+u.assignment.id+'/review',{revision:2,task_revision:1,decision:'approved',reason:'Good'});
+ await u.post('/assignments/'+u.assignment.id+'/dispute',{revision:3,task_revision:1,reason:'Check detail',open:true},u.member);
+ u.db.sql.prepare('UPDATE universe_submissions SET retain_until=0').run();await u.f.service.universe.cleanup();assert.equal(u.objects.size,1);
+ await u.post('/assignments/'+u.assignment.id+'/dispute',{revision:3,task_revision:1,reason:'Resolved',open:false});
+ assert.ok(u.db.sql.prepare('SELECT retain_until FROM universe_submissions').get().retain_until>Date.now()+29*86400000);
+ await u.f.service.universe.blockAccount(u.owner.userId);await universeReject(u.handle(u.member,u.base+'/files/'+file.id),'ACCESS_DENIED');await u.f.service.universe.cleanup();assert.equal(u.objects.size,0);
+});
 const action2=(u,g,a,action,extra={})=>u.handle(a,'/universe/groups/'+g+'/'+action,{operation_id:newOperation(),revision:1,...extra});
 test('Universe phase 2: owner alone manages admins; admins manage lower roles; stale revisions and roles fail',async()=>{
  const u=await universe2Fixture(),g=(await u.make()).group_id,a=await u.account('user_Admin'),m=await u.account('user_M');

@@ -3060,3 +3060,11 @@ body {
 .universe-workspace :focus-visible {outline:3px solid #60a5fa;outline-offset:2px}
 .universe-workspace ul {padding:0;list-style:none}.universe-workspace li {overflow-wrap:anywhere}
 @media(max-width:600px){.universe-workspace{padding:8px}.universe-workspace button{width:100%;margin:5px 0}}
+/* Universe projects, task forms and proof history. */
+#universeWorkspace section { margin-block: 1rem; padding: .8rem; border: 1px solid #64748b; border-radius: .6rem; }
+#universeWorkspace label { display: block; margin-block: .7rem; }
+#universeWorkspace input:not([type=checkbox]), #universeWorkspace textarea, #universeWorkspace select { display: block; width: 100%; max-width: 100%; box-sizing: border-box; padding: .6rem; }
+#universeWorkspace input[type=checkbox] { width: auto; margin-inline: .5rem; }
+#universeWorkspace button { margin: .3rem; min-height: 44px; white-space: normal; }
+#universeWorkspace textarea { min-height: 6rem; }
+#universeWorkspace article { border-block-end: 1px solid #64748b; padding-block: .8rem; overflow-wrap: anywhere; }

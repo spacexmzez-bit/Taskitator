@@ -271,7 +271,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-phase2-v9'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-phase3-v10'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -711,6 +711,13 @@ function uniUI(api){
 function rootURL(){return new URL('./',import.meta.url);}
 const uniFlush=async()=>{for(let i=0;i<20;i++)await new Promise(r=>setImmediate(r));};
 const uniNodes=e=>[e,...e.children.filter(x=>typeof x==='object').flatMap(uniNodes)];
+test('Phase 3 UI renders hostile task titles as text and fences stale-view actions',async()=>{
+ const root=new UniElement(),window={},calls=[];let current=true;
+ vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,document:{createElement:tag=>new UniElement(tag)},Date,Map,Error});
+ await window.UniverseTasksUI.mount(root,{id:'g',role:'member'},[],{current:()=>current,run:fn=>fn(),send:async()=>{},api:async path=>{calls.push(path);return {projects:[{id:'p',title:'<script>bad</script>'}],tasks:[{id:'t',project_id:'p',title:'<img src=x>',mode:'shared'}],assignments:[{id:'a',task_id:'t',account_id:null,state:'open'}]};}});
+ assert.ok(uniNodes(root).some(n=>n.textContent==='<img src=x> · shared'));assert.ok(!uniNodes(root).some(n=>n.tag==='img'||n.tag==='script'));
+ current=false;const b=uniNodes(root).find(n=>n.textContent==='Shared · open');await assert.rejects(b.events.click(),/session or view changed/);assert.equal(calls.length,1);
+});
 test('Universe UI renders group values as text, opens details through events and clears on session replacement',async()=>{
  const calls=[];const group={id:'uni_1',title:'<img src=x onerror=alert(1)>',purpose:'Study',role:'member',revision:1};
  const ui=uniUI(async path=>{calls.push(path);if(path.endsWith('capabilities'))return {ui:true};if(path==='/universe/groups')return {groups:[group]};if(path.endsWith('/members'))return {members:[]};if(path.endsWith('/activity'))return {events:[]};return {group};});await uniFlush();

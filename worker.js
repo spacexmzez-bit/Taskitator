@@ -1,4 +1,4 @@
-import { UniverseMembership } from './uni/universe-membership.js';
+import { UniverseTasks } from './uni/universe-tasks.js';
 // ============================================================================
 // Taskitator Consolidated Cloudflare Worker & Security Engine (worker.js)
 // Combines: recurrence-core, break-core, auth, ai-models, verification,
@@ -1407,7 +1407,7 @@ export class TaskitatorSync {
         this.ai = new AIGateway(this);
         this.protection = new TaskProtection(this);
         this.pro = new ProGateway(this);
-        this.universe = new UniverseMembership(this);
+        this.universe = new UniverseTasks(this);
     }
 
     async readTaskSnapshot(store, accountId) {
@@ -1714,7 +1714,8 @@ export class TaskitatorSync {
                 identity = await verifySession(request, this.env, token);
                 if (universeRoute) {
                     await this.rateLimit(request,'universe:'+identity.userId,60);
-                    return json(await this.universe.handle(identity,path,method,method==='GET'?{}:await readJson(request,8192)));
+                    const upload=/^\/universe\/groups\/[A-Za-z0-9_-]+\/work\/files\/[A-Za-z0-9_-]+\/upload$/.test(path);
+                    return json(await this.universe.handle(identity,path,method,method==='GET'?{}:await readJson(request,upload?8*1024*1024:16384)));
                 }
                 if (proRoute) {
                     const account = await this.accountFor(identity);
