@@ -53,7 +53,7 @@ export class UniverseTasks extends UniverseMembership {
    this.input(b,['operation_id','title']);this.manager(g);const pid=uuid('project');
    writes=[this.statement(db,'INSERT INTO universe_projects VALUES(?,?,?,?)',pid,gid,this.text(b.title,200),now)];result={id:pid};
   }else if(entity==='tasks'&&(!id||action==='edit')){
-   this.input(b,['operation_id','revision','project_id','title','criteria','mode','members','reviewer_roles','start_at','due_at','allow_late','ai_required']);this.manager(g);
+   this.input(b,['operation_id','revision','project_id','title','criteria','mode','members','reviewer_roles','start_at','due_at','allow_late','ai_required','human_required']);this.manager(g);
    const data=await this.taskData(db,gid,b);await this.record(db,'universe_projects',b.project_id,gid);const tid=id||uuid('task');let revision=1;
    if(id){const t=await this.task(db,id,gid);this.checkRevision(t.revision,b.revision);revision=t.revision+1;
     writes.push(this.statement(db,'UPDATE universe_tasks SET project_id=?,revision=?,data=? WHERE id=?',b.project_id,revision,JSON.stringify(data),id),

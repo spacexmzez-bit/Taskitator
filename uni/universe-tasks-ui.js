@@ -23,14 +23,15 @@
    await send(base+'/files/'+staged.id+'/upload',{data:btoa(raw)});staged.uploaded=true;return staged.id;
   }
   function editor(data,t){
-   const f=node('form');panel.append(f);f.append(node('h3',t?'Revise task and reset assignments':'Create human-reviewed task'));
+   const f=node('form');panel.append(f);f.append(node('h3',t?'Revise task and reset assignments':'Create task'));
    const project=select(f,'Project',data.projects.map(p=>[p.id,p.title]),t?.project_id),title=input(f,'Title',t?.title),criteria=input(f,'Completion criteria',t?.criteria??'','textarea',4000),mode=select(f,'Assignment type',[['everyone','Everyone’s — separate assignments'],['shared','Shared — one completion']],t?.mode);
    const start=input(f,'Opens (UTC)',date(t?.start_at),'datetime-local'),due=input(f,'Due (UTC)',date(t?.due_at),'datetime-local'),late=input(f,'Allow late submission','','checkbox');late.checked=t?.allow_late??false;
+   const ai=input(f,'Require Universe AI review','','checkbox'),human=input(f,'Require human review after AI approval','','checkbox');ai.checked=t?.ai_required??false;human.checked=t?.human_required??true;
    const selected=[];const group=node('fieldset');group.append(node('legend','Selected assignees'));f.append(group);
    for(const m of members){const c=input(group,m.account_id+' · '+m.role,'','checkbox');c.checked=t?t.members.includes(m.account_id):false;selected.push([m.account_id,c]);}
    const reviewers=[],r=node('fieldset');r.append(node('legend','Reviewer roles'));f.append(r);for(const role of ['owner','admin','reviewer']){const c=input(r,role,'','checkbox');c.checked=t?t.reviewer_roles.includes(role):true;reviewers.push([role,c]);}
    const submit=node('button',t?'Save revision':'Create task');submit.type='submit';f.append(submit);
-   f.addEventListener('submit',e=>{e.preventDefault();run(async()=>{await send(base+'/tasks'+(t?'/'+t.id+'/edit':''),{project_id:project.value,title:title.value,criteria:criteria.value,mode:mode.value,members:selected.filter(([,c])=>c.checked).map(([id])=>id),reviewer_roles:reviewers.filter(([,c])=>c.checked).map(([role])=>role),start_at:start.value?Date.parse(start.value+'Z'):null,due_at:due.value?Date.parse(due.value+'Z'):null,allow_late:late.checked,...(t?{revision:t.revision}:{})});await list();});});
+   f.addEventListener('submit',e=>{e.preventDefault();run(async()=>{await send(base+'/tasks'+(t?'/'+t.id+'/edit':''),{project_id:project.value,title:title.value,criteria:criteria.value,mode:mode.value,members:selected.filter(([,c])=>c.checked).map(([id])=>id),reviewer_roles:reviewers.filter(([,c])=>c.checked).map(([role])=>role),start_at:start.value?Date.parse(start.value+'Z'):null,due_at:due.value?Date.parse(due.value+'Z'):null,allow_late:late.checked,ai_required:ai.checked,human_required:human.checked,...(t?{revision:t.revision}:{})});await list();});});
   }
   async function assignment(id){
    const d=await api(base+'/assignments/'+id),a=d.assignment,t=d.task;panel.replaceChildren();button(panel,'Back to projects',list);panel.append(node('h3',t.title),node('p',t.criteria),node('p','Status: '+a.state+' · task revision '+t.revision));
@@ -42,16 +43,34 @@
     button(panel,'Submit proof',async()=>{if(files.files.length>3)throw Error('Choose up to three files.');const uploaded=[];for(const f of files.files)uploaded.push(await upload(f,t,a,'proof'));await send(base+'/assignments/'+id+'/submit',{revision:a.revision,task_revision:t.revision,text:text.value,files:uploaded});await assignment(id);});
    }
    panel.append(node('h4','Submission history'));for(const s of d.submissions){const h=node('article');panel.append(h);h.append(node('p',new Date(s.created_at).toLocaleString()+' · '+s.actor_id+' · '+(s.decision||'Awaiting review')),node('p',s.text),node('p',s.reason||''));for(const fid of s.files||[])button(h,'Download proof',()=>download(fid));}
+   if(t.ai_required){
+    const aiBase='/universe/groups/'+g.id+'/ai';panel.append(node('h4','Universe AI review'),node('p',t.human_required?'AI approval is followed by a human decision.':'AI makes the completion decision.'));
+    if(d.can_request_ai&&writable&&a.state==='pending'){
+     const mode=select(panel,'Review payment',t.mode==='shared'?[['hosted','Group Shared credits']]:[['personal','My saved Gemini key'],['hosted','My Universe credits (Pro)']]);
+     button(panel,'Get review quote',async()=>{await send(aiBase+'/'+id+'/quote',{mode:mode.value});await assignment(id);});
+    }
+    for(const q of d.ai_reviews||[]){const box=node('article');panel.append(box);box.append(node('p',q.mode+' · '+q.model+' · '+q.state),node('p','Maximum: '+q.max_credits+' credits. Charged: '+q.charged+' credits.'));
+     if(q.result)box.append(node('p',q.result.verdict+': '+q.result.reason+(q.applied?'':' (not applied: assignment or access changed)')));
+     if(q.state==='quoted'&&writable&&q.expires_at>Date.now()){
+      box.append(node('p',q.mode==='personal'?'Your provider bills your own key. No Taskitator credits are charged.':'This reserves the maximum shown; unused credits return at settlement. Completed rejected reviews are charged.'));
+      button(box,'Approve review — up to '+q.max_credits+' credits',async()=>{await send(aiBase+'/'+q.id+'/approve',{accept_max_credits:q.max_credits});await assignment(id);});
+      button(box,'Cancel quote',async()=>{await send(aiBase+'/'+q.id+'/cancel',{});await assignment(id);});
+     }
+     if(['running','uncertain'].includes(q.state))box.append(node('p','This inference will not restart automatically. Its maximum hold remains until reconciled; refresh to check its status.'));
+    }
+    button(panel,'Refresh review status',()=>assignment(id));
+   }
    if(writable&&['owner','admin','reviewer'].includes(g.role)){
     const reason=input(panel,'Review / reopening / dispute reason','','textarea',2000);
     async function change(action,extra={}){await send(base+'/assignments/'+id+'/'+action,{revision:a.revision,task_revision:t.revision,reason:reason.value,...extra});await assignment(id);}
-    if(a.state==='pending'){button(panel,'Approve',()=>change('review',{decision:'approved'}));button(panel,'Reject',()=>change('review',{decision:'rejected'}));}
+    if(a.state==='pending'&&(!t.ai_required||t.human_required&&d.ai_attestation?.verdict==='approved')){button(panel,'Approve',()=>change('review',{decision:'approved'}));button(panel,'Reject',()=>change('review',{decision:'rejected'}));}
     if(['approved','rejected'].includes(a.state))button(panel,'Reopen with reason',()=>change('reopen'));
     if(a.submission_id)button(panel,'Close dispute',()=>change('dispute',{open:false}));
    }
    if(writable&&['approved','rejected'].includes(a.state)){const reason=input(panel,'Dispute reason','','textarea',2000);button(panel,'Open dispute',async()=>{await send(base+'/assignments/'+id+'/dispute',{revision:a.revision,task_revision:t.revision,reason:reason.value,open:true});await assignment(id);});}
   }
   async function list(){const data=await api(base);panel.replaceChildren(node('h3','Projects and tasks'));button(panel,'Refresh tasks',list);
+   button(panel,'Show Universe balances',async()=>{const b=await api('/universe/groups/'+g.id+'/ai');panel.append(node('p','My Universe: '+b.account.daily/1000+' / 45 today, '+b.account.monthly/1000+' / 1000 this month. Shared: '+b.shared.daily/1000+' / 100 today, '+b.shared.monthly/1000+' / 2000 this month. Includes active holds.'));});
    for(const p of data.projects){const section=node('section');section.append(node('h4',p.title));panel.append(section);for(const t of data.tasks.filter(t=>t.project_id===p.id)){section.append(node('p',t.title+' · '+t.mode));for(const a of data.assignments.filter(a=>a.task_id===t.id&&a.state!=='cancelled'))button(section,(a.account_id||'Shared')+' · '+a.state,()=>assignment(a.id));}}
    if(management&&writable){const title=input(panel,'New project name');button(panel,'Create project',async()=>{await send(base+'/projects',{title:title.value});await list();});if(data.projects.length)editor(data);}
   }

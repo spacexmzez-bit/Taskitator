@@ -23,7 +23,7 @@
   if(g.read_only)root.append(node('p','Read-only: the owner needs to renew Pro. You may still leave; the owner may delete this Universe.'));
   else if(g.grace_until)root.append(node('p','Normal access continues until '+new Date(g.grace_until).toLocaleString()+'. The owner needs to renew Pro.'));
   if(g.entitlement_unavailable)root.append(node('p','Pro status could not be checked. Refresh before making changes.'));
-  root.append(node('p','Phone locking, AI review, discussion and exports are planned for later phases. Joining does not enable phone locking.'));
+  root.append(node('p','Phone locking, discussion and exports are planned for later phases. Joining does not enable phone locking.'));
   const capabilities=await api('/universe/capabilities');
   const viewEpoch=epoch;
   if(capabilities.capabilities?.tasks&&window.UniverseTasksUI)await window.UniverseTasksUI.mount(root,g,members,{api,send,run,current:()=>viewEpoch===epoch&&owner===actor()});
