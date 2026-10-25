@@ -1,4 +1,4 @@
-import { UniverseTasks } from './uni/universe-tasks.js';
+import { UniverseAI } from './uni/universe-ai.js';
 // ============================================================================
 // Taskitator Consolidated Cloudflare Worker & Security Engine (worker.js)
 // Combines: recurrence-core, break-core, auth, ai-models, verification,
@@ -1407,7 +1407,7 @@ export class TaskitatorSync {
         this.ai = new AIGateway(this);
         this.protection = new TaskProtection(this);
         this.pro = new ProGateway(this);
-        this.universe = new UniverseTasks(this);
+        this.universe = new UniverseAI(this);
     }
 
     async readTaskSnapshot(store, accountId) {

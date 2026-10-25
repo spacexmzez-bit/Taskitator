@@ -271,7 +271,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-phase3-v10'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-phase4-1-v11'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -717,6 +717,21 @@ test('Phase 3 UI renders hostile task titles as text and fences stale-view actio
  await window.UniverseTasksUI.mount(root,{id:'g',role:'member'},[],{current:()=>current,run:fn=>fn(),send:async()=>{},api:async path=>{calls.push(path);return {projects:[{id:'p',title:'<script>bad</script>'}],tasks:[{id:'t',project_id:'p',title:'<img src=x>',mode:'shared'}],assignments:[{id:'a',task_id:'t',account_id:null,state:'open'}]};}});
  assert.ok(uniNodes(root).some(n=>n.textContent==='<img src=x> · shared'));assert.ok(!uniNodes(root).some(n=>n.tag==='img'||n.tag==='script'));
  current=false;const b=uniNodes(root).find(n=>n.textContent==='Shared · open');await assert.rejects(b.events.click(),/session or view changed/);assert.equal(calls.length,1);
+});
+test('Phase 4.1 UI requires explicit maximum approval and withholds human buttons before AI approval',async()=>{
+ const root=new UniElement(),window={},sent=[];
+ vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,document:{createElement:tag=>new UniElement(tag)},Date,Map,Error});
+ const task={id:'t',project_id:'p',title:'AI task',criteria:'Photo of finished checklist',mode:'shared',ai_required:true,human_required:true,revision:1};
+ const a={id:'a',task_id:'t',state:'pending',submission_id:'s',revision:2};
+ const detail={assignment:a,task,references:[],submissions:[],can_request_ai:true,ai_attestation:null,ai_reviews:[{id:'q',state:'quoted',mode:'hosted',model:'gemini-test-flash-lite',max_credits:1.25,charged:0,expires_at:Date.now()+60000}]};
+ const tools={current:()=>true,run:fn=>fn(),api:async path=>path.endsWith('/assignments/a')?detail:{projects:[{id:'p',title:'Project'}],tasks:[task],assignments:[a]},send:async(path,body)=>{sent.push({path,body});return {id:'q'};}};
+ await window.UniverseTasksUI.mount(root,{id:'g',role:'owner'},[],tools);
+ await uniNodes(root).find(n=>n.textContent==='Shared · pending').events.click();
+ assert.ok(!uniNodes(root).some(n=>n.tag==='button'&&n.textContent==='Approve'));
+ assert.equal(sent.length,0);
+ await uniNodes(root).find(n=>n.textContent==='Approve review — up to 1.25 credits').events.click();
+ assert.equal(sent[0].path,'/universe/groups/g/ai/q/approve');assert.equal(sent[0].body.accept_max_credits,1.25);
+ detail.ai_attestation={verdict:'approved'};detail.ai_reviews=[];await uniNodes(root).find(n=>n.textContent==='Refresh review status').events.click();assert.ok(uniNodes(root).some(n=>n.tag==='button'&&n.textContent==='Approve'));
 });
 test('Universe UI renders group values as text, opens details through events and clears on session replacement',async()=>{
  const calls=[];const group={id:'uni_1',title:'<img src=x onerror=alert(1)>',purpose:'Study',role:'member',revision:1};

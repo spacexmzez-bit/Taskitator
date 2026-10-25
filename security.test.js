@@ -1379,6 +1379,143 @@ test('Phase 3: submission deletion and expired retention scrub bytes and text',a
  await universeReject(u.handle(u.owner,u.base+'/files/'+f.id),'EXPIRED');
  await u.f.service.universe.cleanup();assert.equal(u.objects.size,0);assert.equal(u.db.sql.prepare('SELECT data FROM universe_submissions').get().data,'{}');
 });
+async function universe4Fixture({mode='everyone',human=false,pro=false}={}){
+ const u=await workFixture(mode);u.db.sql.exec(readFileSync(new URL('./uni/universe-phase4.sql',import.meta.url),'utf8'));
+ Object.assign(u.f.env,{UNIVERSE_GEMINI_MODEL:'gemini-3.5-flash-lite',UNIVERSE_AI_MODEL_VERIFIED:'true',UNIVERSE_INPUT_NANODOLLARS_PER_TOKEN:'100',UNIVERSE_OUTPUT_NANODOLLARS_PER_TOKEN:'500',UNIVERSE_HOSTED_ENABLED:'true',UNIVERSE_HOSTED_MONTHLY_SPEND_NANODOLLARS:'1000000000',UNIVERSE_GEMINI_API_KEY:'test-only-hosted'});
+ if(pro)await u.f.storage.put('pro:entitlement:'+u.member.userId,await activeLicense(u.member.userId));
+ const task=await u.post('/tasks',{...u.data,ai_required:true,human_required:human});
+ const assignment=u.db.sql.prepare('SELECT * FROM universe_assignments WHERE task_id=?').get(task.id);
+ const submission=await u.post('/assignments/'+assignment.id+'/submit',{revision:1,task_revision:1,text:'Completed'},u.member);
+ const svc=u.f.service.universe,calls=[];let response={candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({verdict:'approved',reason:'All criteria met.'})}]}}],usageMetadata:{promptTokenCount:100,candidatesTokenCount:50,totalTokenCount:150}};
+ svc.credentials=async(id,mode)=>({key:'test-'+mode,version:'version1'});
+ svc.provider=async(key,model,action,payload)=>{calls.push({key,model,action,payload});return action==='countTokens'?{totalTokens:100}:structuredClone(response);};
+ const aiBase='/universe/groups/'+u.gid+'/ai';
+ const quote=(mode='personal',body={})=>u.handle(u.member,aiBase+'/'+assignment.id+'/quote',{operation_id:newOperation(),mode,...body});
+ const approve=(q,body={})=>u.handle(u.member,aiBase+'/'+q.id+'/approve',{operation_id:newOperation(),accept_max_credits:q.max_credits,...body});
+ return {...u,task,assignment,submission,svc,calls,quote,approve,aiBase,response:set=>{response=set}};
+}
+test('Phase 4.1: personal Gemini mode works for Free without changing personal balances or provider',async()=>{
+ const u=await universe4Fixture();await u.f.storage.put('pro:usage:user_M:sentinel',{credits:9});
+ const q=await u.quote();assert.equal(q.max_credits,0);assert.equal(u.calls.filter(c=>c.action==='generateContent').length,0);
+ const result=await u.approve(q);assert.equal(result.state,'done');assert.equal(result.applied,true);assert.equal(result.charged,0);
+ assert.equal(u.db.sql.prepare('SELECT state FROM universe_assignments WHERE id=?').get(u.assignment.id).state,'approved');
+ assert.deepEqual(await u.f.storage.get('pro:usage:user_M:sentinel'),{credits:9});
+ assert.equal(u.calls.filter(c=>c.action==='generateContent').length,1);assert.ok(u.calls.every(c=>c.model==='gemini-3.5-flash-lite'));
+});
+test('Phase 4.1: hosted access, setup gates, separate credit settlement and rejected proof charges',async()=>{
+ const free=await universe4Fixture();await assert.rejects(free.quote('hosted'),e=>e.code==='UNIVERSE_AI_PRO');
+ const u=await universe4Fixture({pro:true});u.f.env.UNIVERSE_HOSTED_ENABLED='false';await assert.rejects(u.quote('hosted'),e=>e.code==='UNIVERSE_AI_HOSTED_DISABLED');assert.equal(u.calls.length,0);
+ u.f.env.UNIVERSE_HOSTED_ENABLED='true';const q=await u.quote('hosted');
+ await assert.rejects(u.approve(q,{accept_max_credits:q.max_credits+1}),e=>e.code==='UNIVERSE_AI_CONSENT');
+ u.response({candidates:[{finishReason:'STOP',content:{parts:[{text:'{"verdict":"rejected","reason":"Insufficient evidence"}'}]}}],usageMetadata:{promptTokenCount:100,totalTokenCount:150}});
+ const r=await u.approve(q);assert.ok(r.charged>0&&r.charged<q.max_credits);assert.equal(r.result.verdict,'rejected');
+ const balances=await u.handle(u.member,u.aiBase);assert.equal(balances.account.daily,r.charged*1000);assert.equal(balances.shared.daily,0);
+ assert.equal((await u.approve(q)).charged,r.charged);assert.equal(u.calls.filter(c=>c.action==='generateContent').length,1);
+});
+test('Phase 4.1: combined review cannot finish before both AI and human approval',async()=>{
+ const u=await universe4Fixture({human:true});
+ await assert.rejects(u.post('/assignments/'+u.assignment.id+'/review',{revision:2,task_revision:1,decision:'approved',reason:'Too early'}),e=>e.code==='UNIVERSE_AI_REQUIRED');
+ const q=await u.quote();await u.approve(q);
+ let a=u.db.sql.prepare('SELECT * FROM universe_assignments WHERE id=?').get(u.assignment.id);assert.equal(a.state,'pending');assert.equal(a.revision,3);
+ await u.post('/assignments/'+a.id+'/review',{revision:3,task_revision:1,decision:'approved',reason:'Checked'});a=u.db.sql.prepare('SELECT * FROM universe_assignments WHERE id=?').get(a.id);assert.equal(a.state,'approved');
+});
+test('Phase 4.1: Shared uses only group balance and reference multiplier doubles the quoted hold',async()=>{
+ const u=await universe4Fixture({mode:'shared'});await assert.rejects(u.quote('personal'),e=>e.code==='UNIVERSE_AI_MODE');
+ const q=await u.quote('hosted');await u.approve(q);const totals=await u.handle(u.member,u.aiBase);assert.equal(totals.account.daily,0);assert.ok(totals.shared.daily>0);
+ const v=await universe4Fixture({pro:true});const plain=await v.quote('hosted');
+ const original=v.svc.payload.bind(v.svc);v.svc.payload=async(...args)=>({...await original(...args),multiplier:2});const example=await v.quote('hosted');assert.equal(example.max_credits,Math.ceil(plain.max_spend_nanodollars*2*1000/POLICY.creditValue)/1000);
+});
+test('Phase 4.1: concurrent approvals and lost responses cannot purchase a second inference',async()=>{
+ const u=await universe4Fixture({pro:true}),q=await u.quote('hosted');
+ let release,enter;const gate=new Promise(r=>release=r),started=new Promise(r=>enter=r),provider=u.svc.provider.bind(u.svc);
+ u.svc.provider=async(...args)=>{if(args[2]==='generateContent'){enter();await gate;}return provider(...args);};
+ const first=u.approve(q);await started;const second=await u.approve(q);assert.equal(second.state,'running');release();await first;
+ assert.equal(u.calls.filter(c=>c.action==='generateContent').length,1);const row=u.db.sql.prepare('SELECT * FROM universe_ai_reviews WHERE id=?').get(q.id);await u.svc.settle(u.db,row,null,JSON.parse(row.policy),row.result?JSON.parse(row.result):null);
+ assert.equal(u.db.sql.prepare('SELECT revision FROM universe_assignments WHERE id=?').get(u.assignment.id).revision,3);
+});
+test('Phase 4.1: timeout keeps hold and blocks a fresh inference even after expiry',async()=>{
+ const u=await universe4Fixture({pro:true}),q=await u.quote('hosted');u.svc.provider=async()=>{throw Error('timeout');};
+ assert.equal((await u.approve(q)).state,'uncertain');u.db.sql.prepare('UPDATE universe_ai_reviews SET expires_at=0').run();await u.svc.cleanup();
+ assert.equal((await u.approve(q)).state,'uncertain');await assert.rejects(u.quote('hosted'),e=>e.code==='UNIVERSE_AI_EXISTING');
+ const b=await u.handle(u.member,u.aiBase);assert.equal(b.account.daily,Math.round(q.max_credits*1000));
+});
+test('Phase 4.1: membership removal during inference charges usage but cannot grant completion',async()=>{
+ const u=await universe4Fixture({pro:true}),q=await u.quote('hosted'),provider=u.svc.provider.bind(u.svc);
+ u.svc.provider=async(...args)=>{if(args[2]==='generateContent')u.db.sql.prepare('DELETE FROM universe_members WHERE group_id=? AND account_id=?').run(u.gid,u.member.userId);return provider(...args);};
+ await assert.rejects(u.approve(q));const row=u.db.sql.prepare('SELECT * FROM universe_ai_reviews WHERE id=?').get(q.id);assert.equal(row.state,'done');assert.equal(row.applied,0);assert.ok(row.charged>0);
+ assert.equal(u.db.sql.prepare('SELECT state FROM universe_assignments WHERE id=?').get(u.assignment.id).state,'pending');
+});
+test('Phase 4.1: removal followed by immediate rejoin cannot receive the old inference grant',async()=>{
+ const u=await universe4Fixture(),q=await u.quote(),provider=u.svc.provider.bind(u.svc);
+ u.svc.provider=async(...args)=>{if(args[2]==='generateContent'){
+  const m=u.db.sql.prepare('SELECT * FROM universe_members WHERE group_id=? AND account_id=?').get(u.gid,u.member.userId);
+  u.db.sql.prepare('DELETE FROM universe_members WHERE group_id=? AND account_id=?').run(u.gid,u.member.userId);
+  u.db.sql.prepare('INSERT INTO universe_members VALUES(?,?,?,?)').run(m.group_id,m.account_id,m.role,m.joined_at);
+ }return provider(...args);};
+ const result=await u.approve(q);assert.equal(result.state,'done');assert.equal(result.applied,false);assert.equal(u.db.sql.prepare('SELECT state FROM universe_assignments WHERE id=?').get(u.assignment.id).state,'pending');
+});
+test('Phase 4.1: daily and monthly hosted limits independently reject approval without inference',async()=>{
+ for(const [day,charge]of [[periods().day,45000],['2000-01-01',1000000]]){
+  const u=await universe4Fixture({pro:true}),q=await u.quote('hosted');
+  u.db.sql.prepare(`INSERT INTO universe_ai_reviews SELECT 'old_'||id,actor_id,'old_'||operation_id,request_hash,group_id,assignment_id,'old_'||submission_id,task_revision,assignment_revision,membership_epoch,mode,balance_key,?,month,model,key_version,payload_hash,policy,max_credits,max_spend,?,0,'done',NULL,0,created_at,expires_at FROM universe_ai_reviews WHERE id=?`).run(day,charge,q.id);
+  await assert.rejects(u.approve(q),e=>e.code==='UNIVERSE_AI_BALANCE_OR_CONFLICT');assert.equal(u.calls.filter(c=>c.action==='generateContent').length,0);
+ }
+});
+test('Phase 4.1: monthly global ceiling blocks approval atomically without touching another balance',async()=>{
+ const u=await universe4Fixture({pro:true});u.f.env.UNIVERSE_HOSTED_MONTHLY_SPEND_NANODOLLARS='1';const q=await u.quote('hosted');
+ await assert.rejects(u.approve(q),e=>e.code==='UNIVERSE_AI_BALANCE_OR_CONFLICT');assert.equal(u.calls.filter(c=>c.action==='generateContent').length,0);
+ assert.equal((await u.handle(u.member,u.aiBase)).account.daily,0);
+});
+test('Phase 4.1: encrypted Gemini key mode preserves a personal Claude selection',async()=>{
+ const u=await universe4Fixture();enableVault(u.f);delete u.svc.credentials;
+ const key='gemini-secret-for-universe-only';const record=await u.f.service.vault.seal(u.member,key,'active','gemini');await u.f.storage.put(await u.f.service.vault.recordKey(u.member,'gemini'),record);
+ const account=await u.f.storage.get('account:'+encodeURIComponent(u.member.userId));account.ai_provider='claude';await u.f.storage.put('account:'+encodeURIComponent(u.member.userId),account);
+ const q=await u.quote();await u.approve(q);assert.ok(u.calls.every(c=>c.key===key));assert.equal(await u.f.service.vault.selectedProvider(u.member),'claude');
+ assert.equal(JSON.stringify(u.db.sql.prepare('SELECT * FROM universe_ai_reviews').all()).includes(key),false);
+});
+test('Phase 4.1: stale task/key changes and midnight quotes cannot start inference',async()=>{
+ const u=await universe4Fixture(),q=await u.quote();u.svc.credentials=async()=>({key:'new',version:'version2'});await assert.rejects(u.approve(q),e=>e.code==='UNIVERSE_AI_REVISION');
+ u.svc.credentials=async()=>({key:'old',version:'version1'});u.db.sql.prepare("UPDATE universe_ai_reviews SET day='2000-01-01' WHERE id=?").run(q.id);await assert.rejects(u.approve(q),e=>e.code==='UNIVERSE_AI_EXPIRED');
+ const fresh=await u.quote();await u.post('/tasks/'+u.task.id+'/edit',{...u.data,revision:1,ai_required:true,human_required:false,criteria:'New requirement'});await assert.rejects(u.approve(fresh));assert.equal(u.calls.filter(c=>c.action==='generateContent').length,0);
+});
+test('Phase 4.1: interrupted settlement recovers its saved receipt without another inference',async()=>{
+ const u=await universe4Fixture({pro:true}),q=await u.quote('hosted'),settle=u.svc.settle.bind(u.svc);u.svc.settle=async()=>{throw Error('database interrupted');};
+ await assert.rejects(u.approve(q),/database interrupted/);assert.ok(u.db.sql.prepare('SELECT result FROM universe_ai_reviews WHERE id=?').get(q.id).result);
+ u.svc.settle=settle;await u.svc.cleanup();assert.equal((await u.approve(q)).state,'done');assert.equal(u.calls.filter(c=>c.action==='generateContent').length,1);
+});
+test('Phase 4.1: simultaneous quotes for one submission can reserve only one inference',async()=>{
+ const u=await universe4Fixture({pro:true}),q1=await u.quote('hosted'),q2=await u.quote('hosted');let release,entered;
+ const gate=new Promise(r=>release=r),start=new Promise(r=>entered=r),provider=u.svc.provider.bind(u.svc);u.svc.provider=async(...args)=>{if(args[2]==='generateContent'){entered();await gate;}return provider(...args);};
+ const first=u.approve(q1);await start;await assert.rejects(u.approve(q2),e=>e.code==='UNIVERSE_AI_BALANCE_OR_CONFLICT');release();await first;
+ assert.equal(u.calls.filter(c=>c.action==='generateContent').length,1);
+});
+test('Phase 4.1: owner deletion during inference prevents completion while accounting still settles',async()=>{
+ const u=await universe4Fixture({pro:true}),q=await u.quote('hosted'),provider=u.svc.provider.bind(u.svc);
+ u.svc.provider=async(...args)=>{if(args[2]==='generateContent')await u.svc.blockAccount(u.owner.userId);return provider(...args);};
+ await assert.rejects(u.approve(q));const row=u.db.sql.prepare('SELECT * FROM universe_ai_reviews WHERE id=?').get(q.id);assert.equal(row.applied,0);assert.equal(row.state,'done');assert.ok(row.charged>0);
+});
+test('Phase 4.1: AI-approved Shared reopening requires a different strictly higher ranked manager',async()=>{
+ const u=await universe4Fixture({mode:'shared'}),q=await u.quote('hosted');await u.approve(q);
+ await assert.rejects(u.post('/assignments/'+u.assignment.id+'/reopen',{revision:3,task_revision:1,reason:'Self'},u.member));
+ await u.post('/assignments/'+u.assignment.id+'/reopen',{revision:3,task_revision:1,reason:'Owner requests another check'});
+ const v=await universe4Fixture({mode:'shared'}),quote=await v.quote('hosted');await v.approve(quote);v.db.sql.prepare("UPDATE universe_ai_attestations SET completer_role='owner'").run();await assert.rejects(v.post('/assignments/'+v.assignment.id+'/reopen',{revision:3,task_revision:1,reason:'Equal rank'}),e=>e.code==='UNIVERSE_AI_REOPEN');
+});
+test('Phase 4.1: provider usage beyond the reserve blocks new hosted approval',async()=>{
+ const u=await universe4Fixture({pro:true}),q=await u.quote('hosted');u.response({candidates:[{finishReason:'STOP',content:{parts:[{text:'{"verdict":"approved","reason":"OK"}'}]}}],usageMetadata:{promptTokenCount:30000,totalTokenCount:31000}});
+ const result=await u.approve(q);assert.equal(result.charged,q.max_credits);assert.ok(result.spent_nanodollars>q.max_spend_nanodollars);assert.equal(u.db.sql.prepare('SELECT blocked FROM universe_ai_safety').get().blocked,1);
+});
+test('Phase 4.1: actual HTTP adapter uses only configured Gemini with manual redirect handling',async()=>{
+ const u=await universe4Fixture(),previous=globalThis.fetch,requests=[];delete u.svc.provider;
+ try{globalThis.fetch=async(url,options)=>{requests.push({url,options});return Response.json(String(url).endsWith(':countTokens')?{totalTokens:100}:{candidates:[{finishReason:'STOP',content:{parts:[{text:'{"verdict":"approved","reason":"OK"}'}]}}],usageMetadata:{promptTokenCount:100,totalTokenCount:150}});};
+  const q=await u.quote();await u.approve(q);assert.equal(requests.length,2);assert.ok(requests.every(r=>r.url.startsWith('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:')&&r.options.redirect==='manual'));
+  assert.equal(requests[0].options.headers['x-goog-api-key'],'test-personal');assert.ok(JSON.parse(requests[1].options.body).systemInstruction.parts[0].text.includes('untrusted evidence'));
+ }finally{globalThis.fetch=previous;}
+});
+test('Phase 4.1: repeatable schema, stale proof, expired quotes and invalid output fail safely',async()=>{
+ const u=await universe4Fixture();u.db.sql.exec(readFileSync(new URL('./uni/universe-phase4.sql',import.meta.url),'utf8'));
+ const q=await u.quote();u.db.sql.prepare('UPDATE universe_ai_reviews SET expires_at=0 WHERE id=?').run(q.id);await assert.rejects(u.approve(q),e=>e.code==='UNIVERSE_AI_EXPIRED');
+ const next=await u.quote();u.response({candidates:[{finishReason:'MAX_TOKENS',content:{parts:[{text:'{"verdict":"approved"}'}]}}]});const result=await u.approve(next);assert.equal(result.result.verdict,'invalid');assert.equal(u.db.sql.prepare('SELECT state FROM universe_assignments WHERE id=?').get(u.assignment.id).state,'rejected');
+});
 async function proofUpload(u,kind='proof'){
  const bytes=Buffer.from('Evidence'),hash=await sha256('Evidence');
  const file=await u.post('/files',{task_id:u.task.id,assignment_id:u.assignment.id,task_revision:1,kind,name:'evidence.txt',mime:'text/plain',size:bytes.length,hash},kind==='proof'?u.member:u.owner);
