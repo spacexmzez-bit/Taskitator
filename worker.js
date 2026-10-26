@@ -1246,11 +1246,24 @@ export function evaluateStatus(record, now = Date.now()) {
     }
     const hour = dayHour(record.settings);
     const today = logicalDate(now, hour);
+    const byId = new Map(record.tasks.filter(object).map(task => [task.id, task]));
+    function effectiveDue(task) {
+        const visited = new Set();
+        while (task) {
+            if (visited.has(task)) return ''; // Broken trees retain the existing blocking fallback.
+            visited.add(task);
+            const due = typeof task.due_date === 'string' ? task.due_date.trim().toLowerCase() : '';
+            if (due) return due;
+            task = byId.get(task.parent_id);
+        }
+        return '';
+    }
     const unfinished = record.tasks.some(task => {
         if (!object(task)) return true; // Corrupt entries must not silently unlock.
         if (task.status !== 'active') return false;
-        const due = typeof task.due_date === 'string' ? task.due_date.trim().toLowerCase() : '';
-        // Preserve the original behavior for undated tasks; include overdue dates.
+        const due = effectiveDue(task);
+        // Undated subtasks inherit the nearest dated ancestor. Standalone undated
+        // tasks retain their existing behavior; explicit subtask dates take priority.
         return !due || due === 'today' || (validDate(due) && due <= today);
     });
     const inBreak = globalThis.TaskitatorBreaks.active(record.today_breaks,record.settings||{},now);

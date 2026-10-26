@@ -1081,6 +1081,27 @@ test('both emergency URLs require a connected live account and reject phone toke
 // against SQLite, not a map of expected SQL strings. D1 transport is adapted.
 import './uni/universe-release.test.js';
 import { sleepLockActive } from './worker.js';
+test('Phone blocking: undated subtasks inherit rescheduled parent dates at every depth',()=>{
+ const now=Date.parse('2026-10-26T09:00:00Z'),parent={id:'parent',status:'active',due_date:'today'},child={id:'child',parent_id:'parent',status:'active',due_date:''},grandchild={id:'grandchild',parent_id:'child',status:'active',due_date:''};
+ const record={tasks:[parent,child,grandchild],settings:{}};
+ assert.equal(evaluateStatus(record,now).device_unlocked,false);
+ parent.due_date='2026-10-27';assert.equal(evaluateStatus(record,now).device_unlocked,true);
+ child.due_date='2026-10-26';assert.equal(evaluateStatus(record,now).device_unlocked,false);
+ child.due_date='2026-10-28';assert.equal(evaluateStatus(record,now).device_unlocked,true);
+ parent.due_date='2026-10-25';assert.equal(evaluateStatus(record,now).device_unlocked,false);
+});
+test('Phone blocking: inheritance handles missing parents and cycles without hiding undated requirements',()=>{
+ const tasks=[{id:'a',parent_id:'b',status:'active',due_date:''},{id:'b',parent_id:'a',status:'active',due_date:''}];
+ assert.equal(evaluateStatus({tasks,settings:{}}).device_unlocked,false);
+ tasks[0].parent_id='missing';assert.equal(evaluateStatus({tasks,settings:{}}).device_unlocked,false);
+ assert.equal(evaluateStatus({tasks:[{id:'standalone',status:'active',due_date:''}],settings:{}}).device_unlocked,false);
+});
+test('Phone blocking: syncing a postponed parent releases its undated subtasks for the existing phone token',async()=>{
+ const f=fixture(),a=await create(f),phone=(await f.call('/auth/phone',a.token,'POST')).body.token;
+ const tasks=[{id:'parent',title:'Parent',status:'active',due_date:'today',ai_locked:false},{id:'child',title:'Child',parent_id:'parent',status:'active',due_date:'',ai_locked:false}];
+ let saved=await f.call('/sync/push',a.token,'POST',{tasks,settings:{},base_version:0,mutation_id:'date_inherit_initial'});assert.equal(saved.status,200);assert.equal((await f.call('/status',phone)).body.device_unlocked,false);
+ tasks[0].due_date='2099-01-01';saved=await f.call('/sync/push',a.token,'POST',{tasks,settings:{},base_version:saved.body.version,mutation_id:'date_inherit_postponed'});assert.equal(saved.status,200);assert.equal((await f.call('/status',phone)).body.device_unlocked,true);
+});
 test('Sleep Lock: Riyadh overnight and daytime boundaries, disabled and invalid schedules',()=>{
  const s={enabled:true,bedtime:'23:00',wake_time:'07:00'};
  for(const [time,expected]of [['2026-10-26T19:59:59Z',false],['2026-10-26T20:00:00Z',true],['2026-10-27T03:59:59Z',true],['2026-10-27T04:00:00Z',false]])assert.equal(sleepLockActive(s,Date.parse(time)),expected,time);
