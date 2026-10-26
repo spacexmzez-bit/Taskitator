@@ -712,7 +712,7 @@ export class AccountDeletion {
                         (key.startsWith('pro:binding:') && value?.account_id===job.userId) ||
                         (key.startsWith('pro:username:map:') && value?.accountId===job.userId) ||
                         (key.startsWith('pro:attestation:') && value?.account_id===job.userId));
-                    else if (job.stage==='legacy') next=await this.legacy(job);
+                    else if (job.stage==='legacy') {await this.storage.delete('sleep-lock:'+job.userId);next=await this.legacy(job);}
                     else if (job.stage==='clerk') {
                         if(this.env.TASKITATOR_DB){
                             try{await this.env.TASKITATOR_DB.prepare('DELETE FROM entitlements WHERE account_id = ?').bind(job.userId).run();}
@@ -1257,6 +1257,13 @@ export function evaluateStatus(record, now = Date.now()) {
     return { status: 'ok', device_unlocked: !unfinished || inBreak,
         finished: !unfinished, in_break: inBreak };
 }
+export function sleepLockActive(schedule, now = Date.now()) {
+    const valid=t=>typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
+    if(!schedule?.enabled||!valid(schedule.bedtime)||!valid(schedule.wake_time)||schedule.bedtime===schedule.wake_time)return false;
+    const minutes=t=>Number(t.slice(0,2))*60+Number(t.slice(3)),start=minutes(schedule.bedtime),end=minutes(schedule.wake_time);
+    const date=new Date(now+3*3600000),current=date.getUTCHours()*60+date.getUTCMinutes();
+    return start<end?current>=start&&current<end:current>=start||current<end;
+}
 function publicRecord(record) {
     if (!object(record)) return record;
     const result = { ...record };
@@ -1687,8 +1694,9 @@ export class TaskitatorSync {
             const emergencyRoute = ['/emergency','/pro/emergency'].includes(path);
             const proRoute = path.startsWith('/pro/') && !emergencyRoute;
             const universeRoute = path.startsWith('/universe/');
+            const sleepRoute = path === '/sleep-lock';
             if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
-                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute) {
+                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute && !sleepRoute) {
                 return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
             }
             await this.rateLimit(request);
@@ -1743,6 +1751,21 @@ export class TaskitatorSync {
                 }
                 if (connect) return await this.connectAccount(request, identity);
                 const account = await this.accountFor(identity);
+                if(sleepRoute){
+                    if(!account)throw new HTTPError(403,'Connect your Taskitator account first.');
+                    if(!['GET','POST'].includes(method))throw new HTTPError(405,'Method not allowed.');
+                    const key='sleep-lock:'+identity.userId;
+                    const defaults={enabled:false,bedtime:'23:00',wake_time:'07:00',timezone:'Asia/Riyadh',revision:0};
+                    if(method==='GET')return json({schedule:await this.storage.get(key)||defaults});
+                    const b=await readJson(request,2048),valid=t=>typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
+                    if(Object.keys(b).some(k=>!['enabled','bedtime','wake_time','revision'].includes(k))||typeof b.enabled!=='boolean'||!valid(b.bedtime)||!valid(b.wake_time)||b.bedtime===b.wake_time||!Number.isSafeInteger(b.revision)||b.revision<0)throw new HTTPError(400,'Choose different bedtime and wake-up times, and refresh before saving.');
+                    return await this.storage.transaction(async tx=>{
+                        const meta=await tx.get(accountKey(account.user));if(!meta||meta.deleting||meta.owner_id!==identity.userId)throw new HTTPError(403,'Account access denied.');
+                        const old=await tx.get(key)||defaults;if(old.revision!==b.revision)throw new HTTPError(409,'Sleep schedule changed on another device. Reload it before saving.');
+                        if(old.revision>=Number.MAX_SAFE_INTEGER)throw new HTTPError(409,'Sleep schedule revision limit reached.');
+                        const schedule={enabled:b.enabled,bedtime:b.bedtime,wake_time:b.wake_time,timezone:'Asia/Riyadh',revision:old.revision+1};await tx.put(key,schedule);return json({schedule});
+                    });
+                }
                 if (emergencyRoute) {
                     if (!account) throw new HTTPError(403, 'Connect your Taskitator account on the login page first.');
                     if (!['GET','POST'].includes(method)) throw new HTTPError(405, 'Method not allowed.');
@@ -1800,6 +1823,9 @@ export class TaskitatorSync {
                     state.universe_degraded=groupState.degraded;
                     state.universe_locks=groupState.count||0;
                     if(groupState.locked&&!state.in_break){state.device_unlocked=false;state.finished=false;}
+                    const schedule=await tx.get('sleep-lock:'+(identity?.userId||meta.owner_id));
+                    state.sleep_lock_active=sleepLockActive(schedule);
+                    if(state.sleep_lock_active)state.device_unlocked=false;
                     if(identity && await this.protection.bypass(tx,identity.userId)) { state.device_unlocked=true;state.emergency_bypass=true; }
                     else if(!identity) { const owner=meta.owner_id; if(owner && await this.protection.bypass(tx,owner)){state.device_unlocked=true;state.emergency_bypass=true;} }
                     return url.searchParams.get('format') === 'text'

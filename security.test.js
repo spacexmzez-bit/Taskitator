@@ -1080,6 +1080,22 @@ test('both emergency URLs require a connected live account and reject phone toke
 // Universe foundation tests execute the production SQL and service entrypoints
 // against SQLite, not a map of expected SQL strings. D1 transport is adapted.
 import './uni/universe-release.test.js';
+import { sleepLockActive } from './worker.js';
+test('Sleep Lock: Riyadh overnight and daytime boundaries, disabled and invalid schedules',()=>{
+ const s={enabled:true,bedtime:'23:00',wake_time:'07:00'};
+ for(const [time,expected]of [['2026-10-26T19:59:59Z',false],['2026-10-26T20:00:00Z',true],['2026-10-27T03:59:59Z',true],['2026-10-27T04:00:00Z',false]])assert.equal(sleepLockActive(s,Date.parse(time)),expected,time);
+ assert.equal(sleepLockActive({...s,enabled:false}),false);assert.equal(sleepLockActive({...s,wake_time:'23:00'}),false);assert.equal(sleepLockActive({...s,bedtime:'25:00'}),false);
+ assert.equal(sleepLockActive({enabled:true,bedtime:'09:00',wake_time:'17:00'},Date.parse('2026-10-26T09:00:00Z')),true);
+});
+test('Sleep Lock: server settings, stale saves, overnight status, bypass and disabling',async()=>{
+ const f=fixture(),a=await create(f);let r=await f.call('/sleep-lock',a.token);assert.equal(r.body.schedule.enabled,false);
+ const current=new Date(Date.now()+3*3600000),minute=current.getUTCHours()*60+current.getUTCMinutes(),time=m=>String(Math.floor(((m+1440)%1440)/60)).padStart(2,'0')+':'+String((m+1440)%60).padStart(2,'0');
+ const body={enabled:true,bedtime:time(minute-1),wake_time:time(minute+2),revision:0};r=await f.call('/sleep-lock',a.token,'POST',body);assert.equal(r.status,200);assert.equal((await f.call('/status',a.token)).body.device_unlocked,false);
+ assert.equal((await f.call('/sleep-lock',a.token,'POST',body)).status,409);assert.equal((await f.call('/sleep-lock',a.token,'POST',{...body,wake_time:body.bedtime,revision:1})).status,400);
+ const phone=(await f.call('/auth/phone',a.token,'POST')).body.token;assert.equal((await f.call('/status',phone)).body.device_unlocked,false);assert.equal((await f.call('/sleep-lock',phone)).status,403);
+ await f.call('/emergency',a.token,'POST',{});assert.equal((await f.call('/status',a.token)).body.device_unlocked,true);assert.equal((await f.call('/status',phone)).body.device_unlocked,true);
+ assert.equal((await f.call('/sleep-lock',a.token,'POST',{...body,enabled:false,revision:1})).status,200);
+});
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 class UniverseTestD1 {
