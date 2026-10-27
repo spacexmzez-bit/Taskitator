@@ -1,4 +1,4 @@
-import { UniverseRelease } from './uni/universe-release.js';
+import { UniverseRules } from './uni/universe-rules.js';
 import './pro/study-plan.js';
 // ============================================================================
 // Taskitator Consolidated Cloudflare Worker & Security Engine (worker.js)
@@ -1435,7 +1435,7 @@ export class TaskitatorSync {
         this.ai = new AIGateway(this);
         this.protection = new TaskProtection(this);
         this.pro = new ProGateway(this);
-        this.universe = new UniverseRelease(this);
+        this.universe = new UniverseRules(this);
     }
 
     async readTaskSnapshot(store, accountId) {
@@ -1746,7 +1746,7 @@ export class TaskitatorSync {
                     await this.rateLimit(request,'universe:'+identity.userId,60);
                     const upload=/^\/universe\/groups\/[A-Za-z0-9_-]+\/work\/files\/[A-Za-z0-9_-]+\/upload$/.test(path);
                     const transfer=path==='/universe/imports'||/^\/universe\/(?:imports|groups\/[^/]+\/(?:transfer|archive))\/[^/]+\/file$/.test(path);
-                    return json(await this.universe.handle(identity,path,method,method==='GET'?{}:await readJson(request,upload?8*1024*1024:transfer?21*1024*1024:16384)));
+                    return json(await this.universe.handle(identity,path,method,method==='GET'?{}:await readJson(request,upload?8*1024*1024:transfer?21*1024*1024:65536)));
                 }
                 if (proRoute) {
                     const account = await this.accountFor(identity);

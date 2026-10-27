@@ -1760,3 +1760,6 @@ test('Universe phase 2: deletion frees joined capacity immediately, before defer
  const third=await u.invite(c,owner3);await universeReject(u.accept(m,third.token),'JOINED_CAP');
  await action2(u,a,u.owner,'delete',{confirm:true});await u.accept(m,third.token);assert.equal((await u.handle(m,'/universe/groups')).groups.length,2);
 });
+
+// Phases 6–7 use the separately downloaded SQL guide for migration checks.
+import './uni/universe-rules.test.js';

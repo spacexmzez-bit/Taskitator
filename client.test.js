@@ -296,7 +296,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-study-v1'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-67-v1'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -719,8 +719,8 @@ test('an open Pro review modal defers automatic page refresh',()=>{
 });
 
 class UniElement {
- constructor(tag='div',text=''){this.tag=tag;this.textContent=text;this.children=[];this.events={};this.attrs={};this.value='';}
- append(...items){this.children.push(...items);}
+ constructor(tag='div',text=''){this.tag=tag;this.textContent=text;this.children=[];this.events={};this.attrs={};this.value='';this.style={};}
+ append(...items){for(const item of items)if(item&&typeof item==='object')item.parentElement=this;this.children.push(...items);}
  replaceChildren(...items){this.children=[...items];}
  setAttribute(k,v){this.attrs[k]=v;}
  addEventListener(k,fn){this.events[k]=fn;}
@@ -773,17 +773,17 @@ test('Phase 3 UI renders hostile task titles as text and fences stale-view actio
  const root=new UniElement(),window={},calls=[];let current=true;
  vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,document:{createElement:tag=>new UniElement(tag)},Date,Map,Error});
  await window.UniverseTasksUI.mount(root,{id:'g',role:'member'},[],{current:()=>current,run:fn=>fn(),send:async()=>{},api:async path=>{calls.push(path);return {projects:[{id:'p',title:'<script>bad</script>'}],tasks:[{id:'t',project_id:'p',title:'<img src=x>',mode:'shared'}],assignments:[{id:'a',task_id:'t',account_id:null,state:'open'}]};}});
- assert.ok(uniNodes(root).some(n=>n.textContent==='<img src=x> · shared'));assert.ok(!uniNodes(root).some(n=>n.tag==='img'||n.tag==='script'));
+ assert.ok(uniNodes(root).some(n=>n.textContent.startsWith('<img src=x> · shared')));assert.ok(!uniNodes(root).some(n=>n.tag==='img'||n.tag==='script'));
  current=false;const b=uniNodes(root).find(n=>n.textContent==='Shared · open');await assert.rejects(b.events.click(),/session or view changed/);assert.equal(calls.length,1);
 });
 test('Phase 4.1 UI requires explicit maximum approval and withholds human buttons before AI approval',async()=>{
- const root=new UniElement(),window={},sent=[];
+ const root=new UniElement(),window={addEventListener(){},removeEventListener(){}},sent=[];
  vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,document:{createElement:tag=>new UniElement(tag)},Date,Map,Error});
- const task={id:'t',project_id:'p',title:'AI task',criteria:'Photo of finished checklist',mode:'shared',ai_required:true,human_required:true,revision:1};
+ const task={id:'t',project_id:'p',title:'AI task',criteria:'Photo of finished checklist',mode:'shared',audit_mode:'both',members:[],reviewers:[],ai_required:true,human_required:true,revision:1};
  const a={id:'a',task_id:'t',state:'pending',submission_id:'s',revision:2};
- const detail={assignment:a,task,references:[],submissions:[],can_request_ai:true,ai_attestation:null,ai_reviews:[{id:'q',state:'quoted',mode:'hosted',model:'gemini-test-flash-lite',max_credits:1.25,charged:0,expires_at:Date.now()+60000}]};
+ const detail={assignment:a,task,references:[],submissions:[],can_review:true,can_submit:false,can_request_ai:true,ai_attestation:null,ai_reviews:[{id:'q',state:'quoted',mode:'hosted',model:'gemini-test-flash-lite',max_credits:1.25,charged:0,expires_at:Date.now()+60000}]};
  const tools={current:()=>true,run:fn=>fn(),api:async path=>path.endsWith('/assignments/a')?detail:{projects:[{id:'p',title:'Project'}],tasks:[task],assignments:[a]},send:async(path,body)=>{sent.push({path,body});return {id:'q'};}};
- await window.UniverseTasksUI.mount(root,{id:'g',role:'owner'},[],tools);
+ await window.UniverseTasksUI.mount(root,{id:'g',role:'admin'},[],tools);
  await uniNodes(root).find(n=>n.textContent==='Shared · pending').events.click();
  assert.ok(!uniNodes(root).some(n=>n.tag==='button'&&n.textContent==='Approve'));
  assert.equal(sent.length,0);
