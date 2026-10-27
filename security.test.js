@@ -1081,6 +1081,24 @@ test('both emergency URLs require a connected live account and reject phone toke
 // against SQLite, not a map of expected SQL strings. D1 transport is adapted.
 import './uni/universe-release.test.js';
 import { sleepLockActive } from './worker.js';
+import { sleepWindow } from './worker.js';
+test('Sleep delay: postpones bedtime across midnight without changing wake time or resetting allowance',()=>{
+ const schedule={enabled:true,bedtime:'23:30',wake_time:'07:00'},before=Date.parse('2026-10-26T20:40:00Z'),afterMidnight=Date.parse('2026-10-26T21:15:00Z'),w=sleepWindow(schedule,before),delay={day:w.day,minutes:60};
+ assert.equal(w.day,'2026-10-26');assert.equal(sleepWindow(schedule,afterMidnight).day,w.day);assert.equal(sleepLockActive(schedule,before),true);assert.equal(sleepLockActive(schedule,before,delay),false);assert.equal(sleepLockActive(schedule,afterMidnight,delay),false);
+ assert.equal(sleepLockActive(schedule,Date.parse('2026-10-26T21:30:00Z'),delay),true);assert.equal(sleepLockActive(schedule,Date.parse('2026-10-27T04:00:00Z'),delay),false);
+ assert.equal(sleepLockActive(schedule,Date.parse('2026-10-27T20:40:00Z'),delay),true);
+});
+test('Sleep delay: server persists one daily use across schedule edits and rejects invalid or stale requests',async()=>{
+ const f=fixture(),a=await create(f),date=new Date(Date.now()+3*3600000),n=date.getUTCHours()*60+date.getUTCMinutes(),time=m=>String(Math.floor((m%1440)/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+ const schedule={enabled:true,bedtime:time(n+1435),wake_time:time(n+180),revision:0};assert.equal((await f.call('/sleep-lock',a.token,'POST',schedule)).status,200);
+ const phone=(await f.call('/auth/phone',a.token,'POST')).body.token;assert.equal((await f.call('/status',phone)).body.device_unlocked,false);
+ assert.equal((await f.call('/sleep-lock',a.token,'POST',{action:'delay',minutes:45,revision:1})).status,400);
+ const r=await f.call('/sleep-lock',a.token,'POST',{action:'delay',minutes:30,revision:1});assert.equal(r.status,200);assert.equal(r.body.delay.minutes,30);assert.equal((await f.call('/sleep-lock',a.token)).body.delay.minutes,30);assert.equal((await f.call('/status',phone)).body.device_unlocked,true);
+ assert.equal((await f.call('/sleep-lock',a.token,'POST',{action:'delay',minutes:60,revision:1})).status,409);
+ assert.equal((await f.call('/sleep-lock',a.token,'POST',{...schedule,revision:1})).status,200);
+ assert.equal((await f.call('/sleep-lock',a.token,'POST',{action:'delay',minutes:60,revision:2})).status,409);
+ assert.equal((await f.call('/sleep-lock',a.token,'POST',{action:'delay',minutes:60,revision:0})).status,409);
+});
 test('Phone blocking: undated subtasks inherit rescheduled parent dates at every depth',()=>{
  const now=Date.parse('2026-10-26T09:00:00Z'),parent={id:'parent',status:'active',due_date:'today'},child={id:'child',parent_id:'parent',status:'active',due_date:''},grandchild={id:'grandchild',parent_id:'child',status:'active',due_date:''};
  const record={tasks:[parent,child,grandchild],settings:{}};

@@ -712,7 +712,7 @@ export class AccountDeletion {
                         (key.startsWith('pro:binding:') && value?.account_id===job.userId) ||
                         (key.startsWith('pro:username:map:') && value?.accountId===job.userId) ||
                         (key.startsWith('pro:attestation:') && value?.account_id===job.userId));
-                    else if (job.stage==='legacy') {await this.storage.delete('sleep-lock:'+job.userId);next=await this.legacy(job);}
+                    else if (job.stage==='legacy') {await this.storage.delete('sleep-lock:'+job.userId);next=await this.page(job,'sleep-delay:'+job.userId+':')&&await this.legacy(job);}
                     else if (job.stage==='clerk') {
                         if(this.env.TASKITATOR_DB){
                             try{await this.env.TASKITATOR_DB.prepare('DELETE FROM entitlements WHERE account_id = ?').bind(job.userId).run();}
@@ -1270,12 +1270,19 @@ export function evaluateStatus(record, now = Date.now()) {
     return { status: 'ok', device_unlocked: !unfinished || inBreak,
         finished: !unfinished, in_break: inBreak };
 }
-export function sleepLockActive(schedule, now = Date.now()) {
+export function sleepWindow(schedule, now = Date.now()) {
     const valid=t=>typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
-    if(!schedule?.enabled||!valid(schedule.bedtime)||!valid(schedule.wake_time)||schedule.bedtime===schedule.wake_time)return false;
+    if(!schedule?.enabled||!valid(schedule.bedtime)||!valid(schedule.wake_time)||schedule.bedtime===schedule.wake_time)return null;
     const minutes=t=>Number(t.slice(0,2))*60+Number(t.slice(3)),start=minutes(schedule.bedtime),end=minutes(schedule.wake_time);
-    const date=new Date(now+3*3600000),current=date.getUTCHours()*60+date.getUTCMinutes();
-    return start<end?current>=start&&current<end:current>=start||current<end;
+    const dayMs=86400000,local=now+3*3600000,current=new Date(local).getUTCHours()*60+new Date(local).getUTCMinutes();let day=Math.floor(local/dayMs)*dayMs;
+    if(start>end&&current<end)day-=dayMs;
+    if(start<end&&current>=end)day+=dayMs;
+    return {day:new Date(day).toISOString().slice(0,10),start:day-3*3600000+start*60000,end:day-3*3600000+end*60000+(start>end?dayMs:0)};
+}
+export function sleepLockActive(schedule, now = Date.now(), delay = null) {
+    const w=sleepWindow(schedule,now);if(!w)return false;
+    const minutes=delay?.day===w.day&&[30,60].includes(delay.minutes)?delay.minutes:0;
+    return now>=w.start+minutes*60000&&now<w.end;
 }
 function publicRecord(record) {
     if (!object(record)) return record;
@@ -1567,11 +1574,11 @@ export class TaskitatorSync {
             after = [...entries.keys()].pop();
             if (entries.size < 1000) break;
         }
-        for (const prefix of ['action-proof:', 'verification-used:', 'deleted-identity:', 'deleted-legacy:', 'deletion-status:', 'phone:']) {
+        for (const prefix of ['action-proof:', 'verification-used:', 'deleted-identity:', 'deleted-legacy:', 'deletion-status:', 'phone:', 'sleep-delay:']) {
             let cursor;
             while (true) {
                 const entries = await this.storage.list({prefix,limit:1000,...(cursor?{startAfter:cursor}:{})});
-                const expired = [...entries].filter(([,value]) => value?.expires && value.expires <= Date.now()).map(([key]) => key);
+            const expired = [...entries].filter(([,value]) => value?.expires && value.expires <= Date.now()).map(([key]) => key);
                 if (expired.length) await this.storage.delete(expired);
                 if (entries.size < 1000) break;
                 cursor = [...entries.keys()].pop();
@@ -1769,8 +1776,21 @@ export class TaskitatorSync {
                     if(!['GET','POST'].includes(method))throw new HTTPError(405,'Method not allowed.');
                     const key='sleep-lock:'+identity.userId;
                     const defaults={enabled:false,bedtime:'23:00',wake_time:'07:00',timezone:'Asia/Riyadh',revision:0};
-                    if(method==='GET')return json({schedule:await this.storage.get(key)||defaults});
+                    if(method==='GET'){const schedule=await this.storage.get(key)||defaults,w=sleepWindow(schedule);return json({schedule,delay:w?await this.storage.get('sleep-delay:'+identity.userId+':'+w.day)||null:null});}
                     const b=await readJson(request,2048),valid=t=>typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
+                    if(b.action==='delay'){
+                        if(Object.keys(b).some(k=>!['action','minutes','revision'].includes(k))||![30,60].includes(b.minutes)||!Number.isSafeInteger(b.revision))throw new HTTPError(400,'Choose a 30- or 60-minute delay.');
+                        await this.ensureAlarm();
+                        return await this.storage.transaction(async tx=>{
+                            const meta=await tx.get(accountKey(account.user));if(!meta||meta.deleting||meta.owner_id!==identity.userId)throw new HTTPError(403,'Account access denied.');
+                            const schedule=await tx.get(key)||defaults;if(schedule.revision!==b.revision)throw new HTTPError(409,'Sleep schedule changed. Reload before delaying sleep.');
+                            const now=Date.now(),w=sleepWindow(schedule,now);if(!w)throw new HTTPError(409,'Enable and save your sleep schedule first.');
+                            const delayKey='sleep-delay:'+identity.userId+':'+w.day,old=await tx.get(delayKey);
+                            if(old)throw new HTTPError(409,'Sleep has already been delayed for this night.');
+                            const until=w.start+b.minutes*60000;if(until<=now||until>=w.end)throw new HTTPError(409,'That delay would already have ended or reach your wake-up time.');
+                            const delay={day:w.day,minutes:b.minutes,sleep_at:until,wake_at:w.end,expires:w.end+172800000};await tx.put(delayKey,delay);return json({schedule,delay});
+                        });
+                    }
                     if(Object.keys(b).some(k=>!['enabled','bedtime','wake_time','revision'].includes(k))||typeof b.enabled!=='boolean'||!valid(b.bedtime)||!valid(b.wake_time)||b.bedtime===b.wake_time||!Number.isSafeInteger(b.revision)||b.revision<0)throw new HTTPError(400,'Choose different bedtime and wake-up times, and refresh before saving.');
                     return await this.storage.transaction(async tx=>{
                         const meta=await tx.get(accountKey(account.user));if(!meta||meta.deleting||meta.owner_id!==identity.userId)throw new HTTPError(403,'Account access denied.');
@@ -1837,7 +1857,8 @@ export class TaskitatorSync {
                     state.universe_locks=groupState.count||0;
                     if(groupState.locked&&!state.in_break){state.device_unlocked=false;state.finished=false;}
                     const schedule=await tx.get('sleep-lock:'+(identity?.userId||meta.owner_id));
-                    state.sleep_lock_active=sleepLockActive(schedule);
+                    const sleepPeriod=sleepWindow(schedule),delay=sleepPeriod?await tx.get('sleep-delay:'+(identity?.userId||meta.owner_id)+':'+sleepPeriod.day):null;
+                    state.sleep_lock_active=sleepLockActive(schedule,Date.now(),delay);
                     if(state.sleep_lock_active)state.device_unlocked=false;
                     if(identity && await this.protection.bypass(tx,identity.userId)) { state.device_unlocked=true;state.emergency_bypass=true; }
                     else if(!identity) { const owner=meta.owner_id; if(owner && await this.protection.bypass(tx,owner)){state.device_unlocked=true;state.emergency_bypass=true;} }
