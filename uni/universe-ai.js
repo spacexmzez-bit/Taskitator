@@ -167,12 +167,13 @@ export class UniverseAI extends UniverseTasks {
   await this.access(db,identity,row.group_id);return this.publicReview(await this.record(db,'universe_ai_reviews',row.id,row.group_id));
  }
  async settle(db,row,c,p,result){
+  const phase7=typeof this.phase67==='function'&&await this.phase67(db);
   const ok=`EXISTS(SELECT 1 FROM universe_assignments a JOIN universe_tasks t ON t.id=a.task_id
    JOIN universe_members m ON m.group_id=a.group_id AND m.account_id=? JOIN universe_groups g ON g.id=a.group_id
    JOIN universe_accounts u ON u.account_id=m.account_id JOIN universe_accounts o ON o.account_id=g.owner_id
    LEFT JOIN universe_group_state gs ON gs.group_id=g.id LEFT JOIN universe_lifecycle l ON l.account_id=g.owner_id
    WHERE a.id=? AND a.submission_id=? AND a.revision=? AND a.state='pending' AND t.revision=? AND EXISTS(SELECT 1 FROM universe_member_epochs e WHERE e.group_id=m.group_id AND e.account_id=m.account_id AND e.epoch=?)
-   AND u.blocked=0 AND o.blocked=0 AND COALESCE(gs.deleted,0)=0 AND (l.lapse_at IS NULL OR l.lapse_at+604800000>unixepoch()*1000))`;
+   AND u.blocked=0 AND o.blocked=0 AND COALESCE(gs.deleted,0)=0 AND ${phase7?'1=1':'(l.lapse_at IS NULL OR l.lapse_at+604800000>unixepoch()*1000)'} ${phase7&&Number.isSafeInteger(row.group_revision)?'AND g.revision='+row.group_revision:''})`;
   const complete=!result||result.verdict==='rejected'||!p.human,decision=result?.verdict||'rejected';
   try{await db.batch([
    this.statement(db,"INSERT OR REPLACE INTO universe_ai_budget_guard VALUES(1,EXISTS(SELECT 1 FROM universe_ai_reviews WHERE id=? AND state='running' AND result IS NOT NULL))",row.id),

@@ -22,6 +22,8 @@
  }
  async function detail(id){start();const g=(await api('/universe/groups/'+id)).group;const members=(await api('/universe/groups/'+id+'/members')).members;
   button(root,'All Universes',list);root.append(node('h2',g.title),node('p',g.purpose),node('p','Your role: '+g.role));
+  if(g.solo_until)root.append(node('p','This Universe will be permanently deleted on '+new Date(g.solo_until).toLocaleString('en-GB',{timeZone:'Asia/Riyadh'})+' (Riyadh) unless another member joins. '+(!g.owner_pro?'Renew Pro to allow members to join. ':'')+'Export remains available during this countdown.'));
+  if(!g.owner_pro&&!g.entitlement_unavailable)root.append(node('p','The owner needs active Pro to rename this Universe or add members. Existing work continues.'));
   if(g.read_only)root.append(node('p','Read-only: the owner needs to renew Pro. You may still leave; the owner may delete this Universe.'));
   else if(g.grace_until)root.append(node('p','Normal access continues until '+new Date(g.grace_until).toLocaleString()+'. The owner needs to renew Pro.'));
   if(g.entitlement_unavailable)root.append(node('p','Pro status could not be checked. Refresh before making changes.'));
@@ -31,19 +33,21 @@
   if(capabilities.capabilities?.tasks&&window.UniverseTasksUI)await window.UniverseTasksUI.mount(root,g,members,{api,send,run,current:()=>viewEpoch===epoch&&owner===actor()});
   if(capabilities.capabilities?.portability&&window.UniverseReleaseUI)await window.UniverseReleaseUI.mount(root,g,{api,send,run,current:()=>viewEpoch===epoch&&owner===actor()});
   async function change(action,extra={}){await send('/universe/groups/'+id+'/'+action,{revision:g.revision,...extra});await (['leave','delete'].includes(action)?list():detail(id));}
-  if(!g.read_only&&!g.entitlement_unavailable&&['owner','admin'].includes(g.role)){
-   form(root,'Group settings',[['Name',g.title,120],['Purpose',g.purpose,2000]],'Save',([title,purpose])=>change('edit',{title,purpose}));
+  if(['owner','admin'].includes(g.role)){
+   if(g.role==='owner'&&g.can_rename)form(root,'Group settings',[['Name',g.title,120],['Purpose',g.purpose,2000]],'Save',([title,purpose])=>change('edit',{title,purpose}));
    const invite=node('div'),l=node('label','Invitation role'),select=node('select');for(const role of(g.role==='owner'?['member','reviewer','admin']:['member','reviewer'])){const o=node('option',role);o.value=role;select.append(o);}l.append(select);invite.append(l);let token=null;
-   button(invite,'Create invitation',async()=>{token??=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');const r=await send('/universe/groups/'+id+'/invitations',{token,role:select.value});const output=field(invite,'Share this single-use token privately. Expires '+new Date(r.expires_at).toLocaleString(),token,64);output.readOnly=true;output.focus();output.select();token=null;});root.append(invite);
+   if(g.can_add_members)button(invite,'Create invitation',async()=>{token??=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');const r=await send('/universe/groups/'+id+'/invitations',{token,role:select.value});const output=field(invite,'Share this single-use token privately. Expires '+new Date(r.expires_at).toLocaleString(),token,64);output.readOnly=true;output.focus();output.select();token=null;});root.append(invite);
   }
+  if(['owner','admin'].includes(g.role)){const invitations=await api('/universe/groups/'+id+'/invitations');for(const i of invitations.invitations){root.append(node('p','Reserved seat · '+i.role+' · until '+new Date(i.expires_at).toLocaleString()));button(root,'Cancel invitation',async()=>{await send('/universe/groups/'+id+'/invitations/'+i.id+'/cancel',{revision:g.revision});await detail(id);});}}
+  if(g.role==='owner'){const settings=await api('/universe/groups/'+id+'/settings');button(root,settings.validate_criteria?'Disable criteria validation':'Enable criteria validation',async()=>{if(confirm('Change criteria validation for this Universe?')){await send('/universe/groups/'+id+'/settings',{revision:g.revision,validate_criteria:!settings.validate_criteria});await detail(id);}});}
   root.append(node('h3','Members'));const ul=node('ul');root.append(ul);
-  for(const m of members){const li=node('li',m.account_id+' · '+m.role);ul.append(li);
+  for(const m of members){const li=node('li',(m.username||'Member')+' · '+m.role);ul.append(li);
    if(!g.read_only&&!g.entitlement_unavailable&&m.role!=='owner'&&(g.role==='owner'||(g.role==='admin'&&['member','reviewer'].includes(m.role)))){
-    const l=node('label','Role for '+m.account_id),select=node('select');for(const role of(g.role==='owner'?['member','reviewer','admin']:['member','reviewer'])){const o=node('option',role);o.value=role;select.append(o);}select.value=m.role;l.append(select);li.append(l);
+    const l=node('label','Role for '+(m.username||'Member')),select=node('select');for(const role of(g.role==='owner'?['member','reviewer','admin']:['member','reviewer'])){const o=node('option',role);o.value=role;select.append(o);}select.value=m.role;l.append(select);li.append(l);
     button(li,'Change role',()=>change('role',{target_id:m.account_id,role:select.value}));button(li,'Remove member',async()=>{if(window.confirm('Remove this member and end their group access?'))await change('remove',{target_id:m.account_id});});
    }
   }
-  const events=(await api('/universe/groups/'+id+'/activity')).events;const history=node('details');history.append(node('summary','Recent membership activity'));for(const e of events)history.append(node('p',new Date(e.created_at).toLocaleString()+' · '+e.kind+' · '+e.actor_id));root.append(history);
+  const events=(await api('/universe/groups/'+id+'/activity')).events;const history=node('details');history.append(node('summary','Recent membership activity'));for(const e of events)history.append(node('p',new Date(e.created_at).toLocaleString()+' · '+e.kind+' · '+(members.find(m=>m.account_id===e.actor_id)?.username||'Member')));root.append(history);
   if(g.role==='owner')button(root,'Delete Universe',async()=>{if(window.confirm('Permanently delete this Universe for every member? Save an export first if you need one.'))await change('delete',{confirm:true});});
   else button(root,'Leave Universe',async()=>{if(window.confirm('Leave this Universe and lose access to its history?'))await change('leave');});
  }
