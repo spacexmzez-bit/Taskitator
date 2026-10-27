@@ -296,7 +296,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-8-v1'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-8-v2'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -719,7 +719,7 @@ test('an open Pro review modal defers automatic page refresh',()=>{
 });
 
 class UniElement {
- constructor(tag='div',text=''){this.tag=tag;this.textContent=text;this.children=[];this.events={};this.attrs={};this.value='';this.style={};}
+ constructor(tag='div',text=''){this.tag=tag;this.textContent=text;this.children=[];this.events={};this.attrs={};this.dataset={};this.value='';this.style={};}
  append(...items){for(const item of items)if(item&&typeof item==='object')item.parentElement=this;this.children.push(...items);}
  replaceChildren(...items){this.children=[...items];}
  setAttribute(k,v){this.attrs[k]=v;}
@@ -773,7 +773,7 @@ test('Phase 3 UI renders hostile task titles as text and fences stale-view actio
  const root=new UniElement(),window={},calls=[];let current=true;
  vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,document:{createElement:tag=>new UniElement(tag)},Date,Map,Error});
  await window.UniverseTasksUI.mount(root,{id:'g',role:'member'},[],{current:()=>current,run:fn=>fn(),send:async()=>{},api:async path=>{calls.push(path);return {projects:[{id:'p',title:'<script>bad</script>'}],tasks:[{id:'t',project_id:'p',title:'<img src=x>',mode:'shared'}],assignments:[{id:'a',task_id:'t',account_id:null,state:'open'}]};}});
- assert.ok(uniNodes(root).some(n=>n.textContent.startsWith('<img src=x> · shared')));assert.ok(!uniNodes(root).some(n=>n.tag==='img'||n.tag==='script'));
+ assert.ok(uniNodes(root).some(n=>n.textContent==='<img src=x>'));assert.ok(!uniNodes(root).some(n=>n.tag==='img'||n.tag==='script'));
  current=false;const b=uniNodes(root).find(n=>n.textContent==='Shared · open');await assert.rejects(b.events.click(),/session or view changed/);assert.equal(calls.length,1);
 });
 test('Phase 4.1 UI requires explicit maximum approval and withholds human buttons before AI approval',async()=>{
@@ -794,7 +794,7 @@ test('Phase 4.1 UI requires explicit maximum approval and withholds human button
 test('Universe UI renders group values as text, opens details through events and clears on session replacement',async()=>{
  const calls=[];const group={id:'uni_1',title:'<img src=x onerror=alert(1)>',purpose:'Study',role:'member',revision:1};
  const ui=uniUI(async path=>{calls.push(path);if(path.endsWith('capabilities'))return {ui:true};if(path==='/universe/groups')return {groups:[group]};if(path.endsWith('/members'))return {members:[]};if(path.endsWith('/activity'))return {events:[]};return {group};});await uniFlush();
- const b=uniNodes(ui.root).find(e=>e.tag==='button'&&e.textContent===group.title+' · member');assert.ok(b);b.events.click();await uniFlush();
+ const b=uniNodes(ui.root).find(e=>e.tag==='button'&&e.textContent===group.title);assert.ok(b);b.events.click();await uniFlush();
  assert.ok(calls.includes('/universe/groups/uni_1/members'));assert.ok(uniNodes(ui.root).some(e=>e.textContent==='Leave Universe'));
  assert.ok(!uniNodes(ui.root).some(e=>e.tag==='img'));ui.w.Clerk.session.id='other';ui.w.Clerk.listener();assert.equal(ui.root.children.length,0);
 });
@@ -809,3 +809,5 @@ test('Universe UI retries a failed create using the same operation and rejects l
 });
 import './uni/universe-shell.test.js';
 test('Phase 8 dashboard filters locally and shows assigned child with contextual parent',async()=>{const root=new UniElement(),window={Clerk:{user:{id:'me'}},addEventListener(){}};let calls=0;vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,document:{createElement:tag=>new UniElement(tag)},Date,Map,Set,Error});await window.UniverseTasksUI.mount(root,{id:'g',role:'member'},[{account_id:'me',username:'Me'}],{view:'dashboard',current:()=>true,run:fn=>fn(),api:async()=>{calls++;return {projects:[{id:'p',title:'Project'}],tasks:[{id:'parent',title:'Parent',project_id:'p',members:[],mode:'everyone'},{id:'child',title:'Assigned child',parent_id:'parent',project_id:'p',members:['me'],mode:'everyone'}],assignments:[{id:'a',task_id:'child',account_id:'me',state:'open'}],catalog:[],progress:{}};}});assert.ok(uniNodes(root).some(n=>n.textContent==='Parent · context'));assert.ok(uniNodes(root).some(n=>n.textContent==='Assigned child'));const search=uniNodes(root).find(n=>n.tag==='input');search.value='No match';search.events.input();assert.ok(uniNodes(root).some(n=>n.textContent==='No assigned tasks match these filters.'));assert.equal(calls,1);});
+
+import './uni/universe-interface.test.js';

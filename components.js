@@ -1335,6 +1335,7 @@ window.TaskitatorComponents = Object.freeze({
         // Task Creation Launcher
         // =========================================================================
         function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task', preselectedProjectId = null) {
+            if(document.body.classList.contains('universe-active')){window.dispatchEvent(new Event('universe-create-task'));return;}
             if(draft&&!discardDraft())return;
             void refreshConsecutive();
             const form = document.getElementById('taskCreateForm');
