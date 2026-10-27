@@ -405,6 +405,7 @@
     }
     function overview() {
         const d=dialog('Recurring tasks & history'),data=state();
+        button('Study recurrence · Pro',d,async()=>{const result=await window.TaskitatorStudy?.open();if(result?.status==='pro_required')alert(result.message);});
         if(!data.series.length)element('p','Open a task’s details to set up recurrence, or choose Repeat when creating a task.',d);
         for(const s of data.series){const root=tasks().find(t=>t.id===s.current_root_id);element('h3',root?.title||s.nodes[0]?.task.title||'Recurring task',d);element('p',(s.enabled?'Repeating':'Stopped')+' · '+s.schedule.kind.replace(/_/g,' ')+' · Current date: '+s.current_date,d);if(root)button('Manage branch',d,()=>{d.close();open(root.id);});}
         element('h3','Occurrence history (latest 500)',d);
@@ -412,7 +413,7 @@
         if(!data.history.length)element('p','No recurring-task history yet.',d);
     }
     window.addEventListener('taskitator-auth-ready',()=>{
-        const form=document.getElementById('taskCreateForm');if(form){const wrap=element('fieldset',undefined,form);wrap.style.cssText='margin:14px 0;border:1px solid var(--border-color);border-radius:8px;padding:12px';element('legend','Recurrence',wrap);const sub=document.getElementById('subtaskBuilderList')?.parentElement;if(sub?.parentElement)sub.parentElement.insertBefore(wrap,sub);createControl=scheduleForm(wrap,undefined,true);}
+        const form=document.getElementById('taskCreateForm');if(form){const wrap=element('fieldset',undefined,form);wrap.style.cssText='margin:14px 0;border:1px solid var(--border-color);border-radius:8px;padding:12px';element('legend','Recurrence',wrap);const sub=document.getElementById('subtaskBuilderList')?.parentElement;if(sub?.parentElement)sub.parentElement.insertBefore(wrap,sub);createControl=scheduleForm(wrap,undefined,true);button('Study recurrence · Pro',wrap,async()=>{const r=await window.TaskitatorStudy?.open({title:document.getElementById('taskTitleInput')?.value||''});if(r?.status==='pro_required')alert(r.message);});}
         const nav=document.querySelector('.sidebar nav')||document.querySelector('nav');if(nav)button('↻ Recurring tasks',nav,overview);
     });
     window.TaskitatorRecurrenceUI={state,save,persist,attachCreated,validCreate,bindTask,applyEdit,resetCreate:()=>createControl?.reset(),overview};

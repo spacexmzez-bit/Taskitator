@@ -59,7 +59,7 @@ window.TaskitatorAgent = (() => {
     let conversationIdentity='';
     const aiSelection=()=>window.TaskitatorVault?.selection?.()||{provider:'gemini',primary:PRIMARY_MODEL,fallback:FALLBACK_MODEL};
     const selectionIdentity=selection=>selection.provider+':'+(selection.keyVersion||'');
-    function resetConversation(){conversationHistory.length=0;conversationIdentity='';sessionStorage.removeItem(SESSION_LATCH_KEY);}
+    function resetConversation(){conversationHistory.length=0;conversationIdentity='';studyPlanContext=false;sessionStorage.removeItem(SESSION_LATCH_KEY);}
 
     // =========================================================================
     // 1. Page Context Detection
@@ -188,9 +188,12 @@ window.TaskitatorAgent = (() => {
     // =========================================================================
     // 3. Flat Tool Schemas
     // =========================================================================
+    let studyPlanContext=false;
+    window.addEventListener('taskitator-study-closed',()=>{studyPlanContext=false;});
     const AGENT_TOOLS = [
         {
             function_declarations: [
+                {name:'propose_study_plan',description:'Pro-only finite study recurrence. Obtain title, total units and study days FROM THE USER (ask for any missing fields). Opens an editable preview; never creates tasks or confirms. Never use ordinary creation tools to bypass this feature. No audit settings or criteria can be supplied.',parameters:{type:'OBJECT',properties:{title:{type:'STRING'},total:{type:'INTEGER'},days:{type:'INTEGER'},unit:{type:'STRING'},plural:{type:'STRING'},first:{type:'INTEGER'},start:{type:'STRING',description:'YYYY-MM-DD, default today'},weekdays:{type:'ARRAY',items:{type:'INTEGER'},description:'0 Sunday through 6 Saturday. Omit to use Settings weekends.'}},required:['title','total','days']}},
                 {
                     name: 'get_tasks',
                     description: 'Retrieve current tasks from Taskitator to check existing tasks, find IDs, or review schedules.',
@@ -310,6 +313,8 @@ window.TaskitatorAgent = (() => {
     // 6. Tool Dispatcher & Hard Lock Guardrails
     // =========================================================================
     function executeToolCall(name, args) {
+        if(name==='propose_study_plan'){studyPlanContext=true;return window.TaskitatorStudy?.propose(args)||{status:'error',message:'Reload Taskitator to load Study recurrence.'};}
+        if(studyPlanContext&&['create_task','update_task','trash_task'].includes(name))return {status:'error',message:'Study plans must use the Pro preview and manual confirmation. Ordinary mutation tools cannot create or alter this proposal.'};
         let tasks = [];
         try {
             tasks = JSON.parse(localStorage.getItem(STORAGE_KEY_TASKS) || '[]');
@@ -470,6 +475,10 @@ window.TaskitatorAgent = (() => {
     // 8. Conversational Turn Execution
     // =========================================================================
     async function sendMessage(userText) {
+        if(/study recurrence|study plan|(?:chapters?|lessons?|units?).*(?:days?|daily)|(?:split|distribute|spread).*(?:chapters?|lessons?|units?)/i.test(userText)&&window.TaskitatorPro?.checkConsecutiveEntitlement){
+            const access=await window.TaskitatorPro.checkConsecutiveEntitlement();
+            if(!access.allowed)return {text:access.status==='unavailable'?'I couldn’t check Pro status right now. Please retry shortly.':'Study recurrence is a Pro feature. With Pro, I can distribute your units across study days and show you an editable schedule before creating anything.'};
+        }
         const selection=aiSelection();
         const apiKey = getApiKey();
         if (!apiKey) {
@@ -487,8 +496,9 @@ window.TaskitatorAgent = (() => {
                 role: 'user',
                 parts: [{ text: userText }]
             });
+            if(/study recurrence|study plan|(?:chapters?|lessons?|units?).*(?:days?|daily)|(?:split|distribute|spread).*(?:chapters?|lessons?|units?)/i.test(userText))studyPlanContext=true;
 
-            const systemText = await getSystemPrompt();
+            const systemText = await getSystemPrompt()+'\nStudy recurrence is a Pro-only finite plan: one dated parent per study day, one {num} subtask per unit. Use propose_study_plan exclusively, never create_task loops to imitate it. You MUST ask for missing title, unit amount, study days; never invent these. Respect existing user answers. Other defaults: first=1, start=today, weekdays=Settings excluding weekends. The user must confirm the editable preview. Never claim creation before confirmation. You cannot enable audits, set criteria or change their override. If the tool returns pro_required, gently explain the Pro requirement and stop proposing task creation.';
             const pageContext = getPageContext();
 
             const activeTools = (pageContext === 'today' || pageContext === 'general') 
@@ -529,11 +539,11 @@ window.TaskitatorAgent = (() => {
 
                     conversationHistory.push({
                         role: 'user',
-                        parts: toolCallParts.map(part=>({functionResponse:{
+                        parts: await Promise.all(toolCallParts.map(async part=>({functionResponse:{
                             name:part.functionCall.name,
                             ...(part.functionCall.id?{id:part.functionCall.id}:{}),
-                            response:executeToolCall(part.functionCall.name,part.functionCall.args||{})
-                        }}))
+                            response:await executeToolCall(part.functionCall.name,part.functionCall.args||{})
+                        }})))
                     });
 
                     continue;

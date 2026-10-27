@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-sleep-delay-v1';
+const CACHE_NAME = 'taskitator-study-v1';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -9,6 +9,7 @@ self.addEventListener('message', event => {
 });
 
 const STATIC_ASSETS = [
+    './pro/study-plan.js',
     './sleep.html',
     './uni/universe-archive.js',
     './uni/universe-release-ui.js',

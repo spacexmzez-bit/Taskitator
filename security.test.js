@@ -1082,6 +1082,30 @@ test('both emergency URLs require a connected live account and reject phone toke
 import './uni/universe-release.test.js';
 import { sleepLockActive } from './worker.js';
 import { sleepWindow } from './worker.js';
+const Study=globalThis.TaskitatorStudyCore;
+const studyConfig={title:'Math',unit:'Lesson',plural:'Lessons',total:10,days:5,first:1,start:'2026-10-27',weekdays:[0,1,2,3,4]};
+test('Study recurrence: dates, balanced counts, numbering and skipped units stay deterministic',()=>{
+ const rows=Study.rows(studyConfig);assert.deepEqual(rows.map(r=>r.date),['2026-10-27','2026-10-28','2026-10-29','2026-11-01','2026-11-02']);assert.deepEqual(rows.map(r=>r.count),[2,2,2,2,2]);
+ let tasks=Study.build({...studyConfig,skipped:[2,3]},'plan_12345','2026-10-27T00:00:00Z');assert.equal(tasks.length,15);assert.equal(tasks[0].description,'Covers lessons 1, 4');assert.equal(tasks[1].raw_title,'Lesson.{num==1}');assert.equal(tasks[2].title,'Lesson.4');assert.equal(tasks.at(-1).raw_title,'Lesson.{num==12}');
+ tasks=Study.build({...studyConfig,skipped:[3]},'plan_12345','2026-10-27T00:00:00Z');assert.equal(tasks.at(-1).title,'Lesson.11');assert.equal(tasks[0].description,'Covers lessons 1 to 2');
+ assert.deepEqual(Study.defaultDays({weekend_start:5,weekend_end:6}),[0,1,2,3,4]);assert.equal(Study.rows({...studyConfig,weekdays:[]})[4].date,'2026-10-31');
+});
+test('Study recurrence: totals and dates validated; parent titles and audit variables preserved',()=>{
+ assert.throws(()=>Study.build({...studyConfig,counts:[2,2,2,2,1]},'plan_12345',new Date().toISOString()));assert.throws(()=>Study.normalize({...studyConfig,days:11}));assert.throws(()=>Study.normalize({...studyConfig,start:'2026-02-30'}));
+ const tasks=Study.build({...studyConfig,titles:['Algebra']},'plan_12345',new Date().toISOString(),true,'Show completed lesson {num} notes.');assert.equal(tasks[0].title,'Algebra');assert.equal(tasks[0].ai_locked,false);assert.equal(tasks[1].proof_criteria,'Show completed lesson 1 notes.');assert.equal(tasks[1].raw_proof_criteria,'Show completed lesson {num} notes.');assert.equal(tasks[1].ai_locked,true);
+});
+async function studyFixture(){const f=fixture(),a=await create(f);Object.assign(f.env,testEnv);await f.storage.put('pro:entitlement:user_A',await activeLicense('user_A'));return {f,a};}
+test('Study recurrence: Free cannot authorize or sync a new study plan',async()=>{
+ const f=fixture(),a=await create(f),tasks=Study.build(studyConfig,'plan_free',new Date().toISOString());assert.equal((await f.call('/study-plan',a.token,'POST',{action:'authorize',config:studyConfig,plan_id:'plan_free',created_at:tasks[0].created_at,audit:false})).status,403);assert.equal((await f.call('/sync/push',a.token,'POST',{tasks,settings:{},base_version:0,mutation_id:'study_free_push'})).status,403);
+});
+test('Study recurrence: authorize then sync atomically; retries never duplicate tasks',async()=>{
+ const {f,a}=await studyFixture(),created=new Date().toISOString(),body={action:'authorize',config:studyConfig,plan_id:'plan_pro_123',created_at:created,audit:false,criteria:''};let r=await f.call('/study-plan',a.token,'POST',body);assert.equal(r.status,200,JSON.stringify(r.body));const tasks=Study.build(studyConfig,body.plan_id,created),push={tasks,settings:{},base_version:0,mutation_id:'study_pro_push'};r=await f.call('/sync/push',a.token,'POST',push);assert.equal(r.status,200,JSON.stringify(r.body));assert.equal((await f.call('/sync/push',a.token,'POST',push)).status,200);assert.equal((await f.call('/sync/pull',a.token)).body.tasks.length,15);
+});
+test('Study recurrence: reusable validation must pass, criteria edits invalidate receipt, override uses saved settings',async()=>{
+ const {f,a}=await studyFixture();let score=6;f.service.ai.generate=async()=>({candidates:[{content:{parts:[{text:JSON.stringify({score,passed:score>=7,critique:'Reusable evidence check',suggested_rewrite:''})}]}}]});
+ const base={config:studyConfig,criteria:'Show notes for lesson {num}.'},validate=()=>f.call('/study-plan',a.token,'POST',{...base,action:'validate',provider:'gemini',model:'test'});let v=await validate();const body={...base,action:'authorize',plan_id:'plan_audit_123',created_at:new Date().toISOString(),audit:true,validation_id:v.body.id};assert.equal((await f.call('/study-plan',a.token,'POST',body)).status,409);score=8;v=await validate();body.validation_id=v.body.id;assert.equal((await f.call('/study-plan',a.token,'POST',{...body,criteria:'Different criteria'})).status,409);assert.equal((await f.call('/study-plan',a.token,'POST',body)).status,200);
+ const saved=await f.call('/sync/push',a.token,'POST',{tasks:[],settings:{strict_criteria_validation:false},base_version:0,mutation_id:'study_override_settings'});assert.equal(saved.status,200);assert.equal((await f.call('/study-plan',a.token,'POST',{...body,plan_id:'plan_override_123',validation_id:null})).status,200);
+});
 test('Sleep delay: postpones bedtime across midnight without changing wake time or resetting allowance',()=>{
  const schedule={enabled:true,bedtime:'23:30',wake_time:'07:00'},before=Date.parse('2026-10-26T20:40:00Z'),afterMidnight=Date.parse('2026-10-26T21:15:00Z'),w=sleepWindow(schedule,before),delay={day:w.day,minutes:60};
  assert.equal(w.day,'2026-10-26');assert.equal(sleepWindow(schedule,afterMidnight).day,w.day);assert.equal(sleepLockActive(schedule,before),true);assert.equal(sleepLockActive(schedule,before,delay),false);assert.equal(sleepLockActive(schedule,afterMidnight,delay),false);
