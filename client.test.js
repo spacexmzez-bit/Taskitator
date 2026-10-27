@@ -296,7 +296,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-67-v1'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-8-v1'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -762,7 +762,7 @@ test('Phase 4.5 tree expansion changes only local presentation and never schedul
 function uniUI(api){
  const root=new UniElement(),listeners={};const w={TaskitatorAuth:{account:{user:'A'},api},Clerk:{session:{id:'S'},addListener(fn){this.listener=fn;}},addEventListener(k,fn){listeners[k]=fn;},confirm:()=>true};
  const doc={getElementById:()=>root,createElement:tag=>new UniElement(tag)};
- const context={window:w,document:doc,location:{search:'?view=universe'},URLSearchParams,crypto:webcrypto,Date,Map,Array,Error};
+ const context={window:w,document:doc,location:{search:'?view=universe'},URLSearchParams,crypto:webcrypto,Date,Map,Array,Error,navigator:{onLine:true}};
  vm.runInNewContext(fs.readFileSync(new URL('uni/universe-ui.js',rootURL()),'utf8'),context);
  return {root,w,listeners};
 }
@@ -794,16 +794,18 @@ test('Phase 4.1 UI requires explicit maximum approval and withholds human button
 test('Universe UI renders group values as text, opens details through events and clears on session replacement',async()=>{
  const calls=[];const group={id:'uni_1',title:'<img src=x onerror=alert(1)>',purpose:'Study',role:'member',revision:1};
  const ui=uniUI(async path=>{calls.push(path);if(path.endsWith('capabilities'))return {ui:true};if(path==='/universe/groups')return {groups:[group]};if(path.endsWith('/members'))return {members:[]};if(path.endsWith('/activity'))return {events:[]};return {group};});await uniFlush();
- const b=uniNodes(ui.root).find(e=>e.tag==='button'&&e.textContent===group.title);assert.ok(b);b.events.click();await uniFlush();
+ const b=uniNodes(ui.root).find(e=>e.tag==='button'&&e.textContent===group.title+' · member');assert.ok(b);b.events.click();await uniFlush();
  assert.ok(calls.includes('/universe/groups/uni_1/members'));assert.ok(uniNodes(ui.root).some(e=>e.textContent==='Leave Universe'));
  assert.ok(!uniNodes(ui.root).some(e=>e.tag==='img'));ui.w.Clerk.session.id='other';ui.w.Clerk.listener();assert.equal(ui.root.children.length,0);
 });
 test('Universe UI retries a failed create using the same operation and rejects late results from another session',async()=>{
  const bodies=[];let fail=true;
- const ui=uniUI(async(path,options)=>{if(path.endsWith('capabilities'))return {ui:true};if(path==='/universe/groups'&&!options.body)return {groups:[]};
+ const ui=uniUI(async(path,options)=>{if(path==='/pro/status')return {isPro:true};if(path.endsWith('capabilities'))return {ui:true};if(path==='/universe/groups'&&!options.body)return {groups:[]};
  if(path==='/universe/groups'){bodies.push(JSON.parse(options.body));if(fail){fail=false;throw new Error('Network unavailable');}return {group_id:'g'};}
- if(path.endsWith('/members'))return {members:[]};if(path.endsWith('/activity'))return {events:[]};return {group:{id:'g',title:'Team',purpose:'',role:'owner',revision:1}};});await uniFlush();
+ if(path.endsWith('/members'))return {members:[]};if(path.endsWith('/invitations'))return {invitations:[]};if(path.endsWith('/settings'))return {validate_criteria:1};if(path.endsWith('/activity'))return {events:[]};return {group:{id:'g',title:'Team',purpose:'',role:'owner',revision:1}};});await uniFlush();
  const form=uniNodes(ui.root).find(e=>e.tag==='form');const inputs=form.children.filter(e=>e.tag==='label').map(l=>l.children[0]);inputs[0].value='Team';
  form.events.submit({preventDefault(){}});await uniFlush();form.events.submit({preventDefault(){}});await uniFlush();assert.equal(bodies.length,2);assert.equal(bodies[0].operation_id,bodies[1].operation_id);
  let resolve;const late=uniUI(path=>path.endsWith('capabilities')?new Promise(r=>resolve=r):Promise.resolve({groups:[]}));late.w.Clerk.session.id='new';late.w.Clerk.listener();resolve({ui:true});await uniFlush();assert.equal(late.root.children.length,0);
 });
+import './uni/universe-shell.test.js';
+test('Phase 8 dashboard filters locally and shows assigned child with contextual parent',async()=>{const root=new UniElement(),window={Clerk:{user:{id:'me'}},addEventListener(){}};let calls=0;vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,document:{createElement:tag=>new UniElement(tag)},Date,Map,Set,Error});await window.UniverseTasksUI.mount(root,{id:'g',role:'member'},[{account_id:'me',username:'Me'}],{view:'dashboard',current:()=>true,run:fn=>fn(),api:async()=>{calls++;return {projects:[{id:'p',title:'Project'}],tasks:[{id:'parent',title:'Parent',project_id:'p',members:[],mode:'everyone'},{id:'child',title:'Assigned child',parent_id:'parent',project_id:'p',members:['me'],mode:'everyone'}],assignments:[{id:'a',task_id:'child',account_id:'me',state:'open'}],catalog:[],progress:{}};}});assert.ok(uniNodes(root).some(n=>n.textContent==='Parent · context'));assert.ok(uniNodes(root).some(n=>n.textContent==='Assigned child'));const search=uniNodes(root).find(n=>n.tag==='input');search.value='No match';search.events.input();assert.ok(uniNodes(root).some(n=>n.textContent==='No assigned tasks match these filters.'));assert.equal(calls,1);});
