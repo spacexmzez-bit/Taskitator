@@ -11,13 +11,13 @@
  document.body.classList.add('universe-active');const shell=el('div');shell.className='uni-shell';root.append(shell);
  const header=el('header');header.className='uni-header';shell.append(header);const menu=button(header,'☰',()=>{aside.hidden=!aside.hidden;menu.setAttribute('aria-expanded',String(!aside.hidden));});menu.setAttribute('aria-label','Universe navigation');menu.setAttribute('aria-expanded','false');
  const brand=el('div');brand.append(el('small','YOUR UNIVERSE'),el('h2',g.title));header.append(brand);const identity=el('div');identity.className='uni-identity';identity.append(el('span',username),el('span',g.role));header.append(identity);label=el('span');label.className='uni-connection';label.setAttribute('role','status');header.append(label);this.connection(navigator.onLine===false?'offline':state);
- link(header,'Back to Tasks','index.html?view=today');button(header,'All Universes',()=>{if(this.canLeave())onExit();});
+ const sync=button(header,'↻',()=>{if(this.canLeave())onRefresh();});sync.setAttribute('aria-label','Sync Universe');sync.title='Sync Universe';link(header,'Back to Tasks','index.html?view=today');button(header,'All Universes',()=>{if(this.canLeave())onExit();});
  const aside=el('nav');aside.className='uni-sidebar';aside.hidden=true;aside.setAttribute('aria-label','Universe sidebar');shell.append(aside);const tabs=el('nav');tabs.className='uni-tabs';tabs.setAttribute('aria-label','Universe tabs');shell.append(tabs);
  const content=el('main');content.className='uni-content';shell.append(content);const panes={},buttons=[];
- const items=[['dashboard','My dashboard'],['projects','Projects'],['community','Community'],...( ['owner','admin'].includes(g.role)?[['controls','Controls']]:[]),['settings','Settings']];
+ const items=[['dashboard','My dashboard'],['projects','Projects'],['stats','My stats'],...( ['owner','admin'].includes(g.role)?[['controls','Controls']]:[]),['settings','Settings']];
  const show=id=>{if(dirty()&&!this.canLeave())return;for(const [key,pane]of Object.entries(panes))pane.hidden=key!==id;for(const [key,b]of buttons){b.setAttribute('aria-current',key===id?'page':'false');b.classList.toggle('selected',key===id);}aside.hidden=true;menu.setAttribute('aria-expanded','false');};
  for(const [id,title]of items){const pane=el('section');pane.className='uni-pane';pane.dataset.pane=id;panes[id]=pane;content.append(pane);for(const nav of [aside,tabs])buttons.push([id,button(nav,title,()=>show(id))]);}
- button(aside,'Refresh Universe',()=>{if(this.canLeave())onRefresh();});const footer=el('footer');footer.className='uni-footer';link(footer,'Back to Tasks','index.html?view=today');button(footer,'All Universes',()=>{if(this.canLeave())onExit();});shell.append(footer);show('dashboard');
+ const footer=el('footer');footer.className='uni-footer';link(footer,'Back to Tasks','index.html?view=today');button(footer,'All Universes',()=>{if(this.canLeave())onExit();});shell.append(footer);show('dashboard');
  shell.addEventListener('input',e=>{const form=e.target.closest('form');if(form)form.dataset.dirty='true';});shell.addEventListener('submit',()=>{});
  shell.addEventListener('click',e=>{const a=e.target.closest('a');if(a&&dirty()&&!this.canLeave())e.preventDefault();});
  return {panes,show};
