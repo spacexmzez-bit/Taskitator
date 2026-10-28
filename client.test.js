@@ -296,7 +296,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-8-v3'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-polish-v2'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -724,6 +724,7 @@ class UniElement {
  replaceChildren(...items){this.children=[...items];}
  setAttribute(k,v){this.attrs[k]=v;}
  addEventListener(k,fn){this.events[k]=fn;}
+ remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(x=>x!==this);this.parentElement=null;}
  focus(){}select(){}
 }
 function focusEngine(){const window={addEventListener(){}},context={window,document:{readyState:'loading',addEventListener(){}},navigator:{},setInterval(){},Date,JSON,Number,Math};vm.runInNewContext(fs.readFileSync(new URL('uni/focus-timer.js',rootURL()),'utf8'),context);return window.TaskitatorPomodoro;}
@@ -811,3 +812,4 @@ import './uni/universe-shell.test.js';
 test('Phase 8 dashboard filters locally and shows assigned child with contextual parent',async()=>{const root=new UniElement(),window={Clerk:{user:{id:'me'}},addEventListener(){}};let calls=0;vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,document:{createElement:tag=>new UniElement(tag)},Date,Map,Set,Error});await window.UniverseTasksUI.mount(root,{id:'g',role:'member'},[{account_id:'me',username:'Me'}],{view:'dashboard',current:()=>true,run:fn=>fn(),api:async()=>{calls++;return {projects:[{id:'p',title:'Project'}],tasks:[{id:'parent',title:'Parent',project_id:'p',members:[],mode:'everyone'},{id:'child',title:'Assigned child',parent_id:'parent',project_id:'p',members:['me'],mode:'everyone'}],assignments:[{id:'a',task_id:'child',account_id:'me',state:'open'}],catalog:[],progress:{}};}});assert.ok(uniNodes(root).some(n=>n.textContent==='Parent · context'));assert.ok(uniNodes(root).some(n=>n.textContent==='Assigned child'));const search=uniNodes(root).find(n=>n.tag==='input');search.value='No match';search.events.input();assert.ok(uniNodes(root).some(n=>n.textContent==='No assigned tasks match these filters.'));assert.equal(calls,1);});
 
 import './uni/universe-interface.test.js';
+import './uni/universe-polish.test.js';
