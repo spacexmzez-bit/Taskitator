@@ -256,6 +256,22 @@ test('backup sanitation excludes authentication and AI secrets, and normal sync 
     assert.equal(auth.cleanSettings(raw).gemini_api_key,undefined);
     assert.equal(raw.worker_passkey,'old');
 });
+test('logout records intent, confirms Clerk session ended, and prevents false logout success',async()=>{
+    const {auth,window,context}=client();
+    auth.account={user:'rd',user_id:'user_A'};
+    window.Clerk.signOut=async()=>{window.Clerk.session=null;};
+    await auth.signOut();
+    assert.equal(context.sessionStorage.getItem('taskitator_logout_pending'),'1');
+    assert.equal(auth.account,null);
+
+    const second=client();
+    second.auth.account={user:'rd',user_id:'user_A'};
+    second.window.Clerk.signOut=async()=>{}; // provider session incorrectly remains active
+    await assert.rejects(second.auth.signOut(),/could not confirm that your sign-in session ended/i);
+    assert.equal(second.context.sessionStorage.getItem('taskitator_logout_pending'),null);
+    assert.equal(second.auth.account.user,'rd');
+});
+
 test('sync archive keys do not contain bearer credentials and logout awaits revocation',async()=>{
     const {storage,auth,window,context}=client();
     auth.account={user:'rd',display_name:'rd',user_id:'user_A'};
@@ -296,7 +312,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-tabs-v3'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-polish-v3'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};

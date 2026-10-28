@@ -156,8 +156,25 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             return data.account;
         },
         async signOut() {
-            // Await provider revocation before treating the browser as signed out.
-            await window.Clerk.signOut();
+            // Keep an intent marker across the redirect. If Clerk's session-change
+            // listener navigates before the caller does, the login bootstrap can
+            // finish logout instead of auto-entering the still-cached account.
+            const marker = 'taskitator_logout_pending';
+            sessionStorage.setItem(marker, '1');
+            try {
+                await window.Clerk.signOut();
+            } catch (error) {
+                // Some SDK failures can arrive after the provider has already
+                // cleared the session. Treat that as a completed logout.
+                if (window.Clerk?.session) {
+                    sessionStorage.removeItem(marker);
+                    throw error;
+                }
+            }
+            if (window.Clerk?.session) {
+                sessionStorage.removeItem(marker);
+                throw new Error('Taskitator could not confirm that your sign-in session ended. Please try Log Out again.');
+            }
             this.account = null;
         },
         async manageAccount() { window.Clerk.openUserProfile(); },
@@ -175,6 +192,24 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
                 signInUrl: location.origin + '/login.html', signUpUrl: location.origin + '/login.html',
                 signInForceRedirectUrl: location.origin + '/login.html',
                 signUpForceRedirectUrl: location.origin + '/login.html' });
+
+            // A logout may trigger the old page's session listener before its
+            // explicit redirect completes. Never auto-enter an account while
+            // that deliberate logout is being finalized.
+            const logoutMarker = 'taskitator_logout_pending';
+            if (sessionStorage.getItem(logoutMarker) === '1') {
+                if (window.Clerk.session) {
+                    try { await window.Clerk.signOut(); }
+                    catch (error) {
+                        if (window.Clerk.session) throw new Error('Taskitator could not finish signing out. Please retry Log Out.');
+                    }
+                }
+                if (window.Clerk.session) throw new Error('Taskitator could not confirm that your sign-in session ended. Please retry Log Out.');
+                sessionStorage.removeItem(logoutMarker);
+                this.account = null;
+                this.deletion = null;
+                return;
+            }
             if (window.Clerk.session) {
                 const data = await this.api('/auth/me');
                 this.account = data.account;
@@ -1345,7 +1380,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-universe-tabs-v3');
+                    resolve(event.data?.version === 'taskitator-universe-polish-v3');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
