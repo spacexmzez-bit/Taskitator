@@ -42,3 +42,21 @@ test('Shared layer helper traps focus, sizes to visual viewport and releases scr
  const html=new E('html'),body=new E('body'),root=new E('div');html.append(body);body.append(root);const old=new E('button');root.append(old);document={documentElement:html,body,activeElement:old,getElementById:()=>root,createElement:t=>new E(t),addEventListener:(k,f)=>{const a=listeners.get(k)||[];a.push(f);listeners.set(k,a);},removeEventListener:(k,f)=>listeners.set(k,(listeners.get(k)||[]).filter(x=>x!==f))};const vEvents={};const window={visualViewport:{offsetTop:10,height:400,addEventListener:(k,f)=>vEvents[k]=f,removeEventListener:k=>delete vEvents[k]}};
  vm.runInNewContext(source('universe-widgets.js'),{window,document,navigator:{onLine:true},setTimeout:()=>1,clearTimeout(){}});const overlay=new E('div'),first=new E('button'),last=new E('button');overlay.append(first,last);root.append(overlay);let close=0;const release=window.UniverseUX.layer(overlay,{initial:first,close:()=>close++});assert.equal(document.activeElement,first);assert.equal(html.style.overflow,'hidden');assert.equal(overlay.style.height,'400px');last.focus();let prevented=false;listeners.get('keydown')[0]({key:'Tab',preventDefault(){prevented=true;}});assert.ok(prevented);assert.equal(document.activeElement,first);listeners.get('keydown')[0]({key:'Escape',preventDefault(){},stopImmediatePropagation(){}});await flush();assert.equal(close,1);release();assert.equal(document.activeElement,old);assert.equal(html.style.overflow,undefined);assert.deepEqual(Object.keys(vEvents),[]);
 });
+
+test('Selection keeps inactive sections hidden while member counts are still loading',async()=>{
+ const root=new Element('div'),events={};let resolveMembers;
+ const members=new Promise(resolve=>{resolveMembers=resolve;});
+ const window={Clerk:{session:{id:'s'},user:{id:'me'},addListener(){}},addEventListener:(k,fn)=>events[k]=fn,TaskitatorAuth:{account:{user:'me'},api:async path=>{
+  if(path.endsWith('/capabilities'))return {ui:true};
+  if(path==='/universe/groups')return {groups:[{id:'g',title:'Team',role:'owner'}]};
+  if(path==='/pro/status')return {isPro:true};
+  if(path.endsWith('/members'))return members;
+ }}};
+ vm.runInNewContext(source('universe-ui.js'),{window,document:{getElementById:()=>root,createElement:t=>new Element(t)},navigator:{onLine:true},location:{search:''},URL,URLSearchParams,Map,Set,Error});
+ events['taskitator-universe-view']();await flush();
+ const sections=root.children.filter(x=>x.tag==='section');assert.equal(sections.length,2);assert.ok(sections.every(x=>x.hidden));
+ assert.equal(byText(root,'Joined Universes').attrs['aria-selected'],'true');
+ resolveMembers({members:[{account_id:'me'}]});await flush();assert.ok(sections.every(x=>x.hidden));
+ await byText(root,'Created Universes').fire('click');assert.ok(byText(root,'1 joined members'));
+ await byText(root,'Join or Create a Universe').fire('click');assert.equal(sections[0].hidden,false);assert.equal(sections[1].hidden,true);
+});
