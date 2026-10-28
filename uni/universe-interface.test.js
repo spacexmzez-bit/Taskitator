@@ -15,10 +15,11 @@ class Element{
  reset(){}focus(){}select(){}
 }
 const descendants=e=>[e,...e.children.flatMap(descendants)];
-async function fixture(view='projects'){
+async function fixture(view='projects',setup=null){
  const panel=new Element('root'),controls=new Element('section'),sent=[],listeners={};let fail=false;
  const window={Clerk:{user:{id:'me'}},addEventListener:(name,fn)=>(listeners[name]??=[]).push(fn),removeEventListener(){}};
  const data={revision:1,projects:[{id:'p',title:'First',members:['me'],reviewers:[]},{id:'q',title:'Second',members:['other'],reviewers:[]}],tasks:[{id:'t',project_id:'p',title:'First task',members:['me'],mode:'everyone'},{id:'u',project_id:'q',title:'Second task',members:['other'],mode:'everyone'}],assignments:[],catalog:[{id:'low',kind:'priority',rank:9,title:'Low'},{id:'high',kind:'priority',rank:1,title:'High'}],progress:{}};
+ if(setup)setup(data);
  const context={window,document:{createElement:tag=>new Element(tag)},Date,Map,Set,Error,confirm:()=>true};
  vm.runInNewContext(readFileSync(new URL('./universe-tasks-ui.js',import.meta.url),'utf8'),context);
  await window.UniverseTasksUI.mount(panel,{id:'g',role:'owner'},[{account_id:'me',username:'Mazen',role:'owner'},{account_id:'other',username:'Sara',role:'member'}],{view,controls,current:()=>true,run:fn=>fn(),api:async()=>data,send:async(path,body)=>{sent.push({path,body});if(fail&&body.title==='Child'){fail=false;throw Error('Offline');}return {id:'new'+sent.length};}});
@@ -51,3 +52,14 @@ test('Visual rebuild selection opens a complete owner shell with Controls and Se
  await byText(root,'Created Universes').fire('click');await byText(root,'Orion').fire('click');for(let i=0;i<30;i++)await new Promise(r=>setImmediate(r));
  assert.ok(byText(root,'Members'));assert.ok(byText(root,'Create invitation'));assert.ok(byText(root,'Group settings'));assert.ok(byText(root,'Delete Universe'));assert.ok(byText(root,'Manage priorities'));assert.equal(byText(root,'Community'),undefined);assert.ok(byText(root,'My stats'));assert.ok(descendants(root).some(n=>n.className==='uni-connection'&&n.attrs['aria-label']==='Connected'));
 });
+
+test('Personal dashboard uses current member assignment state instead of whole-team completion',async()=>{
+ const f=await fixture('dashboard',data=>{data.assignments=[{id:'a',task_id:'t',account_id:'me',state:'approved'}];data.progress.t={approved:1,total:2,complete:false};});
+ assert.ok(byText(f.panel,'0 active · 1 complete'));const filter=descendants(f.panel).find(x=>x.attrs['aria-label']==='Filter tasks');await filter.fire('click');input(f.panel,'Status').value='all';await input(f.panel,'Status').fire('input');const row=descendants(f.panel).find(x=>x.className?.includes('task-node completed'));assert.ok(row);assert.equal(byText(f.panel,'Open'),undefined);
+});
+test('Pending review is labelled without reporting completion',async()=>{
+ const f=await fixture('dashboard',data=>{data.assignments=[{id:'a',task_id:'t',account_id:'me',state:'pending'}];data.progress.t={approved:0,total:2,complete:false};});
+ assert.ok(byText(f.panel,'In review'));assert.ok(!descendants(f.panel).some(n=>n.className==='uni-state'&&n.textContent==='Complete'));assert.equal(f.sent.length,0);
+});
+
+export { Element, descendants, byText, input, fixture };
