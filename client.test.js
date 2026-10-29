@@ -312,7 +312,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-polish-v3'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-phase9-v1'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -829,3 +829,14 @@ test('Phase 8 dashboard filters locally and shows assigned child with contextual
 
 import './uni/universe-interface.test.js';
 import './uni/universe-polish.test.js';
+
+
+test('bootstrap requires the version actually reported by the shipped service worker',()=>{
+    const core=fs.readFileSync(new URL('core.js',root),'utf8');
+    const sw=fs.readFileSync(new URL('sw.js',root),'utf8');
+    const expected=core.match(/event\.data\?\.version === '([^']+)'/)?.[1];
+    const actual=sw.match(/const CACHE_NAME = '([^']+)'/)?.[1];
+    assert.ok(expected,'Bootstrap must specify the required security cache version');
+    assert.ok(actual,'Service worker must report its cache version');
+    assert.equal(expected,actual,'Deploy a matching bootstrap and service worker version');
+});
