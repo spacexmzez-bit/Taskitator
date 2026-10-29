@@ -1,0 +1,31 @@
+-- Phase 6–7 schema and triggers, extracted from the current tested migration.
+-- Apply after uni/universe-phase5.sql. Repeatable and additive.
+CREATE TABLE IF NOT EXISTS universe_phase6(version INTEGER PRIMARY KEY CHECK(version=6));
+CREATE TABLE IF NOT EXISTS universe_phase7(version INTEGER PRIMARY KEY CHECK(version=7));
+CREATE TABLE IF NOT EXISTS universe_solo(group_id TEXT PRIMARY KEY,solo_since INTEGER);
+CREATE TABLE IF NOT EXISTS universe_settings(group_id TEXT PRIMARY KEY,validate_criteria INTEGER NOT NULL DEFAULT 1 CHECK(validate_criteria IN(0,1)));
+CREATE TABLE IF NOT EXISTS universe_project_options(project_id TEXT PRIMARY KEY,data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS universe_catalog(id TEXT PRIMARY KEY,group_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN('tag','priority')),title TEXT NOT NULL,rank INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS universe_profiles(account_id TEXT PRIMARY KEY,username TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS universe_criteria_checks(id TEXT PRIMARY KEY,group_id TEXT NOT NULL,actor_id TEXT NOT NULL,signature TEXT NOT NULL,score INTEGER NOT NULL,expires_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS universe_task_state(task_id TEXT PRIMARY KEY,group_id TEXT NOT NULL,parent_id TEXT,deleted INTEGER NOT NULL DEFAULT 0,closed INTEGER NOT NULL DEFAULT 0,position INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS universe_tree ON universe_task_state(group_id,parent_id,deleted);
+INSERT OR IGNORE INTO universe_task_state SELECT id,group_id,NULL,0,0,created_at FROM universe_tasks;
+INSERT OR IGNORE INTO universe_solo SELECT g.id,CASE WHEN count(m.account_id)=1 THEN unixepoch()*1000 ELSE NULL END FROM universe_groups g JOIN universe_members m ON m.group_id=g.id GROUP BY g.id;
+CREATE TRIGGER IF NOT EXISTS universe_solo_create AFTER INSERT ON universe_groups BEGIN INSERT OR IGNORE INTO universe_solo VALUES(NEW.id,NEW.created_at); END;
+CREATE TRIGGER IF NOT EXISTS universe_solo_join AFTER INSERT ON universe_members WHEN NEW.role<>'owner' BEGIN UPDATE universe_solo SET solo_since=NULL WHERE group_id=NEW.group_id; END;
+CREATE TRIGGER IF NOT EXISTS universe_solo_depart AFTER DELETE ON universe_members WHEN OLD.role<>'owner' BEGIN UPDATE universe_solo SET solo_since=CASE WHEN (SELECT count(*) FROM universe_members WHERE group_id=OLD.group_id)=1 THEN unixepoch()*1000 ELSE NULL END WHERE group_id=OLD.group_id; END;
+DROP TRIGGER IF EXISTS universe_invite_lifecycle;
+CREATE TRIGGER universe_invite_lifecycle BEFORE INSERT ON universe_invitations BEGIN SELECT CASE WHEN EXISTS(SELECT 1 FROM universe_group_state WHERE group_id=NEW.group_id AND deleted=1) OR NOT EXISTS(SELECT 1 FROM universe_groups g JOIN universe_lifecycle l ON l.account_id=g.owner_id WHERE g.id=NEW.group_id AND l.lapse_at IS NULL) THEN RAISE(ABORT,'U_ACCESS_DENIED') END; SELECT CASE WHEN (SELECT count(*) FROM universe_members WHERE group_id=NEW.group_id AND role<>'owner')+(SELECT count(*) FROM universe_invitations WHERE group_id=NEW.group_id AND accepted_by IS NULL AND expires_at>unixepoch()*1000)>=20 THEN RAISE(ABORT,'U_PARTICIPANT_CAP') END; END;
+DROP TRIGGER IF EXISTS universe_join_lifecycle;
+CREATE TRIGGER universe_join_lifecycle BEFORE INSERT ON universe_members WHEN NEW.role<>'owner' BEGIN SELECT CASE WHEN EXISTS(SELECT 1 FROM universe_group_state WHERE group_id=NEW.group_id AND deleted=1) OR NOT EXISTS(SELECT 1 FROM universe_groups g JOIN universe_lifecycle l ON l.account_id=g.owner_id WHERE g.id=NEW.group_id AND l.lapse_at IS NULL) THEN RAISE(ABORT,'U_ACCESS_DENIED') END; SELECT CASE WHEN (SELECT count(*) FROM universe_members WHERE group_id=NEW.group_id AND role<>'owner')+(SELECT count(*) FROM universe_invitations WHERE group_id=NEW.group_id AND accepted_by IS NULL AND expires_at>unixepoch()*1000)>=20 THEN RAISE(ABORT,'U_PARTICIPANT_CAP') END; END;
+UPDATE universe_submissions SET retain_until=NULL WHERE decision IS NULL;
+UPDATE universe_files SET expires_at=9007199254740991 WHERE kind='proof' AND state='attached' AND submission_id IN(SELECT id FROM universe_submissions WHERE decision IS NULL);
+CREATE TRIGGER IF NOT EXISTS universe_assignment_depart AFTER DELETE ON universe_members BEGIN UPDATE universe_assignments SET state='cancelled',revision=revision+1 WHERE group_id=OLD.group_id AND account_id=OLD.account_id AND state<>'cancelled'; DELETE FROM universe_invitations WHERE group_id=OLD.group_id AND actor_id=OLD.account_id AND accepted_by IS NULL; END;
+INSERT OR IGNORE INTO universe_catalog SELECT 'priority_'||id||'_high',id,'priority','High',1 FROM universe_groups;
+INSERT OR IGNORE INTO universe_catalog SELECT 'priority_'||id||'_medium',id,'priority','Medium',2 FROM universe_groups;
+INSERT OR IGNORE INTO universe_catalog SELECT 'priority_'||id||'_low',id,'priority','Low',3 FROM universe_groups;
+CREATE TRIGGER IF NOT EXISTS universe_default_priorities AFTER INSERT ON universe_groups BEGIN INSERT INTO universe_catalog VALUES('priority_'||NEW.id||'_high',NEW.id,'priority','High',1); INSERT INTO universe_catalog VALUES('priority_'||NEW.id||'_medium',NEW.id,'priority','Medium',2); INSERT INTO universe_catalog VALUES('priority_'||NEW.id||'_low',NEW.id,'priority','Low',3); END;
+INSERT OR IGNORE INTO universe_phase6 VALUES(6);
+INSERT OR IGNORE INTO universe_phase7 VALUES(7);
+CREATE TABLE IF NOT EXISTS universe_catalog_styles(id TEXT PRIMARY KEY, group_id TEXT NOT NULL, color TEXT NOT NULL);

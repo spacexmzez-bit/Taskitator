@@ -1,6 +1,8 @@
 -- Universe schema 1. Additive and repeatable; never touches personal tables.
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS universe_schema(version INTEGER PRIMARY KEY CHECK(version=1));
+-- The Phase 9 marker table exists from the base schema; capability is enabled only by row version=9.
+CREATE TABLE IF NOT EXISTS universe_phase9(version INTEGER PRIMARY KEY CHECK(version=9));
 CREATE TABLE IF NOT EXISTS universe_accounts(
  account_id TEXT PRIMARY KEY, blocked INTEGER NOT NULL DEFAULT 0 CHECK(blocked IN (0,1)),
  joined_limit INTEGER NOT NULL CHECK(joined_limit IN (2,7)), created_at INTEGER NOT NULL
@@ -45,7 +47,9 @@ CREATE TABLE IF NOT EXISTS universe_events(
  id TEXT PRIMARY KEY, group_id TEXT REFERENCES universe_groups(id), actor_id TEXT NOT NULL,
  kind TEXT NOT NULL, resource_id TEXT NOT NULL, created_at INTEGER NOT NULL
 );
+DROP TRIGGER IF EXISTS universe_owner_immutable;
 CREATE TRIGGER IF NOT EXISTS universe_owner_immutable BEFORE UPDATE OF owner_id,id ON universe_groups
+ WHEN NOT EXISTS(SELECT 1 FROM universe_phase9 WHERE version=9)
  BEGIN SELECT RAISE(ABORT,'U_OWNER_IMMUTABLE'); END;
 CREATE TRIGGER IF NOT EXISTS universe_create_guard BEFORE INSERT ON universe_groups BEGIN
  SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM universe_accounts WHERE account_id=NEW.owner_id AND blocked=0)
