@@ -294,7 +294,9 @@ test('client price rejection does not send paid inference; approval carries payl
     for(const approve of [false,true]) {
         const calls=[],prompts=[],window={Clerk:{session:{id:'s'}},ProUI:{confirmReviewQuote:async(summary)=>{prompts.push(summary);return approve}}};
         vm.runInContext(source,vm.createContext({window,localStorage:{getItem:()=>null},crypto,TextEncoder,Uint8Array}));
+        window.TaskitatorPro.getStatus=async()=>({isPro:true,status:'active',use_byok:false});
         window.TaskitatorPro.prepareAudit=async()=>{};
+        window.TaskitatorPro.getStatus=async()=>({isPro:true,status:'active',use_byok:false});
         window.TaskitatorPro.prepareAudit=async()=>{};
     window.TaskitatorPro.request=async(path,opts)=>{
             calls.push({path,body:JSON.parse(opts.body)});
@@ -319,7 +321,8 @@ test('a lost browser response reuses the same operation on retry instead of purc
     const window={Clerk:{session:{id:'session_A'}},ProUI:{confirmReviewQuote:async()=>true}};
     vm.runInContext(source,vm.createContext({window,crypto,TextEncoder,Uint8Array}));
     let finished=false;
-    window.TaskitatorPro.prepareAudit=async()=>{};
+    window.TaskitatorPro.getStatus=async()=>({isPro:true,status:'active',use_byok:false});
+        window.TaskitatorPro.prepareAudit=async()=>{};
     window.TaskitatorPro.request=async(path,options)=>{
         const body=JSON.parse(options.body);calls.push({path,body});
         if(path==='/pro/ai/quote')return finished ? {completed:true,result:{success:true,credits_charged:.1}} :
@@ -351,7 +354,9 @@ test('batch price preview uses task titles, hides IDs and applies discount wordi
         vm.runInContext(source,vm.createContext({window,crypto,TextEncoder,Uint8Array}));
         const tasks=[{id:'internal_task_942',title:'Lab\nnotes',criteria:'complete'},
             {id:'internal_task_765',title:'',criteria:'complete'}].slice(0,count);
+        window.TaskitatorPro.getStatus=async()=>({isPro:true,status:'active',use_byok:false});
         window.TaskitatorPro.prepareAudit=async()=>{};
+        window.TaskitatorPro.getStatus=async()=>({isPro:true,status:'active',use_byok:false});
         window.TaskitatorPro.prepareAudit=async()=>{};
     window.TaskitatorPro.request=async(path,options)=>{
             const body=JSON.parse(options.body);calls.push({path,body});
@@ -1289,6 +1294,7 @@ test("Review cost preview dialog displays 1-decimal summary, 3-decimal expandabl
         return { verdict: "approved", job_id: "job_1" };
     };
 
+    f.pro.getStatus=async()=>({isPro:true,status:'active',use_byok:false});
     const pendingCancel = f.pro.batchReview({
         tasks: [
             { id: "t1", title: "Calculus Problem Set", criteria: "Show all steps" },
@@ -1450,7 +1456,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-universe-phase9-v1'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-smart-study-v1'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);

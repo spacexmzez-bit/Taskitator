@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" class="auth-pending">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-UMQxSfHx6d3wLl2qdCpqJjGMhJD/qEkhRvFhB1RA/+4=' 'sha256-FsSI9ctBrij98K88YJxSZpXHuaM61ib775+Mx7BRPrI=' 'sha256-CPy/ZLFlquFCxNynIXw+gTsyP0NwNLsdsigcYUSKLQw=' 'sha256-CAU6KVZy6OMeVnS1dN0vmQb8tT/cvIDcATh4wmcEkvQ=' 'sha256-LkDsFLD3B41WimikzpNDDneUxcJ1/GX6fCk9Mj9Lggk=' 'sha256-jxuOiKPpquP1dKO4iWwA4qfxlUwVA3UM9Mid+zg1nhA=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-Z4w7a3cFYzWUmbKyVwHIwHrtcN5O9avyiUm3KQPsPeI=' 'sha256-FsSI9ctBrij98K88YJxSZpXHuaM61ib775+Mx7BRPrI=' 'sha256-CPy/ZLFlquFCxNynIXw+gTsyP0NwNLsdsigcYUSKLQw=' 'sha256-CAU6KVZy6OMeVnS1dN0vmQb8tT/cvIDcATh4wmcEkvQ=' 'sha256-LkDsFLD3B41WimikzpNDDneUxcJ1/GX6fCk9Mj9Lggk=' 'sha256-jxuOiKPpquP1dKO4iWwA4qfxlUwVA3UM9Mid+zg1nhA=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
@@ -1277,6 +1277,7 @@
     <script type="text/taskitator-script" src="uni/universe-shell.js"></script>
     <script type="text/taskitator-script" src="uni/universe-ui.js"></script>
 <script type="text/taskitator-script" src="pro.js"></script>
+    <script type="text/taskitator-script" src="pro/smart-study.js"></script>
     <script type="text/taskitator-script" src="pro/study-plan.js"></script>
     <script type="text/taskitator-script" src="components.js"></script>
     <script type="text/taskitator-script" src="uni/focus-timer.js"></script>
@@ -1348,7 +1349,9 @@
             editFab.style.display = (activeProj.id === 'inbox') ? 'none' : 'flex';
         }
 
-        const tasks = TaskitatorApp.getTasks();
+        const canonicalTasks = TaskitatorApp.getTasks();
+        const logicalToday=TaskitatorRecurrence.today(Date.now(),Number(JSON.parse(localStorage.getItem('taskitator_settings')||'{}').day_start_hour)||0);
+        const tasks=canonicalTasks.map(t=>{if(t.status!=='active'||t.smart_early_date!==logicalToday)return t;const parent=canonicalTasks.find(p=>p.study_plan_id===t.study_plan_id&&!p.parent_id&&p.due_date===logicalToday);return parent?{...t,parent_id:parent.id,is_bonus:true}:t;});
         const allChildrenMap = new Map();
         const visibleChildrenMap = new Map();
 
@@ -1381,7 +1384,10 @@
             return;
         }
 
-        function buildNode(task, depth = 0) {
+        const collapsed = new Set(JSON.parse(localStorage.getItem('taskitator_collapsed_nodes') || '[]'));
+        function buildNode(task, depth = 0, visited = new Set()) {
+            if (visited.has(task.id)) return document.createElement('li');
+            visited = new Set([...visited, task.id]);
             const li = document.createElement('li');
             li.className = `task-node ${task.status === 'completed' ? 'completed' : ''}`;
 
@@ -1392,6 +1398,14 @@
             const main = document.createElement('div');
             main.className = 'task-main';
 
+            const children = visibleChildrenMap.get(task.id) || [];
+            if (children.length) {
+                const toggle = document.createElement('button'); toggle.type='button'; toggle.className='collapse-toggle';
+                toggle.textContent=collapsed.has(task.id)?'▶':'▼';
+                toggle.setAttribute('aria-label',collapsed.has(task.id)?'Expand subtasks':'Collapse subtasks');
+                toggle.setAttribute('aria-expanded',String(!collapsed.has(task.id)));
+                toggle.onclick=e=>{e.stopPropagation();if(collapsed.has(task.id))collapsed.delete(task.id);else collapsed.add(task.id);localStorage.setItem('taskitator_collapsed_nodes',JSON.stringify([...collapsed]));renderProjectWorkspace();}; main.appendChild(toggle);
+            }
             const checkBtn = document.createElement('button');
             checkBtn.className = 'check-circle';
             checkBtn.textContent = task.status === 'completed' ? '✓' : '';
@@ -1405,6 +1419,7 @@
             titleSpan.className = 'task-title';
             titleSpan.textContent = task.title;
             main.appendChild(titleSpan);
+            if(task.smart_early_date===logicalToday&&task.is_bonus){const badge=document.createElement('span');badge.className='bonus-badge';badge.textContent='⭐ Early bonus';main.appendChild(badge);}
 
             if (task.due_date) {
                 const due = document.createElement('span');
@@ -1433,8 +1448,8 @@
             const kids = visibleChildrenMap.get(task.id) || [];
             if (kids.length > 0) {
                 const subUl = document.createElement('ul');
-                subUl.className = 'task-subtree';
-                kids.forEach(k => subUl.appendChild(buildNode(k, depth + 1)));
+                subUl.className = 'task-subtree' + (collapsed.has(task.id) ? ' collapsed' : '');
+                kids.forEach(k => subUl.appendChild(buildNode(k, depth + 1, visited)));
                 li.appendChild(subUl);
             }
 

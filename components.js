@@ -2313,6 +2313,7 @@ window.TaskitatorComponents = Object.freeze({
                         rawEditedTitle = rawEditedTitle.replace(/\$\$/g, '').trim();
                     }
 
+                    if (!task.is_bonus && willBeBonus && !isBypassActive && (task.strict_prerequisites || host.tasks.shieldedAncestor(task.id))) { alert('Required work protected by a shield cannot become bonus work.'); return; }
                     const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(rawEditedTitle);
 
                     const editTaskParentSelect = document.getElementById('editTaskParentSelect');

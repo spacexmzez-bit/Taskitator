@@ -1841,13 +1841,22 @@ window.TaskitatorApp = (() => {
         renderUnifiedTaskTree();
     }
 
+    function eligibleSelectionTasks() {
+        const today=getAppTodayStr();
+        return tasks.filter(t=>t.status==='active'&&!pendingGraceCompletions.has(t.id)&&(currentView!=='today'||['today',today].includes(String(t.due_date||'').trim().toLowerCase())||t.smart_early_date===today));
+    }
     function updateBatchBarUI() {
         const bar = document.getElementById('batchActionBar');
         const label = document.getElementById('batchSelectedCountLabel');
         if (!bar) return;
 
         const review = document.getElementById('batchReviewSelectedBtn');
-        if (review) review.disabled = selectedTaskIds.size === 0;
+        if (review) review.disabled = false;
+        const all=document.getElementById('batchSelectAllBtn'),eligible=eligibleSelectionTasks();
+        if(all)all.textContent=eligible.length&&eligible.every(t=>selectedTaskIds.has(t.id))?'Deselect all':'Select all';
+        const resize=()=>document.documentElement.style.setProperty('--batch-clearance',bar.classList.contains('open')?(Math.ceil(bar.getBoundingClientRect().height)+32)+'px':'0px');
+        if(!bar._sizeObserver&&typeof ResizeObserver!=='undefined'){bar._sizeObserver=new ResizeObserver(resize);bar._sizeObserver.observe(bar);window.addEventListener('resize',resize);}
+        requestAnimationFrame(resize);
         // Keep the available actions visible while the user chooses tasks.
         if (isSelectionModeActive) {
             bar.classList.add('open');
@@ -2303,7 +2312,12 @@ window.TaskitatorApp = (() => {
         const allChildrenMap = new Map();
         const visibleChildrenMap = new Map();
 
-        tasks.forEach(t => {
+        const displayTasks=tasks.map(t=>{
+            if(t.status!=='active'||t.smart_early_date!==todayStr)return t;
+            const parent=tasks.find(p=>p.study_plan_id===t.study_plan_id&&!p.parent_id&&p.due_date===todayStr);
+            return parent?{...t,parent_id:parent.id,due_date:todayStr,is_bonus:true}:t;
+        });
+        displayTasks.forEach(t => {
             if (t.status === 'trash') return;
             const pId = t.parent_id || 'root';
 
@@ -2508,7 +2522,7 @@ window.TaskitatorApp = (() => {
                 if (task.is_bonus) {
                     const bonusBadge = document.createElement('span');
                     bonusBadge.className = 'bonus-badge';
-                    bonusBadge.innerHTML = '⭐ Bonus';
+                    bonusBadge.textContent = task.smart_early_date ? '⭐ Early · required '+task.smart_origin_date : '⭐ Bonus';
                     main.appendChild(bonusBadge);
                 }
 
@@ -2804,6 +2818,9 @@ window.TaskitatorApp = (() => {
     // Boot and Event Wiring
     // =========================================================================
     function init() {
+        if (currentView === 'today') Promise.resolve().then(async()=>{
+            try { if(window.SyncEngine?.isConfigured?.()){const ok=await window.SyncEngine.forceImmediateSync();if(ok){loadStorage();renderUnifiedTaskTree();}else console.warn('Today sync is pending. Use Sync Now to resolve a connection or edit conflict.');}} catch(error){console.warn('Today sync could not finish.',error.message);}
+        });
         initSyncIndicator();
         loadStorage();
         BreakUI.init();
@@ -2846,7 +2863,7 @@ window.TaskitatorApp = (() => {
         // Review only the current multiselection; the modal filters AI eligibility.
         const batchReviewSelectedBtn = document.getElementById('batchReviewSelectedBtn');
         if (batchReviewSelectedBtn) batchReviewSelectedBtn.addEventListener('click', () => {
-            if (!isSelectionModeActive || !selectedTaskIds.size) return;
+            if (!isSelectionModeActive) return;
             if (typeof window.openBatchReviewModal === 'function') window.openBatchReviewModal([...selectedTaskIds]);
         });
 
@@ -2871,15 +2888,8 @@ window.TaskitatorApp = (() => {
 
         if (batchSelectAllBtn) {
             batchSelectAllBtn.addEventListener('click', () => {
-                const todayStr = getAppTodayStr();
-                tasks.forEach(t => {
-                    if (t.status === 'trash' || t.status === 'completed' || pendingGraceCompletions.has(t.id)) return;
-                    if (currentView === 'today') {
-                        const due = String(t.due_date || '').trim().toLowerCase();
-                        if (due !== 'today' && due !== todayStr) return;
-                    }
-                    selectedTaskIds.add(t.id);
-                });
+                const eligible=eligibleSelectionTasks(),clear=eligible.length&&eligible.every(t=>selectedTaskIds.has(t.id));
+                eligible.forEach(t=>clear?selectedTaskIds.delete(t.id):selectedTaskIds.add(t.id));
                 updateBatchBarUI();
                 renderUnifiedTaskTree();
             });

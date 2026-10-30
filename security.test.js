@@ -1763,3 +1763,30 @@ test('Universe phase 2: deletion frees joined capacity immediately, before defer
 
 // Phases 6–7 use the separately downloaded SQL guide for migration checks.
 import './uni/universe-rules.test.js';
+
+test('Shield: direct, inherited and raw sync required-to-bonus conversion rejected; bonus-to-required allowed',async()=>{
+ const f=fixture(),a=await create(f);let tasks=[task('p',{ai_locked:false,strict_prerequisites:true}),task('c',{ai_locked:false,parent_id:'p'}),task('b',{ai_locked:false,parent_id:'p',is_bonus:true})];assert.equal((await save(f,a,tasks)).status,200);
+ let pull=await f.call('/sync/pull',a.token);const update=async(list)=>f.call('/sync/push',a.token,'POST',{tasks:list,settings:{},base_version:pull.body.version,mutation_id:crypto.randomUUID()});
+ for(const id of ['p','c']){const next=structuredClone(tasks);next.find(t=>t.id===id).is_bonus=true;assert.equal((await update(next)).status,403);}
+ tasks[2].is_bonus=false;assert.equal((await update(tasks)).status,200);
+});
+test('BYOK batch: Pro enforcement, Claude vault, strict results, cached retry, no hosted spending',async()=>{
+ const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a,'sk-ant-local-test','claude');await f.call('/ai/provider',a.token,'POST',{provider:'claude'});
+ await save(f,a,[task('t'),task('u')]);const body={batch:true,tasks:[{id:'t'},{id:'u'}],files:[image],operation_id:newOperation()};assert.equal((await f.call('/pro/ai/personal-review',a.token,'POST',body)).status,403);
+ Object.assign(f.env,testEnv);const e=await activeLicense('user_A');e.use_byok=true;await f.storage.put('pro:entitlement:user_A',e);
+ f.setClaudeResponse({model:POLICY.model,stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify(['t','u'].map(task_id=>({task_id,status:'eligible',verdict:'approved',reason:'Matches'})))}],usage:{input_tokens:200,output_tokens:100}});
+ const r=await f.call('/pro/ai/personal-review',a.token,'POST',body);assert.equal(r.status,200,JSON.stringify(r.body));assert.equal(r.body.tasks.length,2);assert.equal((await f.call('/pro/ai/personal-review',a.token,'POST',body)).body.job_id,r.body.job_id);
+ assert.equal((await f.storage.list({prefix:'pro:spend:'})).size,0);assert.equal((await f.call('/pro/ai/batch-confirm',a.token,'POST',{job_id:r.body.job_id,task_ids:['t','u'],operation_id:'byok_batch_confirm',batch:true})).status,200);
+});
+
+test('Smart Study API: authorized creation, forged metadata denial, server movement and repeated sync',async()=>{
+ const {f,a}=await studyFixture(),today=globalThis.TaskitatorRecurrence.today(),created=new Date().toISOString();
+ const config={title:'Smart',total:8,days:4,start:today,weekdays:[],smart:{mode:'dates',appearances:[{unit:3,date:today}],dates:[]}};
+ const base={...config,smart:null},schedule=Study.rows(base);config.smart.dates=[schedule[3].date];
+ const body={action:'authorize',config,plan_id:'smart_api_123',created_at:created,audit:false,criteria:''};assert.equal((await f.call('/study-plan',a.token,'POST',body)).status,200);
+ const tasks=Study.build(config,body.plan_id,created);let r=await f.call('/sync/push',a.token,'POST',{tasks,settings:{},base_version:0,mutation_id:'smart_initial'});assert.equal(r.status,200,JSON.stringify(r.body));
+ let pull=(await f.call('/sync/pull',a.token)).body;const forged=structuredClone(pull.tasks);forged[4].smart_adjusted=true;r=await f.call('/sync/push',a.token,'POST',{tasks:forged,settings:{},base_version:pull.version,mutation_id:'smart_forge'});assert.equal(r.status,409);
+ pull.tasks[4].status='completed';pull.tasks[4].completed_at=created;r=await f.call('/sync/push',a.token,'POST',{tasks:pull.tasks,settings:{},base_version:pull.version,mutation_id:'smart_completion'});assert.equal(r.status,200,JSON.stringify(r.body));
+ pull=(await f.call('/sync/pull',a.token)).body;assert.equal(pull.tasks[4].smart_adjusted,true);assert.equal(pull.tasks.filter(t=>t.smart_moved_from).length,1);
+ r=await f.call('/sync/push',a.token,'POST',{tasks:pull.tasks,settings:{},base_version:pull.version,mutation_id:'smart_repeated'});assert.equal(r.status,200);assert.equal((await f.call('/sync/pull',a.token)).body.tasks.filter(t=>t.smart_moved_from).length,1);
+});

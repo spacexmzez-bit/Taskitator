@@ -1328,11 +1328,14 @@ window.TaskitatorEngine = TaskitatorEngine;
 
             const opId = operationId || ('op_'+Date.now().toString(36)+'_'+crypto.randomUUID().replaceAll('-',''));
 
-            return await this.quotedReview({
+            const status=await this.getStatus();
+            if(!status.isPro||status.status!=='active')throw new Error('Batch Review is a Pro feature. You can still review tasks individually.');
+            const batchPayload={
                 tasks:tasks.map(t => ({id:t.id,title:t.title,criteria:t.criteria || t.resolved_criteria || '',exemplar:t.exemplar || null})),
                 files:files.map(f => ({mime_type:f.mimeType || f.mime_type,data:f.data || f.base64})),
                 operation_id:opId
-            },true);
+            };
+            return status.use_byok?this.personalReview({...batchPayload,batch:true}):this.quotedReview(batchPayload,true);
         }
 
         async prepareAudit() {
@@ -1553,7 +1556,9 @@ window.TaskitatorEngine = TaskitatorEngine;
 
     // --- Phase 2: Batch Proof Review Modal & Trigger ---
 
-    function openBatchReviewModal(selectedIds = null) {
+    async function openBatchReviewModal(selectedIds = null) {
+        const access=await getClient().checkConsecutiveEntitlement();
+        if(!access.allowed){alert(access.status==='unavailable'?'Could not check Pro. Reconnect and retry.':'Batch Review is a Pro feature. You can still review tasks individually.');return;}
         if (document.getElementById('proBatchModalRoot')) return;
 
         let allTasks = [];
@@ -1563,6 +1568,7 @@ window.TaskitatorEngine = TaskitatorEngine;
             allTasks = [];
         }
 
+        const batchStatus=await getClient().getStatus();
         const scope = Array.isArray(selectedIds) ? new Set(selectedIds) : null;
         const eligibleTasks = allTasks.filter(t => t.status === 'active' && (t.ai_locked || t.require_ai_proof) && (!scope || scope.has(t.id)));
         const preselect = Boolean(scope && eligibleTasks.length <= 20);
@@ -1613,7 +1619,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                     <button type="button" class="icon-btn" id="proBatchCloseBtn">✕</button>
                 </div>
                 <p style="font-size: 0.88rem; color: #94a3b8; margin: 8px 0 16px 0;">
-                    ${scope ? 'Only your selected active AI-audited tasks are shown. ' : ''}Select up to 20 tasks and attach up to 5 proof files. Each task is reviewed and charged separately. Reviewing two or more tasks together gives each task a 25% discount. Comparing proof with a reference example doubles that task’s charge. You can check the price before starting.
+                    ${scope ? 'Only your selected active AI-audited tasks are shown. ' : ''}Select up to 20 tasks and attach up to 5 proof files. ${batchStatus.use_byok ? 'Your selected personal provider reviews the evidence using your saved key. Provider charges apply; no hosted credits are used.' : 'Each task is reviewed and charged separately. Reviewing two or more tasks together gives each task a 25% discount. Comparing proof with a reference example doubles that task’s charge. You can check the price before starting.'}
                 </p>
 
                 <div class="pro-batch-section-title">1. Select Target Tasks (<span id="proBatchSelectedCount">0</span> selected)</div>
@@ -1771,7 +1777,7 @@ window.TaskitatorEngine = TaskitatorEngine;
             const eligible = tasks.filter(t => t.status === 'eligible');
 
             let html = `
-                <div class="pro-batch-section-title">3. Audit Results (Job: ${escapeHtml(result.job_id)})</div>
+                <div class="pro-batch-section-title">3. Audit Results</div>
                 <div class="pro-batch-results-list">
             `;
 

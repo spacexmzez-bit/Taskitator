@@ -312,7 +312,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-universe-phase9-v1'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-smart-study-v1'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -668,23 +668,23 @@ test('Google deletion callback only verifies identity and resets manual deletion
     assert.equal(f.element('confirmAccountDeletionBtn').disabled,true);
 });
 
-test('empty batch review uses CSP-compatible close handlers for both dismissal buttons',()=>{
+test('empty batch review uses CSP-compatible close handlers for both dismissal buttons',async()=>{
     for(const buttonId of ['proBatchCloseBtn','proBatchCancelBtn']){
         const nodes=new Map(),tasks=[],storage=new LocalStorage();storage.setItem('taskitator_tasks',JSON.stringify(tasks));
         const modal={removed:false,innerHTML:'',remove(){this.removed=true;nodes.delete(this.id)}};
         const button=()=>({addEventListener(name,fn){this[name]=fn}});
         nodes.set('proBatchCloseBtn',button());nodes.set('proBatchCancelBtn',button());
-        const window={addEventListener(){}};
+        const window={addEventListener(){},TaskitatorPro:{checkConsecutiveEntitlement:async()=>({allowed:true}),getStatus:async()=>({isPro:true,status:'active'})}};
         const document={readyState:'loading',addEventListener(){},getElementById:id=>nodes.get(id)||null,
             createElement:()=>modal,body:{appendChild(node){nodes.set(node.id,node)}}};
         const context=vm.createContext({window,document,localStorage:storage});
         vm.runInContext(readConsolidatedSource('pro/pro-ui.js'),context);
-        window.openBatchReviewModal([]);
+        await window.openBatchReviewModal([]);
         assert.equal(modal.removed,false);assert.match(modal.innerHTML,/None of the selected tasks/);
         assert.doesNotMatch(modal.innerHTML,/onclick=/);nodes.get(buttonId).click();assert.equal(modal.removed,true);
     }
 });
-test('batch review is scoped to selected AI tasks and preselects eligible rows without submitting',()=>{
+test('batch review is scoped to selected AI tasks and preselects eligible rows without submitting',async()=>{
     const nodes=new Map(),storage=new LocalStorage();let requests=0;
     storage.setItem('taskitator_tasks',JSON.stringify([
         {id:'one',title:'Selected',status:'active',ai_locked:true,proof_criteria:'Proof'},
@@ -698,9 +698,9 @@ test('batch review is scoped to selected AI tasks and preselects eligible rows w
     const modal={innerHTML:'',querySelectorAll(){return []}};
     const document={readyState:'loading',addEventListener(){},getElementById:id=>nodes.get(id)||null,
         createElement:()=>modal,body:{appendChild(node){nodes.set(node.id,node)}}};
-    const window={addEventListener(){},TaskitatorPro:{batchReview(){requests++}}};
+    const window={addEventListener(){},TaskitatorPro:{checkConsecutiveEntitlement:async()=>({allowed:true}),getStatus:async()=>({isPro:true,status:'active'}),batchReview(){requests++}}};
     vm.runInContext(readConsolidatedSource('pro/pro-ui.js'),vm.createContext({window,document,localStorage:storage}));
-    window.openBatchReviewModal(['one','plain','done']);
+    await window.openBatchReviewModal(['one','plain','done']);
     assert.match(modal.innerHTML,/value="one" checked/);assert.doesNotMatch(modal.innerHTML,/value="(?:two|plain|done)"/);
     assert.equal(nodes.get('proBatchSelectedCount').textContent,1);assert.equal(nodes.get('proBatchSubmitBtn').disabled,true);assert.equal(requests,0);
 });

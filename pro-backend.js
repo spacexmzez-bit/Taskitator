@@ -316,7 +316,7 @@ export class TaskProtection {
         await liveAccount(tx,account);
         const id='job_'+crypto.randomUUID();
         await tx.put('pro:attestation:'+id,{version:VERSION,job_id:id,account_id:account,session_id:session,
-            action:context.batch?'batch':'single',eligible_task_ids:ids,bindings,evidence_hash:context.hash,
+            submitted_at:context.submittedAt||Date.now(),action:context.batch?'batch':'single',eligible_task_ids:ids,bindings,evidence_hash:context.hash,
             operation_id:context.operation,model:context.model,created_at:Date.now(),expires_at:Date.now()+DAY,consumed:false});
         return id;
     }
@@ -338,6 +338,7 @@ export class TaskProtection {
             if(a.expires_at<=Date.now())throw fail(403,'APPROVAL_EXPIRED','This review expired. Submit proof again.');
             if(!snapshot||ids.some(id=>!a.eligible_task_ids.includes(id)))throw fail(403,'NO_ELIGIBLE_TASKS','Select only tasks approved in this review.');
             for(const id of ids)if(a.bindings[id]!==await this.fingerprint(snapshot,id))throw fail(409,'TASK_CHANGED','The task or its requirements changed after review. Submit new proof.');
+            const smartBefore=JSON.parse(JSON.stringify(snapshot));
             const selected=new Set(ids),tasks=snapshot.tasks;
             for(const id of ids){
                 const t=tasks.find(t=>t.id===id),children=branch(tasks,id).filter(c=>c.id!==id);
@@ -359,6 +360,7 @@ export class TaskProtection {
                     priority_rank:snapshot.settings?.priorities?.find?.(p=>p.id===t.priority_id)?.rank||3,...(t.mrstudy_binding?{mrstudy_binding:t.mrstudy_binding}:{})});
             }
             snapshot.completed_audit_ledger=snapshot.completed_audit_ledger.slice(-200);
+            globalThis.TaskitatorSmartStudy?.apply(snapshot,smartBefore,Date.now(),{ids,submittedAt:a.submitted_at||a.created_at});
             globalThis.TaskitatorRecurrence.reconcile(snapshot);
             const version=await this.service.writeTaskSnapshot(tx,account,snapshot);
             a.consumed=true;a.confirmation_id=operation;a.confirmed_ids=selection;a.completed_version=version;
@@ -374,6 +376,11 @@ export class TaskProtection {
         if(bypass)return;
         for(const old of previous.tasks){
             const current=map.get(old.id);
+            let ancestor=old,seen=new Set(),shielded=false;
+            while(ancestor&&!seen.has(ancestor.id)){seen.add(ancestor.id);if(ancestor.strict_prerequisites)shielded=true;ancestor=previous.tasks.find(t=>t.id===ancestor.parent_id);}
+            if(shielded&&current&&!old.is_bonus&&current.is_bonus)throw fail(403,'SHIELD_REQUIRED','Required work protected by a shield cannot become bonus work.');
+            if(shielded&&current&&old.parent_id!==current.parent_id)throw fail(403,'SHIELD_REQUIRED','Shielded subtasks must remain with their parent.');
+            if(old.smart_early_date&&current&&current.due_date!==old.due_date)throw fail(403,'SMART_DATE_LOCKED','Smart Study dates are fixed. An unfinished early opportunity expires automatically.');
             if(protectedTask(old)&&old.status!=='trash'){
                 if(!current || current.status!==old.status || !protectedTask(current))throw fail(403,'PROOF_REQUIRED','Protected task completion, removal or reopening requires server authorization or Emergency Bypass.');
                 const locked=['title','raw_title','due_date','proof_criteria','raw_proof_criteria','reference_id','reference_inline_data','ai_locked','require_ai_proof'];
@@ -527,7 +534,7 @@ export class HostedAudits {
             await tx.put(b.spendKey,b.spend+rec.reservedCost);
             const currentTask=await this.protection.bind(tx,account,body,batch);
             if(await digest(currentTask.bindings)!==await digest(bindings))throw fail(409,'TASK_CHANGED','Your task changed before the review started. Request a new preview.');
-            current.state='pending'; await tx.put(opKey,current);
+            current.state='pending'; current.submitted_at=Date.now(); rec.submitted_at=current.submitted_at; await tx.put(opKey,current);
         });
 
         let actualCost = rec.reservedCost, charged = rec.reservedCredits, result, error;
@@ -573,7 +580,7 @@ export class HostedAudits {
                 result.credits_remaining={daily:Math.max(0,POLICY.daily-daily),monthly:Math.max(0,POLICY.monthly-monthly)};
                 result.job_id=await this.protection.attest(tx,account,session,bindings,
                     batch?result.tasks.filter(t=>t.status==='eligible').map(t=>t.task_id):result.verdict==='approved'?[tasks[0].id]:[],
-                    {batch,hash,operation,model:POLICY.model});
+                    {batch,hash,operation,model:POLICY.model,submittedAt:rec.submitted_at||Date.now()});
             }
             await tx.put(opKey,{...current,state:error?'failed':'done',response:result,error,provider_cost:actualCost,
                 settled_at:Date.now()});
@@ -869,7 +876,10 @@ export class ProGateway {
     async personalReview(identity,body) {
         const account=identity.userId,session=identity.sessionId;
         if(typeof session!=='string'||!session)throw fail(401,'SESSION_REQUIRED','Sign in again before reviewing proof.');
-        const bound=await this.protection.bind(this.storage,account,body,false,true),created=operationTime(body.operation_id);
+        const batch=body.batch===true;
+        if(batch){const e=await this.licenses.resolve(account);if(!e||e.status!=='active'||!e.use_byok)throw fail(403,'PRO_REQUIRED','Active Pro with personal-key mode is required for personal batch review.');}
+        const submittedAt=Date.now();
+        const bound=await this.protection.bind(this.storage,account,body,batch,true),created=operationTime(body.operation_id);
         const provider=await this.parent.vault.selectedProvider(identity),config=PROVIDERS[provider];
         const hash=await digest({payload:bound.payload,bindings:bound.bindings,provider,mode:'personal'}),opKey='pro:op:'+account+':'+body.operation_id;
         const cached=await this.storage.transaction(async tx=>{
@@ -880,20 +890,21 @@ export class ProGateway {
                 if(old.state==='failed')throw fail(old.error.status,old.error.code,old.error.message);
                 throw fail(409,'AUDIT_PENDING','This audit is already running. Retry the same operation later.');
             }
-            await tx.put(opKey,{mode:'personal',state:'pending',hash,session,created,retain_until:created+86400000});return null;
+            await tx.put(opKey,{mode:'personal',state:'pending',submitted_at:Date.now(),hash,session,created,retain_until:created+86400000});return null;
         });
         if(cached)return json(cached);
         try {
             const parts=bound.payload.messages[0].content.map(c=>c.type==='text'?{text:c.text}:{inline_data:{mime_type:c.source.media_type,data:c.source.data}});
-            const payload={contents:[{role:'user',parts}],systemInstruction:{parts:[{text:bound.payload.system}]},generationConfig:{maxOutputTokens:1024,responseMimeType:'application/json'},taskitatorFormat:'proof'};
+            const payload={contents:[{role:'user',parts}],systemInstruction:{parts:[{text:bound.payload.system}]},generationConfig:{maxOutputTokens:bound.payload.max_tokens,responseMimeType:'application/json'},taskitatorFormat:batch?'batch-proof':'proof'};
             let result,model=config.models[0];
             try { result=await this.parent.ai.generate(identity,{provider,model,payload}); }
             catch(e){if(provider!=='gemini'||![429,503].includes(e.status)||config.models.length<2)throw e;model=config.models[1];result=await this.parent.ai.generate(identity,{provider,model,payload});}
-            const raw=JSON.parse(result.candidates[0].content.parts.map(p=>p.text||'').join('').replace(/^```(?:json)?\s*|\s*```$/gi,''));
+            const text=result.candidates[0].content.parts.map(p=>p.text||'').join('').replace(/^```(?:json)?\s*|\s*```$/gi,'');
+            const raw=parseResult({model:POLICY.model,stop_reason:result.candidates[0].finishReason==='MAX_TOKENS'?'max_tokens':'end_turn',content:[{type:'text',text}]},bound.tasks,batch);
             const response=await this.storage.transaction(async tx=>{
                 await liveAccount(tx,account);
-                const job=await this.protection.attest(tx,account,session,bound.bindings,raw.verdict==='approved'?[body.task_id||body.taskId]:[],
-                    {batch:false,hash,operation:body.operation_id,model});
+                const job=await this.protection.attest(tx,account,session,bound.bindings,batch?raw.tasks.filter(t=>t.status==='eligible').map(t=>t.task_id):raw.verdict==='approved'?[body.task_id||body.taskId]:[],
+                    {batch,hash,operation:body.operation_id,model,submittedAt});
                 const response={success:true,...raw,model_used:model,job_id:job};
                 await tx.put(opKey,{mode:'personal',state:'done',hash,session,created,retain_until:created+86400000,response,settled_at:Date.now()});return response;
             });

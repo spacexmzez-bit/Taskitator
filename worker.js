@@ -1,4 +1,5 @@
 import { UniverseRules } from './uni/universe-rules.js';
+import './pro/smart-study.js';
 import './pro/study-plan.js';
 // ============================================================================
 // Taskitator Consolidated Cloudflare Worker & Security Engine (worker.js)
@@ -1008,7 +1009,7 @@ export function validatePayload(payload){
         !payload.contents.length || payload.contents.length>100)throw new SecurityError(400,'Invalid AI conversation.');
     const allowed=new Set(['contents','systemInstruction','system_instruction','generationConfig','tools','toolConfig','tool_config','safetySettings','taskitatorFormat','taskitatorTask']);
     if(Object.keys(payload).some(key=>!allowed.has(key)))throw new SecurityError(400,'Unsupported AI request options.');
-    if(payload.taskitatorFormat && !['criteria','proof','notes'].includes(payload.taskitatorFormat))throw new SecurityError(400,'Unsupported AI output format.');
+    if(payload.taskitatorFormat && !['criteria','proof','batch-proof','notes'].includes(payload.taskitatorFormat))throw new SecurityError(400,'Unsupported AI output format.');
     if(payload.taskitatorTask !== undefined && (!payload.taskitatorTask || typeof payload.taskitatorTask !== 'object' || Array.isArray(payload.taskitatorTask))) {
         throw new SecurityError(400,'Invalid taskitatorTask metadata.');
     }
@@ -1043,6 +1044,7 @@ export function validatePayload(payload){
 
 const jsonSchema=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 const OUTPUT_SCHEMAS={
+    'batch-proof':{type:'array',items:jsonSchema({task_id:{type:'string'},status:{type:'string',enum:['eligible','rejected','partial','uncertain']},verdict:{type:'string',enum:['approved','rejected']},reason:{type:'string'}})},
     criteria:jsonSchema({score:{type:'integer'},passed:{type:'boolean'},critique:{type:'string'},suggested_rewrite:{type:'string'}}),
     proof:jsonSchema({verdict:{type:'string',enum:['approved','rejected']},confidence:{type:'number'},critique:{type:'string'}}),
     notes:jsonSchema({notes:{type:'array',items:jsonSchema({id:{anyOf:[{type:'string'},{type:'number'}]},title:{type:'string'},clean_text:{type:'string'}})}})
@@ -1142,6 +1144,7 @@ function validateOutput(data,format){
     const parts=data.candidates?.[0]?.content?.parts||[];
     if(parts.some(part=>part.functionCall) || data.candidates?.[0]?.finishReason==='MAX_TOKENS')throw new SecurityError(502,'AI output was incomplete. No approval was accepted.');
     let parsed;try{parsed=JSON.parse(parts.map(part=>part.text||'').join('').replace(/^```(?:json)?\s*|\s*```$/gi,''));}catch{throw new SecurityError(502,'AI returned invalid JSON. No approval was accepted.');}
+    if(format==='batch-proof'){if(!Array.isArray(parsed)||!parsed.length||parsed.length>20)throw new SecurityError(502,'The provider returned invalid batch results. No task was confirmed.');return;}
     const valid=object(parsed) && (format==='proof'?['approved','rejected'].includes(parsed.verdict) && Number.isFinite(parsed.confidence) && parsed.confidence>=0 && parsed.confidence<=1 && typeof parsed.critique==='string':
         format==='criteria'?Number.isInteger(parsed.score) && parsed.score>=1 && parsed.score<=10 && parsed.passed===(parsed.score>=7) && typeof parsed.critique==='string' && typeof parsed.suggested_rewrite==='string':
         Array.isArray(parsed.notes) && parsed.notes.every(note=>object(note) && ['string','number'].includes(typeof note.id) && typeof note.title==='string' && typeof note.clean_text==='string'));
@@ -1912,6 +1915,7 @@ export class TaskitatorSync {
                     if (previous?.recurrence_state?.series?.length && body.recurrence_schema !== 1) {
                         throw new HTTPError(428, 'Refresh Taskitator on this device before syncing recurring tasks.');
                     }
+                    try{globalThis.TaskitatorSmartStudy.guard(previous,snapshot);}catch(e){throw new HTTPError(409,e.message);}
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
                     try { Recurrence.reconcile(snapshot); }
                     catch (err) { throw new HTTPError(400, err.message); }
@@ -1922,6 +1926,7 @@ export class TaskitatorSync {
                         snapshot.today_breaks = snapshot.today_breaks.map(b => object(b) ? { ...b, date: b.date || date } : b);
                     }
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
+                    globalThis.TaskitatorSmartStudy.apply(snapshot,previous);
                     try { snapshot.today_breaks=globalThis.TaskitatorBreaks.merge(previous?.today_breaks,snapshot.today_breaks,snapshot.settings); }
                     catch(error){throw new HTTPError(400,error.message);}
                     snapshot.updated_at = now;

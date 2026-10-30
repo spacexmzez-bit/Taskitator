@@ -3099,3 +3099,11 @@ body {
 #universeWorkspace button { margin: .3rem; min-height: 44px; white-space: normal; }
 #universeWorkspace textarea { min-height: 6rem; }
 #universeWorkspace article { border-block-end: 1px solid #64748b; padding-block: .8rem; overflow-wrap: anywhere; }
+
+/* Task visibility, phone access, and drawer fixes. */
+.phone-status{padding:14px 16px;border:1px solid;border-radius:10px;line-height:1.6;margin:12px 0;overflow-wrap:anywhere}.phone-status.active{background:#052e24;color:#b7f7d7;border-color:#208657}.phone-status.inactive{background:#450e19;color:#fecdd3;border-color:#d44558}.phone-status.unknown{background:#422b09;color:#fde68a;border-color:#a97718}
+body:has(#batchActionBar.open){padding-bottom:calc(var(--batch-clearance,240px) + env(safe-area-inset-bottom))}#batchActionBar{bottom:max(12px,env(safe-area-inset-bottom));max-height:70dvh;overflow:auto}.collapse-toggle{min-width:32px;min-height:36px;flex-shrink:0}.task-main{min-width:0}.task-title{overflow-wrap:anywhere}
+#proBatchModalRoot .pro-modal-footer{display:flex;flex-wrap:wrap;gap:14px}#proBatchFeedback{flex:1 0 100%;min-width:0;width:100%;white-space:normal;overflow-wrap:anywhere;line-height:1.5}#proBatchModalRoot .pro-modal-footer>div:last-child{flex-wrap:wrap;justify-content:flex-end;width:100%}
+.sidebar-drawer{z-index:2147483001}.drawer-backdrop{z-index:2147483000}body:has(.sidebar-drawer.open){overflow:hidden}body:has(.sidebar-drawer.open) :is(.sidebar-drawer,.drawer-backdrop){pointer-events:auto}
+
+.cl-modalBackdrop,.cl-modalContent{z-index:2147483100!important}

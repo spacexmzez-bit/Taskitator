@@ -1296,7 +1296,7 @@ function runTaskitatorLoginPage() {
             if (mode === 'signUp') window.Clerk.unmountSignUp?.(signInNode);
             else window.Clerk.unmountSignIn?.(signInNode);
             mode = next;
-            const options = {routing:'hash',forceRedirectUrl:redirect,signInForceRedirectUrl:redirect,signUpForceRedirectUrl:redirect};
+            const options = {appearance:{elements:{rootBox:{width:'100%',maxWidth:'100%'},cardBox:{width:'100%',maxWidth:'100%'},card:{width:'100%',maxWidth:'100%',boxSizing:'border-box'}}},routing:'hash',forceRedirectUrl:redirect,signInForceRedirectUrl:redirect,signUpForceRedirectUrl:redirect};
             if (next === 'signUp') window.Clerk.mountSignUp(signInNode,options);
             else window.Clerk.mountSignIn(signInNode,{...options,withSignUp:true});
             document.getElementById('showSignInBtn')?.setAttribute('aria-pressed',String(next === 'signIn'));
@@ -1380,7 +1380,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-universe-phase9-v1');
+                    resolve(event.data?.version === 'taskitator-smart-study-v1');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
@@ -1512,3 +1512,18 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
 })();
 
 // <<< MODULE_END: auth-bootstrap.js >>>
+
+// Keep keyboard interaction within the open navigation drawer.
+(function(){
+ if(typeof document==='undefined'||typeof MutationObserver==='undefined')return;
+ const drawer=document.getElementById('sidebarDrawer'),backdrop=document.getElementById('drawerBackdrop');if(!drawer||!backdrop)return;
+ let wasOpen=false,returnFocus=null;const inerted=[];
+ function update(){const open=drawer.classList.contains('open');if(open===wasOpen)return;wasOpen=open;
+  if(open){returnFocus=document.activeElement;drawer.setAttribute('role','dialog');drawer.setAttribute('aria-modal','true');drawer.setAttribute('aria-label','Navigation');
+   for(const child of document.body.children)if(child!==drawer&&child!==backdrop&&!child.contains(drawer)&&!child.matches('script,style,dialog,.cl-modalBackdrop')){inerted.push([child,child.inert]);child.inert=true;}
+   drawer.querySelector('button,a,[tabindex]')?.focus();
+  }else{for(const [child,previous]of inerted)child.inert=previous;inerted.length=0;drawer.removeAttribute('aria-modal');returnFocus?.focus();}
+ }
+ new MutationObserver(update).observe(drawer,{attributes:true,attributeFilter:['class']});
+ document.addEventListener('keydown',e=>{if(!wasOpen)return;if(e.key==='Escape'){drawer.classList.remove('open');backdrop.classList.remove('open');e.preventDefault();}if(e.key==='Tab'){const nodes=[...drawer.querySelectorAll('a[href],button:not(:disabled),[tabindex="0"]')].filter(n=>n.getClientRects().length);if(!nodes.length)return;const first=nodes[0],last=nodes.at(-1);if(e.shiftKey&&document.activeElement===first){last.focus();e.preventDefault();}else if(!e.shiftKey&&document.activeElement===last){first.focus();e.preventDefault();}}});
+})();
