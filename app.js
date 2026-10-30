@@ -2818,8 +2818,9 @@ window.TaskitatorApp = (() => {
     // Boot and Event Wiring
     // =========================================================================
     function init() {
+        window.addEventListener('taskitator-page-load-synced',()=>{loadStorage();renderUnifiedView();});
         if (currentView === 'today') Promise.resolve().then(async()=>{
-            try { if(window.SyncEngine?.isConfigured?.()){const ok=await window.SyncEngine.forceImmediateSync();if(ok){loadStorage();renderUnifiedTaskTree();}else console.warn('Today sync is pending. Use Sync Now to resolve a connection or edit conflict.');}} catch(error){console.warn('Today sync could not finish.',error.message);}
+            try { if(window.SyncEngine?.isConfigured?.()){const result=await window.SyncEngine.syncNow({origin:'page-load'});if(!result?.success)console.warn('Today sync is pending. Use Sync Now to resolve a connection or edit conflict.');}} catch(error){console.warn('Today sync could not finish.',error.message);}
         });
         initSyncIndicator();
         loadStorage();

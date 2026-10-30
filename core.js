@@ -663,7 +663,9 @@ const SyncEngine = {
             localStorage.removeItem(this.STORAGE_KEY_PENDING_DOWNLOAD);
             const refreshOrigin = this.manualRefreshRequested ? 'manual' : origin;
             this.manualRefreshRequested = false;
-            if (refreshOrigin === 'manual' || this.autoRefreshEnabled()) {
+            if (refreshOrigin === 'page-load') {
+                window.dispatchEvent(new CustomEvent('taskitator-page-load-synced'));
+            } else if (refreshOrigin === 'manual' || this.autoRefreshEnabled()) {
                 this.pendingPageRefresh = true;
                 this.pendingRefreshOrigin = refreshOrigin;
             }

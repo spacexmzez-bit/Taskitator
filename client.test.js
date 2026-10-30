@@ -840,3 +840,16 @@ test('bootstrap requires the version actually reported by the shipped service wo
     assert.ok(actual,'Service worker must report its cache version');
     assert.equal(expected,actual,'Deploy a matching bootstrap and service worker version');
 });
+
+test('Today page-load sync pulls once without reloading; manual sync still reloads',async()=>{
+ const f=client();vm.runInContext(readConsolidatedSource('sync-engine.js'),f.context);const s=f.window.SyncEngine;let reloads=0,pulls=0,events=[];
+ f.window.location.reload=()=>reloads++;f.window.dispatchEvent=e=>events.push(e.type);s.sessionId='sess_A';f.storage.setItem(s.STORAGE_KEY_SESSION,'sess_A');
+ s.resumePasswordChange=async()=>({success:true});s.getConfig=()=>({username:'rd'});s.isConfigured=()=>true;s.isDirty=()=>false;s.isSafeToRefresh=()=>true;s.sessionMatches=()=>true;s.pull=async()=>{pulls++;return {success:true}};s.cancelAutoWindow=()=>{};s.autoRefreshEnabled=()=>true;
+ assert.equal((await s.syncNow({origin:'page-load'})).success,true);assert.equal(pulls,1);assert.equal(reloads,0);assert.ok(events.includes('taskitator-page-load-synced'));
+ await s.syncNow({origin:'manual'});assert.equal(pulls,2);assert.equal(reloads,1);
+});
+test('Deferred Today sync waits until safe, then updates in place without reload',async()=>{
+ const f=client();vm.runInContext(readConsolidatedSource('sync-engine.js'),f.context);const s=f.window.SyncEngine;let safe=false,pulls=0,events=[],reloads=0;
+ f.window.dispatchEvent=e=>events.push(e.type);f.window.location.reload=()=>reloads++;s.sessionId='sess_A';f.storage.setItem(s.STORAGE_KEY_SESSION,'sess_A');s.resumePasswordChange=async()=>({success:true});s.getConfig=()=>({username:'rd'});s.isConfigured=()=>true;s.isDirty=()=>false;s.isSafeToRefresh=()=>safe;s.sessionMatches=()=>true;s.pull=async()=>{pulls++;return {success:true}};s.cancelAutoWindow=()=>{};s.autoRefreshEnabled=()=>true;
+ assert.equal((await s.syncNow({origin:'page-load'})).deferred,true);assert.equal(pulls,0);safe=true;await s.syncNow({origin:s.pendingDownloadOrigin});assert.equal(pulls,1);assert.equal(reloads,0);assert.ok(events.includes('taskitator-page-load-synced'));
+});
