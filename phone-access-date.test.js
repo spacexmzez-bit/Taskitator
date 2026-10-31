@@ -6,7 +6,7 @@ const html=fs.readFileSync(new URL('./settings.html',import.meta.url),'utf8');
 const source=html.slice(html.indexOf('function phoneChangeAllowed()'),html.indexOf('async function refreshPhoneStatus()'));
 function allowed(tasks,{onBreak=false,bypass=false}={}){
  let alerts=0;
- const context=vm.createContext({window:{TaskitatorEngine:{BreakEngine:{isCurrentlyOnBreak:()=>onBreak},EmergencyManager:{isBypassActive:()=>bypass}}},localStorage:{getItem:()=>JSON.stringify(tasks)},getAppTodayStr:()=> '2026-10-31',alert:()=>alerts++});
+ const context=vm.createContext({window:{TaskitatorEngine:{BreakEngine:{isCurrentlyOnBreak:()=>onBreak},EmergencyManager:{isBypassActive:()=>bypass}}},localStorage:{getItem:()=>JSON.stringify(tasks)},getAppTodayStr:()=> '2026-10-31',alert:()=>alerts++,notify:()=>alerts++});
  vm.runInContext(source,context);const result=context.phoneChangeAllowed();assert.equal(alerts,result?0:1);return result;
 }
 const task=(id,parent_id,due_date,status='active')=>({id,parent_id,due_date,status});
