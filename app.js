@@ -2479,7 +2479,7 @@ window.TaskitatorApp = (() => {
             if (hasFilters) {
                 const m = matchMap.get(t.id);
                 const d = descMatchMap.get(t.id);
-                if (!m && d) return false;
+                if (!m && !d) return false;
             }
             return isTaskVisuallyActive(t) || hasVisibleDescendant(t.id);
         });
