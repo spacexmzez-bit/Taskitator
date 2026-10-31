@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="uni/universe.css">
     <link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="tutorial-spotlight.css">
 </head>
 <body>
     <!-- Navigation Drawer -->
@@ -1164,7 +1165,7 @@
                     <span class="pro-feature-pill">TASKITATOR FREE &amp; PRO</span>
                     <h1 style="margin: 10px 0 8px 0; font-size: clamp(1.5rem, 3vw, 2.1rem);">Compare Taskitator Free and Pro</h1>
                     <p style="margin: 0; color: var(--text-muted); max-width: 720px; line-height: 1.55;">
-                        Taskitator Free gives you complete task management, recurring schedules, Pomodoro focus sessions, daily break planning, and personal API-key AI features. Taskitator Pro adds hosted AI proof audits with dynamic credit accounting, batch proof reviews, and consecutive subtask auto-numbering.
+                        Use Free to organize tasks and use AI with your own API key. Pro adds hosted AI, batch proof reviews, and more tools. Compare the features below to find what works for you.
                     </p>
                 </header>
 
@@ -1244,7 +1245,7 @@
                     <article class="pro-compare-card">
                         <h3>Personal API-Key Mode (BYOK) vs. Hosted Credits</h3>
                         <p>
-                            Both Free and Pro users can save personal Gemini or Claude API keys in the encrypted server vault. Pro users can switch <strong>Personal BYOK Mode</strong> on or off in Settings at any time. Using your own API key routes requests through your personal provider account while keeping your hosted Pro credit balances and limits intact without resetting them.
+                            Free and Pro users can save their own Gemini or Claude API key. Pro users can switch between their own key and hosted AI in Settings. Using your own key sends requests through your provider account and does not reset your hosted credit balance.
                         </p>
                     </article>
                     <article class="pro-compare-card">
@@ -3145,6 +3146,8 @@ document.querySelector('#componentView-blocker-guide [data-static-action-64]')?.
     activateComponentView(rawInitial);
 })();
     </script>
-    <script defer src="core.js"></script>
+    <script type="text/taskitator-script" src="tutorial-spotlight.js"></script>
+<script type="text/taskitator-script" src="tutorial-integration.js"></script>
+<script defer src="core.js"></script>
 </body>
 </html>

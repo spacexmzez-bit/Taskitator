@@ -1345,6 +1345,7 @@ function runTaskitatorLoginPage() {
         event.target.disabled = true;
         try {
             const account = await TaskitatorAuth.connect({ mode: 'create' });
+            sessionStorage.setItem('taskitator_new_tutorial', TaskitatorAuth.userId);
             if (!showConnected(account) && !TaskitatorAuth.storageWarnings.length) await enter(account);
         }
         catch (err) { show(err.message); } finally { event.target.disabled = false; }

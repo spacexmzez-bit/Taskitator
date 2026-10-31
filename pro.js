@@ -1931,6 +1931,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                     showMsg(res.message || 'Taskitator Pro successfully activated!', 'success');
                     input.value = '';
                     await refreshProStatus();
+                    window.TaskitatorTutorials?.proActivated();
                 } catch (err) {
                     showMsg(err.message || 'Failed to activate license key.', 'error');
                 } finally {
