@@ -1873,12 +1873,12 @@ test('consecutive entitlement rejects stale session, inactive status and expired
 
 test('emergency confirmation blocks repeated clicks, reports failure and closes only after success',async()=>{
     const app=readConsolidatedSource('app.js'),alerts=[];let handler,removed=0,updated=0,activate,calls=0;
-    const confirmEmergencyBtn={disabled:false,addEventListener:(type,fn)=>{handler=fn}};
+    const confirmEmergencyBtn={disabled:false,classList:{toggle(){}},addEventListener:(type,fn)=>{handler=fn}};
     const emergencyConfirmModal={classList:{remove:()=>removed++}};
     const start=app.indexOf("            confirmEmergencyBtn.addEventListener('click', async () => {");
     const end=app.indexOf('\n        }',start);
     assert.ok(start>=0&&end>start);
-    vm.runInNewContext(app.slice(start,end),{confirmEmergencyBtn,emergencyConfirmModal,alert:message=>alerts.push(message),updateEmergencyUI:()=>updated++,TaskitatorEngine:{EmergencyManager:{activateBypass:()=>{calls++;return new Promise(resolve=>{activate=resolve})}}}});
+    vm.runInNewContext(app.slice(start,end),{confirmEmergencyBtn,emergencyConfirmModal,window:{TaskitatorNotify:message=>alerts.push(message)},updateEmergencyUI:()=>updated++,TaskitatorEngine:{EmergencyManager:{activateBypass:()=>{calls++;return new Promise(resolve=>{activate=resolve})}}}});
     const first=handler();assert.equal(confirmEmergencyBtn.disabled,true);await handler();assert.equal(calls,1);
     activate({success:false,error:'Try again'});await first;
     assert.equal(removed,0);assert.equal(confirmEmergencyBtn.disabled,false);assert.deepEqual(alerts,['Try again']);

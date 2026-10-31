@@ -733,7 +733,12 @@ ${formattedInput}`;
         function appendBubble(text, sender, isLoading = false) {
             const bubble = document.createElement('div');
             bubble.className = `chat-bubble ${sender} ${isLoading ? 'loading' : ''}`;
-            bubble.textContent = text;
+            if (isLoading) {
+                bubble.setAttribute('aria-label', text);
+                bubble.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
+            } else {
+                bubble.textContent = text;
+            }
             messagesContainer.appendChild(bubble);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
             return bubble;
@@ -748,6 +753,11 @@ ${formattedInput}`;
             appendBubble(text, 'user');
 
             const loadingBubble = appendBubble('Thinking...', 'bot', true);
+            const sendBtn = form.querySelector('button[type="submit"]');
+            form.classList.add('is-busy');
+            input.setAttribute('aria-busy', 'true');
+            if (sendBtn) { sendBtn.disabled = true; sendBtn.classList.add('is-loading'); }
+            window.TaskitatorFX?.tap();
 
             try {
                 const res = await sendMessage(text);
@@ -759,7 +769,12 @@ ${formattedInput}`;
                 }
             } catch (err) {
                 loadingBubble.remove();
-                appendBubble(`Error: ${err.message}`, 'bot');
+                appendBubble(`Error: ${err.message}`, 'bot').classList.add('error');
+            } finally {
+                form.classList.remove('is-busy');
+                input.removeAttribute('aria-busy');
+                if (sendBtn) { sendBtn.disabled = false; sendBtn.classList.remove('is-loading'); }
+                input.focus();
             }
         });
     }
@@ -821,6 +836,7 @@ window.TaskitatorApp = (() => {
     // Multi-Selection State
     let isSelectionModeActive = false;
     const selectedTaskIds = new Set();
+    let renderedSelectableIds = new Set();
     const batchSelectedTags = new Set();
     let batchSelectedPriority = null;
 
@@ -1172,7 +1188,7 @@ window.TaskitatorApp = (() => {
             listEl.innerHTML = '';
 
             if (notes.length === 0) {
-                listEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px 0;">No distraction notes yet.</div>';
+                listEl.innerHTML = '<div class="empty-state empty-state-sm"><span class="empty-state-icon" aria-hidden="true">💡</span>No distraction notes yet.</div>';
             } else {
                 notes.forEach((n, idx) => {
                     const card = document.createElement('div');
@@ -1183,11 +1199,11 @@ window.TaskitatorApp = (() => {
                         <div class="dump-note-header">
                             <input type="text" class="dump-note-title-input" placeholder="Optional Title..." value="${TaskitatorSafety.escapeHtml(n.title || '')}" data-idx="${idx}">
                             <div class="dump-note-actions">
-                                <span style="font-size: 0.7rem; color: #f59e0b; font-weight: 700; white-space: nowrap; margin-right: 6px;">⏳ ${formatRemainingTTL(n.created_at)}</span>
-                                <button type="button" class="icon-btn del-escrow-note" data-idx="${idx}" style="color: var(--danger); border-color: rgba(239,68,68,0.3); padding: 2px 8px; font-size: 0.75rem;">✕</button>
+                                <span class="dump-note-ttl">⏳ ${formatRemainingTTL(n.created_at)}</span>
+                                <button type="button" class="icon-btn icon-btn-danger icon-btn-sm del-escrow-note" data-idx="${idx}" aria-label="Delete note">✕</button>
                             </div>
                         </div>
-                        <div style="font-size: 0.88rem; line-height: 1.45; color: var(--text-color); white-space: pre-wrap; padding-top: 4px;">${TaskitatorSafety.escapeHtml(n.text)}</div>
+                        <div class="dump-note-body">${TaskitatorSafety.escapeHtml(n.text)}</div>
                     `;
                     
                     const titleInput = card.querySelector('.dump-note-title-input');
@@ -1485,7 +1501,11 @@ window.TaskitatorApp = (() => {
     function updateSyncDot(state) {
         const dot = document.getElementById('syncStatusDot');
         if (!dot) return;
+        const prev = dot.dataset.state;
         dot.className = `sync-dot ${state}`;
+        dot.dataset.state = state;
+        if (state === 'synced' && prev && prev !== 'synced') UIFX.replay(dot, 'just-synced');
+        if (state === 'error' && prev !== 'error') UIFX.replay(dot, 'just-failed');
         if (state === 'synced') dot.title = 'Sync Status: Synced up to date';
         else if (state === 'pending') dot.title = 'Sync Status: Not synced / Pending';
         else if (state === 'error') dot.title = 'Sync Status: Sync Failed / Offline';
@@ -1741,7 +1761,7 @@ window.TaskitatorApp = (() => {
 
         if (task.status === 'completed') {
             if (task.ai_locked && !isBypassActiveSafe()) {
-                alert('Blocked: AI-checked tasks are permanent and cannot be uncompleted.');
+                window.TaskitatorNotify('Blocked: AI-checked tasks are permanent and cannot be uncompleted.');
                 return;
             }
             cascadeTaskStatus(taskId, 'active', null);
@@ -1752,7 +1772,7 @@ window.TaskitatorApp = (() => {
         }
 
         if (isCompletionBlocked(taskId)) {
-            alert('Complete protected core subtasks and submit proof for unfinished AI-audited descendants before completing this branch.');
+            window.TaskitatorNotify('Complete protected core subtasks and submit proof for unfinished AI-audited descendants before completing this branch.');
             return;
         }
 
@@ -1769,17 +1789,23 @@ window.TaskitatorApp = (() => {
         else renderUnifiedView();
     }
 
-    function deleteTask(taskId, triggerRenderFn) {
+    async function deleteTask(taskId, triggerRenderFn) {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
 
         const deletionError = TaskitatorSafety.deletionError(tasks, taskId, isBypassActiveSafe());
         if (deletionError) {
-            alert(deletionError);
+            window.TaskitatorNotify(deletionError);
             return;
         }
 
-        if (confirm(`Delete "${task.title}" and any associated subtasks?`)) {
+        const okDelete = await window.TaskitatorConfirm({
+            title: 'Delete task?',
+            message: `"${task.title}" and its subtasks will move to Trash.`,
+            confirmLabel: 'Delete',
+            tone: 'danger'
+        });
+        if (okDelete && tasks.some(t => t.id === taskId && t.status !== 'trash')) {
             const visited = new Set();
             function markTrash(id) {
                 if (visited.has(id)) return;
@@ -1795,6 +1821,7 @@ window.TaskitatorApp = (() => {
             saveStorageAndPush();
             if (typeof triggerRenderFn === 'function') triggerRenderFn();
             else renderUnifiedView();
+            window.TaskitatorNotify(`Moved "${task.title}" to Trash.`, 'info');
         }
     }
 
@@ -1887,9 +1914,16 @@ window.TaskitatorApp = (() => {
         renderUnifiedTaskTree();
     }
 
+    // "Select all" targets exactly the rows the current render shows as selectable
+    // (respects view, overdue items, subtasks, and active filters).
     function eligibleSelectionTasks() {
-        const today=getAppTodayStr();
-        return tasks.filter(t=>t.status==='active'&&!pendingGraceCompletions.has(t.id)&&(currentView!=='today'||['today',today].includes(String(t.due_date||'').trim().toLowerCase())||t.smart_early_date===today));
+        return tasks.filter(t => renderedSelectableIds.has(t.id) && t.status === 'active' && !pendingGraceCompletions.has(t.id));
+    }
+    function refreshSelectAllLabel() {
+        const all = document.getElementById('batchSelectAllBtn');
+        if (!all) return;
+        const eligible = eligibleSelectionTasks();
+        all.textContent = eligible.length && eligible.every(t => selectedTaskIds.has(t.id)) ? 'Deselect all' : 'Select all';
     }
     function updateBatchBarUI() {
         const bar = document.getElementById('batchActionBar');
@@ -1898,8 +1932,7 @@ window.TaskitatorApp = (() => {
 
         const review = document.getElementById('batchReviewSelectedBtn');
         if (review) review.disabled = false;
-        const all=document.getElementById('batchSelectAllBtn'),eligible=eligibleSelectionTasks();
-        if(all)all.textContent=eligible.length&&eligible.every(t=>selectedTaskIds.has(t.id))?'Deselect all':'Select all';
+        refreshSelectAllLabel();
         const resize=()=>document.documentElement.style.setProperty('--batch-clearance',bar.classList.contains('open')?(Math.ceil(bar.getBoundingClientRect().height)+32)+'px':'0px');
         if(!bar._sizeObserver&&typeof ResizeObserver!=='undefined'){bar._sizeObserver=new ResizeObserver(resize);bar._sizeObserver.observe(bar);window.addEventListener('resize',resize);}
         requestAnimationFrame(resize);
@@ -2131,17 +2164,17 @@ window.TaskitatorApp = (() => {
                 const formatted = `${String(remMin).padStart(2, '0')}:${String(remSecOnly).padStart(2, '0')}`;
 
                 headerBox.innerHTML = `
-                    <div style="background: rgba(59, 130, 246, 0.15); border: 1.5px solid var(--primary); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <strong style="color: var(--primary); font-size: 0.88rem; display: flex; align-items: center; gap: 6px;">
-                                <span>⏳</span> ${status.isRepair?'Repair Break Schedule':'Planning Active'}
+                    <div class="break-panel break-panel-active">
+                        <div class="break-panel-head">
+                            <strong class="break-panel-title">
+                                <span aria-hidden="true">⏳</span> ${status.isRepair?'Repair Break Schedule':'Planning Active'}
                             </strong>
-                            <span id="breakPlanningCountdown" style="font-family: monospace; font-weight: 800; font-size: 0.95rem; color: #93c5fd; background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border-color);">${formatted}</span>
+                            <span id="breakPlanningCountdown" class="break-panel-countdown">${formatted}</span>
                         </div>
-                        <div style="width: 100%; height: 5px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
-                            <div id="breakPlanningProgress" style="height: 100%; width: ${pct}%; background: var(--primary); transition: width 1s linear;"></div>
+                        <div class="break-panel-track">
+                            <div id="breakPlanningProgress" class="break-panel-progress" style="width: ${pct}%;"></div>
                         </div>
-                        <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 8px; line-height: 1.35;">
+                        <small class="break-panel-note">
                             Adjust up to 3 non-overlapping breaks (≤ 3 hours). At expiry, your last valid schedule is locked. If none is valid, enter a valid schedule once to repair it. Times use the planning device’s timezone.
                         </small>
                     </div>
@@ -2172,11 +2205,11 @@ window.TaskitatorApp = (() => {
                 if (desc) desc.style.display = 'none';
 
                 headerBox.innerHTML = `
-                    <div style="background: rgba(59, 130, 246, 0.08); border: 1.5px dashed var(--primary); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; text-align: center;">
-                        <p style="margin: 0 0 10px 0; font-size: 0.84rem; color: var(--text-color); line-height: 1.45;">
+                    <div class="break-panel break-panel-start">
+                        <p class="break-panel-text">
                             You have <strong>10 minutes</strong> to set your breaks.
                         </p>
-                        <button type="button" id="startBreakPlanningBtn" class="icon-btn btn-primary" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 9px 18px; font-size: 0.88rem; width: 100%;">
+                        <button type="button" id="startBreakPlanningBtn" class="icon-btn btn-primary btn-solid-primary btn-block">
                             ▶ Set breaks (10 minutes)
                         </button>
                     </div>
@@ -2191,7 +2224,7 @@ window.TaskitatorApp = (() => {
                 if (Array.isArray(breaks) && breaks.length > 0) {
                     breaks.forEach(b => this.addBreakRow(b.start, b.end, true));
                 } else {
-                    this.rowsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.82rem; text-align: center; padding: 14px 0;">No breaks scheduled. Click "Start 10m Planning Window" to configure.</div>';
+                    this.rowsContainer.innerHTML = '<div class="empty-state empty-state-sm">No breaks scheduled. Click "Start 10m Planning Window" to configure.</div>';
                 }
 
                 if (this.addBtn) this.addBtn.style.display = 'none';
@@ -2204,19 +2237,15 @@ window.TaskitatorApp = (() => {
                 }
                 if (desc) desc.style.display = 'none';
 
-                const bannerBg = status.isLocked ? 'rgba(239, 68, 68, 0.12)' : 'rgba(234, 179, 8, 0.12)';
-                const borderC = status.isLocked ? 'rgba(239, 68, 68, 0.4)' : 'rgba(234, 179, 8, 0.4)';
-                const titleC = status.isLocked ? '#fca5a5' : '#fde047';
-
                 headerBox.innerHTML = `
-                    <div style="background: ${bannerBg}; border: 1.5px solid ${borderC}; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
-                        <div style="display: flex; align-items: flex-start; gap: 8px;">
-                            <span style="font-size: 1.1rem; line-height: 1;">${status.isLocked ? '🔒' : '⚠️'}</span>
-                            <div style="font-size: 0.82rem; color: ${titleC}; line-height: 1.45;">
+                    <div class="break-panel ${status.isLocked ? 'break-panel-locked' : 'break-panel-warn'}">
+                        <div class="break-panel-row">
+                            <span class="break-panel-emoji" aria-hidden="true">${status.isLocked ? '🔒' : '⚠️'}</span>
+                            <div class="break-panel-reason">
                                 <strong>${status.isLocked ? 'Schedule Locked' : 'Planning Buffer Closed'}:</strong> ${status.reason}
                             </div>
                         </div>
-                        <button type="button" id="startBreakPlanningDisabledBtn" class="icon-btn" style="width: 100%; margin-top: 10px; opacity: 0.6; cursor: not-allowed; background: var(--card-subtle);">
+                        <button type="button" id="startBreakPlanningDisabledBtn" class="icon-btn btn-block is-unavailable" aria-disabled="true">
                             🔒 Start Planning Window (Unavailable)
                         </button>
                     </div>
@@ -2228,7 +2257,7 @@ window.TaskitatorApp = (() => {
                         const curStatus = window.TaskitatorEngine?.BreakEngine?.getPlanningStatus 
                             ? TaskitatorEngine.BreakEngine.getPlanningStatus() 
                             : status;
-                        alert(curStatus.reason || 'Planning window is currently unavailable.');
+                        window.TaskitatorNotify(curStatus.reason || 'Planning window is currently unavailable.', 'info');
                     });
                 }
 
@@ -2236,7 +2265,7 @@ window.TaskitatorApp = (() => {
                 if (Array.isArray(breaks) && breaks.length > 0) {
                     breaks.forEach(b => this.addBreakRow(b.start, b.end, true));
                 } else {
-                    this.rowsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.82rem; text-align: center; padding: 14px 0;">No breaks were scheduled for this cycle.</div>';
+                    this.rowsContainer.innerHTML = '<div class="empty-state empty-state-sm">No breaks were scheduled for this cycle.</div>';
                 }
 
                 if (this.addBtn) this.addBtn.style.display = 'none';
@@ -2248,7 +2277,7 @@ window.TaskitatorApp = (() => {
             if (!window.TaskitatorEngine?.BreakEngine?.startPlanningWindow) return;
             const res = TaskitatorEngine.BreakEngine.startPlanningWindow();
             if (!res.success) {
-                alert(res.error);
+                window.TaskitatorNotify(res.error);
                 this.renderModal();
                 return;
             }
@@ -2267,13 +2296,12 @@ window.TaskitatorApp = (() => {
 
             const row = document.createElement('div');
             row.className = 'break-row-item';
-            row.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 6px;';
 
             row.innerHTML = `
-                <input type="time" class="b-start" value="${TaskitatorSafety.escapeHtml(startVal)}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 7px 10px; border: 1.5px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color); font-size: 0.9rem;">
-                <span style="color: var(--text-muted); font-size: 0.85rem; font-weight: 700;">to</span>
-                <input type="time" class="b-end" value="${TaskitatorSafety.escapeHtml(endVal)}" ${disabled ? 'disabled' : ''} style="flex: 1; padding: 7px 10px; border: 1.5px solid var(--border-color); border-radius: 6px; background: var(--card-subtle); color: var(--text-color); font-size: 0.9rem;">
-                ${!disabled ? '<button type="button" class="del-break-row-btn" style="background: none; border: none; color: var(--danger); font-size: 1.3rem; cursor: pointer; padding: 0 4px; line-height: 1;">&times;</button>' : ''}
+                <input type="time" class="b-start break-time-input" aria-label="Break start" value="${TaskitatorSafety.escapeHtml(startVal)}" ${disabled ? 'disabled' : ''}>
+                <span class="break-row-sep">to</span>
+                <input type="time" class="b-end break-time-input" aria-label="Break end" value="${TaskitatorSafety.escapeHtml(endVal)}" ${disabled ? 'disabled' : ''}>
+                ${!disabled ? '<button type="button" class="del-break-row-btn" aria-label="Remove break">&times;</button>' : ''}
             `;
 
             if (!disabled) {
@@ -2286,13 +2314,13 @@ window.TaskitatorApp = (() => {
             if(!disabled)row.querySelectorAll('input').forEach(input=>{input.addEventListener('change',()=>this.captureDraft());input.addEventListener('input',()=>this.captureDraft());});
         },
 
-        saveBreaks() {
+        async saveBreaks() {
             if (!this.rowsContainer) return;
             const breaksArray = this.getCurrentRowsData();
             const check=TaskitatorBreaks.validate(breaksArray,TaskitatorEngine.BreakEngine.getLogicalDayBounds());
             if(!check.valid){this.showError(check.error);return;}
 
-            const confirmed = confirm(
+            const confirmed = await window.TaskitatorConfirm(
                 "⚠️️ CONFIRM & LOCK DAILY SCHEDULE ⚠️\n\n" +
                 "Once locked, your breaks cannot be edited, added, or cleared for the remainder of this cycle.\n\n" +
                 "Do you want to permanently lock this schedule now?"
@@ -2319,7 +2347,7 @@ window.TaskitatorApp = (() => {
             this.updateStatusPill();
 
 
-            alert("Daily breaks locked successfully.");
+            window.TaskitatorNotify("Daily breaks locked successfully.");
             this.closeModal();
         },
 
@@ -2334,6 +2362,17 @@ window.TaskitatorApp = (() => {
             this.errorBox.textContent = '';
         }
     };
+
+    // Crossfade the break pill only when its state (icon) changes, not every tick.
+    (() => {
+        const baseUpdate = BreakUI.updateStatusPill;
+        BreakUI.updateStatusPill = function () {
+            baseUpdate.call(this);
+            const key = this.pillIcon?.textContent;
+            if (this._lastPillKey !== undefined && key !== this._lastPillKey) UIFX.replay(this.pill, 'pill-swap');
+            this._lastPillKey = key;
+        };
+    })();
 
     // =========================================================================
     // Core Tree Rendering
@@ -2353,6 +2392,7 @@ window.TaskitatorApp = (() => {
         if (!list) return;
         list.innerHTML = '';
         const renderedKeys = new Set();
+        const selectableIds = new Set();
         const markEnter = (li, key) => {
             renderedKeys.add(key);
             if (!previouslyRenderedKeys || !previouslyRenderedKeys.has(key)) li.classList.add('enter');
@@ -2450,7 +2490,7 @@ window.TaskitatorApp = (() => {
             const msg = (currentView === 'today') 
                 ? 'No active tasks scheduled for today.' 
                 : 'No active tasks found in workspace.';
-            list.innerHTML = `<li style="text-align: center; color: var(--text-muted); padding: 32px;">${msg}</li>`;
+            list.innerHTML = `<li class="empty-state"><span class="empty-state-icon" aria-hidden="true">${currentView === 'today' ? '🎯' : '📋'}</span>${msg}</li>`;
         } else {
             function buildNodeElement(task, depth = 0) {
                 const li = document.createElement('li');
@@ -2504,6 +2544,7 @@ window.TaskitatorApp = (() => {
                 }
 
                 markEnter(li, 't:' + task.id);
+                if (!isBreadcrumb && !isDone) selectableIds.add(task.id);
 
                 const row = document.createElement('div');
                 row.className = `task-row ${isSelected ? 'row-selected' : ''}`;
@@ -2657,11 +2698,8 @@ window.TaskitatorApp = (() => {
 
                 if (task.strict_prerequisites) {
                     const shieldBadge = document.createElement('span');
-                    shieldBadge.className = 'ai-badge';
-                    shieldBadge.innerHTML = '🛡️ Shielded';
-                    shieldBadge.style.background = '#451a03';
-                    shieldBadge.style.color = '#fde68a';
-                    shieldBadge.style.borderColor = '#78350f';
+                    shieldBadge.className = 'ai-badge shield-badge';
+                    shieldBadge.textContent = '🛡️ Shielded';
                     main.appendChild(shieldBadge);
                 }
 
@@ -2738,6 +2776,8 @@ window.TaskitatorApp = (() => {
             rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
         }
         previouslyRenderedKeys = renderedKeys;
+        renderedSelectableIds = selectableIds;
+        if (isSelectionModeActive) refreshSelectAllLabel();
 
         const overdueBar = document.getElementById('overdueRescheduleBar');
         const countText = document.getElementById('overdueTasksCountText');
@@ -2781,9 +2821,7 @@ window.TaskitatorApp = (() => {
 
         if (completedList.length === 0) {
             container.innerHTML = `
-                <div style="text-align: center; color: var(--text-muted); padding: 24px 0;">
-                    No completed tasks found.
-                </div>
+                <div class="empty-state empty-state-sm">No completed tasks found.</div>
             `;
             return;
         }
@@ -2795,18 +2833,18 @@ window.TaskitatorApp = (() => {
             row.className = 'completed-item-row';
 
             const info = document.createElement('div');
-            info.style.cssText = 'flex: 1; margin-right: 12px;';
+            info.className = 'completed-item-info';
 
             let badgesHtml = '';
             if (task.is_bonus) badgesHtml += '<span class="bonus-badge">⭐ Bonus</span> ';
             if (task.ai_locked) badgesHtml += '<span class="ai-badge">🔒 AI</span> ';
-            if (task.strict_prerequisites) badgesHtml += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡 Shielded</span>';
+            if (task.strict_prerequisites) badgesHtml += '<span class="ai-badge shield-badge">🛡 Shielded</span>';
 
             info.innerHTML = `
-                <div style="font-weight: 600; text-decoration: line-through; color: var(--text-muted);">
-                    ${TaskitatorSafety.escapeHtml(task.title)} ${badgesHtml}
+                <div class="completed-item-title">
+                    <span class="completed-item-text">${TaskitatorSafety.escapeHtml(task.title)}</span> ${badgesHtml}
                 </div>
-                ${task.completed_at ? `<small style="color: var(--text-muted); font-size: 0.75rem;">Done at: ${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
+                ${task.completed_at ? `<small class="completed-item-time">Done at: ${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
             `;
 
             const actionContainer = document.createElement('div');
@@ -2819,12 +2857,12 @@ window.TaskitatorApp = (() => {
                 actionContainer.appendChild(lockedBtn);
             } else {
                 const actionBtn = document.createElement('button');
-                actionBtn.className = 'icon-btn';
-                actionBtn.style.padding = '4px 10px';
-                actionBtn.style.fontSize = '0.8rem';
-                actionBtn.innerHTML = '↺ Uncomplete';
+                actionBtn.type = 'button';
+                actionBtn.className = 'icon-btn icon-btn-sm';
+                actionBtn.textContent = '↺ Uncomplete';
 
                 actionBtn.addEventListener('click', () => {
+                    window.TaskitatorFX?.tap();
                     uncompleteFromModal(task.id);
                 });
                 actionContainer.appendChild(actionBtn);
@@ -2841,7 +2879,7 @@ window.TaskitatorApp = (() => {
         if (!task) return;
 
         if (task.ai_locked && !isBypassActiveSafe()) {
-            alert('Blocked: AI-checked tasks are permanent and cannot be uncompleted.');
+            window.TaskitatorNotify('Blocked: AI-checked tasks are permanent and cannot be uncompleted.');
             return;
         }
 
@@ -2919,9 +2957,10 @@ window.TaskitatorApp = (() => {
                 if (timerEl) {
                     timerEl.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
                 }
+                if (banner) banner.classList.toggle('is-urgent', remaining <= 60);
             }, 1000);
         } else {
-            if (banner) banner.style.display = 'none';
+            if (banner) { banner.style.display = 'none'; banner.classList.remove('is-urgent'); }
             clearInterval(emergencyTimerInterval);
         }
         renderUnifiedTaskTree();
@@ -3017,7 +3056,7 @@ window.TaskitatorApp = (() => {
         if (batchOpenTagsBtn && batchTagsModal) {
             batchOpenTagsBtn.addEventListener('click', () => {
                 if (selectedTaskIds.size === 0) {
-                    alert('Please select at least one task first.');
+                    window.TaskitatorNotify('Please select at least one task first.');
                     return;
                 }
                 batchSelectedTags.clear();
@@ -3044,7 +3083,7 @@ window.TaskitatorApp = (() => {
         if (batchOpenPriorityBtn && batchPriorityModal) {
             batchOpenPriorityBtn.addEventListener('click', () => {
                 if (selectedTaskIds.size === 0) {
-                    alert('Please select at least one task first.');
+                    window.TaskitatorNotify('Please select at least one task first.');
                     return;
                 }
                 batchSelectedPriority = getLowestPriorityId();
@@ -3089,7 +3128,7 @@ window.TaskitatorApp = (() => {
         if (batchOpenDueDateBtn && batchDueDateModal) {
             batchOpenDueDateBtn.addEventListener('click', () => {
                 if (selectedTaskIds.size === 0) {
-                    alert('Please select at least one task first.');
+                    window.TaskitatorNotify('Please select at least one task first.');
                     return;
                 }
                 const dueIn = document.getElementById('batchDueDateInput');
@@ -3123,7 +3162,7 @@ window.TaskitatorApp = (() => {
                 renderUnifiedView();
 
                 if (protectedCount > 0) {
-                    alert(`Due dates updated. ${protectedCount} overdue AI-locked task(s) were protected from postponement (requires proof or Emergency Bypass).`);
+                    window.TaskitatorNotify(`Due dates updated. ${protectedCount} overdue AI-locked task(s) were protected from postponement (requires proof or Emergency Bypass).`);
                 }
             });
         }
@@ -3184,7 +3223,7 @@ window.TaskitatorApp = (() => {
                     const dateInput = document.getElementById('bulkRescheduleTargetDate');
                     const targetDate = dateInput ? dateInput.value : '';
                     if (!targetDate || targetDate < todayStr) {
-                        alert('Please select a valid future date or today.');
+                        window.TaskitatorNotify('Please select a valid future date or today.');
                         return;
                     }
                     tasks.forEach(t => {
@@ -3262,13 +3301,13 @@ window.TaskitatorApp = (() => {
                     const formatSelect = document.getElementById('escrowExportFormatSelect');
                     const format = formatSelect ? formatSelect.value : 'txt';
                     
-                    extractAllEscrowBtn.disabled = true;
+                    extractAllEscrowBtn.disabled = true, extractAllEscrowBtn.classList.toggle('is-loading', true);
                     extractAllEscrowBtn.textContent = '🤖 Processing...';
                     if (deleteAllEscrowBtn) deleteAllEscrowBtn.disabled = true;
                     
                     const res = await TaskitatorEngine.AgentEngine.extractNotesBatch(currentNotes, format);
                     
-                    extractAllEscrowBtn.disabled = false;
+                    extractAllEscrowBtn.disabled = false, extractAllEscrowBtn.classList.toggle('is-loading', false);
                     extractAllEscrowBtn.textContent = '📥 Extract All';
                     if (deleteAllEscrowBtn) deleteAllEscrowBtn.disabled = false;
                     
@@ -3291,22 +3330,22 @@ window.TaskitatorApp = (() => {
                         const m = document.getElementById('distractionEscrowModal');
                         if (m) m.classList.remove('open');
                         
-                        alert(`Successfully extracted ${polishedSet.length} note(s) to ${format.toUpperCase()} and moved to Archive.`);
+                        window.TaskitatorNotify(`Successfully extracted ${polishedSet.length} note(s) to ${format.toUpperCase()} and moved to Archive.`);
                     } else {
-                        alert(`Extraction failed: ${res.error}`);
+                        window.TaskitatorNotify(`Extraction failed: ${res.error}`);
                     }
                 } else {
-                    alert('Agent Engine not loaded.');
+                    window.TaskitatorNotify('Agent Engine not loaded.');
                 }
             });
         }
 
         if (deleteAllEscrowBtn) {
-            deleteAllEscrowBtn.addEventListener('click', () => {
+            deleteAllEscrowBtn.addEventListener('click', async () => {
                 const currentNotes = DistractionDumpEngine.getNotes();
                 if (currentNotes.length === 0) return;
                 
-                if (confirm(`Permanently delete all ${currentNotes.length} unextracted notes?`)) {
+                if (await window.TaskitatorConfirm({ title: 'Delete all notes?', message: `Permanently delete all ${currentNotes.length} unextracted notes? This cannot be undone.`, confirmLabel: 'Delete all', tone: 'danger' })) {
                     DistractionDumpEngine.saveNotes([]);
                     DistractionDumpEngine.openEscrowModal();
                 }
@@ -3316,7 +3355,7 @@ window.TaskitatorApp = (() => {
         const escrowArchiveInfoBtn = document.getElementById('escrowArchiveInfoBtn');
         if (escrowArchiveInfoBtn) {
             escrowArchiveInfoBtn.addEventListener('click', () => {
-                alert("Saved notes are in the Distraction Archive on the Stats page.");
+                window.TaskitatorNotify("Saved notes are in the Distraction Archive on the Stats page.", 'info');
             });
         }
 
@@ -3423,14 +3462,14 @@ window.TaskitatorApp = (() => {
 
         if (emergencyTriggerBtn) {
             emergencyTriggerBtn.addEventListener('click', async () => {
-                try{await window.TaskitatorPro.emergencyStatus();}catch(error){alert(error.message);return;}
+                try{await window.TaskitatorPro.emergencyStatus();}catch(error){window.TaskitatorNotify(error.message);return;}
                 if (isBypassActiveSafe()) {
-                    alert('Emergency bypass is already active.');
+                    window.TaskitatorNotify('Emergency bypass is already active.');
                     return;
                 }
                 const state = getEmergencyStateSafe();
                 if (state.uses_left <= 0) {
-                    alert('All 4 emergency bypass uses for this week have been exhausted.');
+                    window.TaskitatorNotify('All 4 emergency bypass uses for this week have been exhausted.');
                     return;
                 }
                 const remUses = document.getElementById('emergencyModalRemainingUses');
@@ -3446,15 +3485,15 @@ window.TaskitatorApp = (() => {
         if (confirmEmergencyBtn && emergencyConfirmModal) {
             confirmEmergencyBtn.addEventListener('click', async () => {
                 if (confirmEmergencyBtn.disabled) return;
-                confirmEmergencyBtn.disabled = true;
+                confirmEmergencyBtn.disabled = true, confirmEmergencyBtn.classList.toggle('is-loading', true);
                 try {
                     const res = await TaskitatorEngine.EmergencyManager.activateBypass();
-                    if (!res.success) { alert(res.error || 'Could not activate Emergency Bypass. Try again.'); return; }
+                    if (!res.success) { window.TaskitatorNotify(res.error || 'Could not activate Emergency Bypass. Try again.'); return; }
                     emergencyConfirmModal.classList.remove('open');
                     updateEmergencyUI();
                 } catch (error) {
-                    alert(error.message || 'Could not activate Emergency Bypass. Try again.');
-                } finally { confirmEmergencyBtn.disabled = false; }
+                    window.TaskitatorNotify(error.message || 'Could not activate Emergency Bypass. Try again.');
+                } finally { confirmEmergencyBtn.disabled = false, confirmEmergencyBtn.classList.toggle('is-loading', false); }
             });
         }
         window.addEventListener('taskitator-emergency-updated', updateEmergencyUI);
@@ -3476,7 +3515,7 @@ window.TaskitatorApp = (() => {
                 try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch (e) {}
 
                 if (!window.SyncEngine?.isConfigured()) {
-                    alert('Cannot sync: No secret passkey configured in Settings.');
+                    window.TaskitatorNotify('Cannot sync: No secret passkey configured in Settings.');
                     updateSyncDot('local-only');
                     return;
                 }
@@ -3491,8 +3530,10 @@ window.TaskitatorApp = (() => {
                         updateSyncDot('synced');
                         loadStorage();
                         renderUnifiedView();
+                        window.TaskitatorNotify('Synced.', 'success');
                     } else {
                         updateSyncDot('error');
+                        window.TaskitatorNotify('Sync failed. Check your connection and try again.', 'error');
                     }
                 }
             });
@@ -3615,8 +3656,8 @@ if ('serviceWorker' in navigator) {
             width: 52px;
             height: 52px;
             border-radius: 50%;
-            background: #2563eb;
-            color: #ffffff;
+            background: var(--primary);
+            color: #fff;
             border: none;
             box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
             font-size: 22px;
@@ -3627,8 +3668,25 @@ if ('serviceWorker' in navigator) {
             z-index: 998;
             transition: transform 0.15s ease, background 0.2s ease, opacity 0.2s ease;
         }
+        #pomodoroFabBtn {
+            box-shadow: 0 4px 0 var(--depth-primary), 0 6px 18px rgba(0, 0, 0, 0.45);
+        }
         #pomodoroFabBtn:active {
-            transform: scale(0.92);
+            transform: translateY(4px);
+            box-shadow: 0 0 0 transparent, 0 2px 8px rgba(0, 0, 0, 0.4);
+        }
+        .pomo-start-btn, .pomo-ctrl-btn, .pomo-header-btn {
+            transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background-color var(--dur-fast) ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .pomo-start-btn, .pomo-ctrl-btn.primary { box-shadow: 0 3px 0 var(--depth-primary); }
+        .pomo-ctrl-btn, .pomo-header-btn { box-shadow: 0 2px 0 var(--depth); }
+        .pomo-start-btn:active, .pomo-ctrl-btn:active, .pomo-header-btn:active {
+            transform: translateY(3px);
+            box-shadow: 0 0 0 transparent;
+        }
+        #pomodoroOverlay.active #pomoSetupPanel, #pomodoroOverlay.active #pomoClockPanel {
+            animation: modalPopEntry var(--dur-slow) var(--ease-out);
         }
         #pomodoroFabBtn.hidden {
             display: none !important;
@@ -3638,7 +3696,7 @@ if ('serviceWorker' in navigator) {
         #pomodoroOverlay {
             position: fixed;
             inset: 0;
-            background: rgba(15, 23, 42, 0.95);
+            background: rgba(8, 18, 38, 0.95);
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
             z-index: 10000;
@@ -3646,7 +3704,7 @@ if ('serviceWorker' in navigator) {
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            color: #f8fafc;
+            color: var(--text-color);
             user-select: none;
             padding: 24px;
             box-sizing: border-box;
@@ -3667,7 +3725,7 @@ if ('serviceWorker' in navigator) {
         }
         .pomo-header-btn {
             background: rgba(255, 255, 255, 0.1);
-            color: #f8fafc;
+            color: var(--text-color);
             border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 8px;
             padding: 8px 14px;
@@ -3686,8 +3744,8 @@ if ('serviceWorker' in navigator) {
         #pomoSetupPanel {
             max-width: 380px;
             width: 100%;
-            background: #1e293b;
-            border: 1px solid #334155;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
             border-radius: 14px;
             padding: 24px;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
@@ -3698,25 +3756,25 @@ if ('serviceWorker' in navigator) {
         .pomo-field label {
             display: block;
             font-size: 0.82rem;
-            color: #94a3b8;
+            color: var(--text-muted);
             margin-bottom: 6px;
             font-weight: 600;
         }
         .pomo-field input {
             width: 100%;
             padding: 10px 12px;
-            background: #0f172a;
-            border: 1.5px solid #334155;
+            background: var(--card-subtle);
+            border: 1.5px solid var(--border-color);
             border-radius: 8px;
-            color: #f8fafc;
+            color: var(--text-color);
             font-size: 1rem;
             box-sizing: border-box;
         }
         .pomo-start-btn {
             width: 100%;
             padding: 12px;
-            background: #2563eb;
-            color: #ffffff;
+            background: var(--primary);
+            color: #fff;
             font-weight: 700;
             font-size: 1rem;
             border: none;
@@ -3743,7 +3801,7 @@ if ('serviceWorker' in navigator) {
             border-radius: 20px;
             margin-bottom: 14px;
             background: rgba(37, 99, 235, 0.2);
-            color: #60a5fa;
+            color: var(--accent);
             border: 1px solid rgba(96, 165, 250, 0.3);
         }
         .pomo-phase-badge.break {
@@ -3757,7 +3815,7 @@ if ('serviceWorker' in navigator) {
             font-weight: 800;
             line-height: 1;
             margin: 10px 0 20px 0;
-            color: #f8fafc;
+            color: var(--text-color);
         }
         .pomo-dots {
             display: flex;
@@ -3768,15 +3826,15 @@ if ('serviceWorker' in navigator) {
             width: 12px;
             height: 12px;
             border-radius: 50%;
-            background: #334155;
+            background: var(--border-color);
             transition: background 0.2s ease;
         }
         .pomo-dot.filled {
-            background: #2563eb;
+            background: var(--primary);
         }
         .pomo-dot.active {
-            background: #60a5fa;
-            box-shadow: 0 0 10px #60a5fa;
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
         }
         .pomo-controls {
             display: flex;
@@ -3784,9 +3842,9 @@ if ('serviceWorker' in navigator) {
             align-items: center;
         }
         .pomo-ctrl-btn {
-            background: #1e293b;
-            border: 1.5px solid #334155;
-            color: #f8fafc;
+            background: var(--card-bg);
+            border: 1.5px solid var(--border-color);
+            color: var(--text-color);
             padding: 12px 28px;
             border-radius: 10px;
             font-size: 1rem;
@@ -3795,8 +3853,8 @@ if ('serviceWorker' in navigator) {
             transition: background 0.15s ease;
         }
         .pomo-ctrl-btn.primary {
-            background: #2563eb;
-            border-color: #2563eb;
+            background: var(--primary);
+            border-color: var(--primary);
         }
     `;
 
@@ -3863,7 +3921,7 @@ if ('serviceWorker' in navigator) {
             if (state.currentSession >= config.totalSessions) {
                 // All sessions complete
                 state.isRunning = false;
-                alert('Congratulations! All Pomodoro sessions complete.');
+                window.TaskitatorNotify('Congratulations! All Pomodoro sessions complete.');
                 resetTimer();
                 showSetup();
                 return;

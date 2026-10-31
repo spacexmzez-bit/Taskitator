@@ -771,10 +771,10 @@ test('Phase 4.5 paused timers and stored notification preferences survive restor
  assert.equal(engine.valid({...s,config:{...s.config,work:0}}),false);
 });
 test('Phase 4.5 tree expansion changes only local presentation and never schedules a push',()=>{
- const source=fs.readFileSync(new URL('app.js',rootURL()),'utf8'),start=source.indexOf("toggleBtn.addEventListener('click'",source.indexOf("toggleBtn.className = 'collapse-toggle'")),end=source.indexOf('});',start)+3;
+ const source=fs.readFileSync(new URL('app.js',rootURL()),'utf8'),start=source.indexOf("toggleBtn.addEventListener('click'",source.indexOf("toggleBtn.className = `collapse-toggle")),end=source.indexOf('});',start)+3;
  let click,pushes=0,renders=0;const collapsed=new Set(),saved=[];
- vm.runInNewContext(source.slice(start,end),{toggleBtn:{addEventListener(type,fn){click=fn;}},task:{id:'task1'},collapsedNodes:collapsed,COLLAPSED_STATE_KEY:'local-tree',JSON,localStorage:{setItem:(k,v)=>saved.push(v)},saveStorageAndPush:()=>pushes++,renderUnifiedTaskTree:()=>renders++});
- click({stopPropagation(){}});assert.equal(collapsed.has('task1'),true);click({stopPropagation(){}});assert.equal(collapsed.has('task1'),false);assert.equal(pushes,0);assert.equal(renders,2);assert.equal(saved.length,2);
+ vm.runInNewContext(source.slice(start,end),{toggleBtn:{classList:{toggle(){}},setAttribute(){},addEventListener(type,fn){click=fn;}},li:{querySelector:()=>null},UIFX:{tap(){}},task:{id:'task1'},collapsedNodes:collapsed,COLLAPSED_STATE_KEY:'local-tree',JSON,localStorage:{setItem:(k,v)=>saved.push(v)},saveStorageAndPush:()=>pushes++,renderUnifiedTaskTree:()=>renders++});
+ click({stopPropagation(){}});assert.equal(collapsed.has('task1'),true);click({stopPropagation(){}});assert.equal(collapsed.has('task1'),false);assert.equal(pushes,0);assert.equal(renders,0);assert.equal(saved.length,2);
 });
 function uniUI(api){
  const root=new UniElement(),listeners={};const w={TaskitatorAuth:{account:{user:'A'},api},Clerk:{session:{id:'S'},addListener(fn){this.listener=fn;}},addEventListener(k,fn){listeners[k]=fn;},confirm:()=>true};

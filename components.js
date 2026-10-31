@@ -1,7 +1,233 @@
 // ============================================================================
 // Taskitator Consolidated Components & Recurrence Engine (components.js)
-// Combines: recurrence-core, recurrence-ui, and components.
+// Combines: ui-feedback, recurrence-core, recurrence-ui, and components.
 // ============================================================================
+
+// <<< MODULE_START: ui-feedback.js >>>
+// File: ui-feedback.js
+// UI v2 Phase 4: non-blocking toasts, promise-based confirm sheet, busy buttons.
+(function () {
+    'use strict';
+    if (typeof document === 'undefined' || window.TaskitatorToast) return;
+
+    const fx = () => window.TaskitatorFX;
+    const supportsPopover = typeof HTMLElement !== 'undefined' && 'showPopover' in HTMLElement.prototype;
+    let host = null;
+
+    function ensureHost() {
+        if (host && host.isConnected) return host;
+        host = document.createElement('div');
+        host.className = 'toast-host';
+        host.setAttribute('role', 'status');
+        host.setAttribute('aria-live', 'polite');
+        if (supportsPopover) host.setAttribute('popover', 'manual');
+        document.body.appendChild(host);
+        return host;
+    }
+
+    // Keep the toast layer above native <dialog> elements (top layer).
+    function raiseHost() {
+        const el = ensureHost();
+        if (!supportsPopover) return;
+        try {
+            if (el.matches(':popover-open')) el.hidePopover();
+            el.showPopover();
+        } catch (e) {}
+    }
+
+    function inferType(text) {
+        const t = String(text || '');
+        if (/success|locked successfully|extracted|updated\b|congratulations|saved/i.test(t)) return 'success';
+        if (/blocked|fail|error|cannot|can't|could not|not loaded|required|too large|must|missing|removed|changed|exhausted|invalid|please|unavailable|no secret/i.test(t)) return 'error';
+        return 'info';
+    }
+
+    const ICONS = { success: '✓', error: '!', info: 'i' };
+
+    function dismiss(toast) {
+        if (!toast || toast._leaving) return;
+        toast._leaving = true;
+        clearTimeout(toast._timer);
+        toast.classList.add('is-leaving');
+        const remove = () => {
+            toast.remove();
+            if (host && !host.children.length && supportsPopover) {
+                try { host.hidePopover(); } catch (e) {}
+            }
+        };
+        toast.addEventListener('animationend', remove, { once: true });
+        setTimeout(remove, 400);
+    }
+
+    function show(message, opts = {}) {
+        const text = String(message ?? '');
+        const type = opts.type || inferType(text);
+        const el = ensureHost();
+        raiseHost();
+
+        while (el.children.length >= 3) el.firstElementChild.remove();
+
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        if (type === 'error') toast.setAttribute('role', 'alert');
+
+        const icon = document.createElement('span');
+        icon.className = 'toast-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = ICONS[type] || ICONS.info;
+
+        const body = document.createElement('div');
+        body.className = 'toast-body';
+        body.textContent = text;
+
+        toast.append(icon, body);
+
+        if (opts.action && typeof opts.action.fn === 'function') {
+            const act = document.createElement('button');
+            act.type = 'button';
+            act.className = 'toast-action';
+            act.textContent = opts.action.label || 'Undo';
+            act.addEventListener('click', (e) => {
+                e.stopPropagation();
+                fx()?.tap();
+                try { opts.action.fn(); } finally { dismiss(toast); }
+            });
+            toast.appendChild(act);
+        }
+
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'toast-close';
+        close.setAttribute('aria-label', 'Dismiss');
+        close.textContent = '✕';
+        close.addEventListener('click', (e) => { e.stopPropagation(); dismiss(toast); });
+        toast.appendChild(close);
+
+        el.appendChild(toast);
+
+        if (type === 'error') fx()?.deny();
+        else if (type === 'success') fx()?.success();
+
+        const duration = opts.duration ?? Math.min(9000, Math.max(3200, text.length * 55));
+        const arm = () => { toast._timer = setTimeout(() => dismiss(toast), duration); };
+        toast.addEventListener('pointerenter', () => clearTimeout(toast._timer));
+        toast.addEventListener('pointerleave', arm);
+        arm();
+        return { dismiss: () => dismiss(toast) };
+    }
+
+    // ---------------------------------------------------------------------
+    // Confirm sheet. Accepts an options object or a legacy confirm() string.
+    // ---------------------------------------------------------------------
+    function parseLegacy(text) {
+        const parts = String(text || '').split(/\n\s*\n/);
+        let title = '';
+        let message = String(text || '');
+        const first = parts[0] || '';
+        const stripped = first.replace(/[⚠️️]/g, '').trim();
+        if (parts.length > 1 && stripped && stripped === stripped.toUpperCase()) {
+            title = stripped.charAt(0) + stripped.slice(1).toLowerCase();
+            message = parts.slice(1).join('\n\n');
+        }
+        return { title, message };
+    }
+
+    function confirmSheet(input) {
+        const opts = typeof input === 'string' ? parseLegacy(input) : { ...(input || {}) };
+        const raw = typeof input === 'string' ? input : `${opts.title || ''} ${opts.message || ''}`;
+        const tone = opts.tone || (/irrevocable|irreversible|permanent|delete|stop future/i.test(raw) ? 'danger' : 'primary');
+
+        if (typeof HTMLDialogElement === 'undefined') {
+            return Promise.resolve(window.confirm([opts.title, opts.message].filter(Boolean).join('\n\n')));
+        }
+
+        return new Promise(resolve => {
+            const dlg = document.createElement('dialog');
+            dlg.className = `confirm-sheet confirm-${tone}`;
+
+            const box = document.createElement('div');
+            box.className = 'confirm-sheet-box';
+
+            if (opts.title) {
+                const h = document.createElement('h3');
+                h.className = 'confirm-sheet-title';
+                h.textContent = (tone === 'danger' ? '⚠️ ' : '') + opts.title;
+                box.appendChild(h);
+            }
+            const p = document.createElement('p');
+            p.className = 'confirm-sheet-message';
+            p.textContent = opts.message || '';
+            box.appendChild(p);
+
+            const actions = document.createElement('div');
+            actions.className = 'confirm-sheet-actions';
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'icon-btn confirm-cancel';
+            cancel.textContent = opts.cancelLabel || 'Cancel';
+            const ok = document.createElement('button');
+            ok.type = 'button';
+            ok.className = `icon-btn confirm-ok ${tone === 'danger' ? 'btn-danger' : 'btn-primary'}`;
+            ok.textContent = opts.confirmLabel || (tone === 'danger' ? 'Yes, continue' : 'Confirm');
+            actions.append(cancel, ok);
+            box.appendChild(actions);
+            dlg.appendChild(box);
+
+            let settled = false;
+            const finish = (value) => {
+                if (settled) return;
+                settled = true;
+                fx()?.tap();
+                dlg.classList.add('is-leaving');
+                const cleanup = () => { try { dlg.close(); } catch (e) {} dlg.remove(); };
+                dlg.addEventListener('animationend', cleanup, { once: true });
+                setTimeout(cleanup, 320);
+                resolve(value);
+            };
+
+            cancel.addEventListener('click', () => finish(false));
+            ok.addEventListener('click', () => finish(true));
+            dlg.addEventListener('cancel', (e) => { e.preventDefault(); finish(false); });
+            dlg.addEventListener('click', (e) => { if (e.target === dlg) finish(false); });
+
+            document.body.appendChild(dlg);
+            dlg.showModal();
+            // Safer default for destructive prompts.
+            (tone === 'danger' ? cancel : ok).focus();
+            if (host?.children.length) raiseHost();
+        });
+    }
+
+    // ---------------------------------------------------------------------
+    // Busy state for buttons: keeps width, shows spinner, blocks repeat taps.
+    // ---------------------------------------------------------------------
+    function setBusy(btn, busy, label) {
+        if (!btn) return;
+        if (busy) {
+            if (btn.dataset.busyRestore === undefined) btn.dataset.busyRestore = btn.disabled ? '1' : '0';
+            btn.disabled = true;
+            btn.classList.add('is-loading');
+            btn.setAttribute('aria-busy', 'true');
+            if (label) btn.textContent = label;
+        } else {
+            btn.classList.remove('is-loading');
+            btn.removeAttribute('aria-busy');
+            if (btn.dataset.busyRestore !== undefined) {
+                btn.disabled = btn.dataset.busyRestore === '1';
+                delete btn.dataset.busyRestore;
+            } else {
+                btn.disabled = false;
+            }
+            if (label) btn.textContent = label;
+        }
+    }
+
+    window.TaskitatorToast = { show, dismiss };
+    window.TaskitatorNotify = (message, type) => show(message, type ? { type } : {});
+    window.TaskitatorConfirm = confirmSheet;
+    window.TaskitatorBusy = setBusy;
+})();
+// <<< MODULE_END: ui-feedback.js >>>
 
 // <<< MODULE_START: recurrence-core.js >>>
 // File: recurrence-core.js
@@ -242,7 +468,7 @@
             localStorage.removeItem(KEY);localStorage.removeItem('taskitator_tasks');
             if(beforeState!==null)localStorage.setItem(KEY,beforeState);
             if(beforeTasks!==null)localStorage.setItem('taskitator_tasks',beforeTasks);
-            alert('Could not save recurring data. The previous saved copy was kept. If storage is full, reduce reference-file sizes or export a backup before cleaning old data.');
+            window.TaskitatorNotify('Could not save recurring data. The previous saved copy was kept. If storage is full, reduce reference-file sizes or export a backup before cleaning old data.');
             throw err;
         }
     }
@@ -363,8 +589,8 @@
             button('Save schedule for future occurrences',d,() => {
                 try { s.schedule=form.get();save(data,list);d.close();bindTask(id); }catch(e){feedback.textContent=e.message;}
             });
-            if (s.enabled) button('Stop future repetition',d,() => {
-                if (!confirm('Stop future occurrences? The current task and its proof requirements stay active.')) return;
+            if (s.enabled) button('Stop future repetition',d,async () => {
+                if (!(await window.TaskitatorConfirm({ title: 'Stop future occurrences?', message: 'The current task and its proof requirements stay active.', confirmLabel: 'Stop repeating', tone: 'danger' }))) return;
                 s.enabled=false;s.stopped_reason='Stopped by user';save(data,list);d.close();bindTask(id);
             });
             else if (task.status==='active') button('Resume future repetition',d,() => {s.enabled=true;delete s.stopped_reason;save(data,list);d.close();bindTask(id);});
@@ -379,7 +605,7 @@
             const saveButton=button('Validate & save future criteria',d,async () => {
                 const text=area.value.trim();if (!text || /\{[^}]+\}|\[[^\]]+\]/.test(text)){feedback.textContent='Enter concrete criteria with all placeholders filled in.';return;}
                 const user=window.SyncEngine?.getConfig().username, session=localStorage.getItem('taskitator_session_id'), revision=localStorage.getItem('taskitator_local_revision');
-                saveButton.disabled=true;
+                saveButton.disabled=true, saveButton.classList.toggle('is-loading', true);
                 try {
                     let exemplar=file.files[0]||null;
                     if (exemplar) {const check=TaskitatorEngine.AuditEngine.validateFile(exemplar);if(!check.valid)throw new Error(check.error);}
@@ -399,13 +625,13 @@
                     if(file.files[0]){data.reference_files ||= {};const refId='ref_'+crypto.randomUUID().replace(/-/g,'');data.reference_files[refId]=await engine.fileToBase64(file.files[0]);node.task.reference_id=refId;delete node.task.reference_inline_data;}
                     if (user!==window.SyncEngine?.getConfig().username || session!==localStorage.getItem('taskitator_session_id') || revision!==localStorage.getItem('taskitator_local_revision')) throw new Error('Account or tasks changed. Reopen this dialog.');
                     save(data,list);feedback.textContent='Validated '+result.score+'/10. Saved for future occurrences. Current criteria unchanged.';
-                }catch(e){feedback.textContent=e.message;}finally{saveButton.disabled=false;}
+                }catch(e){feedback.textContent=e.message;}finally{saveButton.disabled=false, saveButton.classList.toggle('is-loading', false);}
             });
         }
     }
     function overview() {
         const d=dialog('Recurring tasks & history'),data=state();
-        button('Study recurrence · Pro',d,async()=>{const result=await window.TaskitatorStudy?.open();if(result?.status==='pro_required')alert(result.message);});
+        button('Study recurrence · Pro',d,async()=>{const result=await window.TaskitatorStudy?.open();if(result?.status==='pro_required')window.TaskitatorNotify(result.message);});
         if(!data.series.length)element('p','Open a task’s details to set up recurrence, or choose Repeat when creating a task.',d);
         for(const s of data.series){const root=tasks().find(t=>t.id===s.current_root_id);element('h3',root?.title||s.nodes[0]?.task.title||'Recurring task',d);element('p',(s.enabled?'Repeating':'Stopped')+' · '+s.schedule.kind.replace(/_/g,' ')+' · Current date: '+s.current_date,d);if(root)button('Manage branch',d,()=>{d.close();open(root.id);});}
         element('h3','Occurrence history (latest 500)',d);
@@ -413,7 +639,7 @@
         if(!data.history.length)element('p','No recurring-task history yet.',d);
     }
     window.addEventListener('taskitator-auth-ready',()=>{
-        const form=document.getElementById('taskCreateForm');if(form){const wrap=element('fieldset',undefined,form);wrap.style.cssText='margin:14px 0;border:1px solid var(--border-color);border-radius:8px;padding:12px';element('legend','Recurrence',wrap);const sub=document.getElementById('subtaskBuilderList')?.parentElement;if(sub?.parentElement)sub.parentElement.insertBefore(wrap,sub);createControl=scheduleForm(wrap,undefined,true);button('Study recurrence · Pro',wrap,async()=>{const r=await window.TaskitatorStudy?.open({title:document.getElementById('taskTitleInput')?.value||''});if(r?.status==='pro_required')alert(r.message);});}
+        const form=document.getElementById('taskCreateForm');if(form){const wrap=element('fieldset',undefined,form);wrap.style.cssText='margin:14px 0;border:1px solid var(--border-color);border-radius:8px;padding:12px';element('legend','Recurrence',wrap);const sub=document.getElementById('subtaskBuilderList')?.parentElement;if(sub?.parentElement)sub.parentElement.insertBefore(wrap,sub);createControl=scheduleForm(wrap,undefined,true);button('Study recurrence · Pro',wrap,async()=>{const r=await window.TaskitatorStudy?.open({title:document.getElementById('taskTitleInput')?.value||''});if(r?.status==='pro_required')window.TaskitatorNotify(r.message);});}
         const nav=document.querySelector('.sidebar nav')||document.querySelector('nav');if(nav)button('↻ Recurring tasks',nav,overview);
     });
     window.TaskitatorRecurrenceUI={state,save,persist,attachCreated,validCreate,bindTask,applyEdit,resetCreate:()=>createControl?.reset(),overview};
@@ -463,11 +689,11 @@ window.TaskitatorComponents = Object.freeze({
         function discardDraft(){if(dirty()&&!confirm('Changes unsaved. Discard your changes?'))return false;draft=null;window.TaskitatorEditorDraft=null;return true;}
         async function refreshConsecutive(){for(const id of ['createConsecutiveToggle','detailConsecutiveToggle']){const e=document.getElementById(id);if(e)e.disabled=true;}const check=await window.TaskitatorPro?.checkConsecutiveEntitlement?.();for(const id of ['createConsecutiveToggle','detailConsecutiveToggle']){const e=document.getElementById(id);if(e){e.disabled=!check?.allowed;if(e.disabled)e.checked=false;e.title=e.disabled?'Activate Taskitator Pro to use consecutive numbering.':'';}}}
         function commitDraft(){
-            if(!draft)return false;if(draft.session!==localStorage.getItem('taskitator_session_id')){alert('Your account changed. Reopen the editor.');return false;}
+            if(!draft)return false;if(draft.session!==localStorage.getItem('taskitator_session_id')){window.TaskitatorNotify('Your account changed. Reopen the editor.');return false;}
             liveHost.tasks.reload();const current=liveHost.tasks.getAll(),original=JSON.parse(draft.originalTasks),changes=draft.tasks.filter(t=>JSON.stringify(t)!==JSON.stringify(original.find(o=>o.id===t.id)));
-            if(changes.some(t=>JSON.stringify(current.find(o=>o.id===t.id))!==JSON.stringify(original.find(o=>o.id===t.id)))){alert('This task changed elsewhere. Reopen the editor before saving.');return false;}
+            if(changes.some(t=>JSON.stringify(current.find(o=>o.id===t.id))!==JSON.stringify(original.find(o=>o.id===t.id)))){window.TaskitatorNotify('This task changed elsewhere. Reopen the editor before saving.');return false;}
             const changedRecurrence=JSON.stringify(draft.recurrence)!==draft.originalRecurrence;
-            if(changedRecurrence&&JSON.stringify(JSON.parse(localStorage.getItem('taskitator_recurrence_state')||'{"series":[],"history":[]}'))!==draft.originalRecurrence){alert('The repeat schedule changed elsewhere. Reopen the editor.');return false;}
+            if(changedRecurrence&&JSON.stringify(JSON.parse(localStorage.getItem('taskitator_recurrence_state')||'{"series":[],"history":[]}'))!==draft.originalRecurrence){window.TaskitatorNotify('The repeat schedule changed elsewhere. Reopen the editor.');return false;}
             if(changedRecurrence)localStorage.setItem('taskitator_recurrence_state',JSON.stringify(draft.recurrence));
             for(const tag of draft.newTags||[])liveHost.catalogs.addTag(tag);
             if(draft.savedCriteria)localStorage.setItem('taskitator_saved_criteria',JSON.stringify(draft.savedCriteria));
@@ -614,7 +840,7 @@ window.TaskitatorComponents = Object.freeze({
                 const { resolvedText, hasUnresolved, unresolvedKeys } = this.resolveCriteria(criteriaText, varMap);
                 if (hasUnresolved) {
                     const missingList = unresolvedKeys.length > 0 ? unresolvedKeys.join(', ') : 'unknown';
-                    alert(`Criteria Error: Unresolved variable placeholder(s) detected: {${missingList}}.\nPlease define all referenced variables in the task title using the format: Task Title {${missingList}==value}.`);
+                    window.TaskitatorNotify(`Criteria Error: Unresolved variable placeholder(s) detected: {${missingList}}.\nPlease define all referenced variables in the task title using the format: Task Title {${missingList}==value}.`);
                     return { valid: false, resolvedText: criteriaText };
                 }
                 return { valid: true, resolvedText };
@@ -1054,7 +1280,7 @@ window.TaskitatorComponents = Object.freeze({
             if (auditFeedback) auditFeedback.style.display = 'none';
             
             if (submitProofBtn) {
-                submitProofBtn.disabled = false;
+                submitProofBtn.disabled = false, submitProofBtn.classList.toggle('is-loading', false);
                 submitProofBtn.textContent = 'Submit Proof';
             }
             if (auditModal) auditModal.classList.add('open');
@@ -1097,7 +1323,7 @@ window.TaskitatorComponents = Object.freeze({
         }
 
         async function openTaskDetailModal(taskId, triggerRenderFn) {
-            if(draft&&!liveHost.tasks.getAll().some(t=>t.id===taskId)){alert('Save this draft before opening its new subtask.');return;}
+            if(draft&&!liveHost.tasks.getAll().some(t=>t.id===taskId)){window.TaskitatorNotify('Save this draft before opening its new subtask.');return;}
             if(draft&&!discardDraft())return;
             draft={tasks:copy(liveHost.tasks.getAll()),originalTasks:JSON.stringify(liveHost.tasks.getAll()),recurrence:copy(window.TaskitatorRecurrenceUI?.state()||{series:[],history:[]}),session:localStorage.getItem('taskitator_session_id')};
             draft.originalRecurrence=JSON.stringify(draft.recurrence);window.TaskitatorEditorDraft=draft;removeEditReference=false;
@@ -1462,7 +1688,7 @@ window.TaskitatorComponents = Object.freeze({
                     const siblingSelect = document.getElementById('siblingTaskSelect');
                     const sibId = siblingSelect?.value;
                     if (!sibId) {
-                        alert('Please select a sibling task first.');
+                        window.TaskitatorNotify('Please select a sibling task first.');
                         return;
                     }
 
@@ -1944,7 +2170,7 @@ window.TaskitatorComponents = Object.freeze({
                     }
                     const maxBytes = 5 * 1024 * 1024;
                     if (file.size > maxBytes) {
-                        alert(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum allowed is 5 MB.`);
+                        window.TaskitatorNotify(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum allowed is 5 MB.`);
                         createExemplarInput.value = '';
                         createExemplarChip.style.display = 'none';
                         exemplarGuidanceNote.style.display = 'none';
@@ -1988,7 +2214,7 @@ window.TaskitatorComponents = Object.freeze({
                     }
                     const maxBytes = 5 * 1024 * 1024;
                     if (file.size > maxBytes) {
-                        alert(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum allowed is 5 MB.`);
+                        window.TaskitatorNotify(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum allowed is 5 MB.`);
                         editExemplarInput.value = '';
                         pendingEditExemplarFile = null;
                         return;
@@ -2098,7 +2324,7 @@ window.TaskitatorComponents = Object.freeze({
 
                     if (!rawTitle) return;
                     try { window.TaskitatorRecurrenceUI?.validCreate(parentId); }
-                    catch (err) { alert(err.message); return; }
+                    catch (err) { window.TaskitatorNotify(err.message); return; }
 
                     let isBonus = createModalIsBonus || rawTitle.includes('$$');
                     rawTitle = rawTitle.replace(/\$\$/g, '').trim();
@@ -2113,14 +2339,14 @@ window.TaskitatorComponents = Object.freeze({
 
                         if (host.rules.strictCriteria()) {
                             if (!criteriaValidationState.validated || criteriaValidationState.score < 7) {
-                                alert('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before creating an AI-locked task.');
+                                window.TaskitatorNotify('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before creating an AI-locked task.');
                                 return;
                             }
                         }
                     }
 
                     if (isAi) {
-                        const confirmed = confirm(
+                        const confirmed = await window.TaskitatorConfirm(
                             "⚠️️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
                             "Once created, AI-Checked tasks CANNOT be edited (except description/tags) and CANNOT be deleted.\n\n" +
                             "If phone lock is active, your device stays locked until verified by AI proof.\n\n" +
@@ -2128,7 +2354,7 @@ window.TaskitatorComponents = Object.freeze({
                         );
                         if (!confirmed) return;
                     } else if (isStrictPrereq) {
-                        const confirmed = confirm(
+                        const confirmed = await window.TaskitatorConfirm(
                             "⚠️ IRREVERSIBLE SHIELD ⚠️\n\n" +
                             "The Shield is permanent.\n" +
                             "Once created, this task cannot be completed until ALL core subtasks are finished, and the Shield cannot be turned off.\n\n" +
@@ -2145,7 +2371,7 @@ window.TaskitatorComponents = Object.freeze({
 
                     const submitBtn = document.getElementById('submitTaskCreateBtn');
                     if (submitBtn) {
-                        submitBtn.disabled = true;
+                        submitBtn.disabled = true, submitBtn.classList.toggle('is-loading', true);
                         submitBtn.textContent = 'Saving...';
                     }
 
@@ -2155,8 +2381,8 @@ window.TaskitatorComponents = Object.freeze({
                         try {
                             await window.ExemplarStore.saveExemplar(newTaskId, exemplarFile);
                         } catch (err) {
-                            alert(`Failed to save exemplar image locally: ${err.message}`);
-                            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Save Task'; }
+                            window.TaskitatorNotify(`Failed to save exemplar image locally: ${err.message}`);
+                            if (submitBtn) { submitBtn.disabled = false, submitBtn.classList.toggle('is-loading', false); submitBtn.textContent = 'Save Task'; }
                             return;
                         }
                     }
@@ -2237,11 +2463,11 @@ window.TaskitatorComponents = Object.freeze({
                         const ids = new Set(TaskitatorRecurrence.subtree(list, newTaskId).map(t => t.id));
                         for (let i=list.length-1;i>=0;i--) if(ids.has(list[i].id)) list.splice(i,1);
                         if(window.ExemplarStore) await ExemplarStore.deleteExemplar(newTaskId).catch(()=>{});
-                        alert(err.message); if(submitBtn){submitBtn.disabled=false;submitBtn.textContent='Save Task';} return;
+                        window.TaskitatorNotify(err.message); if(submitBtn){submitBtn.disabled=false, submitBtn.classList.toggle('is-loading', false);submitBtn.textContent='Save Task';} return;
                     }
                     host.tasks.save();
                     if (submitBtn) {
-                        submitBtn.disabled = false;
+                        submitBtn.disabled = false, submitBtn.classList.toggle('is-loading', false);
                         submitBtn.textContent = 'Save Task';
                     }
                     
@@ -2294,7 +2520,7 @@ window.TaskitatorComponents = Object.freeze({
                     host.tasks.reload();
                     const task = host.tasks.getAll().find(t => t.id === activeDetailTaskId);
                     if (!task) {
-                        alert('This task was removed in a background synchronization.');
+                        window.TaskitatorNotify('This task was removed in a background synchronization.');
                         if (taskDetailModal) taskDetailModal.classList.remove('open');
                         activeDetailTaskId = null;
                         host.view.refresh();
@@ -2313,7 +2539,7 @@ window.TaskitatorComponents = Object.freeze({
                         rawEditedTitle = rawEditedTitle.replace(/\$\$/g, '').trim();
                     }
 
-                    if (!task.is_bonus && willBeBonus && !isBypassActive && (task.strict_prerequisites || host.tasks.shieldedAncestor(task.id))) { alert('Required work protected by a shield cannot become bonus work.'); return; }
+                    if (!task.is_bonus && willBeBonus && !isBypassActive && (task.strict_prerequisites || host.tasks.shieldedAncestor(task.id))) { window.TaskitatorNotify('Required work protected by a shield cannot become bonus work.'); return; }
                     const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(rawEditedTitle);
 
                     const editTaskParentSelect = document.getElementById('editTaskParentSelect');
@@ -2325,7 +2551,7 @@ window.TaskitatorComponents = Object.freeze({
                         let parent = host.tasks.getAll().find(t=>t.id===targetParentId); const seen=new Set();
                         while(parent && !seen.has(parent.id)) {
                             seen.add(parent.id);
-                            if(containsSeries && parent.recurrence_series_id && parent.recurrence_series_id !== task.recurrence_series_id){alert('Recurring branches cannot be nested.');return;}
+                            if(containsSeries && parent.recurrence_series_id && parent.recurrence_series_id !== task.recurrence_series_id){window.TaskitatorNotify('Recurring branches cannot be nested.');return;}
                             parent=host.tasks.getAll().find(t=>t.id===parent.parent_id);
                         }
                     }
@@ -2335,25 +2561,25 @@ window.TaskitatorComponents = Object.freeze({
                         const seen = new Set();
                         while(parent && !seen.has(parent.id)) {
                             seen.add(parent.id);
-                            if(parent.recurrence_series_id && parent.recurrence_series_id !== task.recurrence_series_id) { alert('Recurring branches cannot be nested.'); return; }
+                            if(parent.recurrence_series_id && parent.recurrence_series_id !== task.recurrence_series_id) { window.TaskitatorNotify('Recurring branches cannot be nested.'); return; }
                             parent=host.tasks.getAll().find(t=>t.id===parent.parent_id);
                         }
                         const series=TaskitatorRecurrence.seriesFor(data,task);
-                        if(series?.current_root_id !== task.id) { alert('A child must stay inside its recurring branch.'); return; }
+                        if(series?.current_root_id !== task.id) { window.TaskitatorNotify('A child must stay inside its recurring branch.'); return; }
                     }
                     if (task.recurrence_series_id && task.ai_locked && editedCriteriaRaw !== (task.raw_proof_criteria || task.proof_criteria || '')) {
-                        alert('Change recurring proof criteria through Recurrence & future criteria. The current occurrence keeps its original requirements.'); return;
+                        window.TaskitatorNotify('Change recurring proof criteria through Recurrence & future criteria. The current occurrence keeps its original requirements.'); return;
                     }
                     if (targetParentId !== task.parent_id) {
                         const shieldedAncestor = host.tasks.shieldedAncestor(task.id);
                         if (shieldedAncestor && !isBypassActive) {
-                            alert("Shielded task can't be moved out of their parents.");
+                            window.TaskitatorNotify("Shielded task can't be moved out of their parents.");
                             return;
                         }
 
                         const descendants = host.tasks.descendants(task.id);
                         if (targetParentId === task.id || descendants.some(d => d.id === targetParentId)) {
-                            alert("Circular Reference Error: You cannot move a task into one of its own subtasks.");
+                            window.TaskitatorNotify("Circular Reference Error: You cannot move a task into one of its own subtasks.");
                             return;
                         }
 
@@ -2382,14 +2608,14 @@ window.TaskitatorComponents = Object.freeze({
 
                         if (host.rules.strictCriteria()) {
                             if (!editCriteriaValidationState.validated || editCriteriaValidationState.score < 7) {
-                                alert('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before saving an AI-locked task.');
+                                window.TaskitatorNotify('Criteria validation required: Please click "Validate Criteria" and ensure a score of at least 7/10 before saving an AI-locked task.');
                                 return;
                             }
                         }
                     }
 
                     if (!task.ai_locked && willBeAiLocked) {
-                        const confirmed = confirm(
+                        const confirmed = await window.TaskitatorConfirm(
                             "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
                             "Enabling AI Proof on this task is permanent.\n" +
                             "Once saved, this task cannot be un-checked, criteria cannot be changed, and it CANNOT be deleted without an Emergency Bypass.\n\n" +
@@ -2397,7 +2623,7 @@ window.TaskitatorComponents = Object.freeze({
                         );
                         if (!confirmed) return;
                     } else if (!task.strict_prerequisites && willBeStrict && !willBeAiLocked) {
-                        const confirmed = confirm(
+                        const confirmed = await window.TaskitatorConfirm(
                             "⚠️ IRREVERSIBLE SHIELD ⚠️\n\n" +
                             "Enabling the Shield is permanent.\n" +
                             "Once saved, this task cannot be completed until ALL core subtasks are finished, and the Shield cannot be turned off.\n\n" +
@@ -2407,7 +2633,7 @@ window.TaskitatorComponents = Object.freeze({
                     }
 
                     if (task.recurrence_series_id && task.ai_locked && pendingEditExemplarFile) {
-                        alert('Replace recurring reference files through Recurrence & future criteria so the current requirements stay unchanged.'); return;
+                        window.TaskitatorNotify('Replace recurring reference files through Recurrence & future criteria so the current requirements stay unchanged.'); return;
                     }
                     if (pendingEditExemplarFile && willBeAiLocked && window.ExemplarStore) {
                         try {
@@ -2415,7 +2641,7 @@ window.TaskitatorComponents = Object.freeze({
                             await window.ExemplarStore.saveExemplar(task.id, pendingEditExemplarFile);
                             pendingEditExemplarFile = null;
                         } catch (err) {
-                            alert(`Failed to save reference exemplar: ${err.message}`);
+                            window.TaskitatorNotify(`Failed to save reference exemplar: ${err.message}`);
                             return;
                         }
                     }
@@ -2444,7 +2670,7 @@ window.TaskitatorComponents = Object.freeze({
                     
                     task.strict_prerequisites = willBeStrict;
                     await window.TaskitatorRecurrenceUI?.applyEdit(task);
-                    if(removeEditReference){if(task.ai_locked&&!isBypassActive){alert('Emergency Bypass is required to remove this reference.');return;}await window.ExemplarStore?.deleteExemplar(task.id);delete task.reference_inline_data;delete task.reference_id;}
+                    if(removeEditReference){if(task.ai_locked&&!isBypassActive){window.TaskitatorNotify('Emergency Bypass is required to remove this reference.');return;}await window.ExemplarStore?.deleteExemplar(task.id);delete task.reference_inline_data;delete task.reference_id;}
 
                     if(!commitDraft())return;
                     if (taskDetailModal) taskDetailModal.classList.remove('open');
@@ -2464,7 +2690,7 @@ window.TaskitatorComponents = Object.freeze({
                     if (!activeDetailTaskId) return;
                     const customRender = taskDetailModal?._customRenderFn;
                     const branch=TaskitatorRecurrence.subtree(host.tasks.getAll(),activeDetailTaskId);
-                    if(branch.some(t=>t.ai_locked||t.strict_prerequisites)&&!host.rules.bypassActive()){alert('Emergency Bypass is required to delete protected work.');return;}
+                    if(branch.some(t=>t.ai_locked||t.strict_prerequisites)&&!host.rules.bypassActive()){window.TaskitatorNotify('Emergency Bypass is required to delete protected work.');return;}
                     for(const t of branch)t.status='trash';
                     deleteFromDetailBtn.textContent='Marked for deletion — press Save';
                 });
@@ -2505,19 +2731,19 @@ window.TaskitatorComponents = Object.freeze({
                     const fileList = Array.from(document.getElementById('auditImageInput')?.files || []);
                     const file = fileList[0];
                     if (!file) {
-                        alert('Please attach an evidence photo or PDF document.');
+                        window.TaskitatorNotify('Please attach an evidence photo or PDF document.');
                         return;
                     }
 
                     if (window.TaskitatorEngine?.AuditEngine?.validateFile) {
                         const check = TaskitatorEngine.AuditEngine.validateFile(file);
                         if (!check.valid) {
-                            alert(check.error);
+                            window.TaskitatorNotify(check.error);
                             return;
                         }
                     }
 
-                    submitProofBtn.disabled = true;
+                    submitProofBtn.disabled = true, submitProofBtn.classList.toggle('is-loading', true);
                     submitProofBtn.textContent = 'Verifying Evidence...';
                     const auditFeedback = document.getElementById('auditFeedbackContainer');
                     if (auditFeedback) auditFeedback.style.display = 'none';
@@ -2547,7 +2773,7 @@ window.TaskitatorComponents = Object.freeze({
                     }
 
                     if (task.recurrence_series_id && (auditSession !== localStorage.getItem('taskitator_session_id') || pendingAuditTaskId !== auditedId || !host.tasks.getAll().some(t=>t.id===auditedId && t.status==='active'))) {
-                        submitProofBtn.disabled=false;submitProofBtn.textContent='Submit Proof';return;
+                        submitProofBtn.disabled=false, submitProofBtn.classList.toggle('is-loading', false);submitProofBtn.textContent='Submit Proof';return;
                     }
                     if (result.approved && TaskitatorRecurrence.subtree(host.tasks.getAll(),task.id).some(t=>t.id!==task.id && t.status==='active' && t.ai_locked)) {
                         result={success:false,error:'Submit proof for unfinished AI-audited children before completing this parent.'};
@@ -2562,11 +2788,11 @@ window.TaskitatorComponents = Object.freeze({
                             pendingAuditTaskId=null;host.view.refresh();
                         } catch(error){
                             if(['TASK_CHANGED','APPROVAL_EXPIRED','APPROVAL_INVALID'].includes(error.code))pendingProofApprovals.delete(auditedId);
-                            submitProofBtn.disabled=false;submitProofBtn.textContent='Retry Confirmation';
+                            submitProofBtn.disabled=false, submitProofBtn.classList.toggle('is-loading', false);submitProofBtn.textContent='Retry Confirmation';
                             if(auditFeedback){auditFeedback.style.display='block';auditFeedback.textContent=error.message;}
                         }
                     } else {
-                        submitProofBtn.disabled=false;submitProofBtn.textContent='Retry Submission';
+                        submitProofBtn.disabled=false, submitProofBtn.classList.toggle('is-loading', false);submitProofBtn.textContent='Retry Submission';
                         if (auditFeedback) {
                             auditFeedback.className = 'audit-critique-box';
                             auditFeedback.style.display = 'block';
@@ -2606,7 +2832,7 @@ window.TaskitatorComponents = Object.freeze({
 
                 if (hasUnresolved) {
                     const missing = unresolvedKeys.length > 0 ? unresolvedKeys.join(', ') : 'unknown';
-                    alert(`Criteria Error: Cannot validate criteria with unresolved template variables: {${TaskitatorSafety.escapeHtml(missing)}}.\nPlease define all variables in the task title (e.g. {${TaskitatorSafety.escapeHtml(missing)}==value}).`);
+                    window.TaskitatorNotify(`Criteria Error: Cannot validate criteria with unresolved template variables: {${TaskitatorSafety.escapeHtml(missing)}}.\nPlease define all variables in the task title (e.g. {${TaskitatorSafety.escapeHtml(missing)}==value}).`);
                     if (feedbackEl) {
                         feedbackEl.style.display = 'block';
                         feedbackEl.className = 'criteria-feedback-box fail';
@@ -2615,7 +2841,7 @@ window.TaskitatorComponents = Object.freeze({
                     return;
                 }
 
-                btnEl.disabled = true;
+                btnEl.disabled = true, btnEl.classList.toggle('is-loading', true);
                 btnEl.textContent = 'Validating...';
                 if (feedbackEl) {
                     feedbackEl.style.display = 'block';
@@ -2628,7 +2854,7 @@ window.TaskitatorComponents = Object.freeze({
                     res = await TaskitatorEngine.AuditEngine.validateCriteria(resolvedText, cleanTitle, exemplarFile);
                 }
 
-                btnEl.disabled = false;
+                btnEl.disabled = false, btnEl.classList.toggle('is-loading', false);
                 btnEl.textContent = '🔍 Validate Criteria';
 
                 const stateTarget = isEditMode ? editCriteriaValidationState : criteriaValidationState;
@@ -2740,7 +2966,7 @@ window.TaskitatorComponents = Object.freeze({
                                     }
                                 }
 
-                                confirmBtn.disabled = true;
+                                confirmBtn.disabled = true, confirmBtn.classList.toggle('is-loading', true);
                                 confirmBtn.textContent = 'Saving...';
 
                                 let exemplarPayload = null;
