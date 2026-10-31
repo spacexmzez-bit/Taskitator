@@ -973,6 +973,51 @@ window.TaskitatorApp = (() => {
     };
 
     // =========================================================================
+    // UI v2: Haptics & Motion Feedback
+    // =========================================================================
+    const UIFX = {
+        reducedMotion() {
+            return Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+        },
+        hapticsOn() {
+            try {
+                const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+                return settings.haptics_enabled !== false;
+            } catch (e) {
+                return true;
+            }
+        },
+        vibrate(pattern) {
+            if (!this.hapticsOn() || typeof navigator.vibrate !== 'function') return;
+            try { navigator.vibrate(pattern); } catch (e) {}
+        },
+        tap() { this.vibrate(8); },
+        success() { this.vibrate([10, 40, 14]); },
+        deny() { this.vibrate([24, 30, 24]); },
+        // Restartable CSS animation class (works on repeated triggers)
+        replay(el, cls) {
+            if (!el) return;
+            el.classList.remove(cls);
+            void el.offsetWidth;
+            el.classList.add(cls);
+            el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
+        },
+        shake(el) {
+            this.deny();
+            this.replay(el, 'is-denied');
+        },
+        // Cosmetic only: resolves after the check/strike animation; data is not touched here.
+        complete(checkBtn, row) {
+            this.success();
+            if (this.reducedMotion()) return Promise.resolve();
+            checkBtn?.classList.add('is-completing');
+            row?.classList.add('is-completing');
+            return new Promise(resolve => setTimeout(resolve, 260));
+        }
+    };
+    window.TaskitatorFX = UIFX;
+
+    // =========================================================================
     // Distraction Dump & Local Escrow GC
     // =========================================================================
     const DistractionDumpEngine = (() => {
@@ -1653,6 +1698,7 @@ window.TaskitatorApp = (() => {
         }
 
         let remaining = 10;
+        const endsAt = Date.now() + 10000;
         const intervalId = setInterval(() => {
             remaining -= 1;
             const el = document.getElementById(`undoTimerSec_${taskId}`);
@@ -1672,7 +1718,7 @@ window.TaskitatorApp = (() => {
             else renderUnifiedView();
         }, 10000);
 
-        pendingGraceCompletions.set(taskId, { timerId, intervalId, remainingSec: remaining });
+        pendingGraceCompletions.set(taskId, { timerId, intervalId, remainingSec: remaining, endsAt });
     }
 
     function undoTaskCompletion(taskId, triggerRenderFn) {
@@ -1689,7 +1735,7 @@ window.TaskitatorApp = (() => {
         else renderUnifiedView();
     }
 
-    function handleTaskCompletion(taskId, triggerRenderFn) {
+    function handleTaskCompletion(taskId, triggerRenderFn, opts = {}) {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
 
@@ -1717,7 +1763,7 @@ window.TaskitatorApp = (() => {
 
         cascadeTaskStatus(taskId, 'completed', new Date().toISOString());
         startGraceCompletionTimer(taskId, triggerRenderFn);
-        SoundFX.playComplete();
+        if (opts.fx !== false) SoundFX.playComplete();
         saveStorageAndPush();
         if (typeof triggerRenderFn === 'function') triggerRenderFn();
         else renderUnifiedView();
@@ -2130,7 +2176,7 @@ window.TaskitatorApp = (() => {
                         <p style="margin: 0 0 10px 0; font-size: 0.84rem; color: var(--text-color); line-height: 1.45;">
                             You have <strong>10 minutes</strong> to set your breaks.
                         </p>
-                        <button type="button" id="startBreakPlanningBtn" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 9px 18px; font-size: 0.88rem; width: 100%;">
+                        <button type="button" id="startBreakPlanningBtn" class="icon-btn btn-primary" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 9px 18px; font-size: 0.88rem; width: 100%;">
                             ▶ Set breaks (10 minutes)
                         </button>
                     </div>
@@ -2299,10 +2345,18 @@ window.TaskitatorApp = (() => {
         return false;
     }
 
+    // Keys rendered in the previous pass; only keys absent here animate in.
+    let previouslyRenderedKeys = null;
+
     function renderUnifiedTaskTree() {
         const list = document.getElementById('taskListContainer');
         if (!list) return;
         list.innerHTML = '';
+        const renderedKeys = new Set();
+        const markEnter = (li, key) => {
+            renderedKeys.add(key);
+            if (!previouslyRenderedKeys || !previouslyRenderedKeys.has(key)) li.classList.add('enter');
+        };
 
         const todayStr = getAppTodayStr();
         const isBypassActive = isBypassActiveSafe();
@@ -2422,26 +2476,34 @@ window.TaskitatorApp = (() => {
 
                 if (pendingGraceCompletions.has(task.id) && !isBreadcrumb) {
                     const graceInfo = pendingGraceCompletions.get(task.id);
+                    const remainingMs = Math.max(0, (graceInfo.endsAt || Date.now()) - Date.now());
+                    const elapsedMs = 10000 - remainingMs;
+                    const safeId = TaskitatorSafety.escapeHtml(task.id);
                     const graceRow = document.createElement('div');
                     graceRow.className = 'undo-grace-row';
                     graceRow.style.marginLeft = `${depth * 20}px`;
                     graceRow.innerHTML = `
-                        <div style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
-                            <span style="color: var(--success); font-weight: 700;">✓ Completed:</span>
-                            <span style="text-decoration: line-through; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${TaskitatorSafety.escapeHtml(task.title)}</span>
+                        <div class="undo-grace-info">
+                            <span class="undo-grace-label">✓ Completed</span>
+                            <span class="undo-grace-title">${TaskitatorSafety.escapeHtml(task.title)}</span>
                         </div>
-                        <button class="undo-grace-btn" id="undoBtn_${TaskitatorSafety.escapeHtml(task.id)}">Undo (<span id="undoTimerSec_${TaskitatorSafety.escapeHtml(task.id)}">${graceInfo.remainingSec}</span>s)</button>
+                        <button type="button" class="undo-grace-btn" id="undoBtn_${safeId}">Undo (<span id="undoTimerSec_${safeId}">${Math.ceil(remainingMs / 1000)}</span>s)</button>
+                        <span class="undo-grace-bar" aria-hidden="true" style="animation-delay: -${elapsedMs}ms;"></span>
                     `;
-                    const uBtn = graceRow.querySelector(`#undoBtn_${task.id}`);
+                    const uBtn = graceRow.querySelector('.undo-grace-btn');
                     if (uBtn) {
                         uBtn.addEventListener('click', (e) => {
                             e.stopPropagation();
+                            UIFX.tap();
                             undoTaskCompletion(task.id);
                         });
                     }
                     li.appendChild(graceRow);
+                    markEnter(li, 'g:' + task.id);
                     return li;
                 }
+
+                markEnter(li, 't:' + task.id);
 
                 const row = document.createElement('div');
                 row.className = `task-row ${isSelected ? 'row-selected' : ''}`;
@@ -2475,18 +2537,35 @@ window.TaskitatorApp = (() => {
 
                 if (hasVisibleChildren) {
                     const toggleBtn = document.createElement('button');
-                    toggleBtn.className = 'collapse-toggle';
-                    toggleBtn.textContent = isCollapsed ? '▶' : '▼';
+                    toggleBtn.type = 'button';
+                    toggleBtn.className = `collapse-toggle ${isCollapsed ? 'is-collapsed' : ''}`;
+                    toggleBtn.textContent = '▼';
                     toggleBtn.title = isCollapsed ? 'Expand subtasks' : 'Collapse subtasks';
+                    toggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
                     toggleBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        if (collapsedNodes.has(task.id)) {
-                            collapsedNodes.delete(task.id);
-                        } else {
-                            collapsedNodes.add(task.id);
-                        }
+                        const nowCollapsed = !collapsedNodes.has(task.id);
+                        if (nowCollapsed) collapsedNodes.add(task.id);
+                        else collapsedNodes.delete(task.id);
                         localStorage.setItem(COLLAPSED_STATE_KEY, JSON.stringify([...collapsedNodes]));
-                        renderUnifiedTaskTree();
+
+                        // Toggle in place so the height animation can play (no re-render).
+                        toggleBtn.classList.toggle('is-collapsed', nowCollapsed);
+                        toggleBtn.title = nowCollapsed ? 'Expand subtasks' : 'Collapse subtasks';
+                        toggleBtn.setAttribute('aria-expanded', String(!nowCollapsed));
+                        const subtree = li.querySelector(':scope > .task-subtree');
+                        if (subtree) {
+                            subtree.classList.add('is-animating');
+                            subtree.classList.toggle('collapsed', nowCollapsed);
+                            const done = (ev) => {
+                                if (ev && ev.target !== subtree) return;
+                                subtree.classList.remove('is-animating');
+                                subtree.removeEventListener('transitionend', done);
+                            };
+                            subtree.addEventListener('transitionend', done);
+                            setTimeout(done, 400);
+                        }
+                        UIFX.tap();
                     });
                     main.appendChild(toggleBtn);
                 } else {
@@ -2500,16 +2579,43 @@ window.TaskitatorApp = (() => {
                     checkBtn.className = `check-square ${isSelected ? 'selected' : ''}`;
                     checkBtn.textContent = isSelected ? '✓' : '';
                     checkBtn.title = isSelected ? 'Deselect task' : 'Select task';
+                    checkBtn.type = 'button';
                     checkBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
+                        UIFX.tap();
                         toggleTaskSelection(task.id);
                     });
                 } else {
+                    checkBtn.type = 'button';
                     checkBtn.className = 'check-circle';
                     checkBtn.textContent = isDone ? '✓' : '';
+                    checkBtn.setAttribute('aria-label', isDone ? `Mark "${task.title}" as not done` : `Complete "${task.title}"`);
                     checkBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        handleTaskCompletion(task.id);
+                        if (row.classList.contains('is-completing')) return;
+
+                        const live = tasks.find(t => t.id === task.id);
+                        if (!live) return;
+                        const liveDone = live.status === 'completed';
+                        const bypass = isBypassActiveSafe();
+
+                        // Denied paths: show the existing message, then shake the row.
+                        if ((liveDone && live.ai_locked && !bypass) || (!liveDone && isCompletionBlocked(live.id))) {
+                            handleTaskCompletion(live.id);
+                            UIFX.shake(row);
+                            return;
+                        }
+
+                        // Plain completion: animate first, then commit.
+                        if (!liveDone && !live.ai_locked) {
+                            SoundFX.playComplete();
+                            UIFX.complete(checkBtn, row).then(() => handleTaskCompletion(live.id, undefined, { fx: false }));
+                            return;
+                        }
+
+                        // Uncomplete, or AI-locked task opening the audit modal.
+                        UIFX.tap();
+                        handleTaskCompletion(live.id);
                     });
                 }
                 main.appendChild(checkBtn);
@@ -2597,6 +2703,7 @@ window.TaskitatorApp = (() => {
                 } else {
                     delBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
+                        UIFX.tap();
                         deleteTask(task.id);
                     });
                 }
@@ -2613,12 +2720,16 @@ window.TaskitatorApp = (() => {
                 li.appendChild(row);
 
                 if (hasVisibleChildren) {
+                    const subtree = document.createElement('div');
+                    subtree.className = `task-subtree ${isCollapsed ? 'collapsed' : ''}`;
+                    subtree.setAttribute('role', 'group');
                     const subUl = document.createElement('ul');
-                    subUl.className = `task-subtree ${isCollapsed ? 'collapsed' : ''}`;
+                    subUl.className = 'task-subtree-inner';
                     visibleChildren.forEach(child => {
                         subUl.appendChild(buildNodeElement(child, depth + 1));
                     });
-                    li.appendChild(subUl);
+                    subtree.appendChild(subUl);
+                    li.appendChild(subtree);
                 }
 
                 return li;
@@ -2626,6 +2737,7 @@ window.TaskitatorApp = (() => {
 
             rootTasks.forEach(task => list.appendChild(buildNodeElement(task, 0)));
         }
+        previouslyRenderedKeys = renderedKeys;
 
         const overdueBar = document.getElementById('overdueRescheduleBar');
         const countText = document.getElementById('overdueTasksCountText');
@@ -2759,6 +2871,7 @@ window.TaskitatorApp = (() => {
 
     function setView(viewName) {
         currentView = (viewName === 'general') ? 'general' : 'today';
+        previouslyRenderedKeys = null; // animate the full list on view switch
 
         const heading = document.getElementById('pageViewHeading');
         const linkToday = document.getElementById('navLinkToday');

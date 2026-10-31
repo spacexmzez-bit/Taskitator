@@ -17,7 +17,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="icon/icon-192.png">
 
-    <link rel="stylesheet" href="style.css?v=profile-ui-v3">
+    <link rel="stylesheet" href="style.css?v=ui-v2-p2">
     <style>
         .page-title-section {
             padding: 10px 0 8px 0;
@@ -317,7 +317,7 @@
         <div class="copilot-standby-view" id="copilotStandbyView">
             <div class="copilot-standby-icon">🎯</div>
             <div class="copilot-standby-title">Focus Copilot</div>
-            <button class="icon-btn" id="startCopilotBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 10px 22px;">
+            <button class="icon-btn btn-primary" id="startCopilotBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 10px 22px;">
                 Start Conversation
             </button>
         </div>
@@ -326,7 +326,7 @@
             </div>
             <form class="copilot-input-bar" id="copilotForm">
                 <input type="text" id="copilotInput" placeholder="Ask Copilot..." autocomplete="off" required>
-                <button type="submit" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Send</button>
+                <button type="submit" class="icon-btn btn-primary" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Send</button>
             </form>
         </div>
     </div>
@@ -436,7 +436,7 @@
         <div id="batchTagCloud" class="tag-select-cloud"></div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
             <button type="button" class="icon-btn" id="closeBatchTagsBtn">Cancel</button>
-            <button type="button" class="icon-btn" id="applyBatchTagsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Apply to Selected</button>
+            <button type="button" class="icon-btn btn-primary" id="applyBatchTagsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Apply to Selected</button>
         </div>
     </div>
 </div>
@@ -451,7 +451,7 @@
         <div id="batchPriorityCloud" class="priority-select-group"></div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
             <button type="button" class="icon-btn" id="closeBatchPriorityBtn">Cancel</button>
-            <button type="button" class="icon-btn" id="applyBatchPriorityBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Apply to Selected</button>
+            <button type="button" class="icon-btn btn-primary" id="applyBatchPriorityBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Apply to Selected</button>
         </div>
     </div>
 </div>
@@ -469,7 +469,7 @@
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
             <button type="button" class="icon-btn" id="closeBatchDueDateBtn">Cancel</button>
-            <button type="button" class="icon-btn" id="applyBatchDueDateBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Apply to Selected</button>
+            <button type="button" class="icon-btn btn-primary" id="applyBatchDueDateBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Apply to Selected</button>
         </div>
     </div>
 </div>
@@ -499,7 +499,7 @@
 
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
                 <button type="button" class="icon-btn" id="cancelBulkRescheduleBtn">Cancel</button>
-                <button type="button" class="icon-btn" id="confirmBulkRescheduleBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">
+                <button type="button" class="icon-btn btn-primary" id="confirmBulkRescheduleBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">
                     Reschedule Tasks
                 </button>
             </div>
@@ -575,7 +575,7 @@
                 <button type="button" class="icon-btn" id="deleteAllEscrowBtn" style="color: var(--danger); border-color: rgba(239,68,68,0.4); font-size: 0.78rem; padding: 4px 8px;">
                     Delete All
                 </button>
-                <button type="button" class="icon-btn" id="extractAllEscrowBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; font-size: 0.78rem; padding: 5px 12px;">
+                <button type="button" class="icon-btn btn-primary" id="extractAllEscrowBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; font-size: 0.78rem; padding: 5px 12px;">
                     📥 Extract All
                 </button>
             </div>
@@ -612,7 +612,7 @@
 
         <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 16px;">
             <button type="button" class="icon-btn" id="clearFiltersBtn" style="color: var(--danger); border-color: #7f1d1d;">Clear All</button>
-            <button type="button" class="icon-btn" id="applyFiltersBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 8px 16px;">Apply Filters</button>
+            <button type="button" class="icon-btn btn-primary" id="applyFiltersBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 8px 16px;">Apply Filters</button>
         </div>
     </div>
 </div>
@@ -631,7 +631,7 @@
         <div id="breakModalError" style="display: none; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; color: #fca5a5; font-size: 0.8rem; margin-bottom: 14px;"></div>
         <div style="display: flex; gap: 8px; justify-content: flex-end;">
             <button id="addBreakRowModalBtn" type="button" class="icon-btn" style="padding: 6px 12px; font-size: 0.82rem;">+ Add Break</button>
-            <button id="saveBreaksModalBtn" type="button" class="icon-btn" style="padding: 6px 14px; font-size: 0.82rem; background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Breaks</button>
+            <button id="saveBreaksModalBtn" type="button" class="icon-btn btn-primary" style="padding: 6px 14px; font-size: 0.82rem; background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Breaks</button>
         </div>
     </div>
 </div>
@@ -683,7 +683,7 @@
             </div>
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
-            <button class="icon-btn" id="forceSyncFromModalBtn" style="background: var(--primary); color: #fff; border: none; font-size: 0.85rem;">Force Sync Now</button>
+            <button class="icon-btn btn-primary" id="forceSyncFromModalBtn" style="background: var(--primary); color: #fff; border: none; font-size: 0.85rem;">Force Sync Now</button>
             <button class="icon-btn" id="closeSyncInfoModalBtn">Close</button>
         </div>
     </div>
@@ -857,7 +857,7 @@
 
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
                 <button type="button" class="icon-btn" id="closeAddTaskModalBtn">Cancel</button>
-                <button type="submit" class="icon-btn" id="submitTaskCreateBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Task</button>
+                <button type="submit" class="icon-btn btn-primary" id="submitTaskCreateBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Task</button>
             </div>
         </form>
     </div>
@@ -997,7 +997,7 @@
             <div id="siblingInheritContainer" style="display: none; background: rgba(59, 130, 246, 0.1); border: 1.5px dashed var(--primary); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                     <span style="font-size: 0.8rem; font-weight: 700; color: #93c5fd;">⚡ Inherit Criteria from Sibling</span>
-                    <button type="button" class="icon-btn" id="applySiblingInheritBtn" style="padding: 2px 8px; font-size: 0.75rem; background: var(--primary); color: #fff; border: none; font-weight: 700;">Copy Criteria</button>
+                    <button type="button" class="icon-btn btn-primary" id="applySiblingInheritBtn" style="padding: 2px 8px; font-size: 0.75rem; background: var(--primary); color: #fff; border: none; font-weight: 700;">Copy Criteria</button>
                 </div>
                 <select id="siblingTaskSelect" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.82rem;">
                     <option value="">Select a sibling with verified criteria...</option>
@@ -1044,7 +1044,7 @@
                         <span>Consecutive {num==X}</span>
                         <span class="pro-feature-pill">PRO</span>
                     </label>
-                    <button type="button" class="icon-btn" id="openChildAddModalBtn" style="padding: 4px 10px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">+ Add Subtask</button>
+                    <button type="button" class="icon-btn btn-primary" id="openChildAddModalBtn" style="padding: 4px 10px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">+ Add Subtask</button>
                 </div>
             </div>
 
@@ -1061,7 +1061,7 @@
             <button type="button" class="icon-btn" id="deleteFromDetailBtn" style="color: var(--danger); border-color: #7f1d1d;">Delete Task</button>
             <div style="display: flex; gap: 10px;">
                 <button type="button" class="icon-btn" id="closeDetailModalBtn">Cancel</button>
-                <button type="button" class="icon-btn" id="saveTaskDetailsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Changes</button>
+                <button type="button" class="icon-btn btn-primary" id="saveTaskDetailsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Changes</button>
             </div>
         </div>
     </div>
@@ -1088,7 +1088,7 @@
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
             <button type="button" class="icon-btn" id="closeAuditModalBtn">Cancel</button>
-            <button type="submit" class="icon-btn" id="submitProofBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Submit Proof</button>
+            <button type="submit" class="icon-btn btn-primary" id="submitProofBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Submit Proof</button>
         </div>
     </div>
 </div>
@@ -1105,7 +1105,7 @@
         <p id="emergencyModalRemainingUses" style="font-size: 0.85rem; font-weight: 600;"></p>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
             <button class="icon-btn" id="cancelEmergencyBtn">Cancel</button>
-            <button class="icon-btn" id="confirmEmergencyBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 600;">Activate 15m</button>
+            <button class="icon-btn btn-danger" id="confirmEmergencyBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 600;">Activate 15m</button>
         </div>
     </div>
 </div>

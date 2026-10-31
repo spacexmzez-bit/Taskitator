@@ -2660,13 +2660,13 @@ window.TaskitatorComponents = Object.freeze({
                             html += `
                                 <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: space-between;">
                                     <span style="font-size: 0.75rem; color: #86efac; font-weight: 600;">Eligible to save (&ge; 9/10)</span>
-                                    <button type="button" class="icon-btn save-as-criteria-btn" style="background: var(--primary); color: #fff; font-size: 0.75rem; padding: 4px 10px; font-weight: 700; border: none;">💾 Save Criteria</button>
+                                    <button type="button" class="icon-btn save-as-criteria-btn btn-primary" style="background: var(--primary); color: #fff; font-size: 0.75rem; padding: 4px 10px; font-weight: 700; border: none;">💾 Save Criteria</button>
                                 </div>
                                 <div class="save-criteria-inline-prompt" style="display: none; margin-top: 8px;">
                                     <input type="text" class="save-criteria-title-input" placeholder="Enter title for saved criteria..." value="${TaskitatorSafety.escapeHtml(cleanTitle || 'Verified Criteria')}" style="width: 100%; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.8rem; box-sizing: border-box; margin-bottom: 6px;">
                                     <div style="display: flex; justify-content: flex-end; gap: 6px;">
                                         <button type="button" class="icon-btn cancel-save-criteria-btn" style="font-size: 0.72rem; padding: 2px 6px;">Cancel</button>
-                                        <button type="button" class="icon-btn confirm-save-criteria-btn" style="font-size: 0.72rem; padding: 2px 8px; background: var(--primary); color: #fff; border: none; font-weight: 600;">Confirm Save</button>
+                                        <button type="button" class="icon-btn confirm-save-criteria-btn btn-primary" style="font-size: 0.72rem; padding: 2px 8px; background: var(--primary); color: #fff; border: none; font-weight: 600;">Confirm Save</button>
                                     </div>
                                     <div class="save-criteria-inline-error" style="color: #fca5a5; font-size: 0.75rem; margin-top: 4px; display: none;"></div>
                                 </div>
