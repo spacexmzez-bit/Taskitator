@@ -16,6 +16,7 @@
  let key=null,tag,panel,display,counter,phaseLabel,setup,restart,pause,end,message,pip=null,audio=null,wake=null,wakePending=false,busy=false;
  const user=()=>window.Clerk?.user?.id||window.TaskitatorAuth?.account?.user||null;
  const read=()=>{try{const s=JSON.parse(localStorage.getItem(key));if(s?.config){s.config.large??=20;s.config.work=Math.min(s.config.work,90);s.config.rest=Math.min(s.config.rest,15);s.config.sessions=Math.min(s.config.sessions,4);s.session=Math.min(s.session,4);}return valid(s)?s:fresh();}catch{return fresh();}};
+ const ask=(title,message,confirmLabel)=>typeof window.TaskitatorConfirm==='function'?window.TaskitatorConfirm({title,message,confirmLabel,cancelLabel:'Keep going',tone:'danger'}):Promise.resolve(window.confirm(title+'\n\n'+message));
  const el=(t,text,p)=>{const n=document.createElement(t);if(text!==undefined)n.textContent=text;p?.append(n);return n;};
  function save(s){localStorage.setItem(key,JSON.stringify(s));}
  async function exclusive(fn){if(!key)return;const current=key;const run=()=>current===key?fn():undefined;return navigator.locks?.request?navigator.locks.request('focus:'+current,run):run();}
@@ -26,7 +27,7 @@
  async function screen(s){const wanted=s.config.awake&&s.running&&!document.hidden;
   if(!wanted&&wake){const old=wake;wake=null;await old.release().catch(()=>{});}
   if(wanted&&!wake&&!wakePending&&navigator.wakeLock){wakePending=true;const owner=key;try{const lock=await navigator.wakeLock.request('screen');if(owner!==key||document.hidden||!read().config.awake||!read().running)await lock.release();else{wake=lock;lock.addEventListener('release',()=>{if(wake===lock)wake=null;});}}catch{}finally{wakePending=false;}}
-  if(message)message.textContent=s.config.awake?(!navigator.wakeLock?'Screen-awake is unavailable in this browser.':wake?'Screen-awake active.':'Screen-awake requested; the browser may release it.') : '';
+  if(message)message.textContent=s.config.awake?(!navigator.wakeLock?"This browser can't keep the screen awake.":wake?'Keeping your screen awake.':'Asked to keep the screen awake. The browser may still turn it off.') : '';
  }
  function render(s){if(!tag)return;const ms=s.running?Math.max(0,s.target-Date.now()):s.left,sec=Math.ceil(ms/1000),text=s.done?'Sessions complete':`${s.phase==='work'?'Study':s.phase==='large'?'Large break':'Break'} ${s.session}/${s.config.sessions} · ${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}${s.running?'':' · paused'}`;
   const active=Boolean(s.target)&&!s.done,clock=`${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`;
@@ -34,7 +35,7 @@
   if(!active)setup.open=true;else if(!panel.open)setup.open=false;
   setup.querySelector('summary').textContent=active?'Restart':'Timer settings';restart.textContent=active?'Restart timer':'Start timer';pause.hidden=!active;end.hidden=!active;pause.textContent=s.running?'Pause':'Resume';if(pip&&!pip.closed)pip.document.body.textContent=text;void screen(s);
  }
- async function tick(){if(busy||!key)return;busy=true;try{await exclusive(()=>{const s=read(),a=advance(s,Date.now());if(a.event){save(s);if(Date.now()-a.endedAt<5000)notify(a.event,s);}render(s);});}catch{if(message)message.textContent='Timer could not save. Check browser storage.';}finally{busy=false;}}
+ async function tick(){if(busy||!key)return;busy=true;try{await exclusive(()=>{const s=read(),a=advance(s,Date.now());if(a.event){save(s);if(Date.now()-a.endedAt<5000)notify(a.event,s);}render(s);});}catch{if(message)message.textContent="Couldn't save the timer. Your browser may be blocking storage.";}finally{busy=false;}}
  async function action(fn){unlockAudio();await exclusive(()=>{const s=advance(read(),Date.now()).state;fn(s);save(s);render(s);});}
  function mount(){const id=user(),next=id?'taskitator_focus_v1:'+id:null;if(next===key)return;key=next;tag?.remove();panel?.remove();tag=null;if(wake){void wake.release();wake=null;}pip?.close();pip=null;if(!key)return;
   tag=el('button','⏱ Focus timer',document.body);tag.type='button';tag.id='focusTimerTag';tag.className='icon-btn';tag.setAttribute('aria-label','Open focus timer');
@@ -47,11 +48,11 @@
   for(const [name,label]of [['sound','Sound'],['vibration','Vibration'],['awake','Keep screen awake']]){const l=el('label',label,options),n=el('input',undefined,l);n.type='checkbox';n.checked=read().config[name];n.addEventListener('change',()=>action(s=>s.config[name]=n.checked));}
   const actions=el('div',undefined,panel);actions.className='focus-timer-actions';
   function button(label,fn,parent=actions){const b=el('button',label,parent);b.type='button';b.className='icon-btn';b.addEventListener('click',()=>Promise.resolve(fn()).catch(e=>message.textContent=e.message));return b;}
-  restart=button('Start timer',()=>{const current=read();if(current.target&&!current.done&&!window.confirm('Restart this timer? Current progress will be lost.'))return;return action(s=>{const c={...s.config};for(const [name,n]of Object.entries(inputs)){const v=Number(n.value);if(!Number.isInteger(v)||v<1||v>Number(n.max))throw Error('Enter valid durations and session count.');c[name]=v;}Object.assign(s,fresh(),{config:c,running:true,left:c.work*60000,target:Date.now()+c.work*60000});setup.open=false;});},setup);restart.classList.add('focus-timer-start');
+  restart=button('Start timer',async()=>{const current=read();if(current.target&&!current.done&&!(await ask('Restart the timer?','Your progress in this round will be lost.','Restart')))return;return action(s=>{const c={...s.config};for(const [name,n]of Object.entries(inputs)){const v=Number(n.value);if(!Number.isInteger(v)||v<1||v>Number(n.max))throw Error('Check the minutes and session count. One of them is out of range.');c[name]=v;}Object.assign(s,fresh(),{config:c,running:true,left:c.work*60000,target:Date.now()+c.work*60000});setup.open=false;});},setup);restart.classList.add('focus-timer-start');
   pause=button('Pause',()=>action(s=>{if(s.done)return;s.left=s.running?Math.max(0,s.target-Date.now()):s.left;s.running=!s.running;if(s.running)s.target=Date.now()+s.left;}));
-  end=button('End timer',()=>{if(!window.confirm('End this timer before it is finished?'))return;return action(s=>{const c=s.config;Object.assign(s,fresh(),{config:c,left:c.work*60000});});});
+  end=button('End timer',async()=>{if(!(await ask('End the timer now?',"It isn't finished yet. Your progress in this round will be lost.",'End timer')))return;return action(s=>{const c=s.config;Object.assign(s,fresh(),{config:c,left:c.work*60000});});});
   if(window.documentPictureInPicture)button('Floating timer',async()=>{pip=await window.documentPictureInPicture.requestWindow({width:300,height:100});pip.document.body.style.cssText='font:22px system-ui;background:#102038;color:white;padding:16px';render(read());});
-  const help=el('p','Your timer continues across pages. Alerts depend on browser support; tap a timer control to enable sound. Keep this tab open when using the floating window.',panel);help.className='focus-timer-help';
+  const help=el('p','The timer keeps running when you switch pages. Tap any timer button once to allow sound. If you use the floating timer, keep this tab open.',panel);help.className='focus-timer-help';
   button('Close',()=>panel.close());tag.addEventListener('click',()=>{unlockAudio();panel.showModal();render(read());});if(read().config.sound)unlockAudio();void tick();
  }
  window.addEventListener('taskitator-auth-ready',mount);window.Clerk?.addListener?.(mount);window.addEventListener('storage',()=>{mount();void tick();});document.addEventListener('visibilitychange',()=>{mount();void tick();});window.addEventListener('pagehide',()=>{if(wake)void wake.release();});setInterval(()=>{mount();void tick();},500);
