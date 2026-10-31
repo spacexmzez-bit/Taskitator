@@ -479,23 +479,23 @@ window.TaskitatorSafety = {
         return entries;
     }
     function render() {
-        for(const chip of document.querySelectorAll?.('.copilot-model-chip')||[])chip.textContent=models[activeProvider][0];
+        for(const chip of document.querySelectorAll?.('.copilot-model-chip')||[])chip.textContent=names[activeProvider];
         if(!byId('vaultStatus'))return;
-        byId('vaultStatus').textContent=!metadata.ready?'Secure storage needs administrator setup.':metadata.saved?
-            names[viewedProvider]+' key saved securely · ends in '+metadata.suffix:'No saved '+names[viewedProvider]+' key.';
+        byId('vaultStatus').textContent=!metadata.ready?'Key storage isn\'t set up on the server yet.':metadata.saved?
+            '✓ '+names[viewedProvider]+' key saved · ends in '+metadata.suffix:'No '+names[viewedProvider]+' key saved yet.';
         if(byId('aiProviderSelect')){byId('aiProviderSelect').value=viewedProvider;byId('aiProviderSelect').disabled=busy;}
         if(byId('aiActiveProvider'))byId('aiActiveProvider').textContent='Currently used for AI: '+names[activeProvider];
         if(byId('vaultUseProviderBtn')){
             byId('vaultUseProviderBtn').disabled=busy || !metadata.ready || !metadata.saved || viewedProvider===activeProvider;
-            byId('vaultUseProviderBtn').textContent=viewedProvider===activeProvider?names[viewedProvider]+' is active':'Use '+names[viewedProvider]+' for AI';
+            byId('vaultUseProviderBtn').textContent=viewedProvider===activeProvider?names[viewedProvider]+' is active':'Switch to '+names[viewedProvider];
         }
         if(byId('vaultModelInfo'))byId('vaultModelInfo').textContent=viewedProvider==='claude'?
-            'Claude Haiku 5.5 (claude-haiku-5-5). No automatic switch to Gemini. Claude accepts JPG, PNG, WebP and PDF here; convert HEIC photos or use Gemini.':
-            'Gemini 3.5 Flash-Lite (gemini-3.5-flash-lite), with Gemini 3.1 Flash-Lite (gemini-3.1-flash-lite) fallback under the existing quota/unavailable rules. No automatic switch to Claude.';
+            'Uses Claude. It never falls back to Gemini on its own. Accepts JPG, PNG, WebP and PDF. Convert HEIC photos first, or use Gemini for them.':
+            'Uses Gemini. If it hits its quota or is unavailable, Taskitator retries with a lighter Gemini model. It never switches to Claude on its own.';
         byId('vaultRecovered').replaceChildren();
         for(const item of metadata.pending||[]){
             const row=document.createElement('div');row.className='vault-recovery-row';
-            const label=document.createElement('span');label.textContent='Recovered key · …'+item.suffix;row.append(label);
+            const label=document.createElement('span');label.textContent='Recovered key ending in '+item.suffix;row.append(label);
             for(const [label,kind]of [['Use this key','save'],['Show','reveal'],['Remove','delete']]){
                 const button=document.createElement('button');button.type='button';button.className='icon-btn';button.textContent=label;
                 button.addEventListener('click',()=>open(kind,item.id));row.append(button);
@@ -503,7 +503,7 @@ window.TaskitatorSafety = {
             byId('vaultRecovered').append(row);
         }
         if(metadata.archive_pending){
-            const message=document.createElement('p');message.textContent='Additional encrypted Claude archives remain. Review/remove recovered copies and refresh; if they do not appear, ask the operator to check retained vault key versions.';
+            const message=document.createElement('p');message.textContent='More old Claude keys are still stored. Use or remove the ones above, then press Refresh. If none show up, contact support.';
             byId('vaultRecovered').append(message);
         }
         for(const [id,needsSaved]of [['vaultSaveBtn',false],['vaultShowBtn',true],['vaultCopyBtn',true],['vaultDeleteBtn',true],['vaultTestBtn',true]]){
@@ -517,7 +517,7 @@ window.TaskitatorSafety = {
         async refresh(follow=false){
             const user=auth().account?.user,session=window.Clerk.session?.id;
             const data=await api('/ai/keys',null,'GET');
-            if(user!==auth().account?.user || session!==window.Clerk.session?.id)throw new Error('Account changed. Reload before accessing AI settings.');
+            if(user!==auth().account?.user || session!==window.Clerk.session?.id)throw new Error('You switched accounts. Reload the page to see this account\'s AI settings.');
             return acceptMetadata(data,follow);
         },
         async initialize(){
@@ -575,14 +575,14 @@ window.TaskitatorSafety = {
     }
     function open(kind,stageId=null){
         if(busy)return;
-        // Google returns to a fresh Settings load with Tags & Prio selected.
-        // Show the Account tab so the revealed key and clipboard fallback appear.
-        document.querySelector('.tab-btn[data-tab="tab-account"]')?.click();
+        // Google returns to a fresh Settings load on whatever section was last open.
+        // Show the AI & Pro section so the revealed key and clipboard fallback appear.
+        document.querySelector('[data-tab="tab-ai"]')?.click();
         clearReveal();operation={kind,stageId,provider:viewedProvider};proofId=null;verified=false;
         byId('vaultPassword').value='';byId('vaultNewKey').value='';
-        byId('vaultDialogTitle').textContent=({save:stageId?'Activate recovered key':'Save / replace '+names[viewedProvider]+' key',delete:stageId?'Remove recovered key':'Delete saved '+names[viewedProvider]+' key',reveal:'Show saved '+names[viewedProvider]+' key',copy:'Copy saved '+names[viewedProvider]+' key'})[kind];
+        byId('vaultDialogTitle').textContent=({save:stageId?'Use recovered key':'Add or replace your '+names[viewedProvider]+' key',delete:stageId?'Remove recovered key':'Delete your '+names[viewedProvider]+' key',reveal:'Show your '+names[viewedProvider]+' key',copy:'Copy your '+names[viewedProvider]+' key'})[kind];
         if(byId('vaultNewKeyLabel'))byId('vaultNewKeyLabel').textContent='New '+names[viewedProvider]+' API key';
-        dialogMessage('Confirm with your password or the Google account linked to this login. Each confirmation authorizes this action once.');
+        dialogMessage('First, confirm it\'s you with your password or the Google account linked to this login. Each confirmation covers this one action.');
         byId('vaultConfirmBtn').textContent=kind==='delete'?'Delete key':kind==='save'?'Save key':'Continue';
         byId('vaultDialog').showModal();updateDialog();
     }
@@ -594,8 +594,8 @@ window.TaskitatorSafety = {
     async function password(){
         if(busy)return;busy=true;verified=false;updateDialog();
         try{
-            const input=byId('vaultPassword');if(!input.value)throw new Error('Enter your current sign-in password.');
-            dialogMessage('Confirming your password…');await start('password');
+            const input=byId('vaultPassword');if(!input.value)throw new Error('Enter your password first.');
+            dialogMessage('Checking your password…');await start('password');
             await window.Clerk.session.startVerification({level:'first_factor'});
             const result=await window.Clerk.session.attemptFirstFactorVerification({strategy:'password',password:input.value});
             if(result.status!=='complete')throw new Error('Password confirmation did not complete.');
@@ -633,17 +633,17 @@ window.TaskitatorSafety = {
             const body={verification_id:proofId,stage_id:operation.stageId,provider:operation.provider};
             if(operation.kind==='save'){
                 if(!operation.stageId)body.key=byId('vaultNewKey').value;
-                const result=await api('/ai/keys',body);acceptMetadata(result);status(result.test.message+' Press Use '+names[viewedProvider]+' for AI if you want to activate this provider.');
+                const result=await api('/ai/keys',body);acceptMetadata(result);status(result.test.message+(activeProvider===viewedProvider?'':' To start using it, press “Switch to '+names[viewedProvider]+'”.'));
             }else if(operation.kind==='delete'){
-                acceptMetadata(await api('/ai/keys',body,'DELETE'));status('Key removed. Revoke it separately at '+(operation.provider==='claude'?'Claude Console.':'Google AI Studio.'));
+                acceptMetadata(await api('/ai/keys',body,'DELETE'));status('Key deleted from Taskitator. It still works elsewhere until you revoke it in '+(operation.provider==='claude'?'Claude Console.':'Google AI Studio.'));
             }else{
                 const result=await api('/ai/keys/reveal',body);revealed=result.key;
                 byId('vaultRevealedKey').value=revealed;byId('vaultRevealArea').hidden=false;
                 revealTimer=setTimeout(clearReveal,Math.min(result.reveal_seconds||30,30)*1000);
-                status('Key shown for 30 seconds. Copies placed on your clipboard may remain there.');
+                status('Your key is shown below for 30 seconds. Anything you copy stays on your clipboard.');
                 if(operation.kind==='copy'){
-                    try{await navigator.clipboard.writeText(revealed);status('Key copied. Your clipboard may retain it after the display clears.');}
-                    catch{status('Key ready. Press Copy displayed key while it is visible.');}
+                    try{await navigator.clipboard.writeText(revealed);status('✓ Key copied. It stays on your clipboard until you copy something else.');}
+                    catch{status('Key ready. Press Copy below while it\'s visible.');}
                 }
             }
             byId('vaultDialog').close();verified=false;sessionStorage.removeItem(pendingKey);render();
@@ -661,15 +661,15 @@ window.TaskitatorSafety = {
         byId('aiProviderSelect')?.addEventListener('change',event=>{
             if(!Object.hasOwn(models,event.target.value))return;
             clearReveal();viewedProvider=event.target.value;metadata=providers[viewedProvider]||{ready:false,saved:false,pending:[]};render();
-            status('Showing '+names[viewedProvider]+' keys. Save/test a key, then use the activation button to change the AI provider. Your other key stays saved.');
+            status('Viewing your '+names[viewedProvider]+' key. To make '+names[viewedProvider]+' the one Taskitator uses, save a key and press “Switch to '+names[viewedProvider]+'”.');
         });
         byId('vaultModelInfoBtn')?.addEventListener('click',()=>{
             const info=byId('vaultModelInfo');info.hidden=!info.hidden;byId('vaultModelInfoBtn').setAttribute('aria-expanded',String(!info.hidden));
         });
         byId('vaultUseProviderBtn')?.addEventListener('click',async()=>{
             if(busy)return;busy=true;render();clearReveal();
-            try{if(inflight)throw new Error('Wait for the current AI request to finish before switching providers.');
-                acceptMetadata(await api('/ai/provider',{provider:viewedProvider}));status(names[activeProvider]+' is now used for AI. Your other provider key stays saved.');
+            try{if(inflight)throw new Error('An AI request is still running. Wait for it to finish, then switch.');
+                acceptMetadata(await api('/ai/provider',{provider:viewedProvider}));status('✓ Taskitator now uses '+names[activeProvider]+'. Your other key is still saved.');
             }catch(error){status(error.message);}finally{busy=false;render();}
         });
         for(const [id,kind]of [['vaultSaveBtn','save'],['vaultShowBtn','reveal'],['vaultCopyBtn','copy'],['vaultDeleteBtn','delete']])byId(id).addEventListener('click',()=>open(kind));
@@ -680,16 +680,16 @@ window.TaskitatorSafety = {
         byId('vaultDialog').addEventListener('close',()=>{verified=false;proofId=null;byId('vaultNewKey').value='';byId('vaultPassword').value='';});
         byId('vaultHideBtn').addEventListener('click',clearReveal);
         byId('vaultCopyDisplayedBtn').addEventListener('click',async()=>{
-            if(!revealed)return;try{await navigator.clipboard.writeText(revealed);status('Key copied. Your clipboard may retain it.');}catch{status('Clipboard access was denied. Select the displayed key and copy it manually.');}
+            if(!revealed)return;try{await navigator.clipboard.writeText(revealed);status('✓ Key copied.');}catch{status('Couldn\'t copy automatically. Select the key and copy it yourself.');}
         });
-        byId('vaultRefreshBtn').addEventListener('click',async()=>{if(busy)return;busy=true;render();clearReveal();try{await vault.refresh();status('Key status refreshed.');}catch(error){status(error.message);}finally{busy=false;render();}});
+        byId('vaultRefreshBtn').addEventListener('click',async()=>{if(busy)return;busy=true;render();clearReveal();try{await vault.refresh();status('Key status updated.');}catch(error){status(error.message);}finally{busy=false;render();}});
         byId('vaultTestBtn').addEventListener('click',async()=>{
             if(busy)return;busy=true;render();
             try{
                 const res = await api('/ai/keys/test',{provider:viewedProvider});
-                status(names[viewedProvider]+': '+(res.message || 'Key connected and verified successfully!'), true);
+                status(names[viewedProvider]+': '+(res.message || 'Key works.'), true);
             }catch(error){
-                status(error.message || 'Connection test failed.', false);
+                status(error.message || 'The key didn\'t work. Check it and try again.', false);
             }finally{
                 busy=false;render();
             }
@@ -699,13 +699,13 @@ window.TaskitatorSafety = {
             history.replaceState(null,'',location.pathname+location.search);
             try{
                 const pending=JSON.parse(sessionStorage.getItem(pendingKey)||'null');sessionStorage.removeItem(pendingKey);
-                if(pending?.proofId!==match[1] || pending.user!==auth().account.user || pending.session!==window.Clerk.session.id || !['save','delete','reveal','copy'].includes(pending.kind))throw new Error('Google confirmation does not belong to this session. Start again.');
-                const provider=pending.provider||'gemini';if(!Object.hasOwn(models,provider))throw new Error('Invalid provider confirmation. Start again.');
+                if(pending?.proofId!==match[1] || pending.user!==auth().account.user || pending.session!==window.Clerk.session.id || !['save','delete','reveal','copy'].includes(pending.kind))throw new Error('That Google sign-in was for a different session. Please start again.');
+                const provider=pending.provider||'gemini';if(!Object.hasOwn(models,provider))throw new Error('Something went wrong with that confirmation. Please start again.');
                 viewedProvider=provider;metadata=providers[provider]||{ready:false,saved:false,pending:[]};render();
                 open(pending.kind,pending.stageId);proofId=match[1];
                 const result=await api('/auth/verification/status',{verification_id:proofId,action:action()});
                 verified=result.verified && (!result.context || result.context.provider===provider);
-                dialogMessage(verified?'Google identity confirmed. Continue within five minutes. For a new key, enter it now.':'Google confirmation was cancelled or failed. Use the linked Google account and try again.');
+                dialogMessage(verified?'Google sign-in confirmed. Finish within 5 minutes. If you\'re adding a key, paste it now.':'Google sign-in was cancelled or failed. Try again with the Google account linked to this login.');
                 updateDialog();
             }catch(error){status(error.message);}
         }
@@ -1558,7 +1558,7 @@ window.TaskitatorEngine = TaskitatorEngine;
 
     async function openBatchReviewModal(selectedIds = null) {
         const access=await getClient().checkConsecutiveEntitlement();
-        if(!access.allowed){alert(access.status==='unavailable'?'Could not check Pro. Reconnect and retry.':'Batch Review is a Pro feature. You can still review tasks individually.');return;}
+        if(!access.allowed){(window.TaskitatorNotify||alert)(access.status==='unavailable'?"Couldn't check your Pro status. Check your connection and try again.":'Batch review is a Pro feature. You can still review tasks one at a time.', access.status==='unavailable'?'error':'info');return;}
         if (document.getElementById('proBatchModalRoot')) return;
 
         let allTasks = [];
@@ -1842,7 +1842,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                 <div class="pro-header">
                     <div class="pro-title-wrap">
                         <h3 style="margin: 0; font-size: 16px; font-weight: 600;">⭐ Taskitator Pro</h3>
-                        <span class="pro-badge free" id="pro-status-badge">Checking...</span>
+                        <span class="pro-badge free" id="pro-status-badge">Checking…</span>
                     </div>
                     <span id="pro-expiry-label" style="font-size: 12px; color: #94a3b8;"></span>
                 </div>
@@ -1850,17 +1850,17 @@ window.TaskitatorEngine = TaskitatorEngine;
                 <div id="pro-quota-container" style="display: none;">
                     <div class="pro-quota-grid">
                         <div class="pro-quota-card">
-                            <div class="pro-quota-label">Daily Hosted AI Credits</div>
+                            <div class="pro-quota-label">AI credits today</div>
                             <div class="pro-quota-val"><span id="pro-daily-remaining">--</span> / <span id="pro-daily-limit">45</span></div>
-                            <div class="pro-quota-sub">Resets at midnight Asia/Riyadh</div>
+                            <div class="pro-quota-sub">Refills at midnight (Riyadh time)</div>
                             <div class="pro-progress-bar">
                                 <div class="pro-progress-fill" id="pro-daily-fill" style="width: 0%;"></div>
                             </div>
                         </div>
                         <div class="pro-quota-card">
-                            <div class="pro-quota-label">Monthly Hosted AI Credits</div>
+                            <div class="pro-quota-label">AI credits this month</div>
                             <div class="pro-quota-val"><span id="pro-monthly-remaining">--</span> / <span id="pro-monthly-limit">1000</span></div>
-                            <div class="pro-quota-sub">Resets on the first, Asia/Riyadh</div>
+                            <div class="pro-quota-sub">Refills on the 1st (Riyadh time)</div>
                             <div class="pro-progress-bar">
                                 <div class="pro-progress-fill" id="pro-monthly-fill" style="width: 0%;"></div>
                             </div>
@@ -1868,28 +1868,28 @@ window.TaskitatorEngine = TaskitatorEngine;
                     </div>
 
                     <details class="pro-credit-help" id="pro-credit-help-details">
-                        <summary id="pro-credit-help-title">How credits work</summary>
+                        <summary id="pro-credit-help-title">What uses credits?</summary>
                         <div class="pro-credit-help-body">
                             <ul>
-                                <li><strong>Document Pages (Page Count):</strong> For PDF files, usage depends on how many pages are in the document. Each page is read by the AI, so a 10-page file uses more tokens than a 1-page file.</li>
-                                <li><strong>Photo Resolution (Image Size):</strong> Higher-resolution or larger photos take more work for the AI to inspect than smaller, standard-sized screenshots or photos.</li>
-                                <li><strong>Reference Example:</strong> Comparing your proof against an attached reference file doubles that task’s charge because the AI must inspect both files side by side.</li>
-                                <li><strong>Batch Discount:</strong> Reviewing two or more tasks together gives each task a <strong>25% discount</strong> because they share the same proof upload.</li>
-                                <li><strong>Price Preview & Refunds:</strong> Before any review begins, you see the estimated charge and the maximum held amount. Afterward, you only pay for what was actually used, and any unused held credits return immediately.</li>
+                                <li><strong>PDF pages:</strong> the AI reads every page, so a 10-page PDF costs more than a 1-page one.</li>
+                                <li><strong>Photo size:</strong> big, high-resolution photos cost more than normal screenshots.</li>
+                                <li><strong>Reference files:</strong> comparing your proof with a reference file costs double, since the AI checks both.</li>
+                                <li><strong>Batch reviews:</strong> reviewing 2 or more tasks with one proof gives each task <strong>25% off</strong>.</li>
+                                <li><strong>Price preview:</strong> before a review starts you see the estimate and the most it could cost. You only pay what was actually used. The rest comes back straight away.</li>
                             </ul>
-                            <p>You pay for a completed review even if the proof is rejected. Cancelling at the price preview starts no paid review.</p>
+                            <p>A finished review costs credits even if your proof is rejected. Cancelling at the price preview costs nothing.</p>
                         </div>
                     </details>
                     <div class="pro-byok-box">
                         <label class="pro-switch-wrap">
                             <input type="checkbox" id="proByokToggle" />
-                            <span class="pro-switch-label"><strong>Use your own API key.</strong> Switching modes does not reset your hosted credits.</span>
+                            <span class="pro-switch-label"><strong>Use my own API key instead of credits.</strong> Your credits stay as they are if you switch back.</span>
                         </label>
                     </div>
                 </div>
 
                 <div class="pro-form" id="pro-activation-form">
-                    <label style="font-size: 13px; font-weight: 500; color: #cbd5e1;">Activate Pro with Keyo License Key</label>
+                    <label for="pro-license-input" style="font-size: 13px; font-weight: 500; color: #cbd5e1;">Have a Keyo license key? Activate Pro here.</label>
                     <div class="pro-input-group">
                         <input type="text" class="pro-input" id="pro-license-input" placeholder="e.g. XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocorrect="off" spellcheck="false" />
                         <button class="pro-btn" id="pro-activate-btn">Activate Pro</button>
@@ -1898,7 +1898,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                 </div>
 
                 <div class="pro-compare-link-row" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(148, 163, 184, 0.2); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                    <span style="font-size: 0.82rem; color: #94a3b8;">See everything included in Free and Pro</span>
+                    <span style="font-size: 0.82rem; color: #94a3b8;">Not sure what Pro adds?</span>
                     <a href="components.html?view=compare" class="pro-compare-link" id="proComparePageLink" style="font-size: 0.84rem; font-weight: 600; color: #60a5fa; text-decoration: none;">Compare Free and Pro →</a>
                 </div>
             </div>
@@ -1917,25 +1917,27 @@ window.TaskitatorEngine = TaskitatorEngine;
             btn.addEventListener('click', async () => {
                 const key = input.value.trim();
                 if (!key) {
-                    showMsg('Please enter your license key.', 'error');
+                    showMsg('Enter your license key first.', 'error');
                     return;
                 }
 
                 const client = getClient();
                 btn.disabled = true;
-                btn.textContent = 'Activating...';
+                btn.textContent = 'Activating…';
+                btn.classList.add('is-loading');
                 showMsg('', '');
 
                 try {
                     const res = await client.activate(key);
-                    showMsg(res.message || 'Taskitator Pro successfully activated!', 'success');
+                    showMsg(res.message || 'Pro is active. Enjoy!', 'success');
                     input.value = '';
                     await refreshProStatus();
                     window.TaskitatorTutorials?.proActivated();
                 } catch (err) {
-                    showMsg(err.message || 'Failed to activate license key.', 'error');
+                    showMsg(err.message || 'That license key didn\'t work. Check it and try again.', 'error');
                 } finally {
                     btn.disabled = false;
+                    btn.classList.remove('is-loading');
                     btn.textContent = 'Activate Pro';
                 }
             });
@@ -1946,9 +1948,9 @@ window.TaskitatorEngine = TaskitatorEngine;
                 const client = getClient();
                 try {
                     await client.setUseByok(byokToggle.checked);
-                    showMsg(byokToggle.checked ? 'Personal API-key mode enabled. Hosted credits are unchanged.' : 'Hosted AI enabled.', 'success');
+                    showMsg(byokToggle.checked ? 'Now using your own API key. Your credits are untouched.' : 'Now using your Pro credits.', 'success');
                 } catch (err) {
-                    showMsg(err.message || 'Failed to update BYOK mode.', 'error');
+                    showMsg(err.message || 'Couldn\'t switch modes. Try again.', 'error');
                     byokToggle.checked = !byokToggle.checked;
                 }
             });
@@ -1983,7 +1985,7 @@ window.TaskitatorEngine = TaskitatorEngine;
             if (data.isPro) {
                 if (badge) {
                     badge.className = 'pro-badge active';
-                    badge.textContent = 'PRO ACTIVE';
+                    badge.textContent = 'PRO';
                 }
                 if (expiry) expiry.textContent = data.expires_at === null ? 'Lifetime license' :
                     `Valid through ${new Date(data.expires_at).toLocaleDateString()}`;
@@ -2016,19 +2018,19 @@ window.TaskitatorEngine = TaskitatorEngine;
             } else {
                 if (badge) {
                     badge.className = 'pro-badge free';
-                    badge.textContent = 'FREE TIER';
+                    badge.textContent = 'FREE';
                 }
                 if (expiry) expiry.textContent = data.status === 'verification_required' ?
-                    'Please enter your Keyo license key again to verify this account.' :
-                    ['revoked','invalid','expired'].includes(data.status) ? 'License verification failed. Check your license in Keyo, then reactivate.' : '';
+                    'Enter your Keyo license key again to confirm it\'s yours.' :
+                    ['revoked','invalid','expired'].includes(data.status) ? 'Your license couldn\'t be confirmed. Check it in Keyo, then activate again.' : '';
                 if (quotaBox) quotaBox.style.display = 'none';
             }
         } catch (err) {
             if (badge) {
                 badge.className = 'pro-badge free';
-                badge.textContent = 'VERIFICATION UNAVAILABLE';
+                badge.textContent = 'CAN\'T CHECK';
             }
-            if (expiry) expiry.textContent = err.message || 'Unable to check your license. Please refresh Settings and retry.';
+            if (expiry) expiry.textContent = err.message || 'Couldn\'t check your license. Refresh the page to try again.';
             if (quotaBox) quotaBox.style.display = 'none';
         }
     }
@@ -2364,3 +2366,114 @@ window.TaskitatorEngine = TaskitatorEngine;
 })(window);
 
 // <<< MODULE_END: pro/profile-ui.js >>>
+
+
+// <<< MODULE_START: pro/tier-ui.js >>>
+// Cosmetic Free/Pro styling. Sets <html data-tier="pro|free"> (and data-expiring)
+// from the server's Pro status, and draws the sidebar tier card. This never grants
+// access to anything: every Pro feature is still checked on the server.
+(function (global) {
+    'use strict';
+    const KEY = 'taskitator_tier_v1';
+    const FRESH_MS = 15 * 60 * 1000;
+    const WARN_DAYS = 7;
+    const root = document.documentElement;
+    let state = { tier: 'free', days: null, until: null, credits: null };
+
+    const userId = () => global.Clerk?.user?.id || '';
+    function readCache() {
+        try {
+            const c = JSON.parse(localStorage.getItem(KEY));
+            return c && typeof c === 'object' ? c : null;
+        } catch { return null; }
+    }
+    function fromStatus(data) {
+        const active = data?.isPro === true && data.status === 'active' &&
+            (data.expires_at === null || Number(data.expires_at) > Date.now());
+        const exp = data?.expires_at === null || data?.expires_at === undefined ? null : Number(data.expires_at);
+        return {
+            tier: active ? 'pro' : 'free',
+            until: active ? exp : null,
+            days: active && exp !== null ? Math.max(0, Math.ceil((exp - Date.now()) / 86400000)) : null,
+            credits: active && data.credits ? data.credits : null
+        };
+    }
+    function el(tag, text, cls) {
+        const n = document.createElement(tag);
+        if (text !== undefined) n.textContent = text;
+        if (cls) n.className = cls;
+        return n;
+    }
+    function renderCard() {
+        const drawer = document.getElementById('sidebarDrawer');
+        if (!drawer) return;
+        let card = drawer.querySelector('.tier-card');
+        if (!card) { card = el('a', undefined, 'tier-card'); drawer.appendChild(card); }
+        const pro = state.tier === 'pro';
+        card.className = 'tier-card ' + (pro ? 'is-pro' : 'is-free');
+        card.replaceChildren();
+        if (pro) {
+            card.href = 'settings.html#ai';
+            card.append(el('strong', '\u25C6 Taskitator Pro'));
+            card.append(el('span', state.until === null ? 'Lifetime license' : 'Valid through ' + new Date(state.until).toLocaleDateString()));
+            const c = state.credits;
+            if (c && c.daily_limit > 0) {
+                card.append(el('span', ' \u00B7 ' + c.daily_remaining + ' of ' + c.daily_limit + ' AI credits left today'));
+                const bar = el('div', undefined, 'tier-bar'), fill = el('i');
+                bar.append(fill); card.append(bar);
+                requestAnimationFrame(() => { fill.style.width = Math.round((c.daily_remaining / c.daily_limit) * 100) + '%'; });
+            }
+        } else {
+            card.href = 'components.html?view=compare';
+            card.append(el('strong', '\u25C7 Upgrade to Pro'));
+            card.append(el('span', 'Batch reviews and more AI credits.'));
+        }
+    }
+    function apply() {
+        root.dataset.tier = state.tier;
+        const expiring = state.tier === 'pro' && state.days !== null && state.days <= WARN_DAYS;
+        if (expiring) root.dataset.expiring = '1'; else delete root.dataset.expiring;
+        document.querySelectorAll('.tier-chip').forEach(c => { c.dataset.days = String(state.days ?? ''); });
+        renderCard();
+    }
+    function handle(data) {
+        state = fromStatus(data);
+        try {
+            localStorage.setItem(KEY, JSON.stringify({
+                u: userId(), t: Date.now(), tier: state.tier, exp: state.until, credits: state.credits
+            }));
+        } catch {}
+        apply();
+    }
+    function restore() {
+        const c = readCache();
+        if (c && c.tier === 'pro' && (c.exp === null || Number(c.exp) > Date.now())) {
+            state = fromStatus({ isPro: true, status: 'active', expires_at: c.exp, credits: c.credits });
+        }
+    }
+    async function refresh(force) {
+        const client = global.TaskitatorPro;
+        if (!client || !global.Clerk?.session) return;
+        const c = readCache();
+        if (!force && c && c.u === userId() && Date.now() - c.t < FRESH_MS) return;
+        try { await client.getStatus(); } catch { /* keep the last known look */ }
+    }
+
+    global.addEventListener('taskitator-pro-status', e => handle(e.detail));
+    global.addEventListener('taskitator-auth-ready', () => {
+        const c = readCache();
+        if (c && c.u && c.u !== userId()) {   // different account: drop the old look
+            try { localStorage.removeItem(KEY); } catch {}
+            state = { tier: 'free', days: null, until: null, credits: null };
+            apply();
+        }
+        refresh(false);
+    });
+    global.TaskitatorTier = { get: () => ({ ...state }), refresh: () => refresh(true) };
+
+    restore();
+    root.dataset.tier = state.tier;
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
+    else apply();
+})(window);
+// <<< MODULE_END: pro/tier-ui.js >>>

@@ -203,16 +203,16 @@ test('evidence criteria and Copilot use the vault and retain Gemini fallback beh
     const reply=await f.window.TaskitatorAgent.sendMessage('Hello');assert.equal(typeof reply.text,'string');assert.equal(calls.length,1);assert.ok(calls[0].payload.tools);
 });
 
-test('Google key callback opens Account controls and permits one verified reveal with clipboard fallback',async()=>{
+test('Google key callback opens AI settings and permits one verified reveal with clipboard fallback',async()=>{
     const f=client(),events=new Map(),nodes=new Map();let accountTabOpened=false;
     const node=id=>{
         if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,textContent:'',style:{},handlers:{},
             addEventListener(name,fn){this.handlers[name]=fn;},replaceChildren(){},append(){},
-            showModal(){this.open=true;},close(){this.open=false;this.handlers.close?.();}});
+            showModal(){this.open=true;},close(){this.open=false;this.handlers.close?.();},click(){if(id==='tabbtn-account')accountTabOpened=true;}});
         return nodes.get(id);
     };
     f.context.document.getElementById=node;
-    f.context.document.querySelector=selector=>({click(){assert.equal(selector,'.tab-btn[data-tab="tab-account"]');accountTabOpened=true;}});
+    f.context.document.querySelector=selector=>({click(){assert.equal(selector,'[data-tab="tab-ai"]');accountTabOpened=true;}});
     f.window.addEventListener=(name,fn)=>events.set(name,fn);
     f.auth.account={user:'rd'};const proof='a'.repeat(64);
     f.context.sessionStorage.setItem('taskitator_key_verification',JSON.stringify({kind:'copy',stageId:null,proofId:proof,user:'rd',session:'sess_A'}));
@@ -228,7 +228,7 @@ test('Google key callback opens Account controls and permits one verified reveal
     assert.equal(node('vaultConfirmBtn').disabled,false);
     await node('vaultConfirmBtn').handlers.click();
     assert.equal(node('vaultRevealedKey').value,'AIza-visible-after-Google');assert.equal(node('vaultRevealArea').hidden,false);
-    assert.match(node('vaultFeedback').textContent,/Copy displayed key/);
+    assert.match(node('vaultFeedback').textContent,/Press Copy below/);
     assert.equal(f.context.sessionStorage.getItem('taskitator_key_verification'),null);
     vault.clear();assert.equal(node('vaultRevealedKey').value,'');assert.equal(node('vaultRevealArea').hidden,true);
 });
@@ -411,7 +411,7 @@ async function loginFixture(results, copies=[]) {
     context.URL={createObjectURL:blob=>{downloads.push(blob);return 'blob:test'},revokeObjectURL(){}};
     context.Blob=Blob;context.setTimeout=()=>0;
     await vm.runInContext(readConsolidatedSource('login-page.js'),context);
-    return {auth,storage,element,redirects,downloads};
+    return {auth,storage,element,redirects,downloads,context};
 }
 
 test('first migration conflict exposes working Continue and completes after resolution',async()=>{
@@ -505,14 +505,14 @@ test('accepted account local cleanup removes only that owner and preserves other
     assert.equal(removedFiles,'rd');assert.equal(JSON.stringify(f.storage).includes('private'),false);
     assert.equal(f.storage.getItem('taskitator_account_cache_v2:other'),'keep');
 });
-test('Settings initially activates Tags & Priority and keeps local reset distinct from cloud deletion',()=>{
+test('Settings defaults to General and separates local reset from account deletion',()=>{
     const html=readConsolidatedSource('settings.html');
-    assert.match(html,/<button[^>]*class="tab-btn active"[^>]*data-tab="tab-tasks"/);
-    assert.match(html,/<div class="tab-pane active" id="tab-tasks">/);
-    assert.doesNotMatch(html,/<div class="tab-pane active" id="tab-account">/);
-    assert.ok(html.includes('This does NOT delete your cloud account or cloud data.'));
-    const system=html.slice(html.indexOf('id="tab-system"'),html.indexOf('id="tab-tasks"'));
-    for(const href of ['components.html?view=legal','components.html?view=legal#deletion'])assert.ok(system.includes('href="'+href+'"'),href+' must be reachable under System');
+    assert.match(html, /candidates = \[fromHash && 'tab-' \+ fromHash\[1\], stored, 'tab-general'\]/);
+    assert.match(html, /id="tabbtn-general"[^>]*data-tab="tab-general"/);
+    assert.ok(html.includes('Your cloud account and synced data stay.'));
+    assert.ok(html.includes('Permanently deletes your account, cloud data'));
+    const account=html.slice(html.indexOf('id="tab-account"'), html.indexOf('id="tab-account"')+18000);
+    for(const href of ['components.html?view=legal','components.html?view=legal#deletion']) assert.ok(account.includes('href="'+href+'"'));
 });
 
 function verificationVaultClient() {
@@ -852,4 +852,17 @@ test('Deferred Today sync waits until safe, then updates in place without reload
  const f=client();vm.runInContext(readConsolidatedSource('sync-engine.js'),f.context);const s=f.window.SyncEngine;let safe=false,pulls=0,events=[],reloads=0;
  f.window.dispatchEvent=e=>events.push(e.type);f.window.location.reload=()=>reloads++;s.sessionId='sess_A';f.storage.setItem(s.STORAGE_KEY_SESSION,'sess_A');s.resumePasswordChange=async()=>({success:true});s.getConfig=()=>({username:'rd'});s.isConfigured=()=>true;s.isDirty=()=>false;s.isSafeToRefresh=()=>safe;s.sessionMatches=()=>true;s.pull=async()=>{pulls++;return {success:true}};s.cancelAutoWindow=()=>{};s.autoRefreshEnabled=()=>true;
  assert.equal((await s.syncNow({origin:'page-load'})).deferred,true);assert.equal(pulls,0);safe=true;await s.syncNow({origin:s.pendingDownloadOrigin});assert.equal(pulls,1);assert.equal(reloads,0);assert.ok(events.includes('taskitator-page-load-synced'));
+});
+
+
+test('new account sets tutorial marker; import and failed creation do not',async()=>{
+ const created=await loginFixture([{success:true}]);
+ await created.element('newAccountBtn').onclick({target:created.element('newAccountBtn')});
+ assert.equal(created.context.sessionStorage.getItem('taskitator_new_tutorial'),'user_A');
+ const imported=await loginFixture([{success:true}]);
+ await imported.element('migrationForm').onsubmit({preventDefault(){}});
+ assert.equal(imported.context.sessionStorage.getItem('taskitator_new_tutorial'),null);
+ const failed=await loginFixture([]);failed.auth.connect=async()=>{throw Error('creation failed')};
+ await failed.element('newAccountBtn').onclick({target:failed.element('newAccountBtn')});
+ assert.equal(failed.context.sessionStorage.getItem('taskitator_new_tutorial'),null);
 });

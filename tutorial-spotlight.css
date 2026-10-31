@@ -1,4 +1,70 @@
-.tt-tour-veil{position:fixed;inset:0;z-index:2147483000;background:transparent}.tt-tour-veil.tt-tour-no-target{background:rgba(2,6,23,.78)}
-.tt-tour-ring{position:fixed;pointer-events:none;border:3px solid #60a5fa;border-radius:10px;box-sizing:border-box;box-shadow:0 0 0 9999px rgba(2,6,23,.78),0 0 20px #60a5fa}
-.tt-tour-dialog{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:min(92vw,480px);max-height:45vh;overflow:auto;box-sizing:border-box;padding:18px;background:#101f38;color:#f1f5f9;border:1px solid #5477ac;border-radius:16px;box-shadow:0 12px 36px #0009}
-.tt-tour-dialog h2{font-size:1.15rem;margin:.3rem 0}.tt-tour-dialog p{line-height:1.45;margin:.5rem 0}.tt-tour-count,.tt-tour-note{font-size:.8rem;color:#b8c9df}.tt-tour-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.tt-tour-actions button{font:inherit;color:#fff;background:#26446d;border:1px solid #7092c3;border-radius:8px;padding:10px 14px}.tt-tour-actions button:disabled{opacity:.5}.tt-tour-actions button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+/* Taskitator tour (spotlight v2). Uses the app's tokens with fallbacks. */
+.tt-veil{position:fixed;inset:0;z-index:2147483000;background:transparent}
+.tt-veil.tt-dim{background:rgba(2,6,23,.82)}
+.tt-ring{position:fixed;z-index:1;pointer-events:none;border-radius:12px;box-sizing:border-box;
+  box-shadow:0 0 0 9999px rgba(2,6,23,.8);
+  transition:left var(--dur-slow,320ms) var(--ease-out,ease),top var(--dur-slow,320ms) var(--ease-out,ease),width var(--dur-slow,320ms) var(--ease-out,ease),height var(--dur-slow,320ms) var(--ease-out,ease)}
+.tt-ring::after{content:'';position:absolute;inset:-3px;border-radius:inherit;border:2px solid var(--primary-hover,#60a5fa);animation:ttPulse 2s ease-out infinite}
+.tt-ring.tt-instant{transition:none}
+.tt-ring.tt-none{display:none}
+@keyframes ttPulse{0%{box-shadow:0 0 0 0 rgba(96,165,250,.55)}70%,100%{box-shadow:0 0 0 12px rgba(96,165,250,0)}}
+
+.tt-card{position:fixed;z-index:2;box-sizing:border-box;width:min(420px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;
+  padding:14px 14px 12px;background:#101f38;color:#f1f5f9;border:1px solid #3d5f96;border-radius:16px;box-shadow:0 16px 40px rgba(0,0,0,.6);
+  animation:ttIn var(--dur-slow,320ms) var(--ease-out,ease)}
+.tt-card:focus{outline:none}
+.tt-card.tt-center{left:50%;top:50%;transform:translate(-50%,-50%);animation-name:ttInMid}
+@keyframes ttIn{from{opacity:0;transform:translateY(10px) scale(.98)}}
+@keyframes ttInMid{from{opacity:0;transform:translate(-50%,calc(-50% + 10px)) scale(.97)}}
+.tt-arrow{position:fixed;z-index:3;width:14px;height:14px;background:#101f38;border:1px solid #3d5f96;transform:rotate(45deg);pointer-events:none}
+.tt-arrow.tt-below{border-bottom:0;border-right:0}  /* card sits below target, arrow on card's top edge */
+.tt-arrow.tt-above{border-top:0;border-left:0}
+.tt-arrow.tt-hide{display:none}
+
+.tt-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.tt-chapter{font-size:.68rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--primary-hover,#60a5fa)}
+.tt-count{font-size:.72rem;color:var(--text-muted,#8bb3e8);font-variant-numeric:tabular-nums}
+.tt-bar{display:flex;gap:3px;margin-bottom:10px}
+.tt-bar i{flex:1;height:3px;border-radius:2px;background:rgba(255,255,255,.14);transition:background-color var(--dur-med,200ms)}
+.tt-bar i.tt-done{background:var(--primary,#3b82f6)}
+.tt-bar i.tt-now{background:var(--primary-hover,#60a5fa)}
+.tt-head{display:flex;align-items:flex-start;gap:10px}
+.tt-icon{flex-shrink:0;width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:1.2rem;background:var(--accent-light,#172554);border:1px solid var(--border-hover,#2d5599)}
+.tt-card h2{margin:0;font-size:1.05rem;line-height:1.25;color:#fff}
+.tt-text{margin:3px 0 0;font-size:.88rem;line-height:1.5;color:#dbe7f7}
+.tt-text b,.tt-why b{color:#fff}
+.tt-text code,.tt-why code{font-size:.85em;background:rgba(0,0,0,.35);padding:1px 5px;border-radius:4px}
+.tt-note{margin:10px 0 0;padding:8px 10px;border-radius:8px;background:rgba(245,158,11,.12);border-left:3px solid #f59e0b;font-size:.8rem;line-height:1.45;color:#fde7b0}
+.tt-why{margin:10px 0 0;padding:8px 10px;border-radius:8px;background:rgba(59,130,246,.1);border-left:3px solid var(--primary,#3b82f6);font-size:.8rem;line-height:1.45;color:#bcd3f2}
+.tt-visual{margin-top:10px}
+
+.tt-legend{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.tt-legend span{display:flex;align-items:center;gap:7px;font-size:.76rem;padding:5px 8px;border-radius:8px;background:var(--card-subtle,#14264b);border:1px solid var(--border-color,#1e3a6e)}
+.tt-legend .tt-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.tt-pips{display:flex;gap:5px;align-items:center;flex-wrap:wrap;font-size:.78rem;color:var(--text-muted,#8bb3e8)}
+.tt-pips i{width:14px;height:14px;border-radius:4px;background:var(--danger,#ef4444);box-shadow:0 0 6px rgba(239,68,68,.5)}
+.tt-pips i.tt-off{background:var(--border-color,#1e3a6e);box-shadow:none}
+.tt-list{margin:0;padding:0;list-style:none;display:grid;gap:5px}
+.tt-list li{display:flex;gap:8px;align-items:flex-start;font-size:.8rem;line-height:1.4;color:#dbe7f7;padding:6px 8px;border-radius:8px;background:var(--card-subtle,#14264b);border:1px solid var(--border-color,#1e3a6e)}
+.tt-list li>span:first-child{flex-shrink:0}
+.tt-checklist{display:grid;gap:6px}
+.tt-checklist a{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;border:1px solid var(--border-color,#1e3a6e);background:var(--card-subtle,#14264b);color:var(--text-color,#f0f7ff);font-size:.84rem;font-weight:600;text-decoration:none;cursor:pointer;transition:border-color var(--dur-fast,120ms),transform var(--dur-fast,120ms) var(--ease-out,ease)}
+.tt-checklist a:hover{border-color:var(--primary,#3b82f6)}
+.tt-checklist a:active{transform:scale(.98)}
+.tt-checklist a:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(59,130,246,.55)}
+.tt-checklist small{display:block;font-weight:500;color:var(--text-muted,#8bb3e8);font-size:.74rem}
+.tt-checklist .tt-go{margin-left:auto;color:var(--primary-hover,#60a5fa)}
+
+.tt-actions{display:flex;align-items:center;gap:8px;margin-top:12px}
+.tt-spacer{flex:1}
+.tt-skip{background:none;border:0;color:var(--text-muted,#8bb3e8);font:inherit;font-size:.8rem;padding:8px 4px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.tt-btn{font:inherit;font-weight:700;font-size:.86rem;min-height:40px;padding:0 16px;border-radius:9px;border:1.5px solid var(--border-color,#1e3a6e);background:var(--card-bg,#0f1d3a);color:var(--text-color,#f0f7ff);cursor:pointer;box-shadow:0 2px 0 var(--depth,#050d1f);transition:transform var(--dur-fast,120ms) var(--ease-out,ease),box-shadow var(--dur-fast,120ms) var(--ease-out,ease)}
+.tt-btn:active:not(:disabled){transform:translateY(2px);box-shadow:none}
+.tt-btn:disabled{opacity:.35;cursor:not-allowed}
+.tt-btn.tt-primary{background:var(--primary,#3b82f6);border-color:var(--primary,#3b82f6);color:#fff;box-shadow:0 3px 0 var(--depth-primary,#1d4ed8)}
+.tt-btn.tt-primary:active:not(:disabled){box-shadow:none;transform:translateY(3px)}
+.tt-btn:focus-visible,.tt-skip:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(59,130,246,.55)}
+.tt-keys{margin:8px 0 0;font-size:.68rem;color:#6f8fbf;text-align:right}
+.tt-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (max-width:640px){.tt-keys{display:none}}
+@media (prefers-reduced-motion:reduce){.tt-ring,.tt-ring::after,.tt-card,.tt-bar i,.tt-btn,.tt-checklist a{animation:none!important;transition:none!important}}

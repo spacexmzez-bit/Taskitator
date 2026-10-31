@@ -1193,8 +1193,8 @@ test('Settings Pro block: How credits work is a roll-down details menu closed by
         'How credits work must be a <details> element');
     assert.ok(!proUi.includes('<details class="pro-credit-help" id="pro-credit-help-details" open>'),
         'How credits work must be closed by default');
-    assert.ok(proUi.includes('Document Pages (Page Count):'), 'Must explain page count system');
-    assert.ok(proUi.includes('Photo Resolution (Image Size):'), 'Must explain photo resolution system');
+    assert.ok(proUi.includes('PDF pages:'), 'Must explain page count system');
+    assert.ok(proUi.includes('Photo size:'), 'Must explain photo resolution system');
 });
 
 test('Vault: API key connection test displays green/red popup box', () => {

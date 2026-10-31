@@ -157,7 +157,7 @@ window.TaskitatorAgent = (() => {
             contextDirectives += (
                 "CURRENT PAGE: Settings (settings.html).\n" +
                 "ROLE: Technical Configuration Assistant.\n" +
-                "Explain Gemini (Google AI Studio) and Claude (Claude Console) API keys, separate encrypted provider keys, password/Google confirmation, the Use provider activation button, zero-generation metadata tests, Privacy/Terms links under System, Cloudflare sync, MacroDroid status authorization, weekend cycles, emergency tokens and the daily break window. Never ask a user to send an API key or password in chat.\n" +
+                "Explain Gemini (Google AI Studio) and Claude (Claude Console) API keys, separate encrypted provider keys, password/Google confirmation, the \"Switch to <provider>\" button, the zero-cost \"Test key\" check, and Cloudflare sync. Settings sections: General (Copilot name, sound, vibration, distraction note timer, sync), Tasks (tags, priorities, criteria check), Day & week (day start, weekend, emergency unlocks, break window), AI & Pro (provider, keys, Pro credits), Phone lock (MacroDroid status URL and token), Account & data (login, backup/restore, Privacy/Terms links, danger zone). Most settings need the Save changes bar; AI keys, Pro and phone access save immediately. Never ask a user to send an API key or password in chat.\n" +
                 "CRITICAL RESTRICTION: You DO NOT have task manipulation tools on this page. If the user asks you to create, update, complete, or trash a task, you MUST explicitly refuse and instruct them to switch to the Today or General Tasks page first."
             );
         } else if (page === 'blocker_guide') {
@@ -764,9 +764,6 @@ ${formattedInput}`;
                 loadingBubble.remove();
                 appendBubble(res.text, 'bot');
 
-                if (chip && sessionStorage.getItem(SESSION_LATCH_KEY) === 'true') {
-                    chip.textContent = '3.1 Flash Lite';
-                }
             } catch (err) {
                 loadingBubble.remove();
                 appendBubble(`Error: ${err.message}`, 'bot').classList.add('error');
@@ -2479,7 +2476,7 @@ window.TaskitatorApp = (() => {
             if (hasFilters) {
                 const m = matchMap.get(t.id);
                 const d = descMatchMap.get(t.id);
-                if (!m && !d) return false;
+                if (!m && d) return false;
             }
             return isTaskVisuallyActive(t) || hasVisibleDescendant(t.id);
         });

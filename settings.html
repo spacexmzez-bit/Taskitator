@@ -1,9 +1,8 @@
 <!-- File: settings.html -->
-<!-- settings.html -->
 <!DOCTYPE html>
 <html lang="en" class="auth-pending">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-Z5zonchQVOj3oE2hVN2XlOOtOVN95OtFlMj/dVGrNy8=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-YoHcuyU2mH8Dfp0ViBJyhNzv2JV8+8iRPflMIcM0VG4=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
 <style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -17,321 +16,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="icon/icon-192.png">
 
-    <link rel="stylesheet" href="style.css?v=profile-ui-v3">
-    <style>
-        .notice-banner {
-            padding: 10px 14px;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            margin-top: 10px;
-            display: none;
-        }
-        .notice-info {
-            background: var(--accent-light);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-        }
-        .notice-warning {
-            background: #380d15;
-            border: 1px solid #881337;
-            color: #fda4af;
-        }
-        .notice-success {
-            background: #052e16;
-            border: 1px solid #166534;
-            color: #86efac;
-        }
-        .quota-indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-weight: 700;
-            padding: 6px 12px;
-            border-radius: 8px;
-            background: var(--card-subtle);
-            border: 1px solid var(--border-color);
-            margin-top: 6px;
-        }
-        .account-session-box {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: var(--card-subtle);
-            border: 1px solid var(--border-color);
-            padding: 12px 14px;
-            border-radius: 8px;
-            margin-bottom: 12px;
-        }
-        
-        /* Persistent Sticky Save Header */
-        .sticky-save-bar {
-            position: sticky;
-            top: 60px;
-            z-index: 40;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: #142952;
-            border: 1px solid var(--border-color);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-            padding: 10px 16px;
-            border-radius: 10px;
-            margin-bottom: 16px;
-        }
-        .unsaved-pill {
-            font-size: 0.75rem;
-            font-weight: 700;
-            color: #f59e0b;
-            background: rgba(245, 158, 11, 0.15);
-            border: 1px solid rgba(245, 158, 11, 0.3);
-            padding: 2px 8px;
-            border-radius: 12px;
-            margin-left: 8px;
-            display: none;
-        }
-        .copy-group {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            margin-top: 6px;
-        }
-        .copy-input {
-            flex: 1;
-            font-family: monospace;
-            font-size: 0.8rem;
-            background: rgba(0, 0, 0, 0.25) !important;
-            color: var(--text-color);
-        }
-        .guide-banner-card {
-            border: 1px dashed var(--primary);
-            background: rgba(var(--primary-rgb, 59, 130, 246), 0.08);
-            padding: 14px;
-            border-radius: 8px;
-            margin-top: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-        }
-        button:disabled, input:disabled, select:disabled {
-            opacity: 0.5;
-            cursor: not-allowed !important;
-        }
-
-        /* Settings Tabs Navigation */
-        .settings-tab-nav {
-            display: flex;
-            gap: 6px;
-            border-bottom: 2px solid var(--border-color);
-            margin-bottom: 18px;
-            overflow-x: auto;
-            scrollbar-width: none;
-        }
-        .settings-tab-nav::-webkit-scrollbar {
-            display: none;
-        }
-        .tab-btn {
-            background: transparent;
-            border: none;
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            font-weight: 700;
-            padding: 10px 16px;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            margin-bottom: -2px;
-            white-space: nowrap;
-            transition: all 0.15s ease;
-        }
-        .tab-btn:hover {
-            color: var(--text-color);
-        }
-        .tab-btn.active {
-            color: var(--primary);
-            border-bottom-color: var(--primary);
-        }
-
-        .tab-pane {
-            display: none;
-        }
-        .tab-pane.active {
-            display: block;
-            animation: fadeIn 0.2s ease;
-        }
-
-        /* Tag Cloud Management */
-        .tag-cloud-editor {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 10px;
-            min-height: 40px;
-            padding: 10px;
-            border-radius: 8px;
-            background: var(--card-subtle);
-            border: 1px solid var(--border-color);
-        }
-        .tag-editor-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: #1e3a8a;
-            color: #93c5fd;
-            border: 1px solid #3b82f6;
-            padding: 4px 10px;
-            border-radius: 16px;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-        .tag-editor-del {
-            cursor: pointer;
-            color: #fca5a5;
-            font-weight: 700;
-            font-size: 0.85rem;
-            line-height: 1;
-        }
-        .tag-editor-del:hover {
-            color: #ef4444;
-        }
-
-        /* Priority List Management */
-        .priority-item-card {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            background: var(--card-subtle);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 10px 14px;
-            margin-bottom: 8px;
-            transition: border-color 0.15s ease;
-        }
-        .priority-item-card:hover {
-            border-color: var(--border-hover, #3b6ec2);
-        }
-        .priority-rank-badge {
-            font-size: 0.75rem;
-            font-weight: 800;
-            color: var(--text-muted);
-            min-width: 20px;
-        }
-        .priority-name-input {
-            flex: 1;
-            padding: 6px 10px;
-            border-radius: 6px;
-            border: 1px solid var(--border-color);
-            background: var(--card-bg);
-            color: var(--text-color);
-            font-size: 0.85rem;
-            font-weight: 600;
-        }
-        .priority-color-picker {
-            width: 38px;
-            height: 34px;
-            padding: 2px;
-            border-radius: 6px;
-            border: 1px solid var(--border-color);
-            background: transparent;
-            cursor: pointer;
-        }
-        .priority-reorder-actions {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        .reorder-btn {
-            background: rgba(0, 0, 0, 0.25);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            border-radius: 4px;
-            width: 26px;
-            height: 16px;
-            padding: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.65rem;
-            cursor: pointer;
-        }
-        .reorder-btn:hover:not(:disabled) {
-            border-color: var(--primary);
-            color: var(--primary);
-        }
-        .reorder-btn:disabled {
-            opacity: 0.25;
-            cursor: not-allowed;
-        }
-
-        /* File Input Customization */
-        input[type="file"] {
-            display: block;
-            width: 100%;
-            padding: 10px;
-            border: 1px dashed var(--primary);
-            border-radius: 8px;
-            background: rgba(59, 130, 246, 0.05);
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            cursor: pointer;
-        }
-        input[type="file"]::file-selector-button {
-            background: var(--primary);
-            color: #fff;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-weight: 600;
-            margin-right: 12px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        input[type="file"]::file-selector-button:hover {
-            background: var(--primary-hover);
-        }
-
-        /* Password Rules Checklist */
-        .password-rules-box {
-            background: rgba(0, 0, 0, 0.25);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 10px 12px;
-            margin: 10px 0 16px 0;
-            font-size: 0.78rem;
-        }
-        .password-rule-item {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            margin-bottom: 4px;
-            color: var(--text-muted);
-            transition: color 0.15s ease;
-        }
-        .password-rule-item.valid {
-            color: var(--success);
-            font-weight: 600;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-4px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .priority-name-input {min-width:0;width:100%}
-        .priority-color-picker {flex:0 0 44px;width:44px;height:44px}
-        .del-priority-btn {flex:0 0 44px;min-width:44px;min-height:44px}
-        @media(max-width:767px) {
-            .priority-item-card {display:grid;grid-template-columns:40px 26px minmax(0,1fr) 44px;gap:10px;padding:12px}
-            .priority-reorder-actions {grid-row:1 / 3;gap:8px}
-            .priority-rank-badge {grid-column:2;grid-row:1}
-            .priority-name-input {grid-column:3 / 5;grid-row:1;height:44px}
-            .priority-color-picker {grid-column:3;grid-row:2;justify-self:start;width:64px}
-            .del-priority-btn {grid-column:4;grid-row:2;justify-self:end}
-            .reorder-btn {width:40px;height:40px;font-size:.85rem}
-        }
-    </style>
+    <!-- Settings page styles live in style.css ("Settings page — UI v2"). -->
+    <link rel="stylesheet" href="style.css?v=ui-v2-pro">
+    <link rel="stylesheet" href="tutorial-spotlight.css?v=tour-v2">
 </head>
-<body>
+<body class="settings-page">
 
 <!-- Sidebar Drawer -->
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
@@ -355,224 +44,197 @@
     <header class="top-navbar">
         <div class="nav-left">
             <button class="icon-btn" id="openDrawerBtn" title="Menu">☰<span class="wide-label">Menu</span></button>
-            <h2 style="margin: 0; font-size: 1.25rem;">Settings</h2>
-            <span id="unsavedIndicator" class="unsaved-pill">Unsaved Changes</span>
+            <h2 class="settings-title">Settings</h2>
+            <span class="tier-chip" id="tierChip" title="Taskitator Pro"><span class="d">◆</span> PRO</span>
+            <span id="unsavedIndicator" class="unsaved-pill" role="status">Unsaved</span>
         </div>
         <div class="nav-right">
             <button type="button" class="icon-btn" id="openCopilotNavBtn" title="Focus Copilot" aria-label="Open Focus Copilot"><span aria-hidden="true">💬</span><span class="nav-copilot-label">Copilot</span></button>
         </div>
     </header>
 
-    <!-- Master Authenticated Container (Default: visible to ensure settings always render) -->
-    <div id="authenticatedSettingsContainer">
-        
-        <!-- Persistent Sticky Save Header (Visible Across All Tabs) -->
-        <div class="sticky-save-bar">
-            <div style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.3;">
-                <span>Click <strong>Save All Settings</strong> to sync modifications across devices.</span>
-            </div>
-            <button type="button" class="icon-btn" id="saveAllSettingsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 8px 16px; font-size: 0.85rem; white-space: nowrap;">
-                💾 Save All Settings
-            </button>
-        </div>
+    <div id="authenticatedSettingsContainer" class="settings-layout">
 
-        <!-- 4-Tab Navigation Header -->
-        <nav class="settings-tab-nav">
-            <button type="button" class="tab-btn" data-tab="tab-account">👤 Account</button>
-            <button type="button" class="tab-btn" data-tab="tab-system">🎛️ System</button>
-            <button type="button" class="tab-btn active" data-tab="tab-tasks">🏷️ Tags & Prio</button>
-            <button type="button" class="tab-btn" data-tab="tab-data">💾 Data & Backup</button>
+        <!-- Section navigation: horizontal strip on phones, sidebar on desktop -->
+        <nav class="settings-tabs" id="settingsTabs" role="tablist" aria-label="Settings sections">
+            <button type="button" class="settings-tab" role="tab" id="tabbtn-general" data-tab="tab-general" aria-controls="tab-general" aria-selected="false">
+                <span class="settings-tab-icon" aria-hidden="true">🎛️</span>
+                <span class="settings-tab-text"><span class="settings-tab-label">General</span><span class="settings-tab-hint">Copilot, sounds, sync</span></span>
+            </button>
+            <button type="button" class="settings-tab" role="tab" id="tabbtn-tasks" data-tab="tab-tasks" aria-controls="tab-tasks" aria-selected="false">
+                <span class="settings-tab-icon" aria-hidden="true">🏷️</span>
+                <span class="settings-tab-text"><span class="settings-tab-label">Tasks</span><span class="settings-tab-hint">Tags, priorities, checks</span></span>
+            </button>
+            <button type="button" class="settings-tab" role="tab" id="tabbtn-schedule" data-tab="tab-schedule" aria-controls="tab-schedule" aria-selected="false">
+                <span class="settings-tab-icon" aria-hidden="true">🗓️</span>
+                <span class="settings-tab-text"><span class="settings-tab-label">Day &amp; week</span><span class="settings-tab-hint">Day start, weekend, unlocks</span></span>
+            </button>
+            <button type="button" class="settings-tab" role="tab" id="tabbtn-ai" data-tab="tab-ai" aria-controls="tab-ai" aria-selected="false">
+                <span class="settings-tab-icon" aria-hidden="true">🤖</span>
+                <span class="settings-tab-text"><span class="settings-tab-label">AI &amp; Pro</span><span class="settings-tab-hint">Provider, keys, credits</span></span>
+            </button>
+            <button type="button" class="settings-tab" role="tab" id="tabbtn-phone" data-tab="tab-phone" aria-controls="tab-phone" aria-selected="false">
+                <span class="settings-tab-icon" aria-hidden="true">📲</span>
+                <span class="settings-tab-text"><span class="settings-tab-label">Phone lock</span><span class="settings-tab-hint">MacroDroid connection</span></span>
+            </button>
+            <button type="button" class="settings-tab" role="tab" id="tabbtn-account" data-tab="tab-account" aria-controls="tab-account" aria-selected="false">
+                <span class="settings-tab-icon" aria-hidden="true">👤</span>
+                <span class="settings-tab-text"><span class="settings-tab-label">Account &amp; data</span><span class="settings-tab-hint">Login, backups, deletion</span></span>
+            </button>
+            <span class="settings-tab-indicator" aria-hidden="true"></span>
         </nav>
 
-        <!-- ========================================================================= -->
-        <!-- TAB 1: Account & Setup                                                   -->
-        <!-- ========================================================================= -->
-        <div class="tab-pane" id="tab-account">
-            <!-- Account Session & Status -->
+        <div class="settings-content">
+
+        <!-- ================================================================= -->
+        <!-- General                                                           -->
+        <!-- ================================================================= -->
+        <section class="settings-pane" id="tab-general" role="tabpanel" aria-labelledby="tabbtn-general" tabindex="-1">
+            <header class="settings-pane-head">
+                <h3>General</h3>
+                <p>How Taskitator looks, sounds and syncs.</p>
+            </header>
+
             <div class="settings-card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <h3 style="margin: 0; color: var(--primary);">👤 Cloud Account</h3>
+                <h4 class="card-title">Copilot</h4>
+                <div class="form-group">
+                    <label for="copilotNameInput">Name</label>
+                    <input type="text" id="copilotNameInput" maxlength="20" placeholder="Focus Copilot" autocomplete="off" aria-describedby="copilotNameHint">
+                    <p class="setting-hint" id="copilotNameHint">What your assistant is called around the app. Up to 20 characters.</p>
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h4 class="card-title">Sounds, vibration &amp; notes</h4>
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <label for="soundEffectsToggle" class="setting-label">Sound effects</label>
+                        <p class="setting-hint" id="soundEffectsHint">Play a sound when you finish a task or your proof is approved.</p>
+                    </div>
+                    <input type="checkbox" id="soundEffectsToggle" class="switch" role="switch" aria-describedby="soundEffectsHint" checked>
+                </div>
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <label for="hapticsToggle" class="setting-label">Vibration</label>
+                        <p class="setting-hint" id="hapticsHint">Short vibrations when you tap buttons or finish tasks. Android phones only.</p>
+                    </div>
+                    <input type="checkbox" id="hapticsToggle" class="switch" role="switch" aria-describedby="hapticsHint" checked>
+                </div>
+                <div class="setting-row setting-row-stack">
+                    <div class="setting-text">
+                        <label for="dumpDurationSlider" class="setting-label">Distraction note timer <span id="dumpDurationReadout" class="value-chip">90s</span></label>
+                        <p class="setting-hint">How long the distraction note stays open before it saves and closes itself.</p>
+                    </div>
+                    <input type="range" id="dumpDurationSlider" class="range" min="30" max="300" step="15" value="90">
+                    <div class="range-scale" aria-hidden="true"><span>30s</span><span>5m</span></div>
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <div class="card-title-row">
+                    <h4 class="card-title">Sync</h4>
                     <span id="syncWordBadge" class="sync-badge-word synced">Synced</span>
                 </div>
-
-                <div class="account-session-box">
-                    <div>
-                        <div style="font-size: 0.8rem; color: var(--text-muted);">Signed in as:</div>
-                        <strong id="activeUsernameDisplay" style="color: var(--primary); font-size: 0.95rem;">@local_user</strong>
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <label for="autoPageRefreshToggle" class="setting-label">Refresh after sync</label>
+                        <p class="setting-hint" id="autoRefreshHint">Reload the page when changes arrive from another device. Turning this off doesn't stop syncing.</p>
                     </div>
-                    <div class="account-session-actions">
-                        <button type="button" class="icon-btn" id="openChangePasswordModalBtn" style="color: var(--primary); border-color: var(--primary);">Change Password</button>
-                        <button type="button" class="icon-btn" id="openLogoutModalBtn" style="color: var(--danger); border-color: #881337;">Log Out</button>
+                    <input type="checkbox" id="autoPageRefreshToggle" class="switch" role="switch" aria-describedby="autoRefreshHint" checked>
+                </div>
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <span class="setting-label">Sync now</span>
+                        <p class="setting-hint" id="settingsSyncFeedback" role="status">Push and pull changes right away instead of waiting.</p>
                     </div>
+                    <button type="button" class="icon-btn btn-md" id="settingsSyncNowBtn">↻ Sync now</button>
                 </div>
             </div>
-
-            <!-- Taskitator Pro Section -->
-            <div id="pro-settings-container"></div>
-
-            <!-- Protected provider keys -->
             <div class="settings-card">
-                <h3 style="margin-top: 0; color: var(--primary);">🤖 AI provider &amp; saved keys</h3>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                    Choose Gemini or Claude for Copilot, criteria review, evidence audits and note extraction. Each provider keeps its own encrypted key when you switch.
-                </p>
-                <div class="form-group">
-                    <label for="aiProviderSelect">View and manage provider</label>
-                    <div style="display:flex;gap:10px;align-items:center">
-                        <select id="aiProviderSelect" style="flex:1;min-width:0"><option value="gemini">Gemini</option><option value="claude">Claude</option></select>
-                        <button type="button" class="icon-btn" id="vaultModelInfoBtn" aria-expanded="false" aria-controls="vaultModelInfo" aria-label="Show models and supported files">ⓘ</button>
-                    </div>
-                    <p id="vaultModelInfo" hidden style="font-size:.85rem;color:var(--text-muted)"></p>
+                <div class="card-title-row">
+                    <h4 class="card-title">Help &amp; tutorials</h4>
                 </div>
-                <p id="aiActiveProvider" style="font-size:.85rem;font-weight:700">Currently used for AI: Gemini</p>
-
-                <p id="vaultStatus" role="status">Checking secure key storage…</p>
-                <p style="font-size:.85rem;color:var(--text-muted)">Keys are encrypted on the server. Show, copy, replace and delete require your password or linked Google account. AI requests pass through Taskitator's server to the active provider.</p>
-                <div class="vault-actions">
-                    <button type="button" class="icon-btn" id="vaultSaveBtn">Save / replace key</button>
-                    <button type="button" class="icon-btn" id="vaultShowBtn">Show key</button>
-                    <button type="button" class="icon-btn" id="vaultCopyBtn">Copy key</button>
-                    <button type="button" class="icon-btn" id="vaultDeleteBtn">Delete key</button>
-                    <button type="button" class="icon-btn" id="vaultTestBtn">Test connection</button>
-                    <button type="button" class="icon-btn" id="vaultRefreshBtn">Refresh status</button>
-                    <button type="button" class="icon-btn" id="vaultUseProviderBtn">Gemini is active</button>
-                </div>
-                <div id="vaultRevealArea" hidden style="margin-top:12px">
-                    <label for="vaultRevealedKey">Visible for 30 seconds</label>
-                    <input id="vaultRevealedKey" type="text" readonly autocomplete="off" spellcheck="false">
-                    <div class="vault-actions"><button type="button" class="icon-btn" id="vaultCopyDisplayedBtn">Copy displayed key</button><button type="button" class="icon-btn" id="vaultHideBtn">Hide now</button></div>
-                </div>
-                <div id="vaultRecovered" aria-label="Recovered API keys"></div>
-                <p id="vaultFeedback" role="status" aria-live="polite" style="font-size:.85rem;color:var(--text-muted)">Connection testing generates zero tokens. It checks key/model access, not generation quota or billing.</p>
+                <p class="setting-hint" style="margin-bottom:10px">Short guided tours of the app. Replay any of them whenever you like.</p>
+                <div id="tutorialHub" class="tour-list" role="list"></div>
             </div>
+        </section>
 
-            <!-- MacroDroid Device Lockdown Integration Bridge -->
-            <div class="settings-card" id="macrodroidCard">
-                <h3 style="margin-top: 0; color: var(--primary);">📲 MacroDroid Lock Integration</h3>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                    Copy these exact credentials directly into MacroDroid's HTTP Request action to automate your device lock.
-                </p>
-                
-                <div class="form-group">
-                    <label for="macroEndpointUrl">1. Status URL (HTTP GET)</label>
-                    <div class="copy-group">
-                        <input type="text" id="macroEndpointUrl" class="copy-input" readonly value="https://taskitator-sync.spacexmzez.workers.dev/?action=status&format=text">
-                        <button type="button" class="icon-btn" id="copyUrlBtn">Copy</button>
-                    </div>
-                </div>
+        <!-- ================================================================= -->
+        <!-- Tasks                                                             -->
+        <!-- ================================================================= -->
+        <section class="settings-pane" id="tab-tasks" role="tabpanel" aria-labelledby="tabbtn-tasks" tabindex="-1">
+            <header class="settings-pane-head">
+                <h3>Tasks</h3>
+                <p>The tags and priority levels you pick from when creating a task.</p>
+            </header>
 
-                <div class="form-group" style="margin-top: 12px;">
-                    <label for="macroBearerToken">2. Authorization Header Token</label>
-                    <div class="copy-group">
-                        <input type="password" id="macroBearerToken" class="copy-input" readonly>
-                        <button type="button" class="icon-btn" id="toggleTokenVisibilityBtn">Show</button>
-                        <button type="button" class="icon-btn" id="copyTokenBtn">Copy</button>
-                    </div>
-                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px;">
-                        MacroDroid Header format: <code>Authorization</code> &rarr; <code>Bearer &lt;token&gt;</code>
-                    </small>
-                </div>
-
-                <p id="phoneAccessStatus" style="font-size:0.82rem;color:var(--text-muted)"></p>
-                <button type="button" class="icon-btn" id="generatePhoneTokenBtn">Generate / replace phone token</button>
-                <button type="button" class="icon-btn" id="revokePhoneTokenBtn">Revoke phone access</button>
-
-                <!-- Setup Guide Link -->
-                <div class="guide-banner-card">
-                    <div>
-                        <strong style="display: block; font-size: 0.9rem; color: var(--text-color);">Want to block your phone?</strong>
-                        <span style="font-size: 0.78rem; color: var(--text-muted);">Step-by-step setup guide for the MacroDroid lock and bridge.</span>
-                    </div>
-                    <a href="components.html?view=blocker-guide" class="icon-btn link-guarded" style="text-decoration: none; background: var(--primary); color: #fff; border: none; font-weight: 600; white-space: nowrap; padding: 8px 14px;">
-                        Open Setup Guide &rarr;
-                    </a>
-                </div>
-            </div>
-        </div>
-
-        <!-- ========================================================================= -->
-        <!-- TAB 2: System Configuration                                              -->
-        <!-- ========================================================================= -->
-        <div class="tab-pane" id="tab-system">
-            <div class="settings-card" id="systemLegalCard">
-                <h3 style="margin-top:0;color:var(--primary)">Privacy &amp; terms</h3>
-                <p style="font-size:.85rem;color:var(--text-muted)">How Taskitator handles your data, AI keys and account.</p>
-                <div class="vault-actions">
-                    <a class="icon-btn" href="components.html?view=legal" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
-                    <a class="icon-btn" href="components.html?view=legal" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a>
-                    <a class="icon-btn" href="components.html?view=legal#deletion" target="_blank" rel="noopener noreferrer">Account &amp; data deletion</a>
-                </div>
-            </div>
-            <!-- General Preferences & Persona -->
             <div class="settings-card">
-                <h3 style="margin-top: 0; color: var(--primary);">🎛️ General & Persona</h3>
-                
-                <div class="form-group">
-                    <label for="copilotNameInput">Copilot Name (Max 20 characters)</label>
-                    <input type="text" id="copilotNameInput" maxlength="20" placeholder="Focus Copilot" autocomplete="off">
+                <h4 class="card-title">Tags</h4>
+                <p class="card-desc">Add tags to tasks, then filter your lists by them.</p>
+                <div class="inline-field">
+                    <input type="text" id="newTagInput" class="text-input" placeholder="New tag, e.g. revision" aria-label="New tag name" maxlength="30" autocomplete="off">
+                    <button type="button" class="icon-btn btn-md btn-solid-primary btn-primary" id="addNewTagBtn">+ Add</button>
                 </div>
-
-                <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
-                    <div style="flex: 1;">
-                        <label for="soundEffectsToggle" style="margin-bottom: 2px; font-weight: 700;">Sound Effects</label>
-                        <small style="color: var(--text-muted); font-size: 0.75rem; display: block; line-height: 1.4;">
-                            Play sounds when tasks are completed or proof is approved.
-                        </small>
-                    </div>
-                    <input type="checkbox" id="soundEffectsToggle" style="width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer;" checked>
-                </div>
-
-                <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
-                    <div style="flex: 1;">
-                        <label for="autoPageRefreshToggle" style="margin-bottom: 2px; font-weight: 700;">Auto Page Refresh</label>
-                        <small style="color: var(--text-muted); font-size: 0.75rem; display: block; line-height: 1.4;">Reload the page after a successful automatic sync. Turning this off keeps cloud syncing enabled.</small>
-                    </div>
-                    <input type="checkbox" id="autoPageRefreshToggle" style="width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer;" checked>
-                </div>
-                <div class="form-group" style="margin-top: 14px;">
-                    <button type="button" class="icon-btn" id="settingsSyncNowBtn">Sync Now</button>
-                    <span id="settingsSyncFeedback" role="status" style="font-size: 0.8rem; margin-left: 8px;"></span>
-                </div>
-
-                <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
-                    <div style="flex: 1;">
-                        <label for="strictCriteriaToggle" style="margin-bottom: 2px; font-weight: 700;">Strict Criteria Validation</label>
-                        <small style="color: var(--text-muted); font-size: 0.75rem; display: block; line-height: 1.4;">
-                            Check criteria before locking a task. A score of at least 7/10 is required when enabled.
-                        </small>
-                    </div>
-                    <input type="checkbox" id="strictCriteriaToggle" style="width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer;" checked>
-                </div>
-
-                <!-- Distraction Dump Settings -->
-                <div class="form-group" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
-                    <label for="dumpDurationSlider" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-weight: 700;">
-                        Distraction Dump Timer
-                        <span id="dumpDurationReadout" style="color: var(--primary); font-size: 0.9rem;">90s</span>
-                    </label>
-                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-bottom: 12px; line-height: 1.4;">
-                        How long the distraction note stays open before it saves and closes.
-                    </small>
-                    <input type="range" id="dumpDurationSlider" min="30" max="300" step="15" value="90" style="width: 100%; accent-color: var(--primary); cursor: pointer;">
-                </div>
+                <div class="tag-cloud-editor" id="tagsContainer" aria-live="polite"></div>
             </div>
 
-            <!-- Weekend & Emergency Cycle Engine -->
             <div class="settings-card">
-                <h3 style="margin-top: 0; color: var(--primary);">🚨 Emergency Bypass Quota</h3>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                    Unlock protected tasks for 15 minutes, up to four times a week. Uses reset at midnight after your configured weekend.
-                </p>
-                <div class="form-group">
-                    <label>Uses remaining this week:</label>
-                    <div class="quota-indicator">
-                        <span>🚨</span>
-                        <span id="emergencyTokensDisplay">4 / 4 Uses Remaining</span>
-                    </div>
+                <div class="card-title-row">
+                    <h4 class="card-title">Priorities</h4>
+                    <button type="button" class="icon-btn btn-md" id="addNewPriorityBtn">+ Add level</button>
                 </div>
-                <div class="form-group" style="display: flex; gap: 12px; margin-top: 14px;">
-                    <div style="flex: 1;">
-                        <label for="weekendStartSelect">Weekend Start</label>
+                <p class="card-desc">Listed from highest (#1) to lowest. Use the arrows to reorder.</p>
+                <div id="prioritiesListContainer"></div>
+            </div>
+
+            <div class="settings-card">
+                <h4 class="card-title">Task checks</h4>
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <label for="strictCriteriaToggle" class="setting-label">Check criteria before locking</label>
+                        <p class="setting-hint" id="strictCriteriaHint">AI rates how clear a task's completion criteria are before it can be locked. It needs 7/10 or higher.</p>
+                    </div>
+                    <input type="checkbox" id="strictCriteriaToggle" class="switch" role="switch" aria-describedby="strictCriteriaHint" checked>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================================================================= -->
+        <!-- Day & week                                                        -->
+        <!-- ================================================================= -->
+        <section class="settings-pane" id="tab-schedule" role="tabpanel" aria-labelledby="tabbtn-schedule" tabindex="-1">
+            <header class="settings-pane-head">
+                <h3>Day &amp; week</h3>
+                <p>When your day rolls over and when your week resets.</p>
+            </header>
+
+            <div class="settings-card">
+                <h4 class="card-title">When your day starts</h4>
+                <div class="form-group">
+                    <label for="dayStartHourSelect">New day begins at</label>
+                    <select id="dayStartHourSelect" aria-describedby="dayStartHint">
+                        <option value="0">00:00 (midnight)</option>
+                        <option value="1">01:00</option>
+                        <option value="2">02:00</option>
+                        <option value="3">03:00 (good for night owls)</option>
+                        <option value="4">04:00</option>
+                    </select>
+                    <p class="setting-hint" id="dayStartHint">Anything you do before this time counts toward the previous day. This applies to tasks and breaks.</p>
+                </div>
+                <div class="info-box" id="breakCycleNotice"></div>
+                <div id="breakPlanningStatusBadge" class="status-slot" aria-live="polite"></div>
+            </div>
+
+            <div class="settings-card">
+                <h4 class="card-title">Weekend &amp; emergency unlocks</h4>
+                <p class="card-desc">Emergency Bypass unlocks protected tasks for 15 minutes. You get 4 a week, and they refill after your weekend.</p>
+                <div class="quota-indicator">
+                    <span class="quota-pips" id="emergencyPips" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                    <span id="emergencyTokensDisplay">4 of 4 left this week</span>
+                </div>
+                <div class="field-pair">
+                    <div class="form-group">
+                        <label for="weekendStartSelect">Weekend starts</label>
                         <select id="weekendStartSelect">
                             <option value="5">Friday</option>
                             <option value="6">Saturday</option>
@@ -580,8 +242,8 @@
                             <option value="1">Monday</option>
                         </select>
                     </div>
-                    <div style="flex: 1;">
-                        <label for="weekendEndSelect">Weekend End</label>
+                    <div class="form-group">
+                        <label for="weekendEndSelect">Weekend ends</label>
                         <select id="weekendEndSelect">
                             <option value="6">Saturday</option>
                             <option value="0">Sunday</option>
@@ -590,192 +252,301 @@
                         </select>
                     </div>
                 </div>
-                <div id="workweekCalcNotice" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;"></div>
+                <p class="setting-hint" id="workweekCalcNotice"></p>
+            </div>
+        </section>
+
+        <!-- ================================================================= -->
+        <!-- AI & Pro                                                          -->
+        <!-- ================================================================= -->
+        <section class="settings-pane" id="tab-ai" role="tabpanel" aria-labelledby="tabbtn-ai" tabindex="-1">
+            <header class="settings-pane-head">
+                <h3>AI &amp; Pro</h3>
+                <p>Choose which AI Taskitator uses and manage your keys. Changes here save immediately.</p>
+            </header>
+
+            <!-- Taskitator Pro (rendered by pro.js) -->
+            <div id="pro-settings-container"></div>
+
+            <div class="settings-card">
+                <h4 class="card-title">AI provider</h4>
+                <p class="card-desc">Powers Copilot, criteria checks, proof reviews and note extraction. Gemini and Claude each keep their own key, so switching never erases one.</p>
+                <div class="form-group">
+                    <label for="aiProviderSelect">Provider</label>
+                    <div class="inline-field">
+                        <select id="aiProviderSelect"><option value="gemini">Gemini</option><option value="claude">Claude</option></select>
+                        <button type="button" class="icon-btn btn-md btn-square" id="vaultModelInfoBtn" aria-expanded="false" aria-controls="vaultModelInfo" aria-label="Show models and supported files" title="Models and supported files">ⓘ</button>
+                    </div>
+                    <p id="vaultModelInfo" class="info-box" hidden></p>
+                </div>
+
+                <div class="key-status">
+                    <p id="aiActiveProvider" class="key-status-active">Currently used for AI: Gemini</p>
+                    <p id="vaultStatus" role="status" class="key-status-line">Checking your saved key…</p>
+                </div>
+
+                <div class="vault-actions">
+                    <button type="button" class="icon-btn btn-md btn-solid-primary btn-primary" id="vaultSaveBtn">Add or replace key</button>
+                    <button type="button" class="icon-btn btn-md" id="vaultUseProviderBtn">Gemini is active</button>
+                    <button type="button" class="icon-btn btn-md" id="vaultTestBtn">Test key</button>
+                </div>
+                <div class="vault-actions vault-actions-secondary">
+                    <button type="button" class="icon-btn btn-md" id="vaultShowBtn">Show</button>
+                    <button type="button" class="icon-btn btn-md" id="vaultCopyBtn">Copy</button>
+                    <button type="button" class="icon-btn btn-md" id="vaultRefreshBtn">Refresh</button>
+                    <button type="button" class="icon-btn btn-md icon-btn-danger" id="vaultDeleteBtn">Delete key</button>
+                </div>
+
+                <div id="vaultRevealArea" class="reveal-box" hidden>
+                    <label for="vaultRevealedKey">Your key (hides after 30 seconds)</label>
+                    <input id="vaultRevealedKey" type="text" readonly autocomplete="off" spellcheck="false">
+                    <div class="vault-actions"><button type="button" class="icon-btn btn-md" id="vaultCopyDisplayedBtn">Copy</button><button type="button" class="icon-btn btn-md" id="vaultHideBtn">Hide now</button></div>
+                </div>
+                <div id="vaultRecovered" aria-label="Recovered API keys"></div>
+                <p id="vaultFeedback" role="status" aria-live="polite" class="setting-hint">“Test key” only checks that the key works. It doesn't use any of your quota.</p>
+
+                <details class="fine-print">
+                    <summary>How your key is stored</summary>
+                    <p>Keys are encrypted on Taskitator's server. Showing, copying, replacing or deleting a key asks for your password (or Google sign-in) first. AI requests go through Taskitator's server to the provider you picked.</p>
+                </details>
+            </div>
+        </section>
+
+        <!-- ================================================================= -->
+        <!-- Phone lock                                                        -->
+        <!-- ================================================================= -->
+        <section class="settings-pane" id="tab-phone" role="tabpanel" aria-labelledby="tabbtn-phone" tabindex="-1">
+            <header class="settings-pane-head">
+                <h3>Phone lock</h3>
+                <p>Let MacroDroid lock your phone until today's tasks are done. Changes here save immediately.</p>
+            </header>
+
+            <div class="guide-banner-card">
+                <div>
+                    <strong>First time setting this up?</strong>
+                    <span>The setup guide walks you through MacroDroid step by step.</span>
+                </div>
+                <a href="components.html?view=blocker-guide" class="icon-btn btn-md btn-solid-primary btn-primary link-guarded">Open guide →</a>
             </div>
 
-            <!-- Day Start & Break Planning Cycle -->
-            <div class="settings-card">
-                <h3 style="margin-top: 0; color: var(--primary);">⏸️ Day Start & Break Planning Cycle</h3>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                    Choose when a new day starts.
-                </p>
+            <div class="settings-card" id="macrodroidCard">
+                <h4 class="card-title">Connection</h4>
+                <p id="phoneAccessStatus" class="phone-status unknown">Checking your phone connection…</p>
+
+                <p class="card-desc">In MacroDroid, add an <strong>HTTP Request</strong> action and paste in these two values.</p>
 
                 <div class="form-group">
-                    <label for="dayStartHourSelect">Day Start Time (Daily Rollover)</label>
-                    <select id="dayStartHourSelect">
-                        <option value="0">00:00 (Standard Midnight)</option>
-                        <option value="1">01:00 AM</option>
-                        <option value="2">02:00 AM</option>
-                        <option value="3">03:00 AM (Recommended for Night Owls)</option>
-                        <option value="4">04:00 AM</option>
-                    </select>
-                    <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; line-height: 1.4;">
-                        Tasks and daily breaks use this start time. With 03:00 selected, activity before 03:00 counts toward the previous day.
-                    </small>
+                    <label for="macroEndpointUrl"><span class="step-num">1</span> Status URL (GET request)</label>
+                    <div class="copy-group">
+                        <input type="text" id="macroEndpointUrl" class="copy-input" readonly value="https://taskitator-sync.spacexmzez.workers.dev/?action=status&format=text">
+                        <button type="button" class="icon-btn btn-md" id="copyUrlBtn">Copy</button>
+                    </div>
                 </div>
 
-                <div id="breakCycleNotice" style="margin-top: 10px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;"></div>
-                <div id="breakPlanningStatusBadge" style="margin-top: 8px;"></div>
+                <div class="form-group">
+                    <label for="macroBearerToken"><span class="step-num">2</span> Phone token (Authorization header)</label>
+                    <div class="copy-group">
+                        <input type="password" id="macroBearerToken" class="copy-input" readonly>
+                        <button type="button" class="icon-btn btn-md" id="toggleTokenVisibilityBtn">Show</button>
+                        <button type="button" class="icon-btn btn-md" id="copyTokenBtn">Copy</button>
+                    </div>
+                    <p class="setting-hint">Add a header named <code>Authorization</code> with the value <code>Bearer &lt;your token&gt;</code>.</p>
+                </div>
+
+                <div class="vault-actions">
+                    <button type="button" class="icon-btn btn-md btn-solid-primary btn-primary" id="generatePhoneTokenBtn">Create new token</button>
+                    <button type="button" class="icon-btn btn-md icon-btn-danger" id="revokePhoneTokenBtn">Disconnect phone</button>
+                </div>
+                <p class="setting-hint">You can only change these when today's tasks are done, during a break, or while Emergency Bypass is on.</p>
             </div>
+        </section>
+
+        <!-- ================================================================= -->
+        <!-- Account & data                                                    -->
+        <!-- ================================================================= -->
+        <section class="settings-pane" id="tab-account" role="tabpanel" aria-labelledby="tabbtn-account" tabindex="-1">
+            <header class="settings-pane-head">
+                <h3>Account &amp; data</h3>
+                <p>Your login, backups, and ways to remove data.</p>
+            </header>
+
+            <div class="settings-card">
+                <h4 class="card-title">Account</h4>
+                <div class="account-session-box">
+                    <div class="account-identity">
+                        <span class="account-avatar" aria-hidden="true">👤</span>
+                        <div>
+                            <div class="setting-hint">Signed in as</div>
+                            <strong id="activeUsernameDisplay">@local_user</strong>
+                        </div>
+                    </div>
+                    <div class="account-session-actions">
+                        <button type="button" class="icon-btn btn-md" id="openChangePasswordModalBtn">Manage account &amp; password</button>
+                        <button type="button" class="icon-btn btn-md icon-btn-danger" id="openLogoutModalBtn">Log out</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h4 class="card-title">Back up &amp; restore</h4>
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <span class="setting-label">Download a backup</span>
+                        <p class="setting-hint">Saves your tasks, projects, settings, breaks, saved criteria and review history from this browser as one .json file.</p>
+                    </div>
+                    <button type="button" class="icon-btn btn-md btn-solid-primary btn-primary" id="exportDataBtn">⬇ Download</button>
+                </div>
+
+                <div class="setting-row setting-row-stack">
+                    <div class="setting-text">
+                        <label for="importFileInput" class="setting-label">Restore from a backup</label>
+                        <p class="setting-hint">Pick a .json file you downloaded from Taskitator.</p>
+                    </div>
+                    <input type="file" id="importFileInput" accept=".json,application/json">
+                    <div class="import-choices">
+                        <button type="button" class="import-choice" id="importMergeBtn" disabled>
+                            <strong>Merge</strong>
+                            <span>Add the backup's tasks to what you have. Nothing gets deleted.</span>
+                        </button>
+                        <button type="button" class="import-choice is-warning" id="importReplaceBtn" disabled>
+                            <strong>Replace everything</strong>
+                            <span>Wipe this browser's data and use the backup instead.</span>
+                        </button>
+                    </div>
+                    <div id="importFeedback" class="notice-banner" role="status"></div>
+                </div>
+            </div>
+
+            <div class="settings-card" id="systemLegalCard">
+                <h4 class="card-title">Privacy &amp; terms</h4>
+                <p class="card-desc">How Taskitator handles your data, AI keys and account.</p>
+                <div class="vault-actions">
+                    <a class="icon-btn btn-md" href="components.html?view=legal" target="_blank" rel="noopener noreferrer">Privacy policy ↗</a>
+                    <a class="icon-btn btn-md" href="components.html?view=legal" target="_blank" rel="noopener noreferrer">Terms ↗</a>
+                    <a class="icon-btn btn-md" href="components.html?view=legal#deletion" target="_blank" rel="noopener noreferrer">Data deletion ↗</a>
+                </div>
+            </div>
+
+            <div class="settings-card danger-zone">
+                <h4 class="card-title">⚠️ Danger zone</h4>
+                <p class="card-desc">Download a backup before using any of these.</p>
+
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <span class="setting-label">Clear completed &amp; trash</span>
+                        <p class="setting-hint">Permanently deletes finished and trashed tasks, plus their reference files. Active tasks stay.</p>
+                    </div>
+                    <button type="button" class="icon-btn btn-md icon-btn-danger" id="clearCompletedTrashBtn">Clear</button>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <span class="setting-label">Clear this browser</span>
+                        <p class="setting-hint">Removes Taskitator data from this browser only and signs you out. Your cloud account and synced data stay.</p>
+                    </div>
+                    <button type="button" class="icon-btn btn-md icon-btn-danger" id="factoryResetBtn">Clear browser</button>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <span class="setting-label">Delete account</span>
+                        <p class="setting-hint">Permanently deletes your account, cloud data, saved AI keys and login. This can't be undone.</p>
+                        <p class="setting-hint">Turn off Taskitator blocking macros on all your devices first. For 7 days afterwards, old phone tokens report your phone as <code>unlocked</code>, then stop working.</p>
+                    </div>
+                    <button type="button" class="icon-btn btn-md btn-solid-danger btn-danger" id="openAccountDeletionBtn">Delete account</button>
+                </div>
+            </div>
+        </section>
+
+        </div><!-- /.settings-content -->
+    </div>
+
+    <!-- Unsaved-changes bar: slides up whenever something needs saving -->
+    <div class="settings-savebar" id="settingsSaveBar" role="region" aria-label="Unsaved changes" aria-hidden="true" inert>
+        <span class="settings-savebar-text"><span class="savebar-dot" aria-hidden="true"></span>You have unsaved changes</span>
+        <div class="settings-savebar-actions">
+            <button type="button" class="icon-btn btn-md" id="discardSettingsBtn">Discard</button>
+            <button type="button" class="icon-btn btn-md btn-solid-primary btn-primary" id="saveAllSettingsBtn">Save changes</button>
         </div>
-
-        <!-- ========================================================================= -->
-        <!-- TAB 3: Task Settings (Tags & Priorities)                                  -->
-        <!-- ========================================================================= -->
-        <div class="tab-pane active" id="tab-tasks">
-            <!-- Custom Tags Registry Card -->
-            <div class="settings-card">
-                <h3 style="margin-top: 0; color: var(--primary);">🏷️ Custom Tags Registry</h3>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
-                    Manage global tags available in task creation modals and filter headers.
-                </p>
-                
-                <div class="copy-group">
-                    <input type="text" id="newTagInput" placeholder="Add new tag (e.g. revision)..." style="flex: 1; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);">
-                    <button type="button" class="icon-btn" id="addNewTagBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 8px 14px;">+ Add Tag</button>
-                </div>
-
-                <div class="tag-cloud-editor" id="tagsContainer"></div>
-            </div>
-
-            <!-- Custom Priorities Registry Card -->
-            <div class="settings-card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <h3 style="margin: 0; color: var(--primary);">🎯 Priority Hierarchy</h3>
-                    <button type="button" class="icon-btn" id="addNewPriorityBtn" style="padding: 4px 10px; font-size: 0.8rem; background: var(--card-subtle);">+ Add Level</button>
-                </div>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
-                    Rank priorities from top (Rank 1 / Highest) to bottom. Use the arrow buttons to shift precedence.
-                </p>
-
-                <div id="prioritiesListContainer"></div>
-            </div>
-        </div>
-
-        <!-- ========================================================================= -->
-        <!-- TAB 4: Data Backup, Import & Export Engine                               -->
-        <!-- ========================================================================= -->
-        <div class="tab-pane" id="tab-data">
-            
-            <!-- Export Card -->
-            <div class="settings-card">
-                <h3 style="margin-top: 0; color: var(--primary);">📤 Offline Snapshot Backup</h3>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
-                    Download a full JSON backup file of your local data, including tasks, projects, settings, breaks, saved criteria, and audit history. Keep this file as an offline restore point.
-                </p>
-                <button type="button" class="icon-btn" id="exportDataBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 8px 18px;">
-                    Download Backup file
-                </button>
-            </div>
-
-            <!-- Import Card -->
-            <div class="settings-card">
-                <h3 style="margin-top: 0; color: var(--primary);">📥 Restore / Merge Data</h3>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
-                    Select a previously exported `.json` file to restore.
-                </p>
-                <input type="file" id="importFileInput" accept=".json">
-                
-                <div style="display: flex; gap: 10px; margin-top: 14px;">
-                    <button type="button" class="icon-btn" id="importMergeBtn" style="border-color: var(--primary); color: var(--primary);" title="Combines file data with active tasks, keeping the newest changes.">
-                        Smart Merge (doesn't wipe data)
-                    </button>
-                    <button type="button" class="icon-btn" id="importReplaceBtn" style="border-color: #f59e0b; color: #f59e0b;" title="Wipes current local data and replaces it entirely with the backup file.">
-                        Replace all data
-                    </button>
-                </div>
-                <div id="importFeedback" class="notice-banner"></div>
-            </div>
-
-            <!-- Danger Zone Wipes -->
-            <div class="settings-card" style="border: 1px solid #7f1d1d; background: rgba(127, 29, 29, 0.1);">
-                <h3 style="margin-top: 0; color: var(--danger);">⚠️ Danger Zone</h3>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
-                    Export a backup before removing data. Clearing this browser is different from deleting your cloud account.
-                </p>
-                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button type="button" class="icon-btn" id="clearCompletedTrashBtn" style="border-color: #991b1b; color: #f87171;">
-                        Wipe Completed & Trash
-                    </button>
-                    <button type="button" class="icon-btn" id="factoryResetBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 700;">
-                        Clear this browser's data
-                    </button>
-                </div>
-            </div>
-
-            <div class="settings-card" style="border:1px solid #991b1b">
-                <h3 style="margin-top:0;color:var(--danger)">Delete account &amp; cloud data</h3>
-                <p>Delete this Taskitator account, its cloud workspace, saved AI settings, and its Clerk login. This cannot be undone. Download a backup first.</p>
-                <p style="font-size:.85rem;color:var(--text-muted)">Disable all Taskitator blocking macros on every device first. Existing phone tokens will return <code>device_unlocked = true</code> for seven days after confirmation, then stop working. Other devices and downloaded backups need separate cleanup.</p>
-                <button type="button" class="icon-btn" id="openAccountDeletionBtn" style="border-color:#991b1b;color:#f87171">Delete account &amp; cloud data</button>
-            </div>
-
-        </div>
-
     </div>
 </div>
 
-<!-- Modal: Change Password & Anti-Lockout Gate -->
-<dialog id="accountDeletionDialog" aria-labelledby="accountDeletionTitle" style="width:min(92vw,520px);max-height:90vh;overflow:auto;background:var(--card-bg);color:var(--text-color);border:1px solid #991b1b;border-radius:16px;padding:24px">
-    <h2 id="accountDeletionTitle">Delete your cloud account</h2>
-    <p>First disable Taskitator blocking in MacroDroid on <strong>all devices</strong>. Check that you can access your recovery controls. Seven days of unlocked status is a temporary safety window, not a substitute for disabling macros.</p>
-    <p><strong>Step 1: Verify your identity.</strong> Use your current Clerk password or the Google account already connected to this login.</p>
-    <label for="deletionPassword">Current sign-in password</label>
-    <input id="deletionPassword" type="password" autocomplete="current-password" style="width:100%;padding:10px;margin:8px 0">
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button type="button" class="icon-btn" id="verifyDeletionPasswordBtn">Verify password</button>
-        <button type="button" class="icon-btn" id="verifyDeletionGoogleBtn">Sign in with Google</button>
+<!-- Dialog: Delete account -->
+<dialog id="accountDeletionDialog" class="settings-dialog is-danger" aria-labelledby="accountDeletionTitle">
+    <h2 id="accountDeletionTitle">Delete your account</h2>
+    <p class="dialog-warning">Before you start, turn off Taskitator blocking in MacroDroid on <strong>every device</strong>. Old tokens will report your phone as unlocked for 7 days, but don't count on that.</p>
+
+    <div class="dialog-step">
+        <p class="dialog-step-title"><span class="step-num">1</span> Confirm it's you</p>
+        <p class="setting-hint">Enter your password, or sign in with the Google account linked to this login.</p>
+        <label for="deletionPassword">Password</label>
+        <input id="deletionPassword" type="password" autocomplete="current-password">
+        <div class="vault-actions">
+            <button type="button" class="icon-btn btn-md" id="verifyDeletionPasswordBtn">Verify password</button>
+            <button type="button" class="icon-btn btn-md" id="verifyDeletionGoogleBtn">Sign in with Google</button>
+        </div>
+        <p id="accountDeletionFeedback" role="status" class="dialog-feedback">Nothing has been deleted.</p>
+        <button type="button" class="icon-btn btn-md" id="checkAccountDeletionStatusBtn" hidden>Check deletion status</button>
     </div>
-    <p id="accountDeletionFeedback" role="status" style="color:var(--text-muted);white-space:pre-wrap">Nothing has been deleted.</p>
-    <button type="button" class="icon-btn" id="checkAccountDeletionStatusBtn" hidden>Check deletion status</button>
-    <p><strong>Step 2: Confirm permanent deletion.</strong> This removes your cloud workspace and login. Local archives in this browser will be removed where identifiable; other devices and downloaded backups remain yours to clean up.</p>
-    <label style="display:flex;gap:10px;align-items:start"><input type="checkbox" id="deletionBlockerDisabled" style="width:auto;margin-top:7px"><span>I disabled every Taskitator blocking macro on every connected device.</span></label>
-    <p>Deleting your account also deletes your owned Universes for every member. Universe export is not available in this build. Cancel deletion if you need to retain that work.</p>
-<label for="deletionPhrase" style="display:block;margin-top:15px">Manually type <strong>Macrodroid disabled</strong> exactly:</label>
-    <input id="deletionPhrase" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" style="width:100%;padding:10px;margin:8px 0" aria-describedby="deletionPhraseHint">
-    <p id="deletionPhraseHint" style="font-size:.8rem;color:var(--text-muted)">Pasting and dropping text are disabled. You may cancel before final confirmation.</p>
-    <div style="display:flex;justify-content:space-between;gap:12px;margin-top:16px">
-        <button type="button" class="icon-btn" id="cancelAccountDeletionBtn">Cancel</button>
-        <button type="button" class="icon-btn" id="confirmAccountDeletionBtn" disabled style="background:var(--danger);color:white">Permanently delete account</button>
+
+    <div class="dialog-step">
+        <p class="dialog-step-title"><span class="step-num">2</span> Confirm deletion</p>
+        <p class="setting-hint">This deletes your cloud workspace and login, and any Taskitator data in this browser. Other devices and backup files you downloaded aren't touched.</p>
+        <label class="check-line"><input type="checkbox" id="deletionBlockerDisabled"><span>I've turned off every Taskitator blocking macro on all my devices.</span></label>
+        <p class="dialog-warning">Universes you own are deleted for all their members too. They can't be exported yet, so cancel now if you need that work.</p>
+        <label for="deletionPhrase">Type <strong>Macrodroid disabled</strong> to confirm</label>
+        <input id="deletionPhrase" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="deletionPhraseHint">
+        <p id="deletionPhraseHint" class="setting-hint">You need to type it. Pasting is turned off.</p>
+    </div>
+
+    <div class="dialog-actions">
+        <button type="button" class="icon-btn btn-md" id="cancelAccountDeletionBtn">Cancel</button>
+        <button type="button" class="icon-btn btn-md btn-solid-danger btn-danger" id="confirmAccountDeletionBtn" disabled>Delete my account</button>
     </div>
 </dialog>
+
+<!-- Dialog: Clear this browser (typed confirmation) -->
+<dialog id="resetBrowserDialog" class="settings-dialog is-danger" aria-labelledby="resetBrowserTitle">
+    <h2 id="resetBrowserTitle">Clear this browser?</h2>
+    <p>This removes all Taskitator data from this browser and signs you out. Unsynced changes and reference files stored here will be lost. Your cloud account isn't affected.</p>
+    <label for="resetBrowserPhrase">Type <strong>RESET</strong> to confirm</label>
+    <input id="resetBrowserPhrase" type="text" autocomplete="off" spellcheck="false" autocapitalize="characters">
+    <div class="dialog-actions">
+        <button type="button" class="icon-btn btn-md" id="cancelResetBrowserBtn">Cancel</button>
+        <button type="button" class="icon-btn btn-md btn-solid-danger btn-danger" id="confirmResetBrowserBtn" disabled>Clear browser</button>
+    </div>
+</dialog>
+
 <div class="modal-overlay" id="logoutConfirmModal">
     <div class="modal-box">
-        <h3 style="margin-top: 0; color: var(--danger);">⚠️ Log Out of Taskitator?</h3>
-        <p style="font-size: 0.85rem; line-height: 1.5; color: var(--text-color);">
-            Logging out removes active credentials, tasks, and breaks from this browser. Your data remains safe on the cloud server.
-        </p>
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
-            <button type="button" class="icon-btn" id="cancelLogoutBtn">Cancel</button>
-            <button type="button" class="icon-btn" id="confirmLogoutBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 600;">Log Out</button>
+        <h3 class="modal-title-danger">Log out?</h3>
+        <p class="modal-body-text">This removes your tasks and breaks from this browser. Everything stays saved in your cloud account.</p>
+        <div class="dialog-actions">
+            <button type="button" class="icon-btn btn-md" id="cancelLogoutBtn">Cancel</button>
+            <button type="button" class="icon-btn btn-md btn-solid-danger btn-danger" id="confirmLogoutBtn">Log out</button>
         </div>
     </div>
 </div>
 
-<style>
-.vault-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.vault-recovery-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding-top:14px;margin-top:14px;border-top:1px solid var(--border-color)}
-#vaultDialog{width:min(92vw,540px);max-height:88vh;overflow:auto;border:1px solid var(--primary);border-radius:18px;padding:24px;background:var(--card-bg);color:var(--text-color)}
-#vaultDialog::backdrop{background:#000b}#vaultDialog label{display:block;margin-bottom:6px}#vaultDialog input,#vaultRevealedKey{box-sizing:border-box;width:100%;padding:12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-color)}
-#vaultDialog [hidden],[hidden]#vaultRevealArea{display:none!important}
-</style>
-<dialog id="vaultDialog" aria-labelledby="vaultDialogTitle" aria-describedby="vaultDialogFeedback">
-    <h2 id="vaultDialogTitle">Protect your saved key</h2>
+<!-- Dialog: confirm identity for key actions (driven by pro.js) -->
+<dialog id="vaultDialog" class="settings-dialog" aria-labelledby="vaultDialogTitle" aria-describedby="vaultDialogFeedback">
+    <h2 id="vaultDialogTitle">Confirm it's you</h2>
     <p id="vaultDialogFeedback" role="status" aria-live="polite"></p>
-    <label for="vaultPassword">Taskitator sign-in password</label>
-    <input id="vaultPassword" type="password" autocomplete="current-password" placeholder="Password users: enter your password">
+    <label for="vaultPassword">Your Taskitator password</label>
+    <input id="vaultPassword" type="password" autocomplete="current-password" placeholder="Enter your password">
     <div class="vault-actions">
-        <button type="button" class="icon-btn" id="vaultPasswordBtn">Confirm password</button>
-        <button type="button" class="icon-btn" id="vaultGoogleBtn">Sign in with Google</button>
+        <button type="button" class="icon-btn btn-md" id="vaultPasswordBtn">Confirm password</button>
+        <button type="button" class="icon-btn btn-md" id="vaultGoogleBtn">Sign in with Google</button>
     </div>
-    <p style="font-size:.85rem;color:var(--text-muted)">For Google sign-in, choose the account already linked to this Taskitator login. Google may accept your existing session.</p>
-    <div id="vaultNewKeyArea" style="margin-top:18px">
-        <label for="vaultNewKey" id="vaultNewKeyLabel">New provider API key</label>
-        <input id="vaultNewKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the selected provider's API key">
-        <p style="font-size:.85rem;color:var(--text-muted)">This is saved separately from general Settings. Google confirmation returns here before you enter the new key.</p>
+    <p class="setting-hint">Using Google? Pick the account linked to this login. If you're already signed in, it may go straight through.</p>
+    <div id="vaultNewKeyArea" class="dialog-step">
+        <label for="vaultNewKey" id="vaultNewKeyLabel">New API key</label>
+        <input id="vaultNewKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your API key">
+        <p class="setting-hint">Saved on its own, so you don't need to press Save changes. Google sign-in brings you back here to paste it.</p>
     </div>
-    <div class="vault-actions">
-        <button type="button" class="icon-btn" id="vaultConfirmBtn" disabled>Continue</button>
-        <button type="button" class="icon-btn" id="vaultCancelBtn">Cancel</button>
+    <div class="dialog-actions">
+        <button type="button" class="icon-btn btn-md" id="vaultCancelBtn">Cancel</button>
+        <button type="button" class="icon-btn btn-md btn-solid-primary btn-primary" id="vaultConfirmBtn" disabled>Continue</button>
     </div>
 </dialog>
 
@@ -785,7 +556,7 @@
     <div class="copilot-header">
         <div class="copilot-title-group">
             <span style="font-weight: 800; font-size: 1.05rem;">🤖 Focus Copilot</span>
-            <span class="copilot-model-chip">gemini-3.5-flash-lite</span>
+            <span class="copilot-model-chip">Gemini</span>
         </div>
         <button type="button" class="icon-btn" id="closeCopilotBtn" style="border: none; font-size: 1.2rem; line-height: 1; padding: 4px 8px;">✕</button>
     </div>
@@ -804,14 +575,14 @@
 </aside>
 
 
-    <!-- Account Deletion Status Panel (Merged from account-deletion.html) -->
-    <div id="accountDeletionStatusContainer" style="display:none; max-width:640px; margin:24px auto; padding:0 16px;">
-        <main><h1>Account deletion</h1><p id="deletionStatus" role="status">Checking the deletion receipt in this browser…</p>
-<p id="phoneRecovery"></p><p id="localCleanup"></p><button type="button" id="refreshDeletionStatus">Check status</button>
-<p>Disable Taskitator blocking macros on every device. Existing phone tokens return unlocked status for seven days after acceptance, then become invalid.</p>
-<p>Clear Taskitator site data separately on other devices and remove downloaded backups you no longer need. A new account does not restore deleted data.</p>
-<p><a href="login.html">Return to sign-in</a> · <a href="components.html?view=legal#deletion">Privacy &amp; deletion</a> · <!--email_off--><a href="mailto:info@mazendev.com">Contact Mazendev</a><!--/email_off--></p>
-<small>This page reveals no account details. Keep your deletion receipt private. Closing the tab can remove its saved receipt; accepted cloud cleanup continues independently.</small>
+    <!-- Account Deletion Status Panel (shown after a deletion request) -->
+    <div id="accountDeletionStatusContainer" class="deletion-status-panel" style="display:none;">
+        <main class="settings-card"><h1>Account deletion</h1><p id="deletionStatus" role="status">Checking for a deletion receipt in this browser…</p>
+<p id="phoneRecovery"></p><p id="localCleanup"></p><button type="button" class="icon-btn btn-md" id="refreshDeletionStatus">Check status</button>
+<p>Turn off Taskitator blocking macros on every device. Old phone tokens report your phone as unlocked for 7 days after the request is accepted, then stop working.</p>
+<p>On your other devices, clear Taskitator's site data yourself, and delete any downloaded backups you don't need. Creating a new account won't bring deleted data back.</p>
+<p><a href="login.html">Back to sign-in</a> · <a href="components.html?view=legal#deletion">Privacy &amp; deletion</a> · <!--email_off--><a href="mailto:info@mazendev.com">Contact Mazendev</a><!--/email_off--></p>
+<small>This page shows no account details. Keep your deletion receipt private. Closing this tab may remove the saved receipt, but cleanup on our side continues either way.</small>
 </main>
     </div>
 
@@ -820,6 +591,8 @@
     <script type="text/taskitator-script" src="components.js"></script>
     <script type="text/taskitator-script" src="uni/focus-timer.js"></script>
     <script type="text/taskitator-script" src="app.js"></script>
+    <script type="text/taskitator-script" src="tutorial-spotlight.js?v=tour-v2"></script>
+    <script type="text/taskitator-script" src="tutorial-integration.js?v=tour-v2"></script>
 <script type="text/taskitator-script">
 const HARDCODED_WORKER_URL = 'https://taskitator-sync.spacexmzez.workers.dev';
 const SETTINGS_KEY = 'taskitator_settings';
@@ -840,6 +613,7 @@ const DEFAULT_PRIORITIES = [
 
 const authenticatedSettingsContainer = document.getElementById('authenticatedSettingsContainer');
 const soundEffectsToggle = document.getElementById('soundEffectsToggle');
+const hapticsToggle = document.getElementById('hapticsToggle');
 const copilotNameInput = document.getElementById('copilotNameInput');
 const strictCriteriaToggle = document.getElementById('strictCriteriaToggle');
 const autoPageRefreshToggle = document.getElementById('autoPageRefreshToggle');
@@ -871,20 +645,85 @@ const prioritiesListContainer = document.getElementById('prioritiesListContainer
 const addNewPriorityBtn = document.getElementById('addNewPriorityBtn');
 
 const openChangePasswordModalBtn = document.getElementById('openChangePasswordModalBtn');
+const settingsSaveBar = document.getElementById('settingsSaveBar');
 
+// =========================================================================
+// Feedback helpers (toasts, confirm sheet, haptics). Fall back to native
+// dialogs if components.js/app.js did not load.
+// =========================================================================
+const fx = () => window.TaskitatorFX || null;
+function notify(message, type = 'info') {
+    if (typeof window.TaskitatorNotify === 'function') window.TaskitatorNotify(message, type);
+    else alert(message);
+    if (type === 'error') fx()?.deny?.(); else if (type === 'success') fx()?.success?.();
+}
+function ask(options) {
+    if (typeof window.TaskitatorConfirm === 'function') return window.TaskitatorConfirm(options);
+    return Promise.resolve(confirm(`${options.title}\n\n${options.message || ''}`));
+}
+function setBusy(btn, busy, label) {
+    if (!btn) return;
+    if (typeof window.TaskitatorBusy === 'function') return window.TaskitatorBusy(btn, busy, label);
+    btn.disabled = busy;
+    btn.classList.toggle('is-loading', busy);
+}
+function replayClass(el, cls) {
+    if (!el) return;
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+    // Ignore animationend events bubbling up from children.
+    const done = (e) => {
+        if (e.target !== el) return;
+        el.classList.remove(cls);
+        el.removeEventListener('animationend', done);
+    };
+    el.addEventListener('animationend', done);
+}
+// Run cb once el's exit animation ends (or after a safety timeout).
+function afterAnimation(el, cb, ms = 400) {
+    let done = false;
+    const run = (e) => {
+        if (done || (e && e.target !== el)) return;
+        done = true;
+        el.removeEventListener('animationend', run);
+        cb();
+    };
+    el.addEventListener('animationend', run);
+    setTimeout(run, ms);
+}
+function flashButton(btn, text, ms = 1500) {
+    if (!btn) return;
+    if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+    clearTimeout(btn._flashTimer);
+    btn.textContent = text;
+    btn.classList.add('is-confirmed');
+    btn._flashTimer = setTimeout(() => {
+        btn.textContent = btn.dataset.label;
+        btn.classList.remove('is-confirmed');
+        delete btn.dataset.label;
+    }, ms);
+}
+
+function setSaveBarVisible(visible) {
+    if (unsavedIndicator) unsavedIndicator.classList.toggle('is-visible', visible);
+    if (!settingsSaveBar) return;
+    settingsSaveBar.classList.toggle('open', visible);
+    settingsSaveBar.setAttribute('aria-hidden', String(!visible));
+    settingsSaveBar.inert = !visible;
+    document.body.classList.toggle('has-savebar', visible);
+}
 
 function markUnsaved() {
+    const wasDirty = hasUnsavedChanges;
     hasUnsavedChanges = true;
-    if (unsavedIndicator) {
-        unsavedIndicator.style.display = 'inline-block';
-    }
+    setSaveBarVisible(true);
+    if (!wasDirty) replayClass(settingsSaveBar, 'just-opened');
 }
 
 function markSaved() {
     hasUnsavedChanges = false;
-    if (unsavedIndicator) {
-        unsavedIndicator.style.display = 'none';
-    }
+    setSaveBarVisible(false);
     window.dispatchEvent(new CustomEvent('taskitator-refresh-safe'));
 }
 
@@ -905,30 +744,108 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 document.querySelectorAll('.drawer-links a, .link-guarded').forEach(link => {
-    link.addEventListener('click', (e) => {
-        if (hasUnsavedChanges) {
-            const leave = confirm("You have unsaved changes in Settings.\n\nAre you sure you want to leave without saving?");
-            if (!leave) {
-                e.preventDefault();
-            }
+    link.addEventListener('click', async (e) => {
+        if (!hasUnsavedChanges) return;
+        e.preventDefault();
+        const leave = await ask({
+            title: 'Leave without saving?',
+            message: "Your changes on this page haven't been saved yet.",
+            confirmLabel: 'Leave',
+            cancelLabel: 'Keep editing',
+            tone: 'danger'
+        });
+        if (leave) {
+            hasUnsavedChanges = false;
+            window.location.href = link.href;
         }
     });
 });
 
 // =========================================================================
-// Tab Navigation Routing
+// Section tabs (URL hash keeps the open section, e.g. settings.html#ai)
 // =========================================================================
-document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const targetId = btn.getAttribute('data-tab');
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+const settingsTabs = document.getElementById('settingsTabs');
+const tabButtons = Array.from(document.querySelectorAll('.settings-tab'));
+const tabIndicator = settingsTabs ? settingsTabs.querySelector('.settings-tab-indicator') : null;
+const TAB_STORE_KEY = 'taskitator_settings_tab';
+const LEGACY_TABS = { 'tab-system': 'tab-schedule', 'tab-data': 'tab-account' };
+let activeTabIndex = -1;
 
-        btn.classList.add('active');
-        const targetPane = document.getElementById(targetId);
-        if (targetPane) targetPane.classList.add('active');
+function placeTabIndicator(btn, instant = false) {
+    if (!tabIndicator || !btn) return;
+    if (instant) tabIndicator.style.transition = 'none';
+    tabIndicator.style.width = btn.offsetWidth + 'px';
+    tabIndicator.style.height = btn.offsetHeight + 'px';
+    tabIndicator.style.transform = `translate(${btn.offsetLeft}px, ${btn.offsetTop}px)`;
+    tabIndicator.classList.add('is-ready');
+    if (instant) { void tabIndicator.offsetWidth; tabIndicator.style.transition = ''; }
+}
+
+function activateTab(targetId, { focus = false, instant = false } = {}) {
+    targetId = LEGACY_TABS[targetId] || targetId;
+    const index = tabButtons.findIndex(b => b.dataset.tab === targetId);
+    if (index < 0) return;
+    const forward = index >= activeTabIndex;
+
+    tabButtons.forEach((b, i) => {
+        const on = i === index;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', String(on));
+        b.tabIndex = on ? 0 : -1;
+    });
+    document.querySelectorAll('.settings-pane').forEach(p => {
+        const on = p.id === targetId;
+        p.classList.toggle('active', on);
+        p.classList.toggle('from-left', on && !forward && !instant);
+        if (on && !instant) replayClass(p, 'is-entering');
+    });
+
+    const btn = tabButtons[index];
+    placeTabIndicator(btn, instant);
+    btn.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: instant ? 'auto' : 'smooth' });
+    if (focus) btn.focus();
+    activeTabIndex = index;
+
+    try { localStorage.setItem(TAB_STORE_KEY, targetId); } catch (e) {}
+    if (!/^#key-verification=/.test(location.hash)) {
+        history.replaceState(null, '', location.pathname + location.search + '#' + targetId.replace(/^tab-/, ''));
+    }
+}
+
+tabButtons.forEach((btn, i) => {
+    btn.addEventListener('click', () => {
+        if (i !== activeTabIndex) fx()?.tap?.();
+        activateTab(btn.dataset.tab);
+    });
+    btn.addEventListener('keydown', (e) => {
+        const keys = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+        let next = null;
+        if (e.key in keys) next = (i + keys[e.key] + tabButtons.length) % tabButtons.length;
+        else if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = tabButtons.length - 1;
+        if (next === null) return;
+        e.preventDefault();
+        activateTab(tabButtons[next].dataset.tab, { focus: true });
     });
 });
+
+(function initialTab() {
+    const fromHash = /^#([a-z]+)$/.exec(location.hash);
+    let stored = null;
+    try { stored = localStorage.getItem(TAB_STORE_KEY); } catch (e) {}
+    const candidates = [fromHash && 'tab-' + fromHash[1], stored, 'tab-general'];
+    const target = candidates.find(id => id && tabButtons.some(b => b.dataset.tab === (LEGACY_TABS[id] || id)));
+    activateTab(target, { instant: true });
+})();
+window.addEventListener('hashchange', () => {
+    const m = /^#([a-z]+)$/.exec(location.hash);
+    if (m) activateTab('tab-' + m[1]);
+});
+window.addEventListener('resize', () => placeTabIndicator(tabButtons[activeTabIndex], true));
+window.addEventListener('taskitator-auth-ready', () => requestAnimationFrame(() => {
+    placeTabIndicator(tabButtons[activeTabIndex], true);
+    replayClass(document.querySelector('.settings-pane.active'), 'is-entering');
+}));
 
 // =========================================================================
 // Formatting Utilities
@@ -943,25 +860,31 @@ function formatDumpDuration(seconds) {
 // =========================================================================
 // Tag & Priority Registry Handlers
 // =========================================================================
-function renderTags() {
+function renderTags(enterTag = null) {
     if (!tagsContainer) return;
     tagsContainer.innerHTML = '';
     if (activeTags.length === 0) {
-        tagsContainer.innerHTML = '<span style="font-size: 0.8rem; color: var(--text-muted);">No custom tags created yet.</span>';
+        tagsContainer.innerHTML = '<span class="list-empty">No tags yet. Add one above.</span>';
         return;
     }
 
-    activeTags.forEach((tag, idx) => {
+    activeTags.forEach((tag) => {
         const pill = document.createElement('span');
-        pill.className = 'tag-editor-pill';
+        pill.className = 'tag-editor-pill' + (tag === enterTag ? ' enter' : '');
+        pill.dataset.tag = tag;
         pill.innerHTML = `
             <span>${TaskitatorSafety.escapeHtml(tag)}</span>
-            <span class="tag-editor-del" data-idx="${idx}" title="Delete tag">✕</span>
+            <button type="button" class="tag-editor-del" aria-label="Delete tag ${TaskitatorSafety.escapeHtml(tag)}" title="Delete tag">✕</button>
         `;
         pill.querySelector('.tag-editor-del').addEventListener('click', () => {
-            activeTags.splice(idx, 1);
-            markUnsaved();
-            renderTags();
+            fx()?.tap?.();
+            pill.classList.add('is-leaving');
+            afterAnimation(pill, () => {
+                const i = activeTags.indexOf(tag);
+                if (i >= 0) activeTags.splice(i, 1);
+                markUnsaved();
+                renderTags();
+            });
         });
         tagsContainer.appendChild(pill);
     });
@@ -969,14 +892,21 @@ function renderTags() {
 
 function handleAddTag() {
     const val = newTagInput.value.trim().toLowerCase().replace(/,/g, '');
-    if (!val) return;
-    if (activeTags.includes(val)) {
+    if (!val) {
+        replayClass(newTagInput, 'is-denied');
+        newTagInput.focus();
         return;
     }
+    if (activeTags.includes(val)) {
+        replayClass(tagsContainer.querySelector(`[data-tag="${CSS.escape(val)}"]`), 'is-denied');
+        notify(`“${val}” is already a tag.`, 'info');
+        return;
+    }
+    fx()?.tap?.();
     activeTags.push(val);
     newTagInput.value = '';
     markUnsaved();
-    renderTags();
+    renderTags(val);
 }
 
 if (addNewTagBtn && newTagInput) {
@@ -989,48 +919,46 @@ if (addNewTagBtn && newTagInput) {
     });
 }
 
-function renderPriorities() {
+// Re-render, then slide rows from their old positions to the new ones (FLIP).
+function renderPriorities({ enterId = null, focusSelector = null, focusId = null } = {}) {
     if (!prioritiesListContainer) return;
+    const before = new Map();
+    prioritiesListContainer.querySelectorAll('.priority-item-card').forEach(r => before.set(r.dataset.id, r.getBoundingClientRect().top));
+
     prioritiesListContainer.innerHTML = '';
     if (activePriorities.length === 0) {
-        prioritiesListContainer.innerHTML = '<span style="font-size: 0.8rem; color: var(--text-muted);">No priorities configured. Click "+ Add Level" to create one.</span>';
+        prioritiesListContainer.innerHTML = '<span class="list-empty">No priority levels. Use “+ Add level” to create one.</span>';
         return;
     }
+
+    const move = (from, to) => {
+        if (to < 0 || to >= activePriorities.length) return;
+        fx()?.tap?.();
+        const [item] = activePriorities.splice(from, 1);
+        activePriorities.splice(to, 0, item);
+        markUnsaved();
+        renderPriorities({ focusId: item.id, focusSelector: to < from ? '.move-up' : '.move-down' });
+    };
 
     activePriorities.forEach((p, idx) => {
         p.rank = idx + 1; // Normalize ranks to sequential integers
         const row = document.createElement('div');
-        row.className = 'priority-item-card';
+        row.className = 'priority-item-card' + (p.id === enterId ? ' enter' : '');
+        row.dataset.id = p.id;
+        row.style.setProperty('--prio-color', p.color);
         row.innerHTML = `
             <div class="priority-reorder-actions">
-                <button type="button" class="reorder-btn move-up" ${idx === 0 ? 'disabled' : ''} title="Move Up">▲</button>
-                <button type="button" class="reorder-btn move-down" ${idx === activePriorities.length - 1 ? 'disabled' : ''} title="Move Down">▼</button>
+                <button type="button" class="reorder-btn move-up" ${idx === 0 ? 'disabled' : ''} aria-label="Move ${TaskitatorSafety.escapeHtml(p.name)} up" title="Move up">▲</button>
+                <button type="button" class="reorder-btn move-down" ${idx === activePriorities.length - 1 ? 'disabled' : ''} aria-label="Move ${TaskitatorSafety.escapeHtml(p.name)} down" title="Move down">▼</button>
             </div>
             <span class="priority-rank-badge">#${TaskitatorSafety.escapeHtml(p.rank)}</span>
-            <input type="text" aria-label="Priority name" class="priority-name-input" value="${TaskitatorSafety.escapeHtml(p.name)}" placeholder="Priority Name">
-            <input type="color" aria-label="Priority color" class="priority-color-picker" value="${TaskitatorSafety.escapeHtml(p.color)}" title="Choose color">
-            <button type="button" aria-label="Delete priority" title="Delete priority" class="icon-btn del-priority-btn" style="color: var(--danger); border-color: #881337; padding: 4px 8px; font-size: 0.8rem;">✕</button>
+            <input type="text" aria-label="Priority name" class="priority-name-input" value="${TaskitatorSafety.escapeHtml(p.name)}" placeholder="Priority name" maxlength="30">
+            <input type="color" aria-label="Priority colour" class="priority-color-picker" value="${TaskitatorSafety.escapeHtml(p.color)}" title="Choose colour">
+            <button type="button" aria-label="Delete priority ${TaskitatorSafety.escapeHtml(p.name)}" title="Delete priority" class="icon-btn icon-btn-danger del-priority-btn">✕</button>
         `;
 
-        row.querySelector('.move-up').addEventListener('click', () => {
-            if (idx > 0) {
-                const temp = activePriorities[idx];
-                activePriorities[idx] = activePriorities[idx - 1];
-                activePriorities[idx - 1] = temp;
-                markUnsaved();
-                renderPriorities();
-            }
-        });
-
-        row.querySelector('.move-down').addEventListener('click', () => {
-            if (idx < activePriorities.length - 1) {
-                const temp = activePriorities[idx];
-                activePriorities[idx] = activePriorities[idx + 1];
-                activePriorities[idx + 1] = temp;
-                markUnsaved();
-                renderPriorities();
-            }
-        });
+        row.querySelector('.move-up').addEventListener('click', () => move(idx, idx - 1));
+        row.querySelector('.move-down').addEventListener('click', () => move(idx, idx + 1));
 
         const nameInput = row.querySelector('.priority-name-input');
         nameInput.addEventListener('input', () => {
@@ -1041,30 +969,68 @@ function renderPriorities() {
         const colorInput = row.querySelector('.priority-color-picker');
         colorInput.addEventListener('input', () => {
             p.color = colorInput.value;
+            row.style.setProperty('--prio-color', p.color);
             markUnsaved();
         });
 
-        row.querySelector('.del-priority-btn').addEventListener('click', () => {
-            activePriorities.splice(idx, 1);
-            markUnsaved();
-            renderPriorities();
+        row.querySelector('.del-priority-btn').addEventListener('click', async () => {
+            if (activePriorities.length === 1) {
+                const ok = await ask({
+                    title: 'Delete your last priority level?',
+                    message: 'Tasks need at least one level to pick from. You can add a new one afterwards.',
+                    confirmLabel: 'Delete',
+                    tone: 'danger'
+                });
+                if (!ok) return;
+            }
+            fx()?.tap?.();
+            row.classList.add('is-leaving');
+            afterAnimation(row, () => {
+                const i = activePriorities.indexOf(p);
+                if (i >= 0) activePriorities.splice(i, 1);
+                markUnsaved();
+                renderPriorities();
+            });
         });
 
         prioritiesListContainer.appendChild(row);
     });
+
+    // FLIP: animate rows that changed position.
+    if (before.size && !fx()?.reducedMotion?.()) {
+        prioritiesListContainer.querySelectorAll('.priority-item-card').forEach(r => {
+            const old = before.get(r.dataset.id);
+            if (old === undefined) return;
+            const dy = old - r.getBoundingClientRect().top;
+            if (!dy) return;
+            r.animate(
+                [{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }],
+                { duration: 260, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }
+            );
+        });
+    }
+
+    if (focusId) {
+        const target = prioritiesListContainer.querySelector(`[data-id="${CSS.escape(focusId)}"] ${focusSelector || ''}`);
+        (target && !target.disabled ? target : prioritiesListContainer.querySelector(`[data-id="${CSS.escape(focusId)}"] .priority-name-input`))?.focus();
+    }
 }
 
 if (addNewPriorityBtn) {
     addNewPriorityBtn.addEventListener('click', () => {
+        fx()?.tap?.();
         const nextRank = activePriorities.length + 1;
+        const id = 'prio_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
         activePriorities.push({
-            id: 'prio_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+            id,
             name: `Priority ${nextRank}`,
             color: '#64748b',
             rank: nextRank
         });
         markUnsaved();
-        renderPriorities();
+        renderPriorities({ enterId: id });
+        const input = prioritiesListContainer.querySelector(`[data-id="${CSS.escape(id)}"] .priority-name-input`);
+        if (input) { input.focus(); input.select(); }
     });
 }
 
@@ -1088,10 +1054,18 @@ function loadSettings() {
         activeUsernameDisplay.textContent = config.username ? `${config.displayName || config.username}` : '@local_mode';
     }
     if (macroBearerToken) {
-        macroBearerToken.placeholder = 'Generate a phone token below. It is shown once.';
+        macroBearerToken.placeholder = "Create a token below. It's only shown once.";
     }
 
     if (soundEffectsToggle) soundEffectsToggle.checked = settings.sound_effects_enabled !== false;
+    if (hapticsToggle) {
+        hapticsToggle.checked = settings.haptics_enabled !== false;
+        if (typeof navigator.vibrate !== 'function') {
+            hapticsToggle.disabled = true;
+            const hint = document.getElementById('hapticsHint');
+            if (hint) hint.textContent = "This device or browser doesn't support vibration.";
+        }
+    }
     if (copilotNameInput) copilotNameInput.value = settings.copilot_name || 'Focus Copilot';
     if (strictCriteriaToggle) strictCriteriaToggle.checked = settings.strict_criteria_validation !== false;
     if (autoPageRefreshToggle) autoPageRefreshToggle.checked = settings.auto_page_refresh !== false;
@@ -1140,6 +1114,7 @@ async function saveSettings(silent = false) {
     const chosenDayStart = dayStartHourSelect ? parseInt(dayStartHourSelect.value, 10) : 0;
 
     settings.sound_effects_enabled = soundEffectsToggle ? Boolean(soundEffectsToggle.checked) : true;
+    if (hapticsToggle && !hapticsToggle.disabled) settings.haptics_enabled = Boolean(hapticsToggle.checked);
     settings.copilot_name = copilotNameInput ? (copilotNameInput.value.trim() || 'Focus Copilot').slice(0, 20) : 'Focus Copilot';
     settings.strict_criteria_validation = strictCriteriaToggle ? Boolean(strictCriteriaToggle.checked) : true;
     settings.auto_page_refresh = autoPageRefreshToggle ? Boolean(autoPageRefreshToggle.checked) : true;
@@ -1170,24 +1145,17 @@ async function saveSettings(silent = false) {
     updateWorkweekNotice();
     markSaved();
 
-    const saveBtn = document.getElementById('saveAllSettingsBtn');
-    if (saveBtn) {
-        const originalText = saveBtn.textContent;
-        saveBtn.textContent = '✓ Saved!';
-        saveBtn.style.background = 'var(--success)';
-        setTimeout(() => {
-            saveBtn.textContent = originalText;
-            saveBtn.style.background = 'var(--primary)';
-        }, 1500);
-    }
+    if (!silent) notify('Settings saved.', 'success');
     return true;
 }
 
 function updateEmergencyDisplay() {
     if (!window.TaskitatorEngine || !TaskitatorEngine.EmergencyManager) return;
     const state = TaskitatorEngine.EmergencyManager.getState();
+    const left = Math.max(0, Math.min(4, Number(state.uses_left) || 0));
     const display = document.getElementById('emergencyTokensDisplay');
-    if (display) display.textContent = `${state.uses_left} / 4 Uses Remaining`;
+    if (display) display.textContent = `${left} of 4 left this week`;
+    document.querySelectorAll('#emergencyPips i').forEach((pip, i) => pip.classList.toggle('is-used', i >= left));
 }
 
 window.addEventListener('taskitator-emergency-updated', updateEmergencyDisplay);
@@ -1202,26 +1170,35 @@ function updateBreakPlanningStatus() {
     };
 
     if (breakCycleNotice) {
-        breakCycleNotice.innerHTML = `Current Cycle (${TaskitatorSafety.escapeHtml(bounds.timezone)}): <strong>${formatHour(bounds.start)}</strong> today &rarr; <strong>${formatHour(bounds.end)}</strong> tomorrow. Planning lockout buffer begins at <strong>${formatHour(bounds.cutoff6h)}</strong>.`;
+        breakCycleNotice.innerHTML = `Your day runs from <strong>${formatHour(bounds.start)}</strong> to <strong>${formatHour(bounds.end)}</strong> the next day (${TaskitatorSafety.escapeHtml(bounds.timezone)}). Break planning closes at <strong>${formatHour(bounds.cutoff6h)}</strong>, 6 hours before the day ends.`;
     }
 
     if (!breakPlanningStatusBadge) return;
 
-    if(status.isRepair){
-        breakPlanningStatusBadge.textContent='Repair needed: open Plan Breaks, enter valid times and confirm.';
+    let tone, text;
+    if (status.isRepair) {
+        tone = 'warn'; text = '⚠️ Your break plan needs fixing. Open Plan Breaks, enter valid times and confirm.';
     } else if (status.isLocked) {
-        breakPlanningStatusBadge.innerHTML = '<span class="tag-chip" style="background: #380d15; color: #fda4af; font-weight: 700;">🔒 Daily Breaks Locked (Cycle Completed)</span>';
+        tone = 'locked'; text = "🔒 Today's breaks are planned and locked in.";
     } else if (status.isInBuffer) {
-        breakPlanningStatusBadge.innerHTML = '<span class="tag-chip" style="background: #3f2c06; color: #fde047; font-weight: 700;">⚠️ Planning Closed (Within Final 6-Hour Buffer)</span>';
+        tone = 'warn'; text = '⏱ Too late to plan breaks today. Planning closes 6 hours before the day ends.';
     } else if (status.isRunning) {
         const remSec = Math.ceil(status.remainingWindowMs / 1000);
-        const remMin = Math.floor(remSec / 60);
-        const remSecOnly = remSec % 60;
-        const remStr = `${String(remMin).padStart(2, '0')}:${String(remSecOnly).padStart(2, '0')}`;
-        breakPlanningStatusBadge.innerHTML = `<span class="tag-chip" style="background: #052e16; color: #86efac; font-weight: 700;">⏳ Planning Active (${remStr} Remaining)</span>`;
+        const remStr = `${String(Math.floor(remSec / 60)).padStart(2, '0')}:${String(remSec % 60).padStart(2, '0')}`;
+        tone = 'active'; text = `⏳ Planning window open · ${remStr} left`;
     } else {
-        breakPlanningStatusBadge.innerHTML = '<span class="tag-chip" style="background: #1e3a8a; color: #93c5fd; font-weight: 700;">● Ready to Plan (1-Shot 10m Window Available)</span>';
+        tone = 'ready'; text = "● You can plan today's breaks. You get one 10-minute window to do it.";
     }
+    let chip = breakPlanningStatusBadge.querySelector('.status-chip');
+    if (!chip) {
+        chip = document.createElement('span');
+        breakPlanningStatusBadge.replaceChildren(chip);
+    }
+    const changed = chip.dataset.tone !== tone;
+    chip.className = `status-chip is-${tone}`;
+    chip.dataset.tone = tone;
+    chip.textContent = text;
+    if (changed) replayClass(chip, 'pop-in');
 }
 
 function updateWorkweekNotice() {
@@ -1232,7 +1209,7 @@ function updateWorkweekNotice() {
     const resetDay = (e + 1) % 7;
     const notice = document.getElementById('workweekCalcNotice');
     if (notice) {
-        notice.textContent = `Weekend: ${days[s]} to ${days[e]}. Emergency uses reset every ${days[resetDay]} at 00:00.`;
+        notice.textContent = `Your weekend is ${days[s]} to ${days[e]}. Emergency unlocks refill every ${days[resetDay]} at 00:00.`;
     }
 }
 
@@ -1247,23 +1224,31 @@ if (copyUrlBtn) {
     copyUrlBtn.addEventListener('click', () => {
         const urlInput = document.getElementById('macroEndpointUrl');
         if (!urlInput) return;
-        navigator.clipboard.writeText(urlInput.value).then(() => {
-            const prev = copyUrlBtn.textContent;
-            copyUrlBtn.textContent = 'Copied!';
-            setTimeout(() => copyUrlBtn.textContent = prev, 1500);
-        });
+        copyText(urlInput.value, copyUrlBtn, urlInput);
     });
 }
 
 if (copyTokenBtn && macroBearerToken) {
     copyTokenBtn.addEventListener('click', () => {
-        if (!macroBearerToken.value) return;
-        navigator.clipboard.writeText(macroBearerToken.value).then(() => {
-            const prev = copyTokenBtn.textContent;
-            copyTokenBtn.textContent = 'Copied!';
-            setTimeout(() => copyTokenBtn.textContent = prev, 1500);
-        });
+        if (!macroBearerToken.value) {
+            replayClass(copyTokenBtn, 'is-denied');
+            notify('No token to copy. Tap “Create new token” first. Tokens are only shown right after you create them.', 'info');
+            return;
+        }
+        copyText(macroBearerToken.value, copyTokenBtn, macroBearerToken);
     });
+}
+
+async function copyText(text, btn, field) {
+    try {
+        await navigator.clipboard.writeText(text);
+        fx()?.success?.();
+        flashButton(btn, '✓ Copied');
+    } catch (e) {
+        // Clipboard blocked: select the text so the user can copy manually.
+        if (field) { field.type = 'text'; field.focus(); field.select(); }
+        notify("Couldn't copy automatically. The text is selected, so copy it yourself.", 'error');
+    }
 }
 
 if (toggleTokenVisibilityBtn && macroBearerToken) {
@@ -1274,7 +1259,7 @@ if (toggleTokenVisibilityBtn && macroBearerToken) {
     });
 }
 
-[soundEffectsToggle, copilotNameInput, strictCriteriaToggle, autoPageRefreshToggle, weekendStartSelect, weekendEndSelect, dayStartHourSelect].forEach(el => {
+[soundEffectsToggle, hapticsToggle, copilotNameInput, strictCriteriaToggle, autoPageRefreshToggle, weekendStartSelect, weekendEndSelect, dayStartHourSelect].forEach(el => {
     if (el) {
         el.addEventListener('input', markUnsaved);
         el.addEventListener('change', markUnsaved);
@@ -1320,41 +1305,67 @@ function phoneChangeAllowed() {
         return !due || due === 'today' || due <= today;
     });
     if (pending && !isBreak && !isBypass) {
-        alert('Complete today’s tasks, use a scheduled break, or activate Emergency Bypass before replacing or revoking phone access.');
+        notify("You can change phone access once today's tasks are done, during a scheduled break, or while Emergency Bypass is on.", 'error');
         return false;
     }
     return true;
 }
+function setPhoneStatus(state, text) {
+    const box = document.getElementById('phoneAccessStatus');
+    if (!box) return;
+    const changed = !box.classList.contains(state);
+    box.className = 'phone-status ' + state;
+    box.setAttribute('role', 'status');
+    box.textContent = text;
+    if (changed) replayClass(box, 'pop-in');
+}
 async function refreshPhoneStatus() {
     try {
-        const box = document.getElementById('phoneAccessStatus');
-        box.className = 'phone-status unknown';
         const data = await TaskitatorAuth.api('/auth/phone');
-        if (typeof data.active !== 'boolean') throw new Error('Could not confirm phone access. Retry when connected.');
-        box.className = 'phone-status ' + (data.active ? 'active' : 'inactive');
-        box.setAttribute('role', 'status');
-        box.textContent = data.active
-            ? '✓ Phone access is active. Your token remains in use securely, even though it cannot be displayed again. If MacroDroid needs reconnecting, replace the token and update its Authorization header.'
-            : '✕ Phone access is inactive. Generate a token and copy it to MacroDroid to connect your phone.';
-    } catch (err) { const box=document.getElementById('phoneAccessStatus'); box.className='phone-status unknown'; box.textContent='⚠ Phone access could not be checked. Reconnect and retry. '+err.message; }
+        if (typeof data.active !== 'boolean') throw new Error("The server didn't give a clear answer.");
+        setPhoneStatus(data.active ? 'active' : 'inactive', data.active
+            ? "✓ Your phone is connected. For security, the token can't be shown again. If MacroDroid stops working, create a new token and paste it into the Authorization header."
+            : '✕ No phone connected. Create a token below and paste it into MacroDroid.');
+    } catch (err) {
+        setPhoneStatus('unknown', "⚠ Couldn't check your phone connection. Check your internet and try again. " + err.message);
+    }
 }
 document.getElementById('generatePhoneTokenBtn').addEventListener('click', async event => {
-    if (!phoneChangeAllowed() || !confirm('Generate a new phone token? Any previous phone token stops working immediately. Pause your blocking macro first, then update its Authorization header.')) return;
-    event.target.disabled = true;
+    const btn = event.currentTarget;
+    if (!phoneChangeAllowed()) { replayClass(btn, 'is-denied'); return; }
+    const ok = await ask({
+        title: 'Create a new phone token?',
+        message: 'Your current token stops working right away. Pause your blocking macro first, then paste the new token into its Authorization header.',
+        confirmLabel: 'Create token'
+    });
+    if (!ok) return;
+    setBusy(btn, true);
     try {
         const data = await TaskitatorAuth.api('/auth/phone', { method: 'POST' });
         macroBearerToken.value = data.token;
-        document.getElementById('phoneAccessStatus').className = 'phone-status active';
-        document.getElementById('phoneAccessStatus').textContent = '✓ Phone access created. Copy this token now. It is not saved here and disappears when you reload.';
-    } catch (err) { alert(err.message); } finally { event.target.disabled = false; }
+        macroBearerToken.type = 'text';
+        if (toggleTokenVisibilityBtn) toggleTokenVisibilityBtn.textContent = 'Hide';
+        replayClass(macroBearerToken, 'flash-new');
+        setPhoneStatus('active', '✓ Token created. Copy it now. It disappears when you leave or reload this page.');
+        notify('New phone token created.', 'success');
+    } catch (err) { notify(err.message, 'error'); } finally { setBusy(btn, false); }
 });
 document.getElementById('revokePhoneTokenBtn').addEventListener('click', async event => {
-    if (!phoneChangeAllowed() || !confirm('Revoke phone access? Pause your blocking macro first. Its status checks will fail until you install a new token.')) return;
-    event.target.disabled = true;
+    const btn = event.currentTarget;
+    if (!phoneChangeAllowed()) { replayClass(btn, 'is-denied'); return; }
+    const ok = await ask({
+        title: 'Disconnect your phone?',
+        message: 'Pause your blocking macro first. Its status checks will fail until you add a new token.',
+        confirmLabel: 'Disconnect',
+        tone: 'danger'
+    });
+    if (!ok) return;
+    setBusy(btn, true);
     try {
         await TaskitatorAuth.api('/auth/phone', { method: 'DELETE' });
         macroBearerToken.value = ''; await refreshPhoneStatus();
-    } catch (err) { alert(err.message); } finally { event.target.disabled = false; }
+        notify('Phone disconnected.', 'success');
+    } catch (err) { notify(err.message, 'error'); } finally { setBusy(btn, false); }
 });
 refreshPhoneStatus();
 
@@ -1366,9 +1377,24 @@ const importFeedback = document.getElementById('importFeedback');
 
 function showImportFeedback(msg, isError = false) {
     if (!importFeedback) return;
-    importFeedback.style.display = 'block';
-    importFeedback.className = `notice-banner ${isError ? 'notice-warning' : 'notice-success'}`;
+    importFeedback.className = `notice-banner is-visible ${isError ? 'notice-warning' : 'notice-success'}`;
     importFeedback.innerHTML = msg;
+    replayClass(importFeedback, isError ? 'is-denied' : 'pop-in');
+    if (isError) fx()?.deny?.(); else fx()?.success?.();
+}
+
+if (importFileInput) {
+    const syncImportButtons = () => {
+        const has = importFileInput.files && importFileInput.files.length > 0;
+        ['importMergeBtn', 'importReplaceBtn'].forEach(id => {
+            const b = document.getElementById(id);
+            if (b) b.disabled = !has;
+        });
+        importFileInput.classList.toggle('has-file', has);
+        if (importFeedback && has) importFeedback.className = 'notice-banner';
+    };
+    importFileInput.addEventListener('change', syncImportButtons);
+    syncImportButtons();
 }
 
 const exportBtn = document.getElementById('exportDataBtn');
@@ -1404,32 +1430,46 @@ if (exportBtn) {
         
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        fx()?.success?.();
+        flashButton(exportBtn, '✓ Downloaded');
+        notify(`Backup saved as ${a.download}.`, 'success');
     });
 }
 
 async function processImport(mode) {
     if (!importFileInput || !importFileInput.files.length) {
-        showImportFeedback('Please select a JSON backup file first.', true);
+        showImportFeedback('Choose a backup file first.', true);
         return;
     }
     const file = importFileInput.files[0];
+    const btn = document.getElementById(mode === 'replace' ? 'importReplaceBtn' : 'importMergeBtn');
 
-    if (!confirm(`Are you sure you want to perform a ${mode.toUpperCase()} using this file?`)) {
-        return;
-    }
+    const ok = await ask(mode === 'replace' ? {
+        title: 'Replace everything with this backup?',
+        message: `All Taskitator data in this browser will be overwritten by “${file.name}”. If you might need your current data, download a backup first.`,
+        confirmLabel: 'Replace everything',
+        tone: 'danger'
+    } : {
+        title: 'Merge this backup?',
+        message: `Tasks and projects from “${file.name}” will be added to what you have. Nothing here gets deleted.`,
+        confirmLabel: 'Merge'
+    });
+    if (!ok) return;
+    setBusy(btn, true);
 
     try {
         const text = await file.text();
-        const imported = JSON.parse(text);
+        let imported;
+        try { imported = JSON.parse(text); } catch (e) { throw new Error("This file isn't valid JSON. Pick a backup downloaded from Taskitator."); }
 
         if (!imported.taskitator_tasks || !imported.taskitator_settings) {
-            throw new Error('Invalid backup file format. Missing core Taskitator properties.');
+            throw new Error("This doesn't look like a Taskitator backup. Its tasks or settings are missing.");
         }
 
         const importedRecurrence = imported.taskitator_recurrence_state || {series:[],history:[]};
         TaskitatorRecurrence.validateState(importedRecurrence, imported.taskitator_tasks);
         if (mode === 'merge' && (importedRecurrence.series.length || TaskitatorRecurrenceUI.state().series.length)) {
-            throw new Error('Use Replace all data for backups containing recurring tasks. Smart Merge cannot safely combine separate occurrence versions. Export the current account first.');
+            throw new Error("Recurring tasks can't be merged safely. Use “Replace everything” instead, after downloading a backup of your current data.");
         }
         const localSettingsRaw = JSON.parse(localStorage.getItem('taskitator_settings') || '{}');
         const currentUser = localSettingsRaw.worker_username;
@@ -1525,12 +1565,13 @@ async function processImport(mode) {
             SyncEngine.scheduleAutoPush();
         }
 
-        showImportFeedback(`<strong>Success!</strong> Data successfully ${mode === 'replace' ? 'restored' : 'merged'}. Reloading...`);
+        showImportFeedback(`<strong>✓ Backup ${mode === 'replace' ? 'restored' : 'merged'}.</strong> Reloading…`);
         importFileInput.value = '';
         setTimeout(() => window.location.reload(), 1500);
 
     } catch (err) {
-        showImportFeedback(`<strong>Import Failed:</strong> ${TaskitatorSafety.escapeHtml(err.message)}`, true);
+        setBusy(btn, false);
+        showImportFeedback(`<strong>Couldn't import.</strong> ${TaskitatorSafety.escapeHtml(err.message)}`, true);
     }
 }
 
@@ -1543,7 +1584,14 @@ if (importMergeBtn) importMergeBtn.addEventListener('click', () => processImport
 const clearCompletedTrashBtn = document.getElementById('clearCompletedTrashBtn');
 if (clearCompletedTrashBtn) {
     clearCompletedTrashBtn.addEventListener('click', async () => {
-        if (!confirm('Permanently delete all completed and trashed tasks? This clears historical task data and reference exemplars.')) return;
+        const ok = await ask({
+            title: 'Delete all completed and trashed tasks?',
+            message: "They're removed permanently, along with their reference files. Active tasks aren't affected.",
+            confirmLabel: 'Delete permanently',
+            tone: 'danger'
+        });
+        if (!ok) return;
+        setBusy(clearCompletedTrashBtn, true);
         let tasks = JSON.parse(localStorage.getItem('taskitator_tasks') || '[]');
         const originalLength = tasks.length;
         const removedTasks = tasks.filter(t => t.status !== 'active');
@@ -1562,20 +1610,39 @@ if (clearCompletedTrashBtn) {
             SyncEngine.markLocalModified();
             SyncEngine.scheduleAutoPush();
         }
-        showImportFeedback(`Cleanup complete. Removed ${originalLength - tasks.length} historical tasks.`);
+        setBusy(clearCompletedTrashBtn, false);
+        const removed = originalLength - tasks.length;
+        notify(removed ? `Removed ${removed} ${removed === 1 ? 'task' : 'tasks'}.` : 'Nothing to clear. No completed or trashed tasks.', removed ? 'success' : 'info');
     });
 }
 
 const factoryResetBtn = document.getElementById('factoryResetBtn');
-if (factoryResetBtn) {
-    factoryResetBtn.addEventListener('click', async () => {
-        const confirmation = prompt('Type "RESET" to clear data in this browser. This does NOT delete your cloud account or cloud data. Unsynced drafts and local reference files will be lost.');
-        if (confirmation !== 'RESET') return;
+const resetBrowserDialog = document.getElementById('resetBrowserDialog');
+const resetBrowserPhrase = document.getElementById('resetBrowserPhrase');
+const confirmResetBrowserBtn = document.getElementById('confirmResetBrowserBtn');
+if (factoryResetBtn && resetBrowserDialog && resetBrowserPhrase && confirmResetBrowserBtn) {
+    factoryResetBtn.addEventListener('click', () => {
+        resetBrowserPhrase.value = '';
+        confirmResetBrowserBtn.disabled = true;
+        resetBrowserDialog.showModal();
+        resetBrowserPhrase.focus();
+    });
+    resetBrowserPhrase.addEventListener('input', () => {
+        confirmResetBrowserBtn.disabled = resetBrowserPhrase.value.trim() !== 'RESET';
+    });
+    resetBrowserPhrase.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !confirmResetBrowserBtn.disabled) { e.preventDefault(); confirmResetBrowserBtn.click(); }
+    });
+    document.getElementById('cancelResetBrowserBtn')?.addEventListener('click', () => resetBrowserDialog.close());
+    confirmResetBrowserBtn.addEventListener('click', async () => {
+        if (resetBrowserPhrase.value.trim() !== 'RESET') return;
+        setBusy(confirmResetBrowserBtn, true);
         if (window.ExemplarStore) {
             try {
                 await ExemplarStore.clearAll();
             } catch (e) {}
         }
+        hasUnsavedChanges = false;
         localStorage.clear();
         window.location.replace('login.html');
     });
@@ -1603,7 +1670,8 @@ if (confirmLogoutBtn && logoutConfirmModal) {
     confirmLogoutBtn.addEventListener('click', async () => {
         markSaved();
         if (window.SyncEngine && typeof SyncEngine.logout === 'function') {
-            try { await SyncEngine.logout(); } catch (err) { alert(err.message); return; }
+            setBusy(confirmLogoutBtn, true);
+            try { await SyncEngine.logout(); } catch (err) { setBusy(confirmLogoutBtn, false); notify(err.message, 'error'); return; }
         }
         logoutConfirmModal.classList.remove('open');
         window.location.replace('login.html');
@@ -1657,22 +1725,47 @@ const settingsSyncNowBtn = document.getElementById('settingsSyncNowBtn');
 if (settingsSyncNowBtn) {
     settingsSyncNowBtn.addEventListener('click', async () => {
         const feedback = document.getElementById('settingsSyncFeedback');
-        settingsSyncNowBtn.disabled = true;
+        setBusy(settingsSyncNowBtn, true);
         try {
             const result = await SyncEngine.syncNow({ origin: 'manual' });
-            if (feedback) feedback.textContent = result.success
-                ? (result.deferred ? 'Saved changes synced. Finish editing before the page updates.' : 'Synced.')
-                : (result.error || 'Sync could not finish. Local changes were kept.');
+            const msg = result.success
+                ? (result.deferred ? 'Synced. The page will update once you finish editing.' : '✓ Synced just now.')
+                : (result.error || "Sync didn't finish. Your changes are still saved on this device.");
+            if (feedback) feedback.textContent = msg;
+            notify(msg.replace(/^✓ /, ''), result.success ? 'success' : 'error');
         } catch (err) {
             if (feedback) feedback.textContent = err.message;
-        } finally { settingsSyncNowBtn.disabled = false; }
+            notify(err.message, 'error');
+        } finally { setBusy(settingsSyncNowBtn, false); }
     });
 }
 
 const saveAllBtn = document.getElementById('saveAllSettingsBtn');
 if (saveAllBtn) {
-    saveAllBtn.addEventListener('click', () => saveSettings(false));
+    saveAllBtn.addEventListener('click', async () => {
+        setBusy(saveAllBtn, true);
+        try { await saveSettings(false); }
+        catch (err) { notify("Couldn't save settings: " + err.message, 'error'); }
+        finally { setBusy(saveAllBtn, false); }
+    });
 }
+
+const discardSettingsBtn = document.getElementById('discardSettingsBtn');
+if (discardSettingsBtn) {
+    discardSettingsBtn.addEventListener('click', () => {
+        fx()?.tap?.();
+        loadSettings();
+        notify('Changes discarded.', 'info');
+    });
+}
+
+// Ctrl/Cmd+S saves while there are unsaved changes.
+document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && hasUnsavedChanges) {
+        e.preventDefault();
+        saveAllBtn?.click();
+    }
+});
 
 if (weekendStartSelect) weekendStartSelect.addEventListener('change', updateWorkweekNotice);
 if (weekendEndSelect) weekendEndSelect.addEventListener('change', updateWorkweekNotice);
