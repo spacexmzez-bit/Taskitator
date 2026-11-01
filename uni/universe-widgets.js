@@ -55,12 +55,39 @@
     (initial || focusable(overlay)[0])?.focus();
     return release;
   }
-  function toast(message) {
+  // Toast with optional tone ('success' | 'info' | 'error') and one optional action button.
+  function toast(message, { tone = 'success', action, onAction, duration = 4000 } = {}) {
     const root = document.getElementById('universeWorkspace'); if (!root) return;
-    let node = root.querySelector('.uni-toast');
-    if (!node) { node = element('div'); node.className = 'uni-toast'; node.setAttribute('role', 'status'); node.setAttribute('aria-live', 'polite'); root.append(node); }
-    node.textContent = message; node.hidden = false; clearTimeout(noticeTimer);
-    noticeTimer = setTimeout(() => { node.hidden = true; }, 4000);
+    root.querySelector('.uni-toast')?.remove();
+    const node = element('div'); node.className = 'uni-toast'; node.dataset.tone = tone;
+    node.setAttribute('role', tone === 'error' ? 'alert' : 'status'); node.setAttribute('aria-live', 'polite');
+    node.append(element('span', message));
+    if (action && onAction) {
+      const b = element('button', action); b.type = 'button'; b.className = 'btn-primary';
+      b.addEventListener('click', () => { node.remove(); onAction(); });
+      node.append(b);
+    }
+    root.append(node); clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => node.remove(), duration);
+  }
+  // Placeholder rows shown while a view loads.
+  function skeleton(rows = 4) {
+    const group = element('div'); group.className = 'uni-skeleton-group'; group.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < rows; i++) { const r = element('div'); r.className = 'uni-skeleton'; group.append(r); }
+    return group;
+  }
+  // Visual busy/done feedback for the button that started an action. Never changes the action's outcome.
+  function pressFeedback(button) {
+    if (!button || !button.classList) return { done() {}, fail() {} };
+    const timer = setTimeout(() => { if (button.isConnected) { button.classList.add('is-busy'); button.setAttribute('aria-busy', 'true'); } }, 160);
+    const settle = cls => {
+      clearTimeout(timer);
+      const wasBusy = button.classList.contains('is-busy');
+      button.classList.remove('is-busy'); button.removeAttribute('aria-busy');
+      if (!button.isConnected || (cls === 'is-done' && !wasBusy)) return;
+      button.classList.add(cls); setTimeout(() => button.classList.remove(cls), cls === 'is-done' ? 1100 : 400);
+    };
+    return { done: () => settle('is-done'), fail: () => settle('is-failed') };
   }
   function errorMessage(error) {
     const status = error?.status || error?.statusCode;
@@ -72,5 +99,5 @@
     if (text && text.length < 260 && !/SELECT |INSERT |UPDATE |D1_|stack|https?:\/\//i.test(text)) return text;
     return 'Couldn’t finish this action. Check your connection and retry. Your draft has not been cleared.';
   }
-  window.UniverseUX = { layer, toast, errorMessage };
+  window.UniverseUX = { layer, toast, errorMessage, skeleton, pressFeedback };
 })();

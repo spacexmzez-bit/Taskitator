@@ -17,10 +17,10 @@ test('Task details use two columns without exposing a hidden assignment list',as
 });
 
 async function completeUI(role='member'){
- const root=new Element('div'),body=new Element('body'),events={};body.append(root);const cls=n=>({add:s=>{n.className=s;},remove:()=>{},toggle:()=>{}});Object.defineProperty(body,'classList',{value:cls(body)});Object.defineProperty(root,'classList',{value:cls(root)});root.prepend=function(...nodes){for(const n of nodes)n.remove();this.children.unshift(...nodes);};
+ const root=new Element('div'),body=new Element('body'),events={};body.append(root);const cls=n=>({add:s=>{n.className=s;},remove:()=>{},toggle:()=>{}});body.classList=cls(body);root.classList=cls(root);root.prepend=function(...nodes){for(const n of nodes)n.remove();this.children.unshift(...nodes);};
  const group={id:'g',title:'Team',purpose:'Study together',role,owner_pro:true,can_rename:role==='owner',can_add_members:role!=='member',revision:1};const window={Clerk:{session:{id:'s'},user:{id:'me',username:'Mazen'},addListener(){}},addEventListener:(k,fn)=>(events[k]??=[]).push(fn),TaskitatorAuth:{account:{user:'me'},api:async path=>{
  if(path==='/pro/status')return {isPro:true};if(path.endsWith('/capabilities'))return {ui:true,capabilities:{tasks:true}};if(path==='/universe/groups')return {groups:[group]};if(path.endsWith('/members'))return {members:[{account_id:'me',username:'Mazen',role}]};if(path.endsWith('/settings'))return {validate_criteria:true};if(path.endsWith('/invitations'))return {invitations:[]};if(path.endsWith('/activity'))return {events:[]};if(path.endsWith('/work'))return {revision:1,tasks:[],projects:[],assignments:[],catalog:[]};if(path.endsWith('/ai'))return {account:{daily:0,monthly:0}};return {group};}}};
- const doc={body,createElement:tag=>{const e=new Element(tag);Object.defineProperty(e,'classList',{value:cls(e)});return e;},getElementById:()=>root,querySelectorAll:()=>descendants(root).filter(x=>x.tag==='form')};const context={window,document:doc,navigator:{onLine:true},location:{search:'',href:'https://preview.local/components.html'},URL,URLSearchParams,Event,Date,Map,Set,Error};for(const name of ['universe-tasks-ui.js','universe-shell.js','universe-ui.js'])vm.runInNewContext(source(name),context);events['taskitator-universe-view'][0]();await flush();if(role==='owner')await byText(root,'Created Universes').fire('click');await byText(root,'Team').fire('click');await flush();return {root};
+ const doc={body,createElement:tag=>{const e=new Element(tag);e.classList=cls(e);return e;},getElementById:()=>root,querySelectorAll:()=>descendants(root).filter(x=>x.tag==='form')};const context={window,requestAnimationFrame:()=>{},document:doc,navigator:{onLine:true},location:{search:'',href:'https://preview.local/components.html'},URL,URLSearchParams,Event,Date,Map,Set,Error};for(const name of ['universe-tasks-ui.js','universe-shell.js','universe-ui.js'])vm.runInNewContext(source(name),context);events['taskitator-universe-view'][0]();await flush();if(role==='owner')await byText(root,'Created').fire('click');await byText(root,'Team').fire('click');await flush();return {root};
 }
 
 test('Member settings remain useful without owner controls or another member stats selector',async()=>{
@@ -54,9 +54,10 @@ test('Selection keeps inactive sections hidden while member counts are still loa
  }}};
  vm.runInNewContext(source('universe-ui.js'),{window,document:{getElementById:()=>root,createElement:t=>new Element(t)},navigator:{onLine:true},location:{search:''},URL,URLSearchParams,Map,Set,Error});
  events['taskitator-universe-view']();await flush();
- const sections=root.children.filter(x=>x.tag==='section');assert.equal(sections.length,2);assert.ok(sections.every(x=>x.hidden));
- assert.equal(byText(root,'Joined Universes').attrs['aria-selected'],'true');
- resolveMembers({members:[{account_id:'me'}]});await flush();assert.ok(sections.every(x=>x.hidden));
- await byText(root,'Created Universes').fire('click');assert.ok(byText(root,'1 joined members'));
- await byText(root,'Join or Create a Universe').fire('click');assert.equal(sections[0].hidden,false);assert.equal(sections[1].hidden,true);
+ const cards=root.children.find(x=>x.className==='uni-cards'),actions=root.children.find(x=>x.tag==='section');assert.ok(cards);assert.equal(cards.hidden,false);assert.equal(actions.hidden,true);
+ assert.equal(byText(root,'Joined').attrs['aria-selected'],'true');
+ await byText(root,'Created').fire('click');assert.equal(actions.hidden,true);assert.ok(byText(root,'Counting members…'));
+ await byText(root,'Join or create').fire('click');assert.equal(cards.hidden,true);assert.equal(actions.hidden,false);
+ resolveMembers({members:[{account_id:'me'}]});await flush();assert.equal(cards.hidden,true);assert.equal(actions.hidden,false);
+ await byText(root,'Created').fire('click');assert.ok(byText(root,'1 joined members'));
 });
