@@ -1,5 +1,6 @@
 /* Taskitator tour engine (v2).
    TaskitatorSpotlight.start({steps, onFinish, chapter}) / .stop()
+   Options: theme ('universe' tints the tour galaxy purple).
    Step: {selector:string|string[], title, text, why, note, icon, visual, kind:'center', before(), when()}
    Visuals: {type:'legend'|'pips'|'list'|'checklist', ...}. Text supports **bold** and `code`. */
 (() => {
@@ -66,13 +67,13 @@
     return box;
   }
 
-  function start({ steps, onFinish = () => {}, chapter = '' } = {}) {
+  function start({ steps, onFinish = () => {}, chapter = '', theme = '' } = {}) {
     if (active || !Array.isArray(steps) || !steps.length) return false;
     // Never cover a modal or sign-in screen. The caller can retry later.
     if (document.querySelector('dialog[open], .modal-overlay.open, #authLoadingStatus')) return false;
 
     const previous = document.activeElement;
-    const veil = el('div', 'tt-veil');
+    const veil = el('div', 'tt-veil' + (theme ? ' tt-' + theme : ''));
     const ring = el('div', 'tt-ring tt-none'); ring.setAttribute('aria-hidden', 'true');
     const arrow = el('div', 'tt-arrow tt-hide'); arrow.setAttribute('aria-hidden', 'true');
     const card = el('section', 'tt-card');

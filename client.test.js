@@ -735,12 +735,15 @@ test('an open Pro review modal defers automatic page refresh',()=>{
 });
 
 class UniElement {
- constructor(tag='div',text=''){this.tag=tag;this.textContent=text;this.children=[];this.events={};this.attrs={};this.dataset={};this.value='';this.style={};}
+ constructor(tag='div',text=''){this.tag=tag;this.textContent=text;this.children=[];this.events={};this.attrs={};this.dataset={};this.value='';this.style={setProperty(k,v){this[k]=v;}};this.classList={add:c=>{this.className=((this.className||'')+' '+c).trim()},remove:c=>{this.className=(this.className||'').split(' ').filter(x=>x!==c).join(' ')},contains:c=>(this.className||'').split(' ').includes(c),toggle:(c,on)=>{const a=new Set((this.className||'').split(' '));if(on===undefined)on=!a.has(c);on?a.add(c):a.delete(c);this.className=[...a].join(' ');}};}
+ insertBefore(item,ref){item.remove();item.parentElement=this;const i=this.children.indexOf(ref);this.children.splice(i<0?this.children.length:i,0,item);}
  append(...items){for(const item of items)if(item&&typeof item==='object')item.parentElement=this;this.children.push(...items);}
  replaceChildren(...items){this.children=[...items];}
  setAttribute(k,v){this.attrs[k]=v;}
  addEventListener(k,fn){this.events[k]=fn;}
  remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(x=>x!==this);this.parentElement=null;}
+ querySelectorAll(s){return uniNodes(this).slice(1).filter(n=>s.startsWith('.')?n.className?.split(' ').includes(s.slice(1)):n.tag===s);}
+ querySelector(s){return this.querySelectorAll(s)[0]||null;}
  focus(){}select(){}
 }
 function focusEngine(){const window={addEventListener(){}},context={window,document:{readyState:'loading',addEventListener(){}},navigator:{},setInterval(){},Date,JSON,Number,Math};vm.runInNewContext(fs.readFileSync(new URL('uni/focus-timer.js',rootURL()),'utf8'),context);return window.TaskitatorPomodoro;}
@@ -788,14 +791,14 @@ const uniFlush=async()=>{for(let i=0;i<20;i++)await new Promise(r=>setImmediate(
 const uniNodes=e=>[e,...e.children.filter(x=>typeof x==='object').flatMap(uniNodes)];
 test('Phase 3 UI renders hostile task titles as text and fences stale-view actions',async()=>{
  const root=new UniElement(),window={},calls=[];let current=true;
- vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,document:{createElement:tag=>new UniElement(tag)},Date,Map,Error});
+ vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,requestAnimationFrame:()=>{},document:{createElement:tag=>new UniElement(tag),createElementNS:(ns,tag)=>new UniElement(tag),createTextNode:text=>new UniElement('#text',text)},Date,Map,Error});
  await window.UniverseTasksUI.mount(root,{id:'g',role:'member'},[],{current:()=>current,run:fn=>fn(),send:async()=>{},api:async path=>{calls.push(path);return {projects:[{id:'p',title:'<script>bad</script>'}],tasks:[{id:'t',project_id:'p',title:'<img src=x>',mode:'shared'}],assignments:[{id:'a',task_id:'t',account_id:null,state:'open'}]};}});
  assert.ok(uniNodes(root).some(n=>n.textContent==='<img src=x>'));assert.ok(!uniNodes(root).some(n=>n.tag==='img'||n.tag==='script'));
  current=false;const b=uniNodes(root).find(n=>n.textContent==='Shared · open');await assert.rejects(b.events.click(),/session or view changed/);assert.equal(calls.length,1);
 });
 test('Phase 4.1 UI requires explicit maximum approval and withholds human buttons before AI approval',async()=>{
  const root=new UniElement(),window={addEventListener(){},removeEventListener(){}},sent=[];
- vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,document:{createElement:tag=>new UniElement(tag)},Date,Map,Error});
+ vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,requestAnimationFrame:()=>{},document:{createElement:tag=>new UniElement(tag),createElementNS:(ns,tag)=>new UniElement(tag),createTextNode:text=>new UniElement('#text',text)},Date,Map,Error});
  const task={id:'t',project_id:'p',title:'AI task',criteria:'Photo of finished checklist',mode:'shared',audit_mode:'both',members:[],reviewers:[],ai_required:true,human_required:true,revision:1};
  const a={id:'a',task_id:'t',state:'pending',submission_id:'s',revision:2};
  const detail={assignment:a,task,references:[],submissions:[],can_review:true,can_submit:false,can_request_ai:true,ai_attestation:null,ai_reviews:[{id:'q',state:'quoted',mode:'hosted',model:'gemini-test-flash-lite',max_credits:1.25,charged:0,expires_at:Date.now()+60000}]};
@@ -820,12 +823,12 @@ test('Universe UI retries a failed create using the same operation and rejects l
  const ui=uniUI(async(path,options)=>{if(path==='/pro/status')return {isPro:true};if(path.endsWith('capabilities'))return {ui:true};if(path==='/universe/groups'&&!options.body)return {groups:[]};
  if(path==='/universe/groups'){bodies.push(JSON.parse(options.body));if(fail){fail=false;throw new Error('Network unavailable');}return {group_id:'g'};}
  if(path.endsWith('/members'))return {members:[]};if(path.endsWith('/invitations'))return {invitations:[]};if(path.endsWith('/settings'))return {validate_criteria:1};if(path.endsWith('/activity'))return {events:[]};return {group:{id:'g',title:'Team',purpose:'',role:'owner',revision:1}};});await uniFlush();
- const form=uniNodes(ui.root).find(e=>e.tag==='form');const inputs=form.children.filter(e=>e.tag==='label').map(l=>l.children[0]);inputs[0].value='Team';
+ const form=uniNodes(ui.root).find(e=>e.tag==='form'&&uniNodes(e).some(n=>n.textContent==='Create Universe'));const inputs=form.children.filter(e=>e.tag==='label').map(l=>l.children[0]);inputs[0].value='Team';
  form.events.submit({preventDefault(){}});await uniFlush();form.events.submit({preventDefault(){}});await uniFlush();assert.equal(bodies.length,2);assert.equal(bodies[0].operation_id,bodies[1].operation_id);
  let resolve;const late=uniUI(path=>path.endsWith('capabilities')?new Promise(r=>resolve=r):Promise.resolve({groups:[]}));late.w.Clerk.session.id='new';late.w.Clerk.listener();resolve({ui:true});await uniFlush();assert.equal(late.root.children.length,0);
 });
 import './uni/universe-shell.test.js';
-test('Phase 8 dashboard filters locally and shows assigned child with contextual parent',async()=>{const root=new UniElement(),window={Clerk:{user:{id:'me'}},addEventListener(){}};let calls=0;vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,document:{createElement:tag=>new UniElement(tag)},Date,Map,Set,Error});await window.UniverseTasksUI.mount(root,{id:'g',role:'member'},[{account_id:'me',username:'Me'}],{view:'dashboard',current:()=>true,run:fn=>fn(),api:async()=>{calls++;return {projects:[{id:'p',title:'Project'}],tasks:[{id:'parent',title:'Parent',project_id:'p',members:[],mode:'everyone'},{id:'child',title:'Assigned child',parent_id:'parent',project_id:'p',members:['me'],mode:'everyone'}],assignments:[{id:'a',task_id:'child',account_id:'me',state:'open'}],catalog:[],progress:{}};}});assert.ok(uniNodes(root).some(n=>n.textContent==='Parent · context'));assert.ok(uniNodes(root).some(n=>n.textContent==='Assigned child'));const search=uniNodes(root).find(n=>n.tag==='input');search.value='No match';search.events.input();assert.ok(uniNodes(root).some(n=>n.textContent==='No assigned tasks match these filters.'));assert.equal(calls,1);});
+test('Phase 8 dashboard filters locally and shows assigned child with contextual parent',async()=>{const root=new UniElement(),window={Clerk:{user:{id:'me'}},addEventListener(){}};let calls=0;vm.runInNewContext(fs.readFileSync(new URL('uni/universe-tasks-ui.js',rootURL()),'utf8'),{window,requestAnimationFrame:()=>{},document:{createElement:tag=>new UniElement(tag),createElementNS:(ns,tag)=>new UniElement(tag),createTextNode:text=>new UniElement('#text',text)},Date,Map,Set,Error});await window.UniverseTasksUI.mount(root,{id:'g',role:'member'},[{account_id:'me',username:'Me'}],{view:'dashboard',current:()=>true,run:fn=>fn(),api:async()=>{calls++;return {projects:[{id:'p',title:'Project'}],tasks:[{id:'parent',title:'Parent',project_id:'p',members:[],mode:'everyone'},{id:'child',title:'Assigned child',parent_id:'parent',project_id:'p',members:['me'],mode:'everyone'}],assignments:[{id:'a',task_id:'child',account_id:'me',state:'open'}],catalog:[],progress:{}};}});assert.ok(uniNodes(root).some(n=>n.textContent==='Parent · context'));assert.ok(uniNodes(root).some(n=>n.textContent==='Assigned child'));const search=uniNodes(root).find(n=>n.tag==='input');search.value='No match';search.events.input();assert.ok(uniNodes(root).some(n=>n.textContent==='No assigned tasks match these filters.'));assert.equal(calls,1);});
 
 import './uni/universe-interface.test.js';
 import './uni/universe-polish.test.js';

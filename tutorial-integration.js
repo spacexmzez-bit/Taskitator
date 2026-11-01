@@ -98,32 +98,71 @@
   };
   const ORDER = ['account', 'breaks', 'ai', 'phone', 'pro'];
 
+  // ---- Universe tour (follows the redesigned layout; role-aware) ----
+  const uniTabBtn = id => document.querySelector(`.uni-tabs button[aria-controls="uni-pane-${id}"]`);
+  async function uniTab(id) {
+    const btn = uniTabBtn(id);
+    if (!btn || btn.classList.contains('selected')) return;
+    btn.click(); await sleep(380);
+  }
+  const uniCurrentTab = () => document.querySelector('.uni-tabs button.selected')?.getAttribute('aria-controls')?.replace('uni-pane-', '') || '';
+  const ROLE_LINE = {
+    owner: 'You’re the **owner**, so you see every tab, including Controls.',
+    admin: 'You’re an **admin**, so you can manage people and labels.',
+    reviewer: 'You’re a **reviewer**. Your role decides which actions you see.',
+    member: 'You’re a **member**. Your role decides which actions you see.'
+  };
+
   function universeSteps(g) {
-    const list = [
-      { selector: '.uni-brand', icon: '🌌', title: 'Your Universe', text: 'A shared workspace. Your role decides which actions you see.' },
-      { selector: '.uni-tabs', icon: '🧭', title: 'Move around', text: 'Tabs for your dashboard, projects, statistics and settings.' },
-      { selector: '#uni-pane-dashboard', icon: '📋', title: 'Your work', text: 'Work assigned to you and the review status of each item.' },
-      { selector: '.uni-sync', icon: '🔄', title: 'Refresh', text: 'Pull the latest changes from other members.' }
+    const manager = ['owner', 'admin'].includes(g.role);
+    const steps = [
+      { selector: '.uni-brand', before: () => uniTab('dashboard'), icon: '🌌', title: 'Your Universe', text: `A shared workspace for your group. ${ROLE_LINE[g.role] || 'Your role decides which actions you see.'}`, why: 'The server checks your role on every action, so a button you can’t see is one you can’t use.' },
+      { selector: '.uni-sync', icon: '🔄', title: 'Sync and connection', text: 'Universe needs an internet connection, and changes are **not** queued offline. Tap sync to pull the latest from other members. The label beside it shows the state:', visual: { type: 'list', items: [
+        { icon: '🟢', text: '**Connected**: up to date' },
+        { icon: '💾', text: '**Saving…**: a change is on its way' },
+        { icon: '📴', text: '**Offline**: reconnect, then retry' },
+        { icon: '⚠️', text: '**Attention**: sync again to check' }] } },
+      { selector: '.uni-tabs', icon: '🧭', title: 'Move around', text: `Switch between My dashboard, Projects, My stats${manager ? ', Controls' : ''} and Settings. The glowing bar follows the tab you’re on. Arrow keys also move between tabs.` },
+      { selector: ['.uni-ring', '#uni-pane-dashboard'], before: () => uniTab('dashboard'), icon: '📋', title: 'Your dashboard', text: 'The ring shows how much of **your** assigned work is done. The date pills under it narrow the list to what’s due soon.' },
+      { selector: ['.uni-group', '#uni-pane-dashboard'], before: () => uniTab('dashboard'), icon: '🗂️', title: 'Work, grouped by date', text: 'Tasks sit in groups: **Overdue**, **Today**, **Upcoming**, **No date** and **Complete**. The coloured stripe on a card is its priority. Open one to see where it stands:', visual: { type: 'list', items: [
+        { icon: '1️⃣', text: '**Open**: waiting for you' },
+        { icon: '2️⃣', text: '**Submitted**: you sent your proof' },
+        { icon: '3️⃣', text: '**In review**: a reviewer is checking' },
+        { icon: '✅', text: '**Approved**, or **Needs changes** to fix and resubmit' }] } },
+      { selector: ['.uni-project-head', '.uni-project-tabs', '#uni-pane-projects'], before: () => uniTab('projects'), icon: '📁', title: 'Projects', text: 'Pick a project to see its progress bar and tasks. Subtasks fold under their parent, so tap a parent to show or hide them.' }
     ];
-    if (['owner', 'admin'].includes(g.role)) list.push({ selector: '.uni-tabs', icon: '🛠️', title: 'Manage work', text: 'Use **Controls** to manage the people and labels your role can change.' });
-    return list;
+    if (manager) steps.push({ selector: '#uni-pane-projects .uni-fab', before: () => uniTab('projects'), icon: '➕', title: 'Create work', text: 'Use **＋** to add a task. Task editors pick tags and priorities from your Universe’s labels. If you have no project yet, create one first.', note: 'An unsaved editor shows a small “unsaved” marker, and you’re asked before leaving it.' });
+    steps.push({ selector: ['.uni-stat-grid', '#uni-pane-stats'], before: () => uniTab('stats'), icon: '📊', title: 'My stats', text: 'Counts of your own assignments by state, plus your Universe AI credit use. Only your numbers appear here.' });
+    if (manager) steps.push({ selector: ['.uni-subtabs', '#uni-pane-controls'], before: () => uniTab('controls'), icon: '🛠️', title: 'Controls', text: 'Three sections: **People** (roles and removal under “Manage”), **Invitations** (single-use links that reserve a seat until accepted, cancelled or expired) and **Labels** (tags and priorities).' });
+    steps.push(
+      { selector: '#uni-pane-settings', before: () => uniTab('settings'), icon: '⚙️', title: 'Settings', text: g.role === 'owner'
+        ? 'Preferences, review standards, ownership transfer and exports. Export and import now live here per Universe. From **All Universes**, the **Backups** button on a Universe you created opens this tab.'
+        : 'Your preferences and the Universe options your role allows.' },
+      { selector: '.uni-danger-zone', before: () => uniTab('settings'), icon: '🚪', title: g.role === 'owner' ? 'Delete Universe' : 'Leave Universe', text: g.role === 'owner'
+        ? 'Deleting removes access for every member, so export first. A red confirmation always asks before anything is deleted.'
+        : 'Leaving ends your access and history. A red confirmation always asks first.' },
+      { selector: '.uni-tour-replay', before: () => uniTab('settings'), icon: '🔁', title: 'Replay this tour', text: 'Run it again here whenever you like. **All Universes** switches Universe, and **Back to Tasks** returns to your day.' }
+    );
+    return steps;
   }
 
   // ---- running tours ----
-  function run(key, steps, chapter) {
+  function run(key, steps, chapter, theme = '') {
     const o = owner();
     if (!o || !steps?.length || !window.TaskitatorSpotlight) return false;
     const back = onSettings() ? currentTab() : '';
+    const uniBack = theme === 'universe' ? uniCurrentTab() : '';
     return window.TaskitatorSpotlight.start({
-      steps, chapter,
+      steps, chapter, theme,
       onFinish: async result => {
         if (owner() === o) mark(key, result);
         if (back && currentTab() !== back) { await sleep(60); document.querySelector(`.settings-tab[data-tab="${back}"]`)?.click(); }
+        if (uniBack && uniCurrentTab() !== uniBack) { await sleep(60); uniTabBtn(uniBack)?.click(); }
       }
     });
   }
   function start(key, list) {
-    if (list) return run(key, list, 'Universe');
+    if (list) return run(key, list, 'Universe', 'universe');
     const t = TOURS[key]; if (!t) return false;
     return run(key, t.steps(), t.chapter);
   }
@@ -168,10 +207,19 @@
     openUniverse(g) {
       if (!g?.id) return;
       const key = 'universe:' + g.id;
-      const replay = document.createElement('button'); replay.type = 'button'; replay.className = 'icon-btn'; replay.textContent = 'Replay Universe tutorial';
-      replay.addEventListener('click', () => start(key, universeSteps(g)));
-      document.querySelector('#uni-pane-settings')?.append(replay);
-      if (!progress(key)) setTimeout(() => attempt(() => start(key, universeSteps(g))), 1000);
+      const pane = document.querySelector('#uni-pane-settings');
+      if (pane && !pane.querySelector('.uni-tour-replay')) {
+        const box = document.createElement('section'); box.className = 'uni-settings-section uni-tour-replay';
+        const head = document.createElement('div'); head.className = 'uni-section-heading';
+        const h = document.createElement('h3'); h.textContent = 'Help';
+        const d = document.createElement('p'); d.textContent = 'A short walkthrough of this Universe for your role.';
+        head.append(h, d);
+        const replay = document.createElement('button'); replay.type = 'button'; replay.className = 'icon-btn';
+        replay.textContent = 'Replay Universe tutorial';
+        replay.addEventListener('click', () => start(key, universeSteps(g)));
+        box.append(head, replay); pane.append(box);
+      }
+      if (!progress(key)) setTimeout(() => attempt(() => progress(key) ? true : start(key, universeSteps(g))), 1000);
     },
     proActivated() { if (onSettings()) setTimeout(() => attempt(() => start('pro')), 300); }
   };

@@ -68,3 +68,17 @@
 .tt-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:640px){.tt-keys{display:none}}
 @media (prefers-reduced-motion:reduce){.tt-ring,.tt-ring::after,.tt-card,.tt-bar i,.tt-btn,.tt-checklist a{animation:none!important;transition:none!important}}
+
+/* Universe theme: galaxy purple, matching #universeWorkspace. Applied with start({theme:'universe'}). */
+.tt-veil.tt-universe{--primary:#8b5cf6;--primary-hover:#c4b5fd;--accent-light:#2e1065;--border-hover:#7c3aed;--border-color:#3b2a66;--card-subtle:#1c1438;--card-bg:#150f2e;--text-muted:#b7a6e6;--depth:#0b0620;--depth-primary:#5b21b6;--text-color:#f5f0ff}
+.tt-universe.tt-dim{background:rgba(8,4,24,.84)}
+.tt-universe .tt-ring{box-shadow:0 0 0 9999px rgba(8,4,24,.82)}
+.tt-universe .tt-ring::after{animation-name:ttPulseU}
+@keyframes ttPulseU{0%{box-shadow:0 0 0 0 rgba(167,139,250,.6)}70%,100%{box-shadow:0 0 0 12px rgba(167,139,250,0)}}
+.tt-universe .tt-card,.tt-universe .tt-arrow{background:#17102f;border-color:#5b3fa8}
+.tt-universe .tt-card{box-shadow:0 16px 40px rgba(6,2,20,.7),0 0 0 1px rgba(139,92,246,.18)}
+.tt-universe .tt-text,.tt-universe .tt-list li{color:#e6dcff}
+.tt-universe .tt-why{background:rgba(139,92,246,.12);color:#d4c6f7}
+.tt-universe .tt-btn.tt-primary{background:#7c3aed;border-color:#7c3aed}
+.tt-universe .tt-btn:focus-visible,.tt-universe .tt-skip:focus-visible,.tt-universe .tt-checklist a:focus-visible{box-shadow:0 0 0 3px rgba(167,139,250,.6)}
+.tt-universe .tt-keys{color:#9d8bd0}
