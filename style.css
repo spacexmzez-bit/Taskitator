@@ -5153,10 +5153,22 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
  .page-title-actions .icon-only-btn { min-width: 36px; width: 36px; min-height: 36px; height: 36px; padding: 0; }
 }
 
-/* The sorting menu is hidden until its button is pressed. */
+/* Sort menu uses the same surfaces and motion as the rest of Taskitator. */
 .task-sort-wrap { position: relative; flex: none; }
-.task-sort-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 100; min-width: 200px; padding: 5px; border: 1px solid var(--border-color, #39527f); border-radius: 10px; background: var(--card-bg, #182948); box-shadow: 0 8px 24px #0009; }
+.task-sort-menu {
+    position: absolute; right: 0; top: calc(100% + 8px); z-index: 300;
+    min-width: 210px; padding: 6px; border: 1.5px solid var(--border-color);
+    border-radius: 12px; background: var(--card-bg); box-shadow: var(--card-shadow);
+    animation: nodeSlideIn var(--dur-med) var(--ease-out);
+}
 .task-sort-menu[hidden] { display: none !important; }
-.task-sort-menu button { display: block; width: 100%; padding: 10px; border: 0; border-radius: 6px; color: var(--text-color, #fff); background: transparent; text-align: left; cursor: pointer; }
-.task-sort-menu button:hover, .task-sort-menu button:focus-visible { background: #30466d; }
-.task-sort-menu button[aria-checked="true"]::before { content: '✓ '; }
+.task-sort-menu button {
+    display: flex; align-items: center; width: 100%; min-height: 40px; padding: 8px 10px;
+    border: 1px solid transparent; border-radius: 8px; color: var(--text-color);
+    background: transparent; font: inherit; font-size: .85rem; font-weight: 600;
+    text-align: left; cursor: pointer;
+    transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+.task-sort-menu button:hover, .task-sort-menu button:focus-visible { background: var(--card-subtle); border-color: var(--border-hover); outline: none; }
+.task-sort-menu button[aria-checked="true"] { color: var(--primary); }
+.task-sort-menu button[aria-checked="true"]::after { content: '✓'; margin-left: auto; }

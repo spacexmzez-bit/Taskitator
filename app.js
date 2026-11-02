@@ -3042,7 +3042,6 @@ window.TaskitatorApp = (() => {
         if (currentView === 'today') Promise.resolve().then(async()=>{
             try { if(window.SyncEngine?.isConfigured?.()){const result=await window.SyncEngine.syncNow({origin:'page-load'});if(!result?.success)console.warn('Today sync is pending. Use Sync Now to resolve a connection or edit conflict.');}} catch(error){console.warn('Today sync could not finish.',error.message);}
         });
-        initSyncIndicator();
         const sortButton = document.getElementById('taskSortButton');
         const sortMenu = document.getElementById('taskSortMenu');
         if (sortButton && sortMenu) {
@@ -3071,6 +3070,7 @@ window.TaskitatorApp = (() => {
                 if (event.key === 'Escape' && !sortMenu.hidden) { closeSortMenu(); sortButton.focus(); }
             });
         }
+        initSyncIndicator();
         loadStorage();
         BreakUI.init();
         window.TaskitatorPro?.emergencyStatus().then(()=>updateEmergencyUI()).catch(()=>{});
