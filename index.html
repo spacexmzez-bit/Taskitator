@@ -374,6 +374,7 @@
         <h1 id="pageViewHeading">Today's Focus</h1>
         <button type="button" class="account-username-btn" id="accountUsernameBtn" title="Manage username" aria-label="Set username">Set username</button>
         <div class="page-title-actions">
+            <label>Sort <select id="taskSortMode" aria-label="Sort tasks"><option value="priority">Priority</option><option value="alpha">Alphabetical</option><option value="required">Required, then priority</option></select></label>
             <!-- Compact Icon-Only Selection Mode Toggle Button -->
             <button type="button" class="icon-only-btn select-mode-btn" id="toggleSelectModeBtn" aria-pressed="false" title="Toggle Multi-Selection Mode" aria-label="Toggle Multi-Selection Mode">
                 <span style="font-size: 0.95rem; line-height: 1;">☑</span><span class="wide-label">Multiselect</span>
@@ -558,7 +559,7 @@
         <div id="escrowGateLockBanner" style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; margin-bottom: 12px;">
             <span style="font-size: 1.1rem; line-height: 1;">🔒</span>
             <div style="font-size: 0.8rem; color: #fca5a5; line-height: 1.4;">
-                <strong>Extraction Locked:</strong> Verify today’s AI-locked tasks to export these notes.
+                <strong>Notes locked:</strong> Complete, move or trash required tasks due today or overdue to view your notes.
             </div>
         </div>
 

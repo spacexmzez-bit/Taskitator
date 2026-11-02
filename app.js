@@ -130,7 +130,7 @@ window.TaskitatorAgent = (() => {
                 `CURRENT PAGE: ${page === 'today' ? 'Today Queue (index.html)' : 'General Tasks (general.html)'}.\n` +
                 "ROLE: Primary Task Manager.\n" +
                 "You have full access to task inspection and mutation tools (get_tasks, create_task, update_task, trash_task). " +
-                "Assist directly with creating, breaking down, and managing tasks."
+                "Assist directly with creating, breaking down, and managing tasks. For questions about today’s progress, use get_today_progress and do not use other tools for historical task details. The result includes only currently available active and completed tasks; it does not include moved or trashed history."
             );
         } else if (page === 'stats') {
             let tasks = [];
@@ -194,6 +194,7 @@ window.TaskitatorAgent = (() => {
         {
             function_declarations: [
                 {name:'propose_study_plan',description:'Pro-only finite study recurrence. Obtain title, total units and study days FROM THE USER (ask for any missing fields). Opens an editable preview; never creates tasks or confirms. Never use ordinary creation tools to bypass this feature. No audit settings or criteria can be supplied.',parameters:{type:'OBJECT',properties:{title:{type:'STRING'},total:{type:'INTEGER'},days:{type:'INTEGER'},unit:{type:'STRING'},plural:{type:'STRING'},first:{type:'INTEGER'},start:{type:'STRING',description:'YYYY-MM-DD, default today'},weekdays:{type:'ARRAY',items:{type:'INTEGER'},description:'0 Sunday through 6 Saturday. Omit to use Settings weekends.'}},required:['title','total','days']}},
+                {name:'get_today_progress',description:'Get today’s active and completed task progress with title and hierarchy only. Excludes moved and trashed history.',parameters:{type:'OBJECT',properties:{}}},
                 {
                     name: 'get_tasks',
                     description: 'Retrieve current tasks from Taskitator to check existing tasks, find IDs, or review schedules.',
@@ -312,6 +313,35 @@ window.TaskitatorAgent = (() => {
     // =========================================================================
     // 6. Tool Dispatcher & Hard Lock Guardrails
     // =========================================================================
+    // Scoped progress data: never include task IDs, dates, criteria or descriptions.
+    function todayProgress(tasks, now, dayHour, logicalDate) {
+        const day = logicalDate(now, dayHour), byId = new Map(tasks.filter(Boolean).map(t => [t.id, t]));
+        const dueFor = task => {
+            const seen = new Set(); let node = task;
+            while (node && !seen.has(node.id)) {
+                seen.add(node.id);
+                const due = String(node.due_date || '').trim().toLowerCase();
+                if (due) return due;
+                node = byId.get(node.parent_id);
+            }
+            return '';
+        };
+        return tasks.filter(t => {
+            if (!t || !['active', 'completed'].includes(t.status)) return false;
+            const due = dueFor(t);
+            if (due && due !== 'today' && (!/^\d{4}-\d{2}-\d{2}$/.test(due) || (due > day && t.smart_early_date !== day))) return false;
+            if (t.status === 'completed') {
+                const completed = Date.parse(t.completed_at);
+                if (!Number.isFinite(completed) || logicalDate(completed, dayHour) !== day) return false;
+            }
+            return true;
+        }).map(t => {
+            const directory = [], seen = new Set([t.id]); let parent = byId.get(t.parent_id);
+            while (parent && !seen.has(parent.id)) { seen.add(parent.id); directory.unshift(String(parent.title || '')); parent = byId.get(parent.parent_id); }
+            return {title: String(t.title || ''), directory, status: t.status};
+        });
+    }
+
     function executeToolCall(name, args) {
         if(name==='propose_study_plan'){studyPlanContext=true;return window.TaskitatorStudy?.propose(args)||{status:'error',message:'Reload Taskitator to load Study recurrence.'};}
         if(studyPlanContext&&['create_task','update_task','trash_task'].includes(name))return {status:'error',message:'Study plans must use the Pro preview and manual confirmation. Ordinary mutation tools cannot create or alter this proposal.'};
@@ -322,6 +352,13 @@ window.TaskitatorAgent = (() => {
             tasks = [];
         }
 
+        if (name === 'get_today_progress') {
+            let settings = {}; try { settings = JSON.parse(localStorage.getItem(STORAGE_KEY_SETTINGS) || '{}'); } catch (_) {}
+            const hour = Math.max(0, Math.min(4, Number(settings.day_start_hour) || 0));
+            const logicalDate = window.TaskitatorRecurrence?.today || ((ms, offset) => new Date(ms + (3 - offset) * 3600000).toISOString().slice(0, 10));
+            const items = todayProgress(tasks, Date.now(), hour, logicalDate);
+            return {status:'success', tasks:items, note:'Includes current active tasks and tasks completed today. Moved and trashed task history is unavailable.'};
+        }
         const isBypassActive = window.TaskitatorEngine?.EmergencyManager?.isBypassActive?.() || false;
 
         // READ: get_tasks
@@ -498,7 +535,7 @@ window.TaskitatorAgent = (() => {
             });
             if(/study recurrence|study plan|(?:chapters?|lessons?|units?).*(?:days?|daily)|(?:split|distribute|spread).*(?:chapters?|lessons?|units?)/i.test(userText))studyPlanContext=true;
 
-            const systemText = await getSystemPrompt()+'\nStudy recurrence is a Pro-only finite plan: one dated parent per study day, one {num} subtask per unit. Use propose_study_plan exclusively, never create_task loops to imitate it. You MUST ask for missing title, unit amount, study days; never invent these. Respect existing user answers. Other defaults: first=1, start=today, weekdays=Settings excluding weekends. The user must confirm the editable preview. Never claim creation before confirmation. You cannot enable audits, set criteria or change their override. If the tool returns pro_required, gently explain the Pro requirement and stop proposing task creation.';
+            const systemText = await getSystemPrompt()+'\nFormat headings only by starting a line with [[TT:H1]], [[TT:H2]], or [[TT:H3]] followed by heading text. Use [[TT:LI]] at the start of list items, and [[TT:B]]...[[TT:/B]] or [[TT:I]]...[[TT:/I]] for bold or italic. Treat unmarked text as ordinary text.\nStudy recurrence is a Pro-only finite plan: one dated parent per study day, one {num} subtask per unit. Use propose_study_plan exclusively, never create_task loops to imitate it. You MUST ask for missing title, unit amount, study days; never invent these. Respect existing user answers. Other defaults: first=1, start=today, weekdays=Settings excluding weekends. The user must confirm the editable preview. Never claim creation before confirmation. You cannot enable audits, set criteria or change their override. If the tool returns pro_required, gently explain the Pro requirement and stop proposing task creation.';
             const pageContext = getPageContext();
 
             const activeTools = (pageContext === 'today' || pageContext === 'general') 
@@ -567,6 +604,23 @@ window.TaskitatorAgent = (() => {
     // =========================================================================
     // 9. Single-Pass Batch Note Extraction & Proofreading Engine
     // =========================================================================
+    function scratchpadBlocked() {
+        let all=[]; try { all=JSON.parse(localStorage.getItem('taskitator_tasks')||'[]'); } catch { return true; }
+        if(!Array.isArray(all)) return true;
+        const byId=new Map(all.filter(Boolean).map(t=>[t.id,t]));
+        const today=window.TaskitatorEngine?.BreakEngine?.getLogicalDayBounds?.().dateStr || new Date().toLocaleDateString('en-CA');
+        return all.some(t=>{
+            if(!t || t.status!=='active' || t.is_bonus) return false;
+            const visited=new Set(); let node=t;
+            while(node && !visited.has(node.id)) { visited.add(node.id); const due=String(node.due_date||'').trim().toLowerCase();
+                if(due) return due==='today'||(/^\d{4}-\d{2}-\d{2}$/.test(due)&&due<=today);
+                node=byId.get(node.parent_id);
+            }
+            return false;
+        });
+    }
+    window.TaskitatorScratchpadBlocked=scratchpadBlocked;
+
     async function extractNotesBatch(notesPayload, format = 'txt') {
         const selection=aiSelection();
         const apiKey = getApiKey();
@@ -574,19 +628,7 @@ window.TaskitatorAgent = (() => {
             return { success: false, error: 'Save a key for the active AI provider in Settings → Account.' };
         }
 
-        // Strict Completion Gate: Verify every AI-locked task is 100% finished
-        let activeTasks = [];
-        try {
-            activeTasks = JSON.parse(localStorage.getItem(STORAGE_KEY_TASKS) || '[]');
-        } catch (e) {}
-
-        const hasPendingAiLocks = activeTasks.some(t => t.ai_locked && t.status !== 'completed' && t.status !== 'trash');
-        if (hasPendingAiLocks) {
-            return {
-                success: false,
-                error: 'Extraction Locked: Complete and verify all active AI-locked tasks before extracting thoughts.'
-            };
-        }
+        if (scratchpadBlocked()) return {success:false,error:'Finish, move, or trash all required tasks due today or overdue before viewing or extracting notes.'};
 
         if (!Array.isArray(notesPayload) || notesPayload.length === 0) {
             return { success: false, error: 'No notes selected for extraction.' };
@@ -728,7 +770,29 @@ ${formattedInput}`;
         const messagesContainer = document.getElementById('copilotMessages');
         const chip = document.querySelector('.copilot-model-chip');
 
-        if (!form || !input || !messagesContainer) return;
+        if (!form || !input || !messagesContainer || form.dataset.copilotInitialized === 'true') return;
+        form.dataset.copilotInitialized = 'true';
+        const quick = document.createElement('div');
+        quick.className = 'copilot-quick-commands';
+        quick.setAttribute('aria-label', 'Quick questions');
+        for (const question of ["What’s my progress today?", 'What have I completed today?', 'What tasks remain today?']) {
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'icon-btn'; button.textContent = question;
+            button.addEventListener('click', () => { if (isProcessing) return; input.value = question; form.requestSubmit(); });
+            quick.append(button);
+        }
+        form.before(quick);
+        function formatReply(container, text) {
+            const lines=String(text).split('\n'); let list=null;
+            function inline(parent,value){
+                const tokens=/(\[\[TT:B\]\][^\n]+?\[\[TT:\/B\]\]|\[\[TT:I\]\][^\n]+?\[\[TT:\/I\]\])/g; let pos=0,match;
+                while((match=tokens.exec(value))){parent.append(document.createTextNode(value.slice(pos,match.index)));const strong=match[0].startsWith('[[TT:B]]'),el=document.createElement(strong?'strong':'em');el.textContent=match[0].slice(8,-9);parent.append(el);pos=tokens.lastIndex;}
+                parent.append(document.createTextNode(value.slice(pos)));
+            }
+            for(const line of lines){const heading=/^\[\[TT:H([123])\]\]\s*(.+)$/.exec(line), item=/^\[\[TT:LI\]\]\s*(.+)$/.exec(line);
+                if(item){if(!list){list=document.createElement('ul');container.append(list);}const li=document.createElement('li');inline(li,item[1]);list.append(li);continue;}
+                list=null;if(!line.trim()){container.append(document.createElement('br'));continue;}const el=document.createElement(heading?'h'+(Number(heading[1])+2):'p');inline(el,heading?heading[2]:line);container.append(el);
+            }
+        }
 
         function appendBubble(text, sender, isLoading = false) {
             const bubble = document.createElement('div');
@@ -737,7 +801,7 @@ ${formattedInput}`;
                 bubble.setAttribute('aria-label', text);
                 bubble.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
             } else {
-                bubble.textContent = text;
+                if (sender === 'bot') formatReply(bubble, text); else bubble.textContent = text;
             }
             messagesContainer.appendChild(bubble);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -1036,6 +1100,7 @@ window.TaskitatorApp = (() => {
     const DistractionDumpEngine = (() => {
         let activeTimer = null;
         let activeInterval = null;
+        let returnToTimer = false;
         
         function getNotes() {
             try {
@@ -1088,7 +1153,8 @@ window.TaskitatorApp = (() => {
             return `${mins}m remaining`;
         }
 
-        function openModal() {
+        function openModal(fromTimer = false) {
+            returnToTimer = returnToTimer || fromTimer;
             const modal = document.getElementById('distractionDumpModal');
             const input = document.getElementById('distractionNoteInput');
             const display = document.getElementById('dumpCountdownDisplay');
@@ -1129,11 +1195,12 @@ window.TaskitatorApp = (() => {
             SoundFX.playTimeoutAlert();
         }
 
-        function closeModal() {
+        function closeModal(restoreTimer = true) {
             const modal = document.getElementById('distractionDumpModal');
             if (modal) modal.classList.remove('open');
             if (activeTimer) clearTimeout(activeTimer);
             if (activeInterval) clearInterval(activeInterval);
+            if (restoreTimer && returnToTimer) { returnToTimer=false; const timer=document.getElementById('focusTimerPanel'); if(timer && !timer.open) timer.showModal(); }
         }
 
         function startHardTimer(totalSecs, displayEl, progEl) {
@@ -1172,7 +1239,7 @@ window.TaskitatorApp = (() => {
         }
 
         function openEscrowModal() {
-            closeModal();
+            closeModal(false);
             const eModal = document.getElementById('distractionEscrowModal');
             const listEl = document.getElementById('escrowNotesList');
             const lockBanner = document.getElementById('escrowGateLockBanner');
@@ -1183,6 +1250,12 @@ window.TaskitatorApp = (() => {
             garbageCollect();
             const notes = getNotes();
             listEl.innerHTML = '';
+            if (window.TaskitatorScratchpadBlocked()) {
+                if (lockBanner) lockBanner.style.display = 'flex';
+                if (unlockedBanner) unlockedBanner.style.display = 'none';
+                eModal.classList.add('open');
+                return;
+            }
 
             if (notes.length === 0) {
                 listEl.innerHTML = '<div class="empty-state empty-state-sm"><span class="empty-state-icon" aria-hidden="true">💡</span>No distraction notes yet.</div>';
@@ -1227,12 +1300,7 @@ window.TaskitatorApp = (() => {
             }
 
             const todayStr = getAppTodayStr();
-            const hasPendingAiLocks = tasks.some(t => {
-                if (!t.ai_locked || t.status === 'completed' || t.status === 'trash') return false;
-                const due = (t.due_date || '').trim().toLowerCase();
-                return due === 'today' || due <= todayStr;
-            });
-            
+            const hasPendingAiLocks = window.TaskitatorScratchpadBlocked();            
             if (lockBanner && unlockedBanner) {
                 if (hasPendingAiLocks) {
                     lockBanner.style.display = 'flex';
@@ -1528,7 +1596,10 @@ window.TaskitatorApp = (() => {
             return p ? p.rank : 9999;
         };
 
+        const mode = localStorage.getItem('taskitator_sort_mode') || 'priority';
         return tasksArray.sort((a, b) => {
+            if (mode === 'alpha') return String(a.title||'').localeCompare(String(b.title||''), undefined, {sensitivity:'base'});
+            if (mode === 'required' && !!a.is_bonus !== !!b.is_bonus) return a.is_bonus ? 1 : -1;
             const rA = getRank(a.priority_id);
             const rB = getRank(b.priority_id);
             if (rA !== rB) return rA - rB;
@@ -2972,6 +3043,8 @@ window.TaskitatorApp = (() => {
             try { if(window.SyncEngine?.isConfigured?.()){const result=await window.SyncEngine.syncNow({origin:'page-load'});if(!result?.success)console.warn('Today sync is pending. Use Sync Now to resolve a connection or edit conflict.');}} catch(error){console.warn('Today sync could not finish.',error.message);}
         });
         initSyncIndicator();
+        const sortSelect=document.getElementById('taskSortMode');
+        if(sortSelect){sortSelect.value=localStorage.getItem('taskitator_sort_mode')||'priority';sortSelect.addEventListener('change',()=>{localStorage.setItem('taskitator_sort_mode',sortSelect.value);renderUnifiedTaskTree();});}
         loadStorage();
         BreakUI.init();
         window.TaskitatorPro?.emergencyStatus().then(()=>updateEmergencyUI()).catch(()=>{});
@@ -3249,6 +3322,7 @@ window.TaskitatorApp = (() => {
         const extractAllEscrowBtn = document.getElementById('extractAllEscrowBtn');
         const deleteAllEscrowBtn = document.getElementById('deleteAllEscrowBtn');
 
+        window.addEventListener('taskitator-timer-scratchpad', () => DistractionDumpEngine.openModal(true));
         if (openDistractionDumpBtn) {
             openDistractionDumpBtn.addEventListener('click', () => DistractionDumpEngine.openModal());
         }
@@ -3279,6 +3353,7 @@ window.TaskitatorApp = (() => {
             closeDumpEscrowModalBtn.addEventListener('click', () => {
                 const m = document.getElementById('distractionEscrowModal');
                 if (m) m.classList.remove('open');
+                DistractionDumpEngine.closeModal();
             });
         }
         if (backToDumpInputBtn) {

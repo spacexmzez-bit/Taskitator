@@ -5131,3 +5131,8 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .tour-chip.ok{color:#86efac;border-color:#166534;background:rgba(22,101,52,.2)}
 .tour-chip.new{color:#93c5fd;border-color:var(--primary);background:rgba(30,58,138,.4)}
 @media (max-width:520px){.tour-row{flex-wrap:wrap}.tour-text{flex-basis:calc(100% - 60px)}.tour-chip{margin-left:48px}}
+
+#focusTimerPanel.timer-paused { border-color:#f87171; }
+#focusTimerPanel.timer-paused .focus-timer-display { color:#f87171; }
+
+.copilot-quick-commands{display:flex;gap:6px;overflow-x:auto;padding:8px 12px}.copilot-quick-commands .icon-btn{white-space:nowrap;font-size:.75rem}.chat-bubble.bot p{margin:.35em 0}.chat-bubble.bot h3,.chat-bubble.bot h4,.chat-bubble.bot h5{margin:.5em 0 .25em}.chat-bubble.bot ul{padding-left:1.4em;margin:.4em 0}
