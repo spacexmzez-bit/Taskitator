@@ -2984,7 +2984,7 @@ window.TaskitatorApp = (() => {
         const linkGeneral = document.getElementById('navLinkGeneral');
 
         if (currentView === 'today') {
-            if (heading) heading.textContent = "Today's Focus";
+            if (heading) heading.textContent = "Today's";
             if (linkToday) linkToday.classList.add('active');
             if (linkGeneral) linkGeneral.classList.remove('active');
         } else {

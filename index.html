@@ -371,10 +371,9 @@
     </header>
 
     <div class="page-title-section">
-        <h1 id="pageViewHeading">Today's Focus</h1>
+        <h1 id="pageViewHeading">Today's</h1>
         <button type="button" class="account-username-btn" id="accountUsernameBtn" title="Manage username" aria-label="Set username">Set username</button>
         <div class="page-title-actions">
-            <label>Sort <select id="taskSortMode" aria-label="Sort tasks"><option value="priority">Priority</option><option value="alpha">Alphabetical</option><option value="required">Required, then priority</option></select></label>
             <!-- Compact Icon-Only Selection Mode Toggle Button -->
             <button type="button" class="icon-only-btn select-mode-btn" id="toggleSelectModeBtn" aria-pressed="false" title="Toggle Multi-Selection Mode" aria-label="Toggle Multi-Selection Mode">
                 <span style="font-size: 0.95rem; line-height: 1;">☑</span><span class="wide-label">Multiselect</span>
@@ -386,6 +385,7 @@
                 </svg>
                 <span class="wide-label">Filter</span><span class="filter-active-dot" id="filterActiveDot"></span>
             </button>
+            <label class="icon-only-btn task-sort-button" title="Sort tasks"><span aria-hidden="true">⇅</span><select id="taskSortMode" aria-label="Sort tasks"><option value="priority">Priority</option><option value="alpha">Alphabetical</option><option value="required">Required, then priority</option></select></label>
         </div>
     </div>
 

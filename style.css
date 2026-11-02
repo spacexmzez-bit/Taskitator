@@ -5136,3 +5136,19 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 #focusTimerPanel.timer-paused .focus-timer-display { color:#f87171; }
 
 .copilot-quick-commands{display:flex;gap:6px;overflow-x:auto;padding:8px 12px}.copilot-quick-commands .icon-btn{white-space:nowrap;font-size:.75rem}.chat-bubble.bot p{margin:.35em 0}.chat-bubble.bot h3,.chat-bubble.bot h4,.chat-bubble.bot h5{margin:.5em 0 .25em}.chat-bubble.bot ul{padding-left:1.4em;margin:.4em 0}
+
+/* Compact Today and General list heading */
+.page-title-section:has(.account-username-btn) { display: flex; align-items: center; gap: 8px; }
+.page-title-section:has(.account-username-btn) h1 { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+.page-title-section .account-username-btn { flex: 0 1 auto; min-width: 0; max-width: 160px; width: auto; }
+.page-title-section .page-title-actions { display: flex; align-items: center; margin-left: auto; gap: 6px; flex-shrink: 0; }
+.page-title-actions .task-sort-button { position: relative; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.task-sort-button select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.task-sort-button:focus-within { outline: 2px solid var(--primary); outline-offset: 3px; }
+@media (max-width: 600px) {
+ .page-title-section:has(.account-username-btn) { gap: 5px; }
+ .page-title-section:has(.account-username-btn) h1 { font-size: clamp(1rem, 5vw, 1.4rem); }
+ .page-title-section .account-username-btn { max-width: 85px; padding: 0 7px; font-size: .75rem; }
+ .page-title-actions .wide-label { display: none; }
+ .page-title-actions .icon-only-btn { min-width: 36px; width: 36px; min-height: 36px; height: 36px; padding: 0; }
+}
