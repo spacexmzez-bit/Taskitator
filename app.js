@@ -3043,8 +3043,34 @@ window.TaskitatorApp = (() => {
             try { if(window.SyncEngine?.isConfigured?.()){const result=await window.SyncEngine.syncNow({origin:'page-load'});if(!result?.success)console.warn('Today sync is pending. Use Sync Now to resolve a connection or edit conflict.');}} catch(error){console.warn('Today sync could not finish.',error.message);}
         });
         initSyncIndicator();
-        const sortSelect=document.getElementById('taskSortMode');
-        if(sortSelect){sortSelect.value=localStorage.getItem('taskitator_sort_mode')||'priority';sortSelect.addEventListener('change',()=>{localStorage.setItem('taskitator_sort_mode',sortSelect.value);renderUnifiedTaskTree();});}
+        const sortButton = document.getElementById('taskSortButton');
+        const sortMenu = document.getElementById('taskSortMenu');
+        if (sortButton && sortMenu) {
+            const choices = Array.from(sortMenu.querySelectorAll('[data-sort-mode]'));
+            const updateSortChecks = () => {
+                const mode = localStorage.getItem('taskitator_sort_mode') || 'priority';
+                choices.forEach(choice => choice.setAttribute('aria-checked', String(choice.dataset.sortMode === mode)));
+            };
+            const closeSortMenu = () => { sortMenu.hidden = true; sortButton.setAttribute('aria-expanded', 'false'); };
+            updateSortChecks();
+            sortButton.addEventListener('click', () => {
+                sortMenu.hidden = !sortMenu.hidden;
+                sortButton.setAttribute('aria-expanded', String(!sortMenu.hidden));
+            });
+            choices.forEach(choice => choice.addEventListener('click', () => {
+                localStorage.setItem('taskitator_sort_mode', choice.dataset.sortMode);
+                updateSortChecks();
+                closeSortMenu();
+                renderUnifiedTaskTree();
+                sortButton.focus();
+            }));
+            document.addEventListener('click', event => {
+                if (!sortMenu.hidden && !sortMenu.contains(event.target) && !sortButton.contains(event.target)) closeSortMenu();
+            });
+            document.addEventListener('keydown', event => {
+                if (event.key === 'Escape' && !sortMenu.hidden) { closeSortMenu(); sortButton.focus(); }
+            });
+        }
         loadStorage();
         BreakUI.init();
         window.TaskitatorPro?.emergencyStatus().then(()=>updateEmergencyUI()).catch(()=>{});

@@ -385,7 +385,14 @@
                 </svg>
                 <span class="wide-label">Filter</span><span class="filter-active-dot" id="filterActiveDot"></span>
             </button>
-            <label class="icon-only-btn task-sort-button" title="Sort tasks"><span aria-hidden="true">⇅</span><select id="taskSortMode" aria-label="Sort tasks"><option value="priority">Priority</option><option value="alpha">Alphabetical</option><option value="required">Required, then priority</option></select></label>
+            <div class="task-sort-wrap">
+                <button type="button" class="icon-only-btn task-sort-button" id="taskSortButton" title="Sort tasks" aria-label="Sort tasks" aria-expanded="false" aria-controls="taskSortMenu" aria-haspopup="true">⇅</button>
+                <div class="task-sort-menu" id="taskSortMenu" role="menu" aria-label="Sort tasks" hidden>
+                    <button type="button" role="menuitemradio" data-sort-mode="priority">Priority</button>
+                    <button type="button" role="menuitemradio" data-sort-mode="alpha">Alphabetical</button>
+                    <button type="button" role="menuitemradio" data-sort-mode="required">Required, then priority</button>
+                </div>
+            </div>
         </div>
     </div>
 
