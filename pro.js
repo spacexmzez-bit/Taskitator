@@ -1408,15 +1408,17 @@ window.TaskitatorEngine = TaskitatorEngine;
                     const title = typeof task.title === 'string' ? task.title.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,120) : '';
                     return [task.id,title || (batch ? `Task ${index+1}` : 'Task')];
                 }));
+                // Main figures are charged amounts (whole half-credit steps from the server).
+                // Details show real, unrounded usage to four decimal places.
                 const round1 = value => Number(Number(value || 0).toFixed(1)).toFixed(1);
-                const round3 = value => Number(Number(value || 0).toFixed(3)).toFixed(3);
-                const credits = value => Number(value.toFixed(3)).toString();
+                const round4 = value => Number(Number(value || 0).toFixed(4)).toFixed(4);
+                const credits = value => Number(Number(value || 0).toFixed(4)).toString();
                 const hasBatchDiscount = Boolean(batch && payload.tasks.length >= 2);
                 const taskItems = quote.tasks.map((task,index) => ({
                     taskId: task.task_id,
                     title: names.get(task.task_id) || (batch ? `Task ${index+1}` : 'Task'),
                     credits: Number(task.credits || 0),
-                    creditsFormatted: round3(task.credits),
+                    creditsFormatted: round4(task.credits),
                     creditsShort: credits(task.credits),
                     exemplar: Boolean(task.exemplar)
                 }));
@@ -1427,8 +1429,8 @@ window.TaskitatorEngine = TaskitatorEngine;
                         maximumCredits: quote.maximum_credits,
                         estimatedDisplay: round1(quote.estimated_credits),
                         maximumDisplay: round1(quote.maximum_credits),
-                        estimatedExact: round3(quote.estimated_credits),
-                        maximumExact: round3(quote.maximum_credits),
+                        estimatedExact: round4(quote.estimated_credits_exact ?? quote.estimated_credits),
+                        maximumExact: round4(quote.maximum_credits_exact ?? quote.maximum_credits),
                         tasks: taskItems,
                         batchDiscount: hasBatchDiscount
                     });
@@ -1851,16 +1853,16 @@ window.TaskitatorEngine = TaskitatorEngine;
                     <div class="pro-quota-grid">
                         <div class="pro-quota-card">
                             <div class="pro-quota-label">AI credits today</div>
-                            <div class="pro-quota-val"><span id="pro-daily-remaining">--</span> / <span id="pro-daily-limit">45</span></div>
+                            <div class="pro-quota-val"><span id="pro-daily-remaining">--</span> / <span id="pro-daily-limit">--</span></div>
                             <div class="pro-quota-sub">Refills at midnight (Riyadh time)</div>
                             <div class="pro-progress-bar">
                                 <div class="pro-progress-fill" id="pro-daily-fill" style="width: 0%;"></div>
                             </div>
                         </div>
                         <div class="pro-quota-card">
-                            <div class="pro-quota-label">AI credits this month</div>
-                            <div class="pro-quota-val"><span id="pro-monthly-remaining">--</span> / <span id="pro-monthly-limit">1000</span></div>
-                            <div class="pro-quota-sub">Refills on the 1st (Riyadh time)</div>
+                            <div class="pro-quota-label">AI credits this 30-day cycle</div>
+                            <div class="pro-quota-val"><span id="pro-monthly-remaining">--</span> / <span id="pro-monthly-limit">--</span></div>
+                            <div class="pro-quota-sub" id="pro-monthly-reset">Refills every 30 days from your Pro activation</div>
                             <div class="pro-progress-bar">
                                 <div class="pro-progress-fill" id="pro-monthly-fill" style="width: 0%;"></div>
                             </div>
@@ -1876,6 +1878,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                                 <li><strong>Reference files:</strong> comparing your proof with a reference file costs double, since the AI checks both.</li>
                                 <li><strong>Batch reviews:</strong> reviewing 2 or more tasks with one proof gives each task <strong>25% off</strong>.</li>
                                 <li><strong>Price preview:</strong> before a review starts you see the estimate and the most it could cost. You only pay what was actually used. The rest comes back straight away.</li>
+                                <li><strong>Rounding:</strong> every charge rounds up to the next half credit, so a tiny review costs 0.5. The exact usage is under “View details”.</li>
                             </ul>
                             <p>A finished review costs credits even if your proof is rejected. Cancelling at the price preview costs nothing.</p>
                         </div>
@@ -1885,6 +1888,15 @@ window.TaskitatorEngine = TaskitatorEngine;
                             <input type="checkbox" id="proByokToggle" />
                             <span class="pro-switch-label"><strong>Use my own API key instead of credits.</strong> Your credits stay as they are if you switch back.</span>
                         </label>
+                        <p class="pro-byok-note" id="pro-byok-note">Taskitator credit limits don't apply to your own API key on Pro. Your AI provider bills you directly for that usage.</p>
+                    </div>
+                </div>
+
+                <div class="pro-limits-card is-loading" id="pro-free-limits" role="status" aria-live="polite" style="display: none;">
+                    <span class="pro-limits-dot" aria-hidden="true"></span>
+                    <div class="pro-limits-text">
+                        <div class="pro-limits-title" id="pro-free-limits-title">Limits: Checking…</div>
+                        <div class="pro-limits-sub" id="pro-free-limits-sub">Free accounts use AI with their own API key, within a daily and monthly allowance.</div>
                     </div>
                 </div>
 
@@ -1971,6 +1983,43 @@ window.TaskitatorEngine = TaskitatorEngine;
         msg.style.display = 'block';
     }
 
+    const FREE_LIMIT_STATES = {
+        available: {title: 'Limits: Available', sub: 'You have plenty of your Free personal-key AI allowance left.'},
+        caution: {title: 'Limits: Caution', sub: 'Your Free personal-key AI allowance is running low.'},
+        critical: {title: 'Limits: Critical', sub: 'Your Free personal-key AI allowance is almost used up.'}
+    };
+
+    function showFreeLimits(limits, error) {
+        const card = document.getElementById('pro-free-limits');
+        if (!card) return;
+        const title = document.getElementById('pro-free-limits-title');
+        const sub = document.getElementById('pro-free-limits-sub');
+        card.style.display = 'flex';
+        card.classList.remove('is-loading', 'is-available', 'is-caution', 'is-critical', 'is-unavailable');
+        const view = limits && FREE_LIMIT_STATES[limits.state];
+        if (error || !view) {
+            card.classList.add('is-unavailable');
+            if (title) title.textContent = 'Limits: Unavailable';
+            if (sub) sub.textContent = 'Couldn\'t check your AI allowance right now. Refresh the page to try again.';
+            return;
+        }
+        card.classList.add('is-' + limits.state);
+        if (title) title.textContent = view.title;
+        if (sub) sub.textContent = limits.exhausted ?
+            'Your Free personal-key AI allowance is used up. It refills at midnight (Riyadh time) each day and on the 1st of each month.' :
+            view.sub;
+    }
+
+    function hideFreeLimits() {
+        const card = document.getElementById('pro-free-limits');
+        if (card) card.style.display = 'none';
+    }
+
+    const formatCredits = value => {
+        const n = Number(value);
+        return Number.isFinite(n) ? String(Math.round(n * 10) / 10) : '--';
+    };
+
     async function refreshProStatus() {
         const client = getClient();
         if (!client) return;
@@ -1983,6 +2032,7 @@ window.TaskitatorEngine = TaskitatorEngine;
         try {
             const data = await client.getStatus();
             if (data.isPro) {
+                hideFreeLimits();
                 if (badge) {
                     badge.className = 'pro-badge active';
                     badge.textContent = 'PRO';
@@ -1999,31 +2049,38 @@ window.TaskitatorEngine = TaskitatorEngine;
                 const monthlyRem = document.getElementById('pro-monthly-remaining');
                 const monthlyLim = document.getElementById('pro-monthly-limit');
                 const monthlyFill = document.getElementById('pro-monthly-fill');
+                const monthlyReset = document.getElementById('pro-monthly-reset');
 
                 if (data.credits) {
-                    if (dailyRem) dailyRem.textContent = data.credits.daily_remaining;
-                    if (dailyLim) dailyLim.textContent = data.credits.daily_limit;
-                    if (dailyFill && data.credits.daily_limit > 0) {
-                        const pct = Math.round((data.credits.daily_remaining / data.credits.daily_limit) * 100);
-                        dailyFill.style.width = `${pct}%`;
-                    }
+                    const pct = (remaining, limit) => limit > 0 ? Math.max(0, Math.min(100, Math.round((remaining / limit) * 100))) : 0;
+                    if (dailyRem) dailyRem.textContent = formatCredits(data.credits.daily_remaining);
+                    if (dailyLim) dailyLim.textContent = formatCredits(data.credits.daily_limit);
+                    if (dailyFill) dailyFill.style.width = `${pct(data.credits.daily_remaining, data.credits.daily_limit)}%`;
 
-                    if (monthlyRem) monthlyRem.textContent = data.credits.monthly_remaining;
-                    if (monthlyLim) monthlyLim.textContent = data.credits.monthly_limit;
-                    if (monthlyFill && data.credits.monthly_limit > 0) {
-                        const pct = Math.round((data.credits.monthly_remaining / data.credits.monthly_limit) * 100);
-                        monthlyFill.style.width = `${pct}%`;
+                    if (monthlyRem) monthlyRem.textContent = formatCredits(data.credits.monthly_remaining);
+                    if (monthlyLim) monthlyLim.textContent = formatCredits(data.credits.monthly_limit);
+                    if (monthlyFill) monthlyFill.style.width = `${pct(data.credits.monthly_remaining, data.credits.monthly_limit)}%`;
+                    if (monthlyReset && Number.isFinite(data.credits.monthly_resets_at)) {
+                        monthlyReset.textContent = `Refills ${new Date(data.credits.monthly_resets_at).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}`;
+                    }
+                    if (data.credits.daily_remaining <= 0 || data.credits.monthly_remaining <= 0) {
+                        showMsg(data.credits.monthly_remaining <= 0 ?
+                            'Your hosted credits for this 30-day cycle are used up. You can still review with your own API key.' :
+                            'Your hosted credits for today are used up. They refill at midnight (Riyadh time), or use your own API key.', 'error');
                     }
                 }
             } else {
                 if (badge) {
-                    badge.className = 'pro-badge free';
-                    badge.textContent = 'FREE';
+                    badge.className = data.status === 'invalid_parameters' ? 'pro-badge expired' : 'pro-badge free';
+                    badge.textContent = data.status === 'invalid_parameters' ? 'NEEDS SUPPORT' : 'FREE';
                 }
-                if (expiry) expiry.textContent = data.status === 'verification_required' ?
+                if (expiry) expiry.textContent = data.status === 'invalid_parameters' ?
+                    (data.message || 'Your Pro license is missing its Taskitator allowance settings. Contact support.') :
+                    data.status === 'verification_required' ?
                     'Enter your Keyo license key again to confirm it\'s yours.' :
                     ['revoked','invalid','expired'].includes(data.status) ? 'Your license couldn\'t be confirmed. Check it in Keyo, then activate again.' : '';
                 if (quotaBox) quotaBox.style.display = 'none';
+                showFreeLimits(data.limits, !data.limits);
             }
         } catch (err) {
             if (badge) {
@@ -2032,6 +2089,7 @@ window.TaskitatorEngine = TaskitatorEngine;
             }
             if (expiry) expiry.textContent = err.message || 'Couldn\'t check your license. Refresh the page to try again.';
             if (quotaBox) quotaBox.style.display = 'none';
+            showFreeLimits(null, true);
         }
     }
 
@@ -2066,7 +2124,7 @@ window.TaskitatorEngine = TaskitatorEngine;
             const previousActiveElement = doc?.activeElement || null;
 
             const round1 = v => Number(Number(v || 0).toFixed(1)).toFixed(1);
-            const round3 = v => Number(Number(v || 0).toFixed(3)).toFixed(3);
+            const round4 = v => Number(Number(v || 0).toFixed(4)).toFixed(4);
             const est1 = summary.estimatedDisplay || round1(summary.estimatedCredits);
             const max1 = summary.maximumDisplay || round1(summary.maximumCredits);
             const tasks = Array.isArray(summary.tasks) ? summary.tasks : [];
@@ -2074,7 +2132,7 @@ window.TaskitatorEngine = TaskitatorEngine;
 
             const taskRows = tasks.map((t, idx) => {
                 const title = escapeHtml(t.title || `Task ${idx + 1}`);
-                const c3 = escapeHtml(t.creditsFormatted || round3(t.credits));
+                const c3 = escapeHtml(t.creditsFormatted || round4(t.credits));
                 const exBadge = t.exemplar
                     ? ' <span class="pro-quote-multiplier">(reference comparison: ×2 charge)</span>'
                     : '';
@@ -2110,14 +2168,14 @@ window.TaskitatorEngine = TaskitatorEngine;
                         </div>
                     </div>
                     <p class="pro-quote-policy-brief">
-                        Unused held credits return to your balance immediately after the review finishes. A completed review is charged even when proof is rejected. Cancelling now starts no paid review.
+                        Charges round up to the next half credit. Unused held credits return to your balance immediately after the review finishes. A completed review is charged even when proof is rejected. Cancelling now starts no paid review.
                     </p>
                     <details class="pro-quote-details" id="proQuoteDetailsToggle">
                         <summary id="proQuoteDetailsSummary">View details</summary>
                         <div class="pro-quote-details-body">
                             <div class="pro-quote-exact-totals">
-                                <span>Exact estimated charge: <strong>${escapeHtml(summary.estimatedExact || round3(summary.estimatedCredits))} credits</strong></span>
-                                <span>Exact maximum hold: <strong>${escapeHtml(summary.maximumExact || round3(summary.maximumCredits))} credits</strong></span>
+                                <span>Real estimated usage: <strong>${escapeHtml(summary.estimatedExact || round4(summary.estimatedCredits))} credits</strong></span>
+                                <span>Real maximum usage: <strong>${escapeHtml(summary.maximumExact || round4(summary.maximumCredits))} credits</strong></span>
                             </div>
                             <ul class="pro-quote-task-list">
                                 ${taskRows}

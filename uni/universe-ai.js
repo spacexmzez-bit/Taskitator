@@ -132,6 +132,17 @@ export class UniverseAI extends UniverseTasks {
   if(hosted&&p.taskMode==='everyone'&&!await this.entitlement(identity))throw error(403,'PRO','Hosted Everyone’s review requires active Pro.');
   const {payload}=await this.payload(db,c),credentials=await this.credentials(identity,row.mode);
   if(await digest(payload)!==row.payload_hash||credentials.version!==row.key_version)throw error(409,'REVISION','The key or evidence changed. Request a new quote.');
+  // Free accounts' personal-key Universe reviews draw on the Free personal-key allowance.
+  let hold=null;const meter=this.service.pro?.credits;
+  if(!hosted){
+   if(!meter)throw error(503,'SETUP','AI credit accounting is unavailable. No request was sent.');
+   await meter.refreshLicense(identity.userId);
+   if((await meter.state(this.service.storage,identity.userId)).ledger.plan!=='pro'){
+    const count=await this.provider(credentials.key,row.model,'countTokens',{generateContentRequest:{model:'models/'+row.model,...payload}});
+    if(!Number.isSafeInteger(count.totalTokens)||count.totalTokens<0)throw error(503,'TOKENS','Gemini could not check the request size. Nothing was charged.');
+    hold=await meter.reserveByok(identity.userId,{model:row.model,inputTokens:Math.ceil(count.totalTokens*1.2),maxOutput:MAX_OUTPUT,clamp:false});
+   }
+  }
   const daily=p.taskMode==='shared'?100000:45000,monthly=p.taskMode==='shared'?2000000:1000000;
   const creditSQL=`SELECT COALESCE(sum(CASE WHEN state IN ('running','uncertain') THEN max_credits ELSE charged END),0) FROM universe_ai_reviews WHERE balance_key=? AND month=? AND state IN ('running','uncertain','done')`;
   try {await db.batch([
@@ -140,17 +151,22 @@ export class UniverseAI extends UniverseTasks {
    ...(hosted?[this.statement(db,`INSERT OR REPLACE INTO universe_ai_budget_guard VALUES(1,((`+creditSQL+` AND day=?) + ? <= ?) AND ((`+creditSQL+`) + ? <= ?) AND ((SELECT COALESCE(sum(CASE WHEN state IN ('running','uncertain') THEN max_spend ELSE spent END),0) FROM universe_ai_reviews WHERE mode='hosted' AND month=? AND state IN ('running','uncertain','done')) + ? <= ?))`,row.balance_key,row.month,row.day,row.max_credits,daily,row.balance_key,row.month,row.max_credits,monthly,row.month,row.max_spend,p.ceiling)]:[]),
    this.statement(db,"UPDATE universe_ai_reviews SET state='running' WHERE id=?",row.id)
   ]);}catch{
+   await meter?.settleByok(hold,0);
    const current=await this.record(db,'universe_ai_reviews',row.id,row.group_id);if(current.state!=='quoted')return this.publicReview(current);
    throw error(409,'BALANCE_OR_CONFLICT','The balance, membership, task or review changed. Refresh before retrying.');
   }
   // Once running, this submission can never buy another inference merely because a lease expires.
   await this.service.ensureAlarm();
   let raw;
-  try{raw=await this.provider(credentials.key,row.model,'generateContent',payload);}catch{
+  try{raw=await this.provider(credentials.key,row.model,'generateContent',payload);}catch(e){
+   // A Gemini error response releases the hold; a lost or timed-out response keeps it.
+   await meter?.settleByok(hold,e?.status===504||e?.code==='UNIVERSE_AI_RESPONSE'?hold?.hold:0);
    await this.statement(db,"UPDATE universe_ai_reviews SET state='uncertain' WHERE id=? AND state='running'",row.id).run();
    return this.publicReview(await this.record(db,'universe_ai_reviews',row.id,row.group_id));
   }
   const usage=raw.usageMetadata;let spend=row.max_spend,charged=row.max_credits;
+  if(hold){const u=usage&&Number.isSafeInteger(usage.promptTokenCount)&&Number.isSafeInteger(usage.totalTokenCount)&&usage.totalTokenCount>=usage.promptTokenCount&&usage.promptTokenCount>=0?usage:null;
+   await meter.settleByok(hold,u?meter.usageCharge(hold,u.promptTokenCount,u.totalTokenCount-u.promptTokenCount):hold.hold);}
   if(usage&&Number.isSafeInteger(usage.promptTokenCount)&&usage.promptTokenCount>=0&&Number.isSafeInteger(usage.totalTokenCount)&&usage.totalTokenCount>=usage.promptTokenCount&&usage.promptTokenCount<=MAX_INPUT&&usage.totalTokenCount-usage.promptTokenCount<=MAX_OUTPUT){
    spend=hosted?usage.promptTokenCount*p.input+(usage.totalTokenCount-usage.promptTokenCount)*p.output:0;charged=hosted?creditUnits(spend,p.multiplier):0;
   }

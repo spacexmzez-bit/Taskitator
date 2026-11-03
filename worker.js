@@ -1159,6 +1159,51 @@ async function responseJSON(response,key){
     }finally{reader.releaseLock();}
     try{return JSON.parse(text.split(key).join('[redacted]'));}catch{throw new SecurityError(502,'AI returned an unreadable response.');}
 }
+// Input tokens for a personal-key request, counted by the user's own provider before
+// any Free reservation. Counting is free; a failed count stops the request uncharged.
+async function countInputTokens(provider,model,forward,key){
+    const name=PROVIDERS[provider].name;
+    let url,headers,body;
+    if(provider==='claude'){
+        const {max_tokens,output_config,...rest}=forward;
+        url='https://api.anthropic.com/v1/messages/count_tokens';
+        headers={'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'};body=rest;
+    }else{
+        const request={model:'models/'+model};
+        for(const field of ['contents','systemInstruction','system_instruction','tools','toolConfig','tool_config','generationConfig','safetySettings'])
+            if(forward[field]!==undefined)request[field]=forward[field];
+        url='https://generativelanguage.googleapis.com/v1beta/models/'+model+':countTokens';
+        headers={'Content-Type':'application/json','x-goog-api-key':key};body={generateContentRequest:request};
+    }
+    let response;
+    try{response=await fetch(url,{method:'POST',headers,body:JSON.stringify(body),signal:AbortSignal.timeout(20000)});}
+    catch{throw Object.assign(new SecurityError(503,name+' could not check the request size. Nothing was charged; retry later.'),{code:'TOKEN_COUNT_UNAVAILABLE'});}
+    if(!response.ok){
+        try{await response.body?.cancel();}catch{}
+        throw Object.assign(new SecurityError(response.status===429?429:503,name+' could not check the request size. Nothing was charged; retry later.'),{code:'TOKEN_COUNT_UNAVAILABLE'});
+    }
+    const data=await responseJSON(response,key),count=provider==='claude'?data.input_tokens:data.totalTokens;
+    if(!Number.isSafeInteger(count)||count<0)throw Object.assign(new SecurityError(503,name+' returned an invalid request size. Nothing was charged.'),{code:'TOKEN_COUNT_UNAVAILABLE'});
+    return count;
+}
+// Provider-reported usage. Cache tokens are billed conservatively at the full input rate.
+// Returns null when usage is missing or malformed; the full hold is then charged.
+export function providerUsage(provider,raw){
+    const int=v=>Number.isSafeInteger(v)&&v>=0;
+    if(provider==='claude'){
+        const u=raw?.usage;
+        if(!u||!int(u.input_tokens)||!int(u.output_tokens))return null;
+        const cache=[u.cache_creation_input_tokens,u.cache_read_input_tokens].map(v=>v??0);
+        if(!cache.every(int))return null;
+        return {input:u.input_tokens+cache[0]+cache[1],output:u.output_tokens};
+    }
+    const u=raw?.usageMetadata;
+    if(!u||!int(u.promptTokenCount))return null;
+    const extra=[u.toolUsePromptTokenCount,u.candidatesTokenCount,u.thoughtsTokenCount,u.totalTokenCount].map(v=>v??0);
+    if(!extra.every(int))return null;
+    const input=u.promptTokenCount+extra[0],output=Math.max(extra[1]+extra[2],extra[3]-input);
+    return {input,output};
+}
 export class AIGateway {
     constructor(service){this.service=service;this.inflight=new Map();}
     async generate(identity,body){
@@ -1169,20 +1214,39 @@ export class AIGateway {
         if(await this.service.vault.selectedProvider(identity)!==provider)throw new SecurityError(409,'AI provider changed. Refresh AI status in Settings and start a new request.');
         const forward=provider==='claude'?toClaudeRequest(payload):{...payload};
         delete forward.taskitatorFormat;
+        const credits=this.service.pro?.credits;
+        if(!credits)throw new SecurityError(503,'AI credit accounting is unavailable. No request was sent.');
         await this.service.rateBucket('ai-user:'+identity.userId,30);
         const count=this.inflight.get(identity.userId)||0;
         if(count>=2)throw new SecurityError(429,'Two AI requests are already running. Wait for one to finish.');
         this.inflight.set(identity.userId,count+1);
+        let hold=null,charge=0;
         try{
             const record=await this.service.storage.get(await this.service.vault.recordKey(identity,provider));
             if(body.key_version && body.key_version!==record?.version)throw new SecurityError(409,'The AI key changed. Refresh AI status and start a new conversation.');
             const key=await this.service.vault.unseal(identity,record,provider);
+            // Free personal-key usage is metered server-side; Pro personal-key usage is not.
+            await credits.refreshLicense(identity.userId);
+            const {ledger}=await credits.state(this.service.storage,identity.userId);
+            if(ledger.plan!=='pro'){
+                const maxOutput=provider==='claude'?forward.max_tokens:forward.generationConfig.maxOutputTokens;
+                const input=Math.ceil(await countInputTokens(provider,body.model,forward,key)*1.2);
+                hold=await credits.reserveByok(identity.userId,{model:body.model,inputTokens:input,maxOutput});
+                if(hold){
+                    if(provider==='claude')forward.max_tokens=hold.maxOutput;
+                    else forward.generationConfig={...forward.generationConfig,maxOutputTokens:hold.maxOutput};
+                    // A lost or timed-out response may already be billed by the provider: keep the hold.
+                    charge=hold.hold;
+                }
+            }
             const url=provider==='claude'?'https://api.anthropic.com/v1/messages':'https://generativelanguage.googleapis.com/v1beta/models/'+body.model+':generateContent';
             const headers=provider==='claude'?{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'}:{'Content-Type':'application/json','x-goog-api-key':key};
             let response;
             try{response=await fetch(url,{method:'POST',headers,body:JSON.stringify(forward),signal:AbortSignal.timeout(55000)});}
             catch{throw new SecurityError(504,config.name+' request timed out or could not connect. Retry carefully; provider usage may already have occurred.');}
             if(!response.ok){
+                // A provider error response is not a completed generation: release the hold.
+                charge=0;
                 try{await response.body?.cancel();}catch{}
                 const status=response.status===529?503:response.status;
                 throw new SecurityError([400,401,403,404,413,429,500,502,503,504].includes(status)?status:502,
@@ -1190,6 +1254,8 @@ export class AIGateway {
                     status>=500?config.name+' is temporarily unavailable.':config.name+' rejected this request. Check the model, file format and content.');
             }
             const raw=await responseJSON(response,key);
+            // Completed generations are charged from reported usage even if later rejected.
+            if(hold){const usage=providerUsage(provider,raw);charge=usage?credits.usageCharge(hold,usage.input,usage.output):hold.hold;}
             if(provider==='gemini'){
                 const reason=raw.candidates?.[0]?.finishReason;
                 if(raw.promptFeedback?.blockReason || (reason && reason!=='STOP'))throw new SecurityError(502,'Gemini did not return a complete accepted answer. No partial approval or tool action was accepted.');
@@ -1200,7 +1266,10 @@ export class AIGateway {
             const current=await this.service.storage.get(await this.service.vault.recordKey(identity,provider));
             if(current?.version!==record.version || await this.service.vault.selectedProvider(identity)!==provider)throw new SecurityError(409,'AI settings changed during the request. No result was applied.');
             return data;
-        }finally{const remaining=(this.inflight.get(identity.userId)||1)-1;if(remaining)this.inflight.set(identity.userId,remaining);else this.inflight.delete(identity.userId);}
+        }finally{
+            if(hold)await credits.settleByok(hold,charge);
+            const remaining=(this.inflight.get(identity.userId)||1)-1;if(remaining)this.inflight.set(identity.userId,remaining);else this.inflight.delete(identity.userId);
+        }
     }
 }
 

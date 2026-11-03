@@ -13,15 +13,39 @@ export async function liveAccount(store, accountId) {
     return {link,meta};
 }
 
-// Hosted proof accounting only. Prices checked 2026-10-21 against Anthropic pricing.
+// Hosted proof accounting only. Prices checked 2026-10-21 against Anthropic pricing
+// (Claude Haiku 5.5: $0.10/$0.50 per million tokens up to 100K input tokens).
 // Integer nanodollars prevent floating point drift in provider-spend accounting.
+// Pro hosted credit allowances come only from verified Keyo d_allow/m_allow parameters.
 export const POLICY = Object.freeze({
-    version: 'hosted-credits-v4', model: 'claude-haiku-5-5',
-    daily: 45, monthly: 1000, monthlySpend: 2_000_000_000,
+    version: 'hosted-credits-v5', model: 'claude-haiku-5-5',
+    monthlySpend: 2_000_000_000,
     inputPrice: 100, outputPrice: 500, creditValue: 1_500_000,
     maxInput: 20_000, maxFiles: 5, maxFileBytes: 5 * 1024 * 1024,
     maxBytes: 20 * 1024 * 1024, quoteMs: 5 * 60_000
 });
+// Free accounts: personal-key (BYOK) usage only. Hardcoded server-side; never client-supplied.
+export const FREE_BYOK = Object.freeze({ daily: 10, monthly: 220 });
+// Personal-key pricing used only to meter Free BYOK requests in Taskitator credits.
+// Claude Haiku 5.5 checked 2026-11-03 (metricnexus.ai, updated 2026-10-18): the whole
+// request moves to $0.50/$2.50 when input exceeds 100K tokens. Gemini Flash-Lite checked
+// 2026-11-03 (morphllm.com, updated 2026-10-25); no long-context tier is applied.
+export const BYOK_RATES = Object.freeze({
+    'claude-haiku-5-5': [{ upTo: 100_000, input: 100, output: 500 }, { upTo: Infinity, input: 500, output: 2500 }],
+    'gemini-3.5-flash-lite': [{ upTo: Infinity, input: 300, output: 2500 }],
+    'gemini-3.1-flash-lite': [{ upTo: Infinity, input: 250, output: 1500 }]
+});
+export function modelCost(model, input, output) {
+    const tiers = BYOK_RATES[model];
+    if (!tiers) throw fail(503, 'PRICING_UNAVAILABLE', 'This AI model has no Taskitator pricing. No request was sent.');
+    const tier = tiers.find(t => input <= t.upTo);
+    return input * tier.input + output * tier.output;
+}
+// Every charge or hold counts any part of a half credit as a full half credit.
+export function halfUp(credits) {
+    if (!(credits > 0)) return 0;
+    return Math.max(0.5, Math.ceil(credits * 2 - 1e-9) / 2);
+}
 export function periods(now = Date.now()) {
     const day = new Date(now + 3 * 3600_000).toISOString().slice(0, 10);
     return { day, month: day.slice(0, 7) };
@@ -38,13 +62,13 @@ export function providerCost(input, output) {
 }
 // Share the combined provider cost equally; each task has its own multiplier.
 // Shared batch evidence is sent once, and every task contributes a charge.
+// Per-task values are unrounded real usage; only the request total is rounded (halfUp).
 export function charges(cost, tasks, batch) {
     const discount = batch && tasks.length >= 2 ? .75 : 1;
     return tasks.map(t => ({ task_id: t.id, exemplar: Boolean(t.exemplar),
-        credits: Math.ceil(cost * (t.exemplar ? 2 : 1) * discount * 1000 /
-            (POLICY.creditValue * tasks.length)) / 1000 }));
+        credits: cost * (t.exemplar ? 2 : 1) * discount / (POLICY.creditValue * tasks.length) }));
 }
-export const totalCredits = list => Math.round(list.reduce((n, t) => n + t.credits, 0) * 1000) / 1000;
+export const totalCredits = list => list.reduce((n, t) => n + t.credits, 0);
 
 export function prepare(body, batch, {allowHeic=false}={}) {
     const source = batch ? body.tasks : [{ id: body.task_id || body.taskId,
@@ -122,23 +146,31 @@ export function operationTime(id, now=Date.now()) {
         throw fail(409,'OPERATION_EXPIRED','This audit operation expired or needs an updated app. Refresh and start a new review.');
     return time;
 }
+// Real (unrounded) usage for a verdict: an incomplete verdict is billed at half.
+export function realAuditCredits(baseCredits, verdict) {
+    return verdict === 'incomplete' ? baseCredits / 2 : baseCredits;
+}
+// The charged amount always rounds any part of a half credit up to that half.
 export function calculateAuditCharge(baseCredits, verdict) {
-    if (verdict === 'incomplete') {
-        const half = baseCredits / 2;
-        return half < 1 ? 0 : Math.round(half * 1000) / 1000;
-    }
-    return baseCredits;
+    return halfUp(realAuditCredits(baseCredits, verdict));
 }
 
 
 // Server-only subscription verification. Public settings from the owner's configured Keyo SDK.
 export const KEYO_DEFAULTS = Object.freeze({
     endpoint: 'https://keyo.mazendev.com',
+    // Tried only when the primary origin cannot be reached at the network level
+    // (DNS, TLS, connection or timeout). An HTTP response is never retried elsewhere.
+    fallbackEndpoint: 'https://keyo-api.spacexmzez.workers.dev',
     projectId: 'prj_3ebe1ea2ab5948fd98bca332fad2e5c5',
     publicKey: {kty:'EC',crv:'P-256',x:'12kmFYFug4HYBs-ZTpRleElP9Q8kpQaI5aVyG9CqVOc',
         y:'Up7x4X65FL-LaRweIptSkCZsXN4A3mZM7XIIHRzNndY',ext:true,key_ops:['verify']}
 });
 const DAY = 86400000, HOUR = 3600000;
+export const CYCLE_MS = 30 * DAY;
+// Entitlement records written before Keyo d_allow/m_allow support lack this version.
+export const ALLOWANCE_VERSION = 2;
+const MAX_ALLOWANCE = 1_000_000;
 const DENIED = new Set(['SUSPENDED','REVOKED','DELETED','EXPIRED','INVALID_ENTITLEMENT','INVALID_PROJECT','KEY_UNAVAILABLE','KEY_NOT_FOUND','INVALID_KEY']);
 const issue = (code,message,status=400) => Object.assign(new Error(message),{code,status});
 const decode = value => {
@@ -146,19 +178,24 @@ const decode = value => {
     return Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-value.length%4)%4)),c=>c.charCodeAt(0));
 };
 const parse = value => JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(decode(value)));
+const keyoOrigin = value => {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw Error('Configuration');
+    return url.origin;
+};
 
 export function keyoConfig(env={}) {
     try {
-        const endpoint = env.KEYO_API_ORIGIN ?? env.KEYO_API_URL ?? KEYO_DEFAULTS.endpoint;
-        const url = new URL(endpoint);
+        const endpoint = keyoOrigin(env.KEYO_API_ORIGIN ?? env.KEYO_API_URL ?? KEYO_DEFAULTS.endpoint);
+        const rawFallback = env.KEYO_FALLBACK_ORIGIN ?? KEYO_DEFAULTS.fallbackEndpoint;
+        const fallback = rawFallback === '' || rawFallback === 'none' ? null : keyoOrigin(rawFallback);
         const projectId = env.KEYO_PROJECT_ID ?? env.KEYO_CLIENT_ID ?? KEYO_DEFAULTS.projectId;
         const rawKey = env.KEYO_PUBLIC_JWK ?? KEYO_DEFAULTS.publicKey;
         const publicKey = typeof rawKey === 'string' ? JSON.parse(rawKey) : rawKey;
-        if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash ||
-            (typeof projectId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(projectId)) || publicKey?.kty !== 'EC' || publicKey?.crv !== 'P-256' ||
+        if ((typeof projectId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(projectId)) || publicKey?.kty !== 'EC' || publicKey?.crv !== 'P-256' ||
             !publicKey.x || !publicKey.y || publicKey.d) throw Error('Configuration');
-        return {endpoint:url.origin,projectId,publicKey};
-    } catch { throw issue('KEYO_SETUP_REQUIRED','Keyo settings are invalid. Ask the operator to check KEYO_API_ORIGIN, KEYO_PROJECT_ID and KEYO_PUBLIC_JWK in the Worker.',503); }
+        return {endpoint,endpoints:fallback && fallback !== endpoint ? [endpoint,fallback] : [endpoint],projectId,publicKey};
+    } catch { throw issue('KEYO_SETUP_REQUIRED','Keyo settings are invalid. Ask the operator to check KEYO_API_ORIGIN, KEYO_FALLBACK_ORIGIN, KEYO_PROJECT_ID and KEYO_PUBLIC_JWK in the Worker.',503); }
 }
 
 export async function verifyKeyoToken(token,accountId,config,{allowExpired=false,now=Date.now()}={}) {
@@ -186,22 +223,106 @@ export async function verifyKeyoToken(token,accountId,config,{allowExpired=false
     }
 }
 
+// Pro hosted allowances come only from the signed, verified Keyo parameters.
+// Missing, malformed, negative, fractional or oversized values invalidate the license here.
+const validAllowanceValue = v => Number.isSafeInteger(v) && v >= 0 && v <= MAX_ALLOWANCE;
+export function hostedAllowance(payload) {
+    const params = payload?.parameters;
+    if (!params || typeof params !== 'object' || Array.isArray(params)) return null;
+    return validAllowanceValue(params.d_allow) && validAllowanceValue(params.m_allow) ?
+        {daily:params.d_allow,monthly:params.m_allow} : null;
+}
+const validAllowance = a => Boolean(a) && validAllowanceValue(a.daily) && validAllowanceValue(a.monthly);
+export const LICENSE_PARAMETERS_MESSAGE = 'Your Pro license is missing valid Taskitator allowance settings. Contact support; Pro features stay locked until it is fixed.';
+
+// Plan derived only from the stored, server-verified entitlement record.
+// 'unknown' means not provably Pro and not a confirmed downgrade (stale cache while
+// Keyo is unreachable, or invalid Keyo parameters). It never starts a transition.
+export function planOf(e, now=Date.now()) {
+    if (!e || !e.signed_token || ['revoked','invalid','expired','verification_required'].includes(e.status)) return 'free';
+    if (e.expires_at !== null && Number.isSafeInteger(e.expires_at) && e.expires_at <= now) return 'free';
+    if (e.status !== 'active' || e.keyo_version !== 1 || e.allowance_version !== ALLOWANCE_VERSION ||
+        !validAllowance(e.hosted_allowance) || !['pro','max'].includes(e.tier) ||
+        !(e.expires_at === null || Number.isSafeInteger(e.expires_at)) ||
+        !Number.isSafeInteger(e.valid_until) || e.valid_until <= now) return 'unknown';
+    return 'pro';
+}
+export const PLAN_PREFIX = 'credits:plan:';
+// Each verified Free<->Pro change starts a new usage epoch, so every applicable
+// allowance is fresh. Unchanged plans, allowance edits and refreshes never do.
+export function nextPlanState(state, plan, now, e) {
+    if (plan === 'unknown') return {state:state || null,changed:false};
+    const anchor = () => Number.isSafeInteger(e?.activated_at) && e.activated_at > 0 && e.activated_at <= now ? e.activated_at : now;
+    if (!state) return {changed:true,state:{version:1,plan,epoch:1,anchor:plan === 'pro' ? anchor() : null,
+        since:now,transitions:0,migrated:true}};
+    if (state.plan !== plan) return {changed:true,state:{...state,plan,epoch:state.epoch+1,
+        anchor:plan === 'pro' ? now : null,since:now,transitions:(state.transitions || 0)+1,migrated:false}};
+    if (plan === 'pro' && !Number.isSafeInteger(state.anchor)) return {changed:true,state:{...state,anchor:anchor()}};
+    return {state,changed:false};
+}
+export async function syncPlan(tx, account, e, now=Date.now()) {
+    const key = PLAN_PREFIX+account, {state,changed} = nextPlanState(await tx.get(key), planOf(e,now), now, e);
+    if (changed) await tx.put(key,state);
+    return state;
+}
+export function nextRiyadhMidnight(now=Date.now()) {
+    const d = new Date(now + 3*HOUR); d.setUTCHours(24,0,0,0); return d.getTime() - 3*HOUR;
+}
+export function nextRiyadhMonth(now=Date.now()) {
+    const d = new Date(now + 3*HOUR); return Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1) - 3*HOUR;
+}
+// Usage keys. Pro hosted: Riyadh day + 30-day cycle from the stored anchor.
+// Free/restricted personal-key: Riyadh day + Gregorian Riyadh month.
+export function ledgerFor(account, state, e, now=Date.now()) {
+    const {day,month} = periods(now), epoch = state?.epoch ?? 0;
+    if (state?.plan === 'pro' && planOf(e,now) === 'pro' && Number.isSafeInteger(state.anchor)) {
+        const cycle = Math.max(0,Math.floor((now-state.anchor)/CYCLE_MS)), base = `credits:${account}:e${epoch}:hosted`;
+        return {plan:'pro',bucket:'hosted',epoch,dayKey:base+':day:'+day,monthKey:base+':cycle:'+cycle,
+            limits:{...e.hosted_allowance},daily_resets_at:nextRiyadhMidnight(now),
+            cycle_started_at:state.anchor+cycle*CYCLE_MS,monthly_resets_at:state.anchor+(cycle+1)*CYCLE_MS};
+    }
+    const base = `credits:${account}:e${epoch}:byok`;
+    return {plan:state?.plan === 'free' && planOf(e,now) === 'free' ? 'free' : 'restricted',bucket:'byok',epoch,
+        dayKey:base+':day:'+day,monthKey:base+':month:'+month,limits:{...FREE_BYOK},
+        daily_resets_at:nextRiyadhMidnight(now),monthly_resets_at:nextRiyadhMonth(now)};
+}
+// Free Settings card: derived from the closer of the two allowances, without numbers.
+export function limitsState(limits, used) {
+    const order = ['available','caution','critical'];
+    let worst = 0;
+    for (const k of ['daily','monthly']) {
+        const remaining = Math.max(0, limits[k] - used[k]);
+        const level = remaining*10 < limits[k] ? 2 : remaining*4 <= limits[k] ? 1 : 0;
+        worst = Math.max(worst, level);
+    }
+    return order[worst];
+}
+
 export class KeyoLicenses {
     constructor(gateway) { this.storage=gateway.storage;this.env=gateway.env;this.pending=new Map(); }
     async request(action,accountId,body,config=keyoConfig(this.env)) {
-        let response,data;
         const report = details => console.warn('[Keyo diagnostics]', JSON.stringify(details));
-        try {
-            const url=new URL('/api/v1/'+action,config.endpoint);url.searchParams.set('projectId',config.projectId);
-            response=await fetch(url.toString(),{method:'POST',headers:{'Content-Type':'application/json'},
-                body:JSON.stringify({accountId,...body}),redirect:'manual',signal:AbortSignal.timeout(10000)});
-        } catch (error) {
-            const timeout=['TimeoutError','AbortError'].includes(error?.name);
-            report({stage:'fetch',action,reason:timeout?'timeout':'request_failed'});
-            throw issue('KEYO_NETWORK_ERROR',timeout ?
-                'Keyo request timed out after 10 seconds. Check the Keyo Worker logs.' :
-                'Taskitator could not complete its request to Keyo. Check connectivity, TLS and redirects in the Worker logs.',503);
+        let failure;
+        for (const [index,endpoint] of config.endpoints.entries()) {
+            let response;
+            try {
+                const url=new URL('/api/v1/'+action,endpoint);url.searchParams.set('projectId',config.projectId);
+                response=await fetch(url.toString(),{method:'POST',headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({accountId,...body}),redirect:'manual',signal:AbortSignal.timeout(10000)});
+            } catch (error) {
+                const timeout=['TimeoutError','AbortError'].includes(error?.name);
+                report({stage:'fetch',action,origin:index ? 'fallback' : 'primary',reason:timeout?'timeout':'request_failed'});
+                failure=issue('KEYO_NETWORK_ERROR',timeout ?
+                    'Keyo request timed out after 10 seconds. Check the Keyo Worker logs.' :
+                    'Taskitator could not complete its request to Keyo. Check connectivity, TLS and redirects in the Worker logs.',503);
+                continue;
+            }
+            return this.read(response,action,accountId,config,report);
         }
+        throw failure;
+    }
+    async read(response,action,accountId,config,report) {
+        let data;
         // Workers supports manual/follow, not redirect:'error'. Never forward a key to a redirect target.
         if ((response.status>=300 && response.status<400) || response.type==='opaqueredirect') {
             report({stage:'redirect',action,status:response.status});
@@ -225,11 +346,14 @@ export class KeyoLicenses {
         return {token:data?.entitlement,payload:await verifyKeyoToken(data?.entitlement,accountId,config)};
     }
     record(accountId,verified,previous={},extra={}) {
-        const {token,payload:p}=verified;
-        return {...previous,...extra,account_id:accountId,tier:p.tier.toLowerCase(),status:'active',signed_token:token,
+        const {token,payload:p}=verified,allowance=hostedAllowance(p);
+        return {...previous,...extra,account_id:accountId,tier:p.tier.toLowerCase(),
+            status:allowance ? 'active' : 'invalid_parameters',signed_token:token,
             expires_at:p.expiresAt,valid_until:p.validUntil,last_verified_at:Date.now(),keyo_version:1,
-            keyo_key_id:p.keyId,keyo_binding_id:p.bindingId,policy_version:'2.0',
-            credits_daily_limit:45,credits_monthly_limit:1000,use_byok:Boolean(previous.use_byok)};
+            keyo_key_id:p.keyId,keyo_binding_id:p.bindingId,policy_version:'3.0',
+            allowance_version:ALLOWANCE_VERSION,hosted_allowance:allowance,
+            credits_daily_limit:allowance ? allowance.daily : null,credits_monthly_limit:allowance ? allowance.monthly : null,
+            use_byok:Boolean(previous.use_byok)};
     }
     async resolve(accountId) {
         if(this.pending.has(accountId)) return this.pending.get(accountId);
@@ -249,9 +373,11 @@ export class KeyoLicenses {
         try { payload=await verifyKeyoToken(old.signed_token,accountId,config,{allowExpired:true}); }
         catch { return this.updateIfCurrent(key,old,inactive('invalid')); }
         const now=Date.now();
-        const validCache=old.keyo_version===1 && old.status==='active' && payload.validUntil>now &&
+        const validCache=old.keyo_version===1 && ['active','invalid_parameters'].includes(old.status) && payload.validUntil>now &&
             (payload.expiresAt===null || payload.expiresAt>now);
-        if(validCache && now-payload.issuedAt<HOUR) return {...this.record(accountId,{token:old.signed_token,payload},old),last_verified_at:old.last_verified_at};
+        // A cached token with invalid parameters is rechecked online so a Keyo fix applies promptly.
+        const cached={...this.record(accountId,{token:old.signed_token,payload},old),last_verified_at:old.last_verified_at};
+        if(validCache && now-payload.issuedAt<HOUR && cached.status==='active') return this.persist(key,old,cached);
         try {
             const verified=await this.request('verify',accountId,{entitlement:old.signed_token},config);
             // Verification refreshes the same key/binding; replacement requires explicit activation.
@@ -260,10 +386,16 @@ export class KeyoLicenses {
             return this.updateIfCurrent(key,old,this.record(accountId,verified,old));
         } catch(e) {
             if(DENIED.has(e.code)) return this.updateIfCurrent(key,old,inactive(e.code==='EXPIRED'?'expired':'revoked'));
-            if(validCache && ['KEYO_NETWORK_ERROR','KEYO_UNAVAILABLE'].includes(e.code))
-                return {...this.record(accountId,{token:old.signed_token,payload},old),last_verified_at:old.last_verified_at};
+            if(validCache && ['KEYO_NETWORK_ERROR','KEYO_UNAVAILABLE'].includes(e.code)) return this.persist(key,old,cached);
             throw e;
         }
+    }
+    // Store a cached re-derivation only when it changes status or allowances
+    // (for example, records written before d_allow/m_allow support).
+    async persist(key,old,next) {
+        const same=old.status===next.status && old.allowance_version===next.allowance_version &&
+            JSON.stringify(old.hosted_allowance ?? null)===JSON.stringify(next.hosted_allowance ?? null);
+        return same ? next : this.updateIfCurrent(key,old,next);
     }
     async updateIfCurrent(key,old,next) {
         return this.storage.transaction(async tx=>{
@@ -272,8 +404,83 @@ export class KeyoLicenses {
             if(!current || current.signed_token!==old.signed_token || current.status!==old.status) return current || null;
             // Preserve a BYOK toggle made while Keyo was responding.
             next.use_byok=Boolean(current.use_byok);
-            await tx.put(key,next);return next;
+            await tx.put(key,next);
+            await syncPlan(tx,old.account_id,next,Date.now());
+            return next;
         });
+    }
+}
+
+// Server-side credit ledger shared by hosted audits and every personal-key AI route.
+// Free personal-key requests are reserved before the provider call and settled after.
+const MIN_FREE_OUTPUT = 256;
+export class CreditLedger {
+    constructor(gateway) { this.gateway=gateway; this.storage=gateway.storage; }
+    async state(store, account, now=Date.now()) {
+        const e=await store.get('pro:entitlement:'+account);
+        const {state,changed}=nextPlanState(await store.get(PLAN_PREFIX+account),planOf(e,now),now,e);
+        return {e,state,changed,ledger:ledgerFor(account,state,e,now)};
+    }
+    async usage(store, ledger) {
+        return {daily:(await store.get(ledger.dayKey)) || 0,monthly:(await store.get(ledger.monthKey)) || 0};
+    }
+    // Refresh the license first. Verification failures never become a downgrade:
+    // the stored plan is used and an unprovable Pro state is metered as Free.
+    async refreshLicense(account) {
+        try { await this.gateway.licenses.resolve(account); }
+        catch (e) { if (!e?.code) throw e; }
+    }
+    limitMessage(ledger, used) {
+        const daily=ledger.limits.daily-used.daily <= ledger.limits.monthly-used.monthly;
+        const base=daily ? 'Your Free personal-key AI allowance is used up for today. It refills at midnight (Asia/Riyadh).' :
+            'Your Free personal-key AI allowance is used up for this month. It refills on the 1st (Asia/Riyadh).';
+        return ledger.plan === 'restricted' ? base+' Your Pro license could not be verified right now, so Free limits apply until it is.' : base;
+    }
+    // Atomically checks and reserves both allowances. Returns null for Pro (unmetered).
+    // clamp lowers the request's output limit to what the remaining allowance can pay for.
+    async reserveByok(account, {model, inputTokens, maxOutput, clamp=true}) {
+        if (!Number.isSafeInteger(inputTokens) || inputTokens < 0 || !Number.isSafeInteger(maxOutput) || maxOutput < 1)
+            throw fail(503,'TOKEN_COUNT_UNAVAILABLE','The AI request size could not be checked. Nothing was charged.');
+        const inputCost=modelCost(model,inputTokens,0),outputPrice=modelCost(model,inputTokens,1)-inputCost;
+        return this.storage.transaction(async tx => {
+            await liveAccount(tx,account);
+            const now=Date.now(),{state,changed,ledger}=await this.state(tx,account,now);
+            if (changed) await tx.put(PLAN_PREFIX+account,state);
+            if (ledger.plan === 'pro') return null;
+            const used=await this.usage(tx,ledger);
+            const available=Math.min(ledger.limits.daily-used.daily,ledger.limits.monthly-used.monthly);
+            const budget=Math.floor(Math.max(0,available)*2)/2;
+            const room=Math.floor((budget*POLICY.creditValue-inputCost)/outputPrice);
+            const output=clamp ? Math.min(maxOutput,room) : maxOutput;
+            const hold=halfUp((inputCost+output*outputPrice)/POLICY.creditValue);
+            if (budget <= 0 || output < Math.min(maxOutput,MIN_FREE_OUTPUT) || hold > budget)
+                throw fail(429,'FREE_LIMIT_REACHED',this.limitMessage(ledger,used));
+            await tx.put(ledger.dayKey,used.daily+hold);
+            await tx.put(ledger.monthKey,used.monthly+hold);
+            return {account,model,dayKey:ledger.dayKey,monthKey:ledger.monthKey,hold,maxOutput:output,inputTokens,settled:false};
+        });
+    }
+    usageCharge(hold, input, output) {
+        return Math.min(hold.hold,halfUp(modelCost(hold.model,input,output)/POLICY.creditValue));
+    }
+    // Settles against the exact keys reserved, so a later day, cycle or plan epoch is untouched.
+    async settleByok(hold, charge) {
+        if (!hold || hold.settled) return 0;
+        hold.settled=true;
+        const amount=Math.min(hold.hold,Math.max(0,charge));
+        await this.storage.transaction(async tx => {
+            try { await liveAccount(tx,hold.account); } catch { return; }
+            for (const key of [hold.dayKey,hold.monthKey]) {
+                const value=(await tx.get(key)) || 0;
+                await tx.put(key,Math.max(0,value-hold.hold+amount));
+            }
+        });
+        return amount;
+    }
+    async freeStatus(account) {
+        const {ledger}=await this.state(this.storage,account),used=await this.usage(this.storage,ledger);
+        const exhausted=Math.min(ledger.limits.daily-used.daily,ledger.limits.monthly-used.monthly) < 0.5;
+        return {state:limitsState(ledger.limits,used),exhausted,metered:true,reset_timezone:'Asia/Riyadh'};
     }
 }
 
@@ -470,19 +677,27 @@ export class HostedAudits {
     async entitled(store, account) {
         await liveAccount(store,account);
         const e = await store.get('pro:entitlement:'+account);
-        if (!e || e.status !== 'active' || e.account_id !== account || e.keyo_version !== 1 ||
-            !e.signed_token || !Number.isSafeInteger(e.valid_until) || e.valid_until <= Date.now() ||
-            (e.expires_at !== null && (!Number.isSafeInteger(e.expires_at) || e.expires_at <= Date.now())))
+        if (e?.status === 'invalid_parameters') throw fail(403,'LICENSE_PARAMETERS_INVALID',LICENSE_PARAMETERS_MESSAGE);
+        if (!e || e.account_id !== account || planOf(e) !== 'pro')
             throw fail(403,'PRO_REQUIRED','Active Taskitator Pro is required for hosted proof audits.');
         if (e.use_byok) throw fail(409,'BYOK_ACTIVE','Hosted review is disabled while personal-key mode is selected.');
+        return e;
     }
-    async balance(store, account, period) {
-        const dayKey = `pro:usage:${account}:day:${period.day}`, monthKey = `pro:usage:${account}:month:${period.month}`;
-        const spendKey = `pro:spend:${account}:${period.month}`;
-        const daily = (await store.get(dayKey)) || 0, monthly = (await store.get(monthKey)) || 0;
+    // Current hosted ledger (plan epoch, Riyadh day and 30-day cycle) plus the
+    // calendar-month provider-spend safety cap, which transitions never reset.
+    async balance(store, account, now = Date.now(), keys = null) {
+        const month = periods(now).month;
+        let ledger = keys, plan = null;
+        if (!ledger) {
+            plan = await this.gateway.credits.state(store,account,now);
+            if (plan.ledger.plan !== 'pro') throw fail(403,'PRO_REQUIRED','Active Taskitator Pro is required for hosted proof audits.');
+            ledger = {dayKey:plan.ledger.dayKey,monthKey:plan.ledger.monthKey,spendKey:`pro:spend:${account}:${month}`,limits:plan.ledger.limits};
+        }
+        const daily = (await store.get(ledger.dayKey)) || 0, monthly = (await store.get(ledger.monthKey)) || 0;
         // Historical flat credits have no provider usage. Carry their base-credit value as an estimate.
-        const spend = (await store.get(spendKey)) ?? Math.ceil(monthly * POLICY.creditValue);
-        return { dayKey,monthKey,spendKey,daily,monthly,spend };
+        const legacy = (await store.get(`pro:usage:${account}:month:${ledger.spendKey.split(':').pop()}`)) || 0;
+        const spend = (await store.get(ledger.spendKey)) ?? Math.ceil(legacy * POLICY.creditValue);
+        return { ...ledger,daily,monthly,spend,plan };
     }
     async handle(account, session, body, batch, quoteOnly = false) {
         try { return { status:200, body: await this.run(account,session,body,batch,quoteOnly) }; }
@@ -519,7 +734,7 @@ export class HostedAudits {
             if (!rec || rec.expires <= Date.now() || rec.period.day !== periods().day) {
                 const reservedCost=providerCost(POLICY.maxInput,payload.max_tokens);
                 const taskCharges=charges(reservedCost,tasks,batch);
-                this.checkBalance(await this.balance(this.storage,account,periods()),{reservedCost,reservedCredits:totalCredits(taskCharges)});
+                this.checkBalance(await this.balance(this.storage,account),{reservedCost,reservedCredits:halfUp(totalCredits(taskCharges))});
                 const lease=await this.previewSlot(account,opKey);
                 let keepSlot=false;
                 try {
@@ -538,26 +753,27 @@ export class HostedAudits {
 
                 rec = {version:POLICY.version,hash,session,state:'quoted',quote:crypto.randomUUID(),
                     expires:Date.now()+POLICY.quoteMs,period:periods(),input:count,reservedCost,
-                    reservedCredits:totalCredits(taskCharges),taskCharges,created,retain_until:created+86400000};
+                    reservedCredits:halfUp(totalCredits(taskCharges)),reservedRaw:totalCredits(taskCharges),taskCharges,created,retain_until:created+86400000};
                 rec = await this.storage.transaction(async tx => {
                     await liveAccount(tx,account);
                     const current = await tx.get(opKey);
                     if (current && current.state !== 'quoted') { matches(current); throw fail(409,'AUDIT_PENDING','An audit already uses this operation. Retry the same operation later.'); }
                     if (current) matches(current);
                     if (current && current.expires > Date.now() && current.period.day === periods().day) return current;
-                    this.checkBalance(await this.balance(tx,account,rec.period),rec);
+                    this.checkBalance(await this.balance(tx,account),rec);
                     await tx.put(opKey,rec); return rec;
                 });
                 keepSlot=true;
                 await this.gateway.parent.ensureAlarm?.(60000);
                 } finally { await this.releasePreview(account,lease,opKey,keepSlot); }
             }
-            const b = await this.balance(this.storage,account,rec.period);
+            const b = await this.balance(this.storage,account);
             this.checkBalance(b,rec);
-            const estimated = charges(providerCost(rec.input,payload.max_tokens),tasks,batch);
+            const estimated = totalCredits(charges(providerCost(rec.input,payload.max_tokens),tasks,batch));
+            // Main figures are charged amounts (half-credit steps); *_exact and task values are real, unrounded usage.
             return {quote_id:rec.quote,expires_at:rec.expires,input_tokens:rec.input,
-                max_output_tokens:payload.max_tokens,estimated_credits:totalCredits(estimated),
-                maximum_credits:rec.reservedCredits,tasks:rec.taskCharges,
+                max_output_tokens:payload.max_tokens,estimated_credits:Math.min(rec.reservedCredits,halfUp(estimated)),
+                maximum_credits:rec.reservedCredits,estimated_credits_exact:estimated,maximum_credits_exact:rec.reservedRaw,tasks:rec.taskCharges,
                 batch_discount:batch && tasks.length >= 2 ? .25 : 0,model_used:POLICY.model};
         }
         if (!rec || body.quote_id !== rec.quote || rec.expires <= Date.now() || rec.period.day !== periods().day)
@@ -568,11 +784,15 @@ export class HostedAudits {
             if (!current || current.state !== 'quoted' || current.quote !== rec.quote || current.expires <= Date.now())
                 throw fail(409,'AUDIT_PENDING','This price preview has expired or is already in use.');
             matches(current);
-            const b = await this.balance(tx,account,rec.period);
+            // Recheck the stored entitlement, plan epoch and allowances inside the reservation.
+            const b = await this.balance(tx,account);
             this.checkBalance(b,rec);
+            if (b.plan.changed) await tx.put(PLAN_PREFIX+account,b.plan.state);
             await tx.put(b.dayKey,this.round(b.daily+rec.reservedCredits));
             await tx.put(b.monthKey,this.round(b.monthly+rec.reservedCredits));
             await tx.put(b.spendKey,b.spend+rec.reservedCost);
+            // Settlement uses these exact keys, never the period or epoch current at settlement.
+            current.ledger = {dayKey:b.dayKey,monthKey:b.monthKey,spendKey:b.spendKey,limits:b.limits};
             const currentTask=await this.protection.bind(tx,account,body,batch);
             if(await digest(currentTask.bindings)!==await digest(bindings))throw fail(409,'TASK_CHANGED','Your task changed before the review started. Request a new preview.');
             current.state='pending'; current.submitted_at=Date.now(); rec.submitted_at=current.submitted_at; await tx.put(opKey,current);
@@ -597,11 +817,11 @@ export class HostedAudits {
             result = parseResult(data,tasks,batch);
             const perTask = charges(Math.min(actualCost,rec.reservedCost),tasks,batch);
             // A preview is also a customer-price ceiling. Any unexpected overage is absorbed by the operator.
-            const baseCharged = Math.min(rec.reservedCredits,totalCredits(perTask));
-            charged = calculateAuditCharge(baseCharged, result.verdict);
+            const baseCredits = totalCredits(perTask);
+            charged = Math.min(rec.reservedCredits,calculateAuditCharge(baseCredits, result.verdict));
             const discountApplied = result.verdict === 'incomplete';
             result = {success:true,...result,is_pro:true,discount_applied:discountApplied,model_used:POLICY.model,credits_charged:charged,
-                task_charges:perTask,operation_id:operation};
+                credits_exact:realAuditCredits(baseCredits,result.verdict),task_charges:perTask,operation_id:operation};
 
         } catch (e) {
             charged=0;
@@ -612,13 +832,16 @@ export class HostedAudits {
             await liveAccount(tx,account);
             const current = await tx.get(opKey);
             if (current?.state !== 'pending') throw fail(409,'OPERATION_CONFLICT','Audit settlement was already recorded.');
-            const b = await this.balance(tx,account,rec.period);
+            // Operations reserved before this release used the old calendar keys and 45/1000 limits.
+            const keys = current.ledger || {dayKey:`pro:usage:${account}:day:${rec.period.day}`,monthKey:`pro:usage:${account}:month:${rec.period.month}`,
+                spendKey:`pro:spend:${account}:${rec.period.month}`,limits:{daily:45,monthly:1000}};
+            const b = await this.balance(tx,account,Date.now(),keys);
             const daily=this.round(Math.max(0,b.daily-rec.reservedCredits+charged));
             const monthly=this.round(Math.max(0,b.monthly-rec.reservedCredits+charged));
             await tx.put(b.dayKey,daily); await tx.put(b.monthKey,monthly);
             await tx.put(b.spendKey,Math.max(0,b.spend-rec.reservedCost+actualCost));
             if (result) {
-                result.credits_remaining={daily:Math.max(0,POLICY.daily-daily),monthly:Math.max(0,POLICY.monthly-monthly)};
+                result.credits_remaining={daily:Math.max(0,this.round(keys.limits.daily-daily)),monthly:Math.max(0,this.round(keys.limits.monthly-monthly))};
                 result.job_id=await this.protection.attest(tx,account,session,bindings,
                     batch?result.tasks.filter(t=>t.status==='eligible').map(t=>t.task_id):result.verdict==='approved'?[tasks[0].id]:[],
                     {batch,hash,operation,model:POLICY.model,submittedAt:rec.submitted_at||Date.now()});
@@ -674,8 +897,9 @@ export class HostedAudits {
     checkBalance(b, rec) {
         if (b.spend+rec.reservedCost > POLICY.monthlySpend)
             throw fail(429,'HOSTED_SPEND_LIMIT','Your monthly hosted AI spending allowance is used or reserved. It resets on the first day of the month in Asia/Riyadh.');
-        if (b.daily+rec.reservedCredits > POLICY.daily || b.monthly+rec.reservedCredits > POLICY.monthly)
-            throw fail(429,'QUOTA_EXHAUSTED','Insufficient hosted credits for this audit’s maximum charge. Try fewer pages/tasks or wait for the Asia/Riyadh reset.');
+        // A lowered allowance below current usage blocks until usage resets or the allowance rises.
+        if (b.daily+rec.reservedCredits > b.limits.daily || b.monthly+rec.reservedCredits > b.limits.monthly)
+            throw fail(429,'QUOTA_EXHAUSTED','Insufficient hosted credits for this audit’s maximum charge. Try fewer pages/tasks, or wait for the daily reset (midnight Asia/Riyadh) or your 30-day cycle reset.');
     }
 }
 
@@ -732,6 +956,7 @@ export class ProGateway {
         this.env = parent.env;
         this.protection = parent.protection;
         this.licenses = new KeyoLicenses(this);
+        this.credits = new CreditLedger(this);
         this.audits = new HostedAudits(this);
     }
 
@@ -813,56 +1038,57 @@ export class ProGateway {
         const claimed = usernameRec?.normalizedUsername ? await this.storage.get('pro:username:map:'+usernameRec.normalizedUsername) : null;
         const currentUsername = claimed?.accountId === accountId ? usernameRec.username : null;
 
-        if (!entitlement) {
+        // Limits come only from the stored, verified entitlement and the server ledger.
+        const now = Date.now();
+        const {state, ledger} = await this.credits.state(this.storage, accountId, now);
+        if (ledger.plan === 'pro') {
+            const used = await this.credits.usage(this.storage, ledger);
+            const round = n => Math.round(n * 1000) / 1000;
             return json({
-                isPro: false,
-                tier: 'free',
-                status: 'inactive',
+                isPro: true,
+                tier: entitlement.tier,
+                status: 'active',
+                plan: 'pro',
                 username: currentUsername,
-                use_byok: false,
+                use_byok: Boolean(entitlement.use_byok),
+                // Personal-key requests never use Taskitator credits on Pro.
+                byok_credit_limits: false,
+                activated_at: entitlement.activated_at,
+                cycle_anchor: state.anchor,
+                expires_at: entitlement.expires_at,
+                policy_version: entitlement.policy_version || '3.0',
+                hosted_policy: POLICY.version,
                 credits: {
-                    daily_limit: 0,
-                    daily_used: 0,
-                    daily_remaining: 0,
-                    monthly_limit: 0,
-                    monthly_used: 0,
-                    monthly_remaining: 0,
+                    daily_limit: ledger.limits.daily,
+                    daily_used: round(used.daily),
+                    daily_remaining: Math.max(0, round(ledger.limits.daily - used.daily)),
+                    monthly_limit: ledger.limits.monthly,
+                    monthly_used: round(used.monthly),
+                    monthly_remaining: Math.max(0, round(ledger.limits.monthly - used.monthly)),
+                    monthly_period: '30-day',
+                    daily_resets_at: ledger.daily_resets_at,
+                    cycle_started_at: ledger.cycle_started_at,
+                    monthly_resets_at: ledger.monthly_resets_at,
                     reset_timezone: 'Asia/Riyadh'
                 }
             });
         }
 
-        const now = Date.now();
-        const status = entitlement.status === 'active' && entitlement.valid_until <= now ? 'expired' : entitlement.status;
-
-        const { dateStr, monthStr } = getRiyadhDateStrings(now);
-        const dailyUsed = (await this.storage.get(`pro:usage:${accountId}:day:${dateStr}`)) || 0;
-        const monthlyUsed = (await this.storage.get(`pro:usage:${accountId}:month:${monthStr}`)) || 0;
-
-        // Owner requirements: 45 daily and 1,000 monthly credits
-        const dailyLimit = (Number.isFinite(entitlement.credits_daily_limit) && entitlement.credits_daily_limit > 0) ? entitlement.credits_daily_limit : POLICY.daily;
-        const monthlyLimit = (Number.isFinite(entitlement.credits_monthly_limit) && entitlement.credits_monthly_limit > 0) ? entitlement.credits_monthly_limit : POLICY.monthly;
-        const useByok = Boolean(entitlement.use_byok);
-
+        const status = !entitlement ? 'inactive' :
+            entitlement.status === 'active' ? 'expired' : entitlement.status;
+        // Free numeric allowances and usage are intentionally never returned.
+        const limits = await this.credits.freeStatus(accountId);
         return json({
-            isPro: status === 'active',
-            tier: entitlement.tier,
+            isPro: false,
+            tier: entitlement ? entitlement.tier : 'free',
             status,
+            plan: ledger.plan,
             username: currentUsername,
-            use_byok: useByok,
-            activated_at: entitlement.activated_at,
-            expires_at: entitlement.expires_at,
-            policy_version: entitlement.policy_version || '2.0',
-            hosted_policy: POLICY.version,
-            credits: {
-                daily_limit: dailyLimit,
-                daily_used: dailyUsed,
-                daily_remaining: Math.max(0, dailyLimit - dailyUsed),
-                monthly_limit: monthlyLimit,
-                monthly_used: monthlyUsed,
-                monthly_remaining: Math.max(0, monthlyLimit - monthlyUsed),
-                reset_timezone: 'Asia/Riyadh'
-            }
+            use_byok: false,
+            byok_credit_limits: true,
+            limits,
+            credits: null,
+            ...(status === 'invalid_parameters' ? {code: 'LICENSE_PARAMETERS_INVALID', message: LICENSE_PARAMETERS_MESSAGE} : {})
         });
     }
 
@@ -887,7 +1113,7 @@ export class ProGateway {
         return json({
             success: true,
             use_byok: entitlement.use_byok,
-            message: entitlement.use_byok ? 'Switched to personal BYOK mode. Your hosted credit limits remain active.' : 'Switched to hosted Claude Haiku 5.5 mode.'
+            message: entitlement.use_byok ? 'Switched to personal-key mode. Taskitator credit limits do not apply to personal-key usage; your AI provider bills you directly. Your hosted credits are unchanged.' : 'Switched to hosted Claude Haiku 5.5 mode.'
         });
     }
 
@@ -899,18 +1125,24 @@ export class ProGateway {
         }
         await liveAccount(this.storage,accountId);
         const verified = await this.licenses.request('activate',accountId,{key:normalizedKey});
+        // Pro requires valid d_allow/m_allow. No default allowance is ever assigned.
+        if (!hostedAllowance(verified.payload)) return json({error:LICENSE_PARAMETERS_MESSAGE,code:'LICENSE_PARAMETERS_INVALID'},403);
         const keyFingerprint = await sha256(normalizedKey);
         // Keyo owns account limits and reassignment. An old local fingerprint cannot override it.
         const entitlement = await this.storage.transaction(async tx => {
             await liveAccount(tx,accountId);
             const previous = await tx.get(`pro:entitlement:${accountId}`);
+            const now = Date.now();
+            // Re-activating a still-Pro account keeps its activation (and 30-day cycle) anchor.
             const record = this.licenses.record(accountId,verified,previous,{key_fingerprint:keyFingerprint,
-                activated_at:previous?.activated_at || Date.now()});
+                activated_at:planOf(previous,now) === 'free' ? now : (previous?.activated_at || now)});
             await tx.put(`pro:entitlement:${accountId}`,record);
+            await syncPlan(tx,accountId,record,now);
             return record;
         });
         return json({success:true,isPro:true,tier:entitlement.tier,status:'active',
-            expires_at:entitlement.expires_at,credits_daily_limit:POLICY.daily,credits_monthly_limit:POLICY.monthly,
+            expires_at:entitlement.expires_at,credits_daily_limit:entitlement.hosted_allowance.daily,
+            credits_monthly_limit:entitlement.hosted_allowance.monthly,
             message:'Taskitator Pro successfully activated.'});
     }
 
@@ -918,7 +1150,7 @@ export class ProGateway {
         const account=identity.userId,session=identity.sessionId;
         if(typeof session!=='string'||!session)throw fail(401,'SESSION_REQUIRED','Sign in again before reviewing proof.');
         const batch=body.batch===true;
-        if(batch){const e=await this.licenses.resolve(account);if(!e||e.status!=='active'||!e.use_byok)throw fail(403,'PRO_REQUIRED','Active Pro with personal-key mode is required for personal batch review.');}
+        if(batch){const e=await this.licenses.resolve(account);if(!e||planOf(e)!=='pro'||!e.use_byok)throw fail(403,'PRO_REQUIRED','Active Pro with personal-key mode is required for personal batch review.');}
         const submittedAt=Date.now();
         const bound=await this.protection.bind(this.storage,account,body,batch,true),created=operationTime(body.operation_id);
         const provider=await this.parent.vault.selectedProvider(identity),config=PROVIDERS[provider];

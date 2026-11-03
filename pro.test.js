@@ -13,7 +13,9 @@ import {
     ProGateway, TaskProtection, HostedAudits, KeyoLicenses,
     KEYO_DEFAULTS, keyoConfig, verifyKeyoToken, liveAccount,
     POLICY, periods, charges, totalCredits, providerCost,
-    prepare, parseResult, newOperation, operationTime, calculateAuditCharge
+    prepare, parseResult, newOperation, operationTime, calculateAuditCharge,
+    halfUp, realAuditCredits, PLAN_PREFIX, ledgerFor, planOf, nextPlanState, FREE_BYOK, CYCLE_MS,
+    limitsState, hostedAllowance, modelCost, ALLOWANCE_VERSION
 } from './pro-backend.js';
 
 
@@ -58,7 +60,7 @@ const testEnv={KEYO_PUBLIC_JWK:JSON.stringify(testPublicKey)};
 async function signedToken(accountId,overrides={},header={alg:'ES256',typ:'KEYO'}) {
     const now=Date.now();
     const payload={v:1,projectId:KEYO_DEFAULTS.projectId,accountId,keyId:'test-key',bindingId:'test-binding-'+accountId,
-        tier:'PRO',expiresAt:now+30*86400000,issuedAt:now,validUntil:now+86400000,...overrides};
+        tier:'PRO',expiresAt:now+30*86400000,issuedAt:now,validUntil:now+86400000,parameters:{d_allow:45,m_allow:1000},...overrides};
     const b64=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
     const input=b64(header)+'.'+b64(payload);
     const sig=await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,new TextEncoder().encode(input));
@@ -68,7 +70,9 @@ async function activeLicense(accountId,overrides={}) {
     const token=await signedToken(accountId,overrides);
     const p=JSON.parse(Buffer.from(token.split('.')[1],'base64url'));
     return {account_id:accountId,status:'active',tier:'pro',signed_token:token,expires_at:p.expiresAt,
-        valid_until:p.validUntil,keyo_version:1,last_verified_at:Date.now(),use_byok:false};
+        valid_until:p.validUntil,keyo_version:1,last_verified_at:Date.now(),use_byok:false,
+        allowance_version:2,hosted_allowance:{daily:p.parameters?.d_allow,monthly:p.parameters?.m_allow},
+        credits_daily_limit:p.parameters?.d_allow,credits_monthly_limit:p.parameters?.m_allow};
 }
 
 // Unit-test storage fixtures; integration tests exercise the real Worker snapshot implementation.
@@ -104,7 +108,7 @@ const batch=(n=2,operation='batch_operation_1')=>({tasks:Array.from({length:n},(
 async function auditHarness(options={}) {
     const storage=new KeyoTestStorage();seedUnitAccounts(storage);
     const gateway=new ProGateway(unitParent(storage,{CLAUDE_API_KEY:'test-provider-key',...testEnv,...options.env})),calls=[];
-    await storage.put('pro:entitlement:user_A',{...await activeLicense('user_A'),credits_daily_limit:20,credits_monthly_limit:300});
+    await storage.put('pro:entitlement:user_A',await activeLicense('user_A'));
     const fetchBefore=globalThis.fetch;
     globalThis.fetch=async(url,opts)=>{
         const payload=JSON.parse(opts.body);calls.push({url,payload});
@@ -141,22 +145,33 @@ async function auditHarness(options={}) {
 }
 async function withHarness(fn,options={}) {const h=await auditHarness(options);try{await fn(h)}finally{h.restore()}}
 const providerCalls=h=>h.calls.filter(c=>!c.url.endsWith('/count_tokens'));
+// Current server ledger keys for an account (creates the initial plan record like the Worker does).
+async function hostedKeys(storage,account='user_A',now=Date.now()){
+    const e=await storage.get('pro:entitlement:'+account);
+    let state=await storage.get(PLAN_PREFIX+account);
+    if(!state){state=nextPlanState(null,planOf(e,now),now,e).state;if(state)await storage.put(PLAN_PREFIX+account,state);}
+    return ledgerFor(account,state,e,now);
+}
+const near=(actual,expected,label)=>assert.ok(Math.abs(actual-expected)<1e-9,`${label||''} ${actual} != ${expected}`);
 
-test('dynamic credits use actual token cost, fractions, exemplar ×2 and per-task batch discounts',()=>{
+test('dynamic credits use actual token cost, unrounded real usage, exemplar ×2 and per-task batch discounts',()=>{
     const cost=providerCost(1000,200);
     assert.equal(cost,200000);
-    assert.equal(totalCredits(charges(cost,[{id:'a'}],false)),.134);
-    assert.equal(totalCredits(charges(cost,[{id:'a',exemplar:true}],false)),.267);
-    assert.equal(totalCredits(charges(cost,[{id:'a'},{id:'b',exemplar:true}],true)),.15);
-    assert.equal(totalCredits(charges(cost,[{id:'a'}],true)),.134);
+    near(totalCredits(charges(cost,[{id:'a'}],false)),2/15);
+    near(totalCredits(charges(cost,[{id:'a',exemplar:true}],false)),4/15);
+    near(totalCredits(charges(cost,[{id:'a'},{id:'b',exemplar:true}],true)),.15);
+    near(totalCredits(charges(cost,[{id:'a'}],true)),2/15);
+    // Charged amounts round any part of a half credit up to that half.
+    assert.equal(halfUp(totalCredits(charges(cost,[{id:'a'}],false))),.5);
     assert.equal(charges(200_000_000,Array.from({length:20},(_,i)=>({id:String(i)})),true).length,20);
     assert.ok(totalCredits(charges(200_000_000,Array.from({length:20},(_,i)=>({id:String(i)})),true))>10);
 });
-test('old subscribers receive 45/1000 limits while existing usage is preserved',async()=>withHarness(async h=>{
-    const p=periods();await h.storage.put(`pro:usage:user_A:day:${p.day}`,3.125);
+test('Pro hosted limits come from verified d_allow/m_allow and status shows current ledger usage',async()=>withHarness(async h=>{
+    await h.storage.put((await hostedKeys(h.storage)).dayKey,3.5);
     const status=await (await h.gateway.getStatus('user_A')).json();
     assert.equal(status.credits.daily_limit,45);assert.equal(status.credits.monthly_limit,1000);
-    assert.equal(status.credits.daily_remaining,41.875);
+    assert.equal(status.credits.daily_remaining,41.5);assert.equal(status.credits.monthly_period,'30-day');
+    assert.equal(status.byok_credit_limits,false);
 }));
 test('price preview counts the complete exact provider payload and never starts paid inference',async()=>withHarness(async h=>{
     const body={...single(),exemplar:{mime_type:'application/pdf',data:'ZGVm'}};
@@ -168,21 +183,22 @@ test('price preview counts the complete exact provider payload and never starts 
     assert.ok(JSON.stringify(count).includes('REFERENCE EXEMPLAR'));assert.ok(JSON.stringify(count).includes('ZGVm'));
     const review=await h.route({...body,quote_id:result.body.quote_id});assert.equal(review.status,200);
     const {max_tokens,...actual}=providerCalls(h)[0].payload;assert.deepEqual(actual,count);
-    assert.equal(max_tokens,1024);assert.equal(review.body.credits_charged,.267);
+    assert.equal(max_tokens,1024);assert.equal(review.body.credits_charged,.5);near(review.body.credits_exact,4/15);
 }));
 test('fresh single audit settles the worst-case reserve to the actual fraction and caches retries',async()=>withHarness(async h=>{
     const body=single();const q=await h.quote(body);
-    assert.equal(q.body.maximum_credits,1.675);
+    assert.equal(q.body.maximum_credits,2);near(q.body.maximum_credits_exact,2_512_000/1_500_000);
+    assert.equal(q.body.estimated_credits,.5);near(q.body.estimated_credits_exact,providerCost(1000,1024)/1_500_000);
     const first=await h.route({...body,quote_id:q.body.quote_id});assert.equal(first.status,200);
-    assert.equal(first.body.credits_charged,.134);assert.equal(first.body.credits_remaining.daily,44.866);
+    assert.equal(first.body.credits_charged,.5);assert.equal(first.body.credits_remaining.daily,44.5);
     const retry=await h.route({...body,quote_id:q.body.quote_id});assert.deepEqual(retry,first);
     assert.equal(providerCalls(h).length,1);
     const p=periods();assert.equal(await h.storage.get(`pro:spend:user_A:${p.month}`),200000);
 }));
 test('batch audit charges each task, returns separate results and keeps explicit completion',async()=>withHarness(async h=>{
     const result=await h.review(batch(),{isBatch:true});assert.equal(result.status,200);
-    assert.equal(result.body.credits_charged,.1);assert.equal(result.body.task_charges.length,2);
-    assert.deepEqual(result.body.task_charges.map(t=>t.credits),[.05,.05]);
+    assert.equal(result.body.credits_charged,.5);assert.equal(result.body.task_charges.length,2);
+    result.body.task_charges.forEach(t=>near(t.credits,.05));
     const attestation=await h.storage.get('pro:attestation:'+result.body.job_id);
     assert.deepEqual(attestation.eligible_task_ids,['task_1']);assert.equal(attestation.consumed,false);
     assert.equal(providerCalls(h).length,1);
@@ -237,7 +253,7 @@ test('concurrent audits reserve credits atomically and cannot overdraw the daily
     await withHarness(async h=>{
         const one=single('operation_first'),two=single('operation_second');
         const q1=await h.quote(one),q2=await h.quote(two);const p=periods();
-        await h.storage.put(`pro:usage:user_A:day:${p.day}`,43.2);
+        await h.storage.put((await hostedKeys(h.storage)).dayKey,43);
         const running=h.route({...one,quote_id:q1.body.quote_id});await entered;
         const blocked=await h.route({...two,quote_id:q2.body.quote_id});release();
         assert.equal(blocked.body.code,'QUOTA_EXHAUSTED');assert.equal((await running).status,200);
@@ -259,7 +275,7 @@ test('billable invalid outputs are never approvals; spend is counted and custome
     for(const options of [{result:'not JSON'},{stop:'max_tokens'},{model:'different-expensive-model'},{result:'{"verdict":"approved","confidence":2,"critique":"x"}'}])
         await withHarness(async h=>{
             const result=await h.review(single());assert.equal(result.status,502);assert.equal(result.body.success,undefined);
-            const p=periods();assert.equal(await h.storage.get(`pro:usage:user_A:day:${p.day}`),0);
+            const p=periods();assert.equal(await h.storage.get((await hostedKeys(h.storage)).dayKey),0);
             assert.equal(await h.storage.get(`pro:spend:user_A:${p.month}`),200000);
         },options);
 });
@@ -269,14 +285,14 @@ test('malformed batch IDs, missing tasks or inconsistent eligibility never issue
 },{result:'[{"task_id":"other","status":"eligible","verdict":"approved","reason":"x"}]'}));
 test('uncertain timeouts retain provider spend, refund customer credits, and never silently retry inference',async()=>withHarness(async h=>{
     const body=single(),q=await h.quote(body);const result=await h.route({...body,quote_id:q.body.quote_id});assert.equal(result.status,502);
-    const p=periods();assert.equal(await h.storage.get(`pro:usage:user_A:day:${p.day}`),0);
+    const p=periods();assert.equal(await h.storage.get((await hostedKeys(h.storage)).dayKey),0);
     assert.equal(await h.storage.get(`pro:spend:user_A:${p.month}`),providerCost(20000,1024));
     assert.equal((await h.route({...body,quote_id:q.body.quote_id})).status,502);assert.equal(providerCalls(h).length,1);
 },{networkError:true}));
 test('definite pre-inference provider failures release reservations, while 5xx keeps a conservative spend reserve',async()=>{
     for(const status of [401,429,500])await withHarness(async h=>{
         await h.review(single());const p=periods();
-        assert.equal(await h.storage.get(`pro:usage:user_A:day:${p.day}`),0);
+        assert.equal(await h.storage.get((await hostedKeys(h.storage)).dayKey),0);
         assert.equal(await h.storage.get(`pro:spend:user_A:${p.month}`),status===500?providerCost(20000,1024):0);
     },{status});
 });
@@ -308,7 +324,7 @@ test('client price rejection does not send paid inference; approval carries payl
         else await assert.rejects(operation,/cancelled/);
         assert.equal(calls.length,approve?2:1);
         assert.equal(prompts[0].tasks[0].title,'Biology worksheet');
-        assert.equal(prompts[0].tasks[0].creditsFormatted,'1.500');
+        assert.equal(prompts[0].tasks[0].creditsFormatted,'1.5000');
         assert.equal(prompts[0].tasks[0].exemplar,true);
         assert.equal(prompts[0].estimatedDisplay,'0.4');
         assert.equal(prompts[0].maximumDisplay,'1.5');
@@ -366,7 +382,7 @@ test('batch price preview uses task titles, hides IDs and applies discount wordi
         };
         const result=await window.TaskitatorPro.batchReview({tasks,files:[image],operationId:'batch_price_wording'});
         assert.equal(result.credits_charged,.25);assert.equal(calls.length,2);
-        assert.ok(prompts[0].tasks.some(t=>t.title==='Lab notes' && t.creditsFormatted==='0.500'));
+        assert.ok(prompts[0].tasks.some(t=>t.title==='Lab notes' && t.creditsFormatted==='0.5000'));
         assert.ok(prompts[0].tasks.every(t=>!t.title.includes('internal_task_')));
         assert.equal(prompts[0].batchDiscount,count===2);
         if(count===2)assert.ok(prompts[0].tasks.some(t=>t.title==='Task 2'));
@@ -838,14 +854,16 @@ function makeReq(path, method = 'GET', body = null) {
     return new Request(`https://worker.local${path}`, opts);
 }
 
-test('Phase 2: Unactivated account returns Free tier with zero credits', async () => {
+test('Phase 2: Unactivated account returns Free tier with a numberless limits state', async () => {
     const { pro } = createHarness();
     const res = await pro.handleRequest(makeReq('/pro/status'), '/pro/status', 'GET', { userId: 'u_free' }, {});
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.isPro, false);
     assert.equal(data.tier, 'free');
-    assert.equal(data.credits.daily_limit, 0);
+    assert.equal(data.credits, null);
+    assert.deepEqual(data.limits, {state:'available',exhausted:false,metered:true,reset_timezone:'Asia/Riyadh'});
+    assert.equal(/\b(10|220)\b/.test(JSON.stringify(data)), false, 'Free numeric allowances must not be exposed');
 });
 
 test('Phase 2: Keyo activation elevates account to Pro with 45 daily and 1,000 monthly credits', async () => {
@@ -1208,12 +1226,16 @@ test('Vault: API key connection test displays green/red popup box', () => {
 });
 
 
-test('Tri-State Token Policy: incomplete verdict applies 50% discount for Pro and 0 charge when < 1 token', () => {
-    assert.equal(calculateAuditCharge(1.2, 'incomplete'), 0);
+test('Tri-State Token Policy: incomplete verdict halves real usage, then any part of a half credit is charged as a half', () => {
+    assert.equal(calculateAuditCharge(1.2, 'incomplete'), 1.0);
     assert.equal(calculateAuditCharge(2.0, 'incomplete'), 1.0);
     assert.equal(calculateAuditCharge(3.0, 'incomplete'), 1.5);
+    assert.equal(calculateAuditCharge(0.1, 'incomplete'), 0.5);
     assert.equal(calculateAuditCharge(1.5, 'rejected'), 1.5);
-    assert.equal(calculateAuditCharge(1.5, 'approved'), 1.5);
+    assert.equal(calculateAuditCharge(1.51, 'approved'), 2.0);
+    assert.equal(calculateAuditCharge(0, 'approved'), 0);
+    near(realAuditCredits(1.2,'incomplete'),.6);
+    for (const [raw, charged] of [[1e-9,.5],[.5,.5],[.5001,1],[1,1],[1.0001,1.5],[1.5,1.5],[44.9,45]]) assert.equal(halfUp(raw), charged, String(raw));
 });
 
 
@@ -1235,7 +1257,7 @@ test("CSP policies allow clerk.mazendev.com and all inline HTML scripts compile 
     }
 });
 
-test("Review cost preview dialog displays 1-decimal summary, 3-decimal expandable details, and enforces Cancel vs Start review", async () => {
+test("Review cost preview dialog displays half-step summary, 4-decimal real-usage details, and enforces Cancel vs Start review", async () => {
     const f = client();
     const appended = [];
     f.context.document = {
@@ -1283,8 +1305,10 @@ test("Review cost preview dialog displays 1-decimal summary, 3-decimal expandabl
         if (path === "/pro/ai/quote") {
             return {
                 quote_id: "q_dialog_1",
-                estimated_credits: 0.376,
-                maximum_credits: 1.542,
+                estimated_credits: 0.5,
+                maximum_credits: 2,
+                estimated_credits_exact: 0.376,
+                maximum_credits_exact: 1.542,
                 tasks: [
                     { task_id: "t1", credits: 1.028, exemplar: true },
                     { task_id: "t2", credits: 0.514, exemplar: false }
@@ -1313,15 +1337,15 @@ test("Review cost preview dialog displays 1-decimal summary, 3-decimal expandabl
     assert.equal(appended.length, 1, "Review cost dialog must be mounted");
     const dialogHtml = appended[0].innerHTML;
     // Summary shows 1 decimal place
-    assert.match(dialogHtml, /0\.4 credits/, "Estimated charge must round to 1 decimal place (0.4)");
-    assert.match(dialogHtml, /1\.5 credits/, "Maximum hold must round to 1 decimal place (1.5)");
+    assert.match(dialogHtml, /0\.5 credits/, "Estimated charge shows the half-step charge (0.5)");
+    assert.match(dialogHtml, /2\.0 credits/, "Maximum hold shows the half-step hold (2.0)");
     // Expandable View details section shows 3 decimal places, reference multiplier, and batch discount
     assert.match(dialogHtml, /<details class="pro-quote-details" id="proQuoteDetailsToggle">/);
     assert.match(dialogHtml, /View details/);
-    assert.match(dialogHtml, /0\.376 credits/);
-    assert.match(dialogHtml, /1\.542 credits/);
-    assert.match(dialogHtml, /Calculus Problem Set[\s\S]*1\.028 credits[\s\S]*reference comparison: ×2 charge/);
-    assert.match(dialogHtml, /Physics Lab Report[\s\S]*0\.514 credits/);
+    assert.match(dialogHtml, /0\.3760 credits/);
+    assert.match(dialogHtml, /1\.5420 credits/);
+    assert.match(dialogHtml, /Calculus Problem Set[\s\S]*1\.0280 credits[\s\S]*reference comparison: ×2 charge/);
+    assert.match(dialogHtml, /Physics Lab Report[\s\S]*0\.5140 credits/);
     assert.match(dialogHtml, /25% batch discount/);
     assert.match(dialogHtml, /Unused held credits return/);
     assert.match(dialogHtml, /charged even when proof is rejected/);
@@ -1456,7 +1480,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-smart-study-v1'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-credit-limits-v1'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);
@@ -1898,3 +1922,65 @@ test('Keyo redirects never forward activation credentials or save an entitlement
         assert.equal(await h.storage.get(licenseKey),undefined);
     }
 }));
+
+test('hosted audits reserve against verified d_allow and settle into the reserved epoch even if the plan changes mid-audit',async()=>{
+    let release,started;const entered=new Promise(resolve=>{started=resolve}),gate=new Promise(resolve=>{release=resolve});
+    await withHarness(async h=>{
+        const body=single('operation_transition');const q=await h.quote(body);assert.equal(q.body.maximum_credits,2);
+        const before=await hostedKeys(h.storage);
+        const running=h.route({...body,quote_id:q.body.quote_id});await entered;
+        assert.equal(await h.storage.get(before.dayKey),2,'the maximum hold is reserved before inference');
+        // A verified transition while the provider call is in flight starts a new epoch.
+        const state=await h.storage.get(PLAN_PREFIX+'user_A');
+        await h.storage.put(PLAN_PREFIX+'user_A',{...state,epoch:state.epoch+1,anchor:Date.now(),transitions:1});
+        release();const result=await running;assert.equal(result.status,200);assert.equal(result.body.credits_charged,.5);
+        assert.equal(await h.storage.get(before.dayKey),.5);
+        const after=await hostedKeys(h.storage);assert.notEqual(after.dayKey,before.dayKey);
+        assert.equal(await h.storage.get(after.dayKey),undefined,'the new epoch is untouched');
+    },{pause:async()=>{started();await gate}});
+});
+test('a hosted maximum hold above the verified d_allow is refused before any paid inference',async()=>withHarness(async h=>{
+    await h.storage.put('pro:entitlement:user_A',await activeLicense('user_A',{parameters:{d_allow:1,m_allow:1000}}));
+    const q=await h.quote(single('operation_small_allowance'));
+    assert.equal(q.status,429);assert.equal(q.body.code,'QUOTA_EXHAUSTED');assert.equal(providerCalls(h).length,0);
+}));
+test('Free accounts and invalid Keyo parameters never reach hosted inference',async()=>withHarness(async h=>{
+    // Keyo unreachable for the recheck: the signed token itself lacks m_allow.
+    await h.storage.put('pro:entitlement:user_A',{...await activeLicense('user_A',{parameters:{d_allow:45}}),hosted_allowance:null,status:'invalid_parameters'});
+    assert.equal((await h.quote(single('operation_invalid_params'))).body.code,'LICENSE_PARAMETERS_INVALID');
+    await h.storage.delete('pro:entitlement:user_A');
+    assert.equal((await h.quote(single('operation_free'))).body.code,'PRO_REQUIRED');
+    assert.equal(h.calls.filter(c=>String(c.url).includes('api.anthropic.com')).length,0);
+}));
+
+test('Settings shows the numberless three-state Free limits card, Pro hosted numbers, and clear error states',async()=>{
+    const elements=new Map();
+    const element=id=>{if(!elements.has(id)){const classes=new Set();elements.set(id,{id,textContent:'',className:'',checked:false,style:{},
+        classList:{add:(...c)=>c.forEach(x=>classes.add(x)),remove:(...c)=>c.forEach(x=>classes.delete(x)),contains:c=>classes.has(c),values:()=>[...classes]},addEventListener(){}});}return elements.get(id);};
+    for(const id of ['pro-status-badge','pro-expiry-label','pro-quota-container','proByokToggle','pro-free-limits','pro-free-limits-title','pro-free-limits-sub',
+        'pro-daily-remaining','pro-daily-limit','pro-daily-fill','pro-monthly-remaining','pro-monthly-limit','pro-monthly-fill','pro-monthly-reset','pro-form-msg'])element(id);
+    const document={readyState:'loading',getElementById:id=>elements.get(id)||null,addEventListener(){}};
+    let status;const window={document,addEventListener(){},TaskitatorPro:{getStatus:async()=>{if(status instanceof Error)throw status;return status;}}};
+    vm.runInContext(readConsolidatedSource('pro/pro-ui.js'),vm.createContext({window,document,console,setTimeout}));
+    const card=elements.get('pro-free-limits'),title=elements.get('pro-free-limits-title'),sub=elements.get('pro-free-limits-sub');
+    for(const [state,label] of [['available','Limits: Available'],['caution','Limits: Caution'],['critical','Limits: Critical']]){
+        status={isPro:false,status:'inactive',limits:{state,exhausted:false}};await window.ProUI.refreshProStatus();
+        assert.equal(title.textContent,label);assert.ok(card.classList.contains('is-'+state));assert.equal(card.style.display,'flex');
+        assert.equal(elements.get('pro-quota-container').style.display,'none');
+        assert.doesNotMatch(title.textContent+sub.textContent,/\d/,'Free card never shows numbers');
+    }
+    status={isPro:false,status:'inactive',limits:{state:'critical',exhausted:true}};await window.ProUI.refreshProStatus();
+    assert.match(sub.textContent,/used up/);
+    status=Object.assign(new Error('Couldn\'t reach Taskitator.'),{status:503});await window.ProUI.refreshProStatus();
+    assert.equal(title.textContent,'Limits: Unavailable');assert.ok(card.classList.contains('is-unavailable'));
+    status={isPro:false,status:'invalid_parameters',message:'Contact support.',limits:{state:'available',exhausted:false}};await window.ProUI.refreshProStatus();
+    assert.equal(elements.get('pro-status-badge').textContent,'NEEDS SUPPORT');assert.match(elements.get('pro-expiry-label').textContent,/Contact support/);
+    status={isPro:true,status:'active',use_byok:true,expires_at:null,credits:{daily_limit:45,daily_remaining:44.5,monthly_limit:1000,monthly_remaining:999.5,monthly_resets_at:Date.now()+86400000}};
+    await window.ProUI.refreshProStatus();
+    assert.equal(card.style.display,'none');assert.equal(elements.get('pro-quota-container').style.display,'block');
+    assert.equal(elements.get('pro-daily-remaining').textContent,'44.5');assert.equal(elements.get('pro-monthly-limit').textContent,'1000');
+    assert.equal(elements.get('proByokToggle').checked,true);assert.match(elements.get('pro-monthly-reset').textContent,/^Refills /);
+    const ui=readConsolidatedSource('pro/pro-ui.js');
+    assert.match(ui,/Taskitator credit limits don't apply to your own API key on Pro/);
+    assert.match(ui,/AI credits this 30-day cycle/);
+});

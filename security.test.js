@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker, { TaskitatorSync, evaluateStatus, sha256, RECOVERY_MS } from './worker.js';
-import { KEYO_DEFAULTS, POLICY, periods, newOperation } from './pro-backend.js';
+import { KEYO_DEFAULTS, POLICY, periods, newOperation, PLAN_PREFIX, ledgerFor, planOf, nextPlanState } from './pro-backend.js';
 
 // Test-only signing keys; never imported by the deployed Worker.
 const pair=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
@@ -15,7 +15,7 @@ const testEnv={KEYO_PUBLIC_JWK:JSON.stringify(testPublicKey)};
 async function signedToken(accountId,overrides={},header={alg:'ES256',typ:'KEYO'}) {
     const now=Date.now();
     const payload={v:1,projectId:KEYO_DEFAULTS.projectId,accountId,keyId:'test-key',bindingId:'test-binding-'+accountId,
-        tier:'PRO',expiresAt:now+30*86400000,issuedAt:now,validUntil:now+86400000,...overrides};
+        tier:'PRO',expiresAt:now+30*86400000,issuedAt:now,validUntil:now+86400000,parameters:{d_allow:45,m_allow:1000},...overrides};
     const b64=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
     const input=b64(header)+'.'+b64(payload);
     const sig=await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,new TextEncoder().encode(input));
@@ -25,7 +25,9 @@ async function activeLicense(accountId,overrides={}) {
     const token=await signedToken(accountId,overrides);
     const p=JSON.parse(Buffer.from(token.split('.')[1],'base64url'));
     return {account_id:accountId,status:'active',tier:'pro',signed_token:token,expires_at:p.expiresAt,
-        valid_until:p.validUntil,keyo_version:1,last_verified_at:Date.now(),use_byok:false};
+        valid_until:p.validUntil,keyo_version:1,last_verified_at:Date.now(),use_byok:false,
+        allowance_version:2,hosted_allowance:{daily:p.parameters?.d_allow,monthly:p.parameters?.m_allow},
+        credits_daily_limit:p.parameters?.d_allow,credits_monthly_limit:p.parameters?.m_allow};
 }
 
 
@@ -82,19 +84,27 @@ function fixture() {
     let verificationOverrides = {};
     let revoked = false, verificationStatus='complete', deleteFailure=false, googleToken=null, providerStatus=200;
     let claudeResponse={model:'claude-haiku-5-5',stop_reason:'end_turn',content:[{type:'text',text:'Hello from Claude'}],usage:{input_tokens:12,output_tokens:4}};
-    const providerCalls=[];
+    const providerCalls=[],countCalls=[];let countStatus=200,countTokens=12;
     const deletedUsers=new Set(),sessionOwners=new Map();
     globalThis.fetch = async (url,options={}) => {
+        // Free personal-key metering counts input tokens first; tracked separately from generations.
+        if(String(url).endsWith('/count_tokens')||String(url).endsWith(':countTokens')){
+            countCalls.push({url:String(url),options});
+            if(countStatus!==200)return Response.json({error:{message:'count failed'}},{status:countStatus});
+            return Response.json(String(url).endsWith(':countTokens')?{totalTokens:countTokens}:{input_tokens:countTokens});
+        }
         if(String(url).startsWith('https://api.anthropic.com/v1/')){
             providerCalls.push({url:String(url),options});
             if(providerStatus!==200)return Response.json({error:{message:'provider diagnostic secret'}},{status:providerStatus});
             if(String(url).includes('/models/'))return Response.json({id:'claude-haiku-5-5',type:'model'});
-            return Response.json(typeof claudeResponse==='function'?await claudeResponse(options):claudeResponse);
+            const reply=typeof claudeResponse==='function'?await claudeResponse(options):claudeResponse;
+            // Real Claude responses always report usage; tests opt out explicitly with usage:null.
+            return Response.json(reply && !('usage' in reply)?{...reply,usage:{input_tokens:12,output_tokens:4}}:reply);
         }
         if(String(url).startsWith('https://generativelanguage.googleapis.com/')) {
             providerCalls.push({url:String(url),options});
             return providerStatus===200?Response.json(String(url).includes(':generateContent')?
-                {candidates:[{content:{parts:[{text:'{"score":9,"passed":true}'}]}}]}:{name:'models/gemini-3.5-flash-lite'}):Response.json({error:{message:'provider diagnostic secret'}},{status:providerStatus});
+                {candidates:[{content:{parts:[{text:'{"score":9,"passed":true}'}]}}],usageMetadata:{promptTokenCount:10,candidatesTokenCount:5,totalTokenCount:15}}:{name:'models/gemini-3.5-flash-lite'}):Response.json({error:{message:'provider diagnostic secret'}},{status:providerStatus});
         }
         if(String(url).includes('/reverifications/')) {
             const path = new URL(url).pathname.split('/'), now = Date.now();
@@ -130,7 +140,7 @@ function fixture() {
     return { storage, kv, env, service, call, deletedUsers, sessionOwners, revoke: () => { revoked = true; },
         setVerificationResponse:value=>{verificationOverrides=value},
         setVerificationStatus:value=>{verificationStatus=value},setDeleteFailure:value=>{deleteFailure=value},
-        setGoogleToken:value=>{googleToken=value},providerCalls,setProviderStatus:value=>{providerStatus=value},setClaudeResponse:value=>{claudeResponse=value} };
+        setGoogleToken:value=>{googleToken=value},providerCalls,countCalls,setCountStatus:value=>{countStatus=value},setCountTokens:value=>{countTokens=value},setProviderStatus:value=>{providerStatus=value},setClaudeResponse:value=>{claudeResponse=value} };
 }
 async function create(f, user = 'user_A') {
     const token = await jwt(user);
@@ -1658,8 +1668,9 @@ test('Phase 4.1: provider usage beyond the reserve blocks new hosted approval',a
 test('Phase 4.1: actual HTTP adapter uses only configured Gemini with manual redirect handling',async()=>{
  const u=await universe4Fixture(),previous=globalThis.fetch,requests=[];delete u.svc.provider;
  try{globalThis.fetch=async(url,options)=>{requests.push({url,options});return Response.json(String(url).endsWith(':countTokens')?{totalTokens:100}:{candidates:[{finishReason:'STOP',content:{parts:[{text:'{"verdict":"approved","reason":"OK"}'}]}}],usageMetadata:{promptTokenCount:100,totalTokenCount:150}});};
-  const q=await u.quote();await u.approve(q);assert.equal(requests.length,2);assert.ok(requests.every(r=>r.url.startsWith('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:')&&r.options.redirect==='manual'));
-  assert.equal(requests[0].options.headers['x-goog-api-key'],'test-personal');assert.ok(JSON.parse(requests[1].options.body).systemInstruction.parts[0].text.includes('untrusted evidence'));
+  // Quote counts tokens; Free approval counts again for the Free reservation, then generates.
+  const q=await u.quote();await u.approve(q);assert.equal(requests.length,3);assert.ok(requests[1].url.endsWith(':countTokens'));assert.ok(requests.every(r=>r.url.startsWith('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:')&&r.options.redirect==='manual'));
+  assert.equal(requests[0].options.headers['x-goog-api-key'],'test-personal');assert.ok(JSON.parse(requests[2].options.body).systemInstruction.parts[0].text.includes('untrusted evidence'));
  }finally{globalThis.fetch=previous;}
 });
 test('Phase 4.1: repeatable schema, stale proof, expired quotes and invalid output fail safely',async()=>{
@@ -1805,7 +1816,7 @@ async function dpFixture({license={},record={},none=false}={}) {
 const dpStored=async(f,a)=>(await f.call('/sync/pull',a.token)).body.tasks;
 const keyoOffline=async fn=>{
     const before=globalThis.fetch;
-    globalThis.fetch=async(url,options)=>String(url).startsWith(KEYO_DEFAULTS.endpoint)?Promise.reject(new TypeError('offline')):before(url,options);
+    globalThis.fetch=async(url,options)=>[KEYO_DEFAULTS.endpoint,KEYO_DEFAULTS.fallbackEndpoint].some(origin=>String(url).startsWith(origin))?Promise.reject(new TypeError('offline')):before(url,options);
     try{return await fn();}finally{globalThis.fetch=before;}
 };
 
@@ -1924,4 +1935,99 @@ test('Dynamic Priority: AI-reviewed completion keeps the original priority and t
     const [t]=(await f.call('/sync/pull',a.token)).body.tasks;
     assert.equal(t.status,'completed');assert.equal(t.priority_id,'prio_high');assert.equal(t.dynamic_priority_target,'prio_low');
     const ledger=(await f.call('/sync/pull',a.token)).body.completed_audit_ledger.at(-1);assert.equal(ledger.priority_rank,3);
+});
+
+
+// ============================================================================
+// Free personal-key metering through the real Worker routes
+// ============================================================================
+async function freeLedger(f,account='user_A'){
+    const e=await f.storage.get('pro:entitlement:'+account),now=Date.now();
+    return ledgerFor(account,nextPlanState(await f.storage.get(PLAN_PREFIX+account),planOf(e,now),now,e).state,e,now);
+}
+const gemini=(text='Hi',extra={})=>({model:'gemini-3.5-flash-lite',payload:{contents:[{parts:[{text}]}],...extra}});
+test('Free /ai/generate counts tokens first, reserves, and settles to half-step real usage',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
+    const result=await f.call('/ai/generate',a.token,'POST',gemini());assert.equal(result.status,200);
+    assert.equal(f.countCalls.length,1);assert.ok(f.countCalls[0].url.endsWith('gemini-3.5-flash-lite:countTokens'));
+    assert.equal(f.countCalls[0].options.headers['x-goog-api-key'],'AIza-test-secret-123456789');
+    const l=await freeLedger(f);assert.equal(l.plan,'free');
+    assert.equal(await f.storage.get(l.dayKey),.5);assert.equal(await f.storage.get(l.monthKey),.5);
+    // The default 16,384 output tokens cannot be paid for; the forwarded limit is clamped to the allowance.
+    const sent=JSON.parse(f.providerCalls.at(-1).options.body).generationConfig.maxOutputTokens;assert.ok(sent<16384&&sent>=256);
+    const status=(await f.call('/pro/status',a.token)).body;assert.equal(status.isPro,false);assert.equal(status.limits.state,'available');assert.equal(status.credits,null);
+});
+test('Free token-count failures, provider error responses and blocked outputs charge correctly',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
+    f.setCountStatus(503);const before=f.providerCalls.length;
+    const counted=await f.call('/ai/generate',a.token,'POST',gemini());assert.equal(counted.status,503);assert.equal(counted.body.code,'TOKEN_COUNT_UNAVAILABLE');
+    assert.equal(f.providerCalls.length,before,'no generation without a count');
+    f.setCountStatus(200);f.setProviderStatus(429);
+    assert.equal((await f.call('/ai/generate',a.token,'POST',gemini())).status,429);
+    const l=await freeLedger(f);assert.equal(await f.storage.get(l.dayKey),0,'a provider error response releases the hold');
+    f.setProviderStatus(200);
+    const previous=globalThis.fetch;
+    globalThis.fetch=async(url,options)=>String(url).includes(':generateContent')?Response.json({promptFeedback:{blockReason:'SAFETY'},candidates:[],usageMetadata:{promptTokenCount:10,totalTokenCount:10}}):previous(url,options);
+    try{assert.equal((await f.call('/ai/generate',a.token,'POST',gemini())).status,502);}finally{globalThis.fetch=previous;}
+    assert.equal(await f.storage.get(l.dayKey),.5,'a completed but rejected generation is charged from its usage');
+});
+test('Free lost responses and missing usage keep the full hold; they never bypass the limit',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a,'sk-ant-free-meter-1234','claude');await f.call('/ai/provider',a.token,'POST',{provider:'claude'});
+    const request={provider:'claude',model:'claude-haiku-5-5',payload:{contents:[{parts:[{text:'Hi'}]}],generationConfig:{maxOutputTokens:1024}}};
+    f.setClaudeResponse({stop_reason:'end_turn',content:[{type:'text',text:'ok'}],usage:null});
+    assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,200);
+    const l=await freeLedger(f),hold=Math.ceil(((12*1.2)*100+1024*500)/1_500_000*2)/2;
+    assert.equal(await f.storage.get(l.dayKey),hold);
+    f.setClaudeResponse(async()=>{throw new TypeError('connection reset');});
+    const previous=globalThis.fetch;
+    globalThis.fetch=async(url,options)=>String(url)==='https://api.anthropic.com/v1/messages'?(()=>{throw new TypeError('reset')})():previous(url,options);
+    try{assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,504);}finally{globalThis.fetch=previous;}
+    assert.equal(await f.storage.get(l.dayKey),hold*2);
+});
+test('Free daily exhaustion stops every personal-key route without any generation call',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
+    await f.call('/ai/generate',a.token,'POST',gemini());
+    const l=await freeLedger(f);await f.storage.put(l.dayKey,10);
+    const before=f.providerCalls.length;
+    const blocked=await f.call('/ai/generate',a.token,'POST',gemini());
+    assert.equal(blocked.status,429);assert.equal(blocked.body.code,'FREE_LIMIT_REACHED');assert.match(blocked.body.error,/today/);
+    assert.doesNotMatch(blocked.body.error,/\b10\b|\b220\b/);
+    assert.equal(f.providerCalls.length,before);
+    assert.deepEqual((await f.call('/pro/status',a.token)).body.limits,{state:'critical',exhausted:true,metered:true,reset_timezone:'Asia/Riyadh'});
+    // Direct requests with browser-supplied limits or Pro flags change nothing.
+    const tampered=await f.call('/ai/generate',a.token,'POST',{...gemini(),isPro:true,credits:{daily_limit:1000},use_byok:true});
+    assert.equal(tampered.status,429);
+    assert.equal((await f.call('/pro/byok',a.token,'POST',{use_byok:true})).status,403);
+});
+test('Free simultaneous personal-key requests cannot overdraw the remaining allowance',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
+    await f.call('/ai/generate',a.token,'POST',gemini());
+    const l=await freeLedger(f);await f.storage.put(l.dayKey,9);
+    let release,count=0;const gate=new Promise(r=>{release=r;});const previous=globalThis.fetch;
+    globalThis.fetch=async(url,options)=>{if(String(url).includes(':generateContent')){count++;await gate;}return previous(url,options);};
+    try{
+        const first=f.call('/ai/generate',a.token,'POST',gemini('one',{generationConfig:{maxOutputTokens:300}}));
+        while(!count)await new Promise(r=>setTimeout(r,1));
+        const second=await f.call('/ai/generate',a.token,'POST',gemini('two',{generationConfig:{maxOutputTokens:300}}));
+        assert.equal(second.status,429);assert.equal(second.body.code,'FREE_LIMIT_REACHED');
+        release();assert.equal((await first).status,200);
+    }finally{globalThis.fetch=previous;}
+    assert.equal(await f.storage.get(l.dayKey),9.5);
+});
+test('Pro personal-key requests are unmetered and never consume hosted credits',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);f.env.KEYO_PUBLIC_JWK=testEnv.KEYO_PUBLIC_JWK;
+    await f.storage.put('pro:entitlement:user_A',{...await activeLicense('user_A'),activated_at:Date.now()-86400000});
+    const status=(await f.call('/pro/status',a.token)).body;assert.equal(status.isPro,true);assert.equal(status.byok_credit_limits,false);
+    const l=await freeLedger(f);assert.equal(l.plan,'pro');
+    for(let i=0;i<25;i++)assert.equal((await f.call('/ai/generate',a.token,'POST',gemini())).status,200);
+    assert.equal(f.countCalls.length,0);assert.equal(await f.storage.get(l.dayKey),undefined);
+    assert.equal(JSON.parse(f.providerCalls.at(-1).options.body).generationConfig.maxOutputTokens,16384,'Pro requests are not clamped');
+    assert.equal((await f.call('/pro/status',a.token)).body.credits.daily_remaining,45);
+});
+test('Free accounts cannot reach hosted AI through any hosted route',async()=>{
+    const f=fixture(),a=await create(f);
+    for(const path of ['/pro/ai/quote','/pro/ai/review','/pro/ai/batch-review']){
+        const r=await f.call(path,a.token,'POST',{operation_id:newOperation(),task_id:'t',criteria:'c',files:[{mime_type:'image/png',data:'YWJj'}],isPro:true});
+        assert.equal(r.status,403,path);assert.equal(r.body.code,'PRO_REQUIRED',path);
+    }
 });
