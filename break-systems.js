@@ -14,6 +14,10 @@ export const BREAKS = Object.freeze({
     minDay: 20 * 3600000,    // shortest logical day a settings change can produce
     retention: 90            // days of records kept for history and statistics
 });
+export const STRICT = Object.freeze({
+    flexMin: 30, flexMax: 60,                  // Flexible Strict Mode minimum (minutes)
+    deadlineMin: 60, deadlineMax: 18 * 60, deadlineStep: 15   // Scheduled deadline after day start
+});
 const MIN = 60000, OPERATION = /^[A-Za-z0-9_-]{8,100}$/;
 const core = () => {
     if (!globalThis.TaskitatorBreaks) throw fail(503, 'BREAKS_UNAVAILABLE', 'Break rules are unavailable. Retry shortly.');
@@ -21,6 +25,8 @@ const core = () => {
 };
 const dayKey = (account, date) => 'breaks:day:' + account + ':' + date;
 const indexKey = account => 'breaks:index:' + account;
+const strictKey = account => 'breaks:strict:' + account;
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const addDate = (date, n) => new Date(Date.parse(date + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 const pad = n => String(n).padStart(2, '0');
 const hourOf = settings => Math.max(0, Math.min(4, Math.trunc(Number(settings?.day_start_hour) || 0)));
@@ -56,12 +62,104 @@ export function migrateLegacy(r, old, now) {
     return r;
 }
 
-// Close the planning window and any finished Flexible break as of `now`. Pure: callers
-// persist the result only inside their own transaction.
-export function settle(r, now) {
+// ---- Strict modes -----------------------------------------------------------------
+// Config: { flexible:{enabled,minimum}, scheduled:{enabled,deadline_minutes,default:[clocks],
+// days:{0..6:{mode:'default'|'custom'|'off',breaks}}}, timezone }. Weekdays follow the
+// logical day's date (0 = Sunday). 'off' days are excluded; included days without a plan
+// lock with zero breaks.
+export function defaultStrict() {
+    const days = {};
+    for (let d = 0; d < 7; d++) days[d] = { mode: 'default', breaks: [] };
+    return { flexible: { enabled: false, minimum: STRICT.flexMin },
+        scheduled: { enabled: false, deadline_minutes: 8 * 60, default: [], days }, timezone: null };
+}
+// Strict configs never change a day that already used the previous one: each saved
+// version starts on `from` (a logical date); earlier days keep the version before it.
+export function strictFor(doc, date) {
+    if (!doc?.current) return defaultStrict();
+    if (doc.current.from && date < doc.current.from) return doc.previous?.config || defaultStrict();
+    return doc.current.config;
+}
+export const flexMinimum = cfg => cfg?.flexible?.enabled ? cfg.flexible.minimum : BREAKS.flexMinimum;
+const weekday = date => new Date(date + 'T00:00:00Z').getUTCDay();
+export function strictDay(r, cfg) {
+    const s = cfg?.scheduled;
+    if (!s?.enabled) return null;
+    const day = s.days[weekday(r.date)];
+    if (!day || day.mode === 'off') return { covered: false, weekday: weekday(r.date) };
+    return { covered: true, weekday: weekday(r.date), mode: day.mode, deadline: Math.min(r.cycle_end, r.cycle_start + s.deadline_minutes * MIN),
+        breaks: day.mode === 'custom' ? day.breaks : s.default };
+}
+// Validate a strict plan's clock times against a real day; strict plans may be empty.
+function strictPlan(list, b, label) {
+    if (!Array.isArray(list) || list.length > 3) throw fail(400, 'INVALID_STRICT', `${label}: use at most 3 breaks.`);
+    if (!list.length) return [];
+    const checked = core().validate(list.map(x => ({ start: x?.start, end: x?.end })), b);
+    if (!checked.valid) throw fail(400, 'INVALID_STRICT', `${label}: ${checked.error}`);
+    return checked.breaks.map(x => ({ start: x.start, end: x.end }));
+}
+export function normalizeStrict(input, b) {
+    if (!input || typeof input !== 'object') throw fail(400, 'INVALID_STRICT', 'Strict settings are missing.');
+    const f = input.flexible || {}, s = input.scheduled || {}, out = defaultStrict();
+    if (typeof f.enabled !== 'boolean' || typeof s.enabled !== 'boolean') throw fail(400, 'INVALID_STRICT', 'Turn each strict mode on or off.');
+    if (!Number.isInteger(f.minimum) || f.minimum < STRICT.flexMin || f.minimum > STRICT.flexMax)
+        throw fail(400, 'INVALID_STRICT', `The Flexible minimum must be ${STRICT.flexMin} to ${STRICT.flexMax} minutes.`);
+    const d = s.deadline_minutes;
+    if (!Number.isInteger(d) || d < STRICT.deadlineMin || d > STRICT.deadlineMax || d % STRICT.deadlineStep)
+        throw fail(400, 'INVALID_STRICT', 'Choose a deadline between 1 and 18 hours after your day starts, in 15-minute steps.');
+    out.flexible = { enabled: f.enabled, minimum: f.minimum };
+    out.scheduled.enabled = s.enabled; out.scheduled.deadline_minutes = d;
+    out.scheduled.default = strictPlan(s.default ?? [], b, 'Default plan');
+    const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    for (let i = 0; i < 7; i++) {
+        const day = s.days?.[i] ?? s.days?.[String(i)] ?? { mode: 'default' };
+        if (!['default', 'custom', 'off'].includes(day.mode)) throw fail(400, 'INVALID_STRICT', `${names[i]}: choose the default plan, its own plan, or not covered.`);
+        out.scheduled.days[i] = { mode: day.mode, breaks: day.mode === 'custom' ? strictPlan(day.breaks ?? [], b, names[i]) : [] };
+    }
+    out.timezone = typeof input.timezone === 'string' ? core().timezone(input.timezone) : null;
+    return out;
+}
+// Required work for today (same due-date rules as the phone gate, bonus tasks excluded).
+// Corrupt entries count as required so they cannot unlock strict settings.
+export function requiredTasksToday(snapshot, now = Date.now()) {
+    const tasks = Array.isArray(snapshot?.tasks) ? snapshot.tasks : [];
+    const hour = hourOf(snapshot?.settings), today = new Date(now + 3 * 3600000 - hour * 3600000).toISOString().slice(0, 10);
+    const byId = new Map(tasks.filter(t => t && typeof t === 'object').map(t => [t.id, t]));
+    const due = task => {
+        const seen = new Set();
+        while (task) {
+            if (seen.has(task)) return '';
+            seen.add(task);
+            const value = typeof task.due_date === 'string' ? task.due_date.trim().toLowerCase() : '';
+            if (value) return value;
+            task = byId.get(task.parent_id);
+        }
+        return '';
+    };
+    return tasks.filter(t => {
+        if (!t || typeof t !== 'object') return true;
+        if (t.status !== 'active' || t.is_bonus) return false;
+        const d = due(t);
+        return !d || d === 'today' || (/^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today);
+    }).length;
+}
+
+// Close the planning window and any finished Flexible break as of `now`, then apply
+// Scheduled Strict Mode once its deadline has passed. Pure: callers persist the result
+// only inside their own transaction, so the outcome does not depend on when (or whether)
+// a request arrived at the deadline.
+export function settle(r, now, cfg = null) {
     if (r.planning && !r.planning.saved && now >= r.planning.deadline) r.planning = null;
     const a = r.flexible.active;
     if (a && now >= a.planned_end) finish(r, a.planned_end, 'automatic');
+    const strict = strictDay(r, cfg);
+    if (strict?.covered && !r.system && now >= strict.deadline) {
+        let breaks = [], invalid = false;
+        if (strict.breaks.length) { const c = core().validate(strict.breaks, bounds(r)); breaks = c.valid ? c.breaks : []; invalid = !c.valid; }
+        r.planning = null; // an unsaved planning window is discarded
+        r.system = 'scheduled'; r.locked_at = strict.deadline; r.lock_source = 'strict';
+        r.scheduled = { breaks, saved_at: strict.deadline, strict: true, ...(invalid ? { strict_invalid: true } : {}) };
+    }
     return r;
 }
 function finish(r, endedAt, reason) {
@@ -131,21 +229,25 @@ export class BreakSystems {
         await tx.put(indexKey(account), { dates });
     }
 
-    view(r, now) {
-        const used = usedNow(r, now), remaining = BREAKS.allowance - used, a = r.flexible.active;
+    view(r, now, cfg = null, extra = {}) {
+        const used = usedNow(r, now), remaining = BREAKS.allowance - used, a = r.flexible.active, minimum = flexMinimum(cfg);
         const untilReset = r.cycle_end - now, saved = !!r.scheduled.saved_at, open = planningOpen(r, now);
         let planReason = '';
         if (r.system === 'flexible') planReason = 'Flexible Breaks are selected for today. Scheduled becomes available after the day resets.';
         else if (saved && open) planReason = '';
+        else if (r.lock_source === 'strict') planReason = r.scheduled.breaks.length
+            ? 'Scheduled Strict Mode locked today’s plan at its deadline. It can’t be changed until the day resets.'
+            : 'Scheduled Strict Mode locked today with no breaks at its deadline. You can plan again after the day resets.';
         else if (saved) planReason = 'Today’s schedule is final. You can plan again after the day resets.';
         else if (now >= r.cycle_end - BREAKS.closing) planReason = 'Scheduled planning closes 6 hours before the day ends.';
         let flexReason = '';
         if (r.system === 'scheduled') flexReason = 'Scheduled Breaks are selected for today. Flexible becomes available after the day resets.';
         else if (a) flexReason = 'A Flexible break is already running.';
-        else if (remaining < BREAKS.flexMinimum) flexReason = `Less than ${BREAKS.flexMinimum} minutes of today’s break allowance remain.`;
-        else if (untilReset < BREAKS.flexMinimum * MIN) flexReason = `Less than ${BREAKS.flexMinimum} minutes remain before the day resets.`;
-        const presets = BREAKS.presets.map(minutes => ({ minutes, available: !flexReason && minutes <= remaining,
-            reason: flexReason || (minutes > remaining ? `Only ${remaining} minutes of allowance remain.` : '') }));
+        else if (remaining < minimum) flexReason = `Less than ${minimum} minutes of today’s break allowance remain.`;
+        else if (untilReset < minimum * MIN) flexReason = `Less than ${minimum} minutes remain before the day resets.`;
+        const presets = BREAKS.presets.map(minutes => ({ minutes, available: !flexReason && minutes <= remaining && minutes >= minimum,
+            reason: flexReason || (minutes < minimum ? `Flexible Strict Mode requires at least ${minimum} minutes.` : minutes > remaining ? `Only ${remaining} minutes of allowance remain.` : '') }));
+        const strict = strictDay(r, cfg);
         return {
             date: r.date, timezone: r.timezone, day_start_hour: r.day_start_hour, cycle_start: r.cycle_start, cycle_end: r.cycle_end,
             reset_at: new Date(r.cycle_end).toISOString(), server_now: now, revision: r.revision,
@@ -155,43 +257,85 @@ export class BreakSystems {
                 planning: r.planning ? { started_at: r.planning.started_at, deadline: r.planning.deadline, saved: !!r.planning.saved, open } : null,
                 can_start_planning: !planReason && !open, can_edit: r.system !== 'flexible' && open, reason: planReason, final: saved && !open },
             flexible: {
-                active: a ? { id: a.id, mode: a.mode, minutes: a.minutes, started_at: a.started_at, ends_at: a.planned_end, can_end_at: a.minimum_end } : null,
-                minimum: BREAKS.flexMinimum, presets, max_custom: Math.max(0, remaining), can_start: !flexReason, reason: flexReason,
+                active: a ? { id: a.id, mode: a.mode, minutes: a.minutes, started_at: a.started_at, ends_at: a.planned_end, can_end_at: a.minimum_end, minimum: a.minimum || BREAKS.flexMinimum } : null,
+                minimum, strict: !!cfg?.flexible?.enabled, presets, max_custom: Math.max(0, remaining), can_start: !flexReason, reason: flexReason,
                 sessions: r.flexible.sessions.map(({ operation_id, ...s }) => s)
             },
+            strict_today: strict ? { covered: strict.covered, weekday: strict.weekday, ...(strict.covered ? { deadline: strict.deadline, mode: strict.mode,
+                breaks: strict.breaks, pending: !r.system && now < strict.deadline } : {}) } : null,
             in_break: scheduledActive(r, now) || flexibleActive(r, now),
-            record: mirror(r, now)
+            record: mirror(r, now),
+            ...extra
         };
     }
 
     async snapshot(store, account) { return (await this.service.readTaskSnapshot(store, account)).snapshot; }
 
+    async strictDoc(store, account) { return await store.get(strictKey(account)) || null; }
+    strictInfo(doc, snapshot, today, now) {
+        const required = requiredTasksToday(snapshot, now);
+        return { strict: { config: doc?.current?.config || defaultStrict(), effective_today: strictFor(doc, today.date),
+            pending_from: doc?.current?.from && doc.current.from > today.date ? doc.current.from : null,
+            revision: doc?.revision || 0, locked: required > 0, required_tasks: required,
+            limits: STRICT } };
+    }
+
     async state(account, zone, now = Date.now()) {
         return this.storage.transaction(async tx => {
-            const snapshot = await this.snapshot(tx, account);
-            const { record } = await this.resolve(tx, account, snapshot, zone, now);
-            return this.view(settle(record, now), now);
+            const snapshot = await this.snapshot(tx, account), doc = await this.strictDoc(tx, account);
+            const { record } = await this.resolve(tx, account, snapshot, zone || doc?.current?.config?.timezone, now);
+            const cfg = strictFor(doc, record.date);
+            return this.view(settle(record, now, cfg), now, cfg, this.strictInfo(doc, snapshot, record, now));
         });
     }
 
     async act(account, body, now = Date.now()) {
         const action = body?.action;
-        if (!['lock', 'plan_start', 'plan_cancel', 'schedule_save', 'flex_start', 'flex_end'].includes(action))
+        if (!['lock', 'plan_start', 'plan_cancel', 'schedule_save', 'flex_start', 'flex_end', 'strict_save'].includes(action))
             throw fail(400, 'INVALID_BREAK_ACTION', 'Choose a valid break action.');
         return this.storage.transaction(async tx => {
-            const snapshot = await this.snapshot(tx, account);
+            const snapshot = await this.snapshot(tx, account), doc = await this.strictDoc(tx, account);
             const { record: r, index, created } = await this.resolve(tx, account, snapshot, body.timezone, now);
-            settle(r, now);
-            const replay = this.apply(r, action, body, now);
-            if (replay) return { ...this.view(r, now), replayed: true };
+            const cfg = strictFor(doc, r.date);
+            settle(r, now, cfg); // a passed strict deadline is applied before any conflicting action
+            if (action === 'strict_save') {
+                const next = await this.saveStrict(tx, account, doc, r, snapshot, body, now);
+                await this.persist(tx, account, r, index, created);
+                return this.view(r, now, strictFor(next, r.date), this.strictInfo(next, snapshot, r, now));
+            }
+            const replay = this.apply(r, action, body, now, cfg);
+            const info = this.strictInfo(doc, snapshot, r, now);
+            if (replay) return { ...this.view(r, now, cfg, info), replayed: true };
             await this.persist(tx, account, r, index, created);
-            return this.view(r, now);
+            return this.view(r, now, cfg, info);
         });
     }
 
+    // Strict settings can be turned on at any time. Changing or turning off a strict mode
+    // that is on requires no required (non-bonus) tasks for today. A change applies today
+    // only while today has no system yet and today's strict deadline has not passed;
+    // otherwise it applies from the next logical day, so a locked day is never rewritten.
+    async saveStrict(tx, account, doc, r, snapshot, body, now) {
+        if (!Number.isSafeInteger(body.revision) || body.revision !== (doc?.revision || 0))
+            throw fail(409, 'STRICT_CHANGED', 'Strict settings changed on another device. Reload them before saving.');
+        const next = normalizeStrict({ ...body.config, timezone: body.timezone ?? body.config?.timezone }, bounds(r));
+        const latest = doc?.current?.config || defaultStrict();
+        const touched = mode => latest[mode].enabled && !same(latest[mode], next[mode]);
+        const required = requiredTasksToday(snapshot, now);
+        if (required && (touched('flexible') || touched('scheduled')))
+            throw fail(403, 'STRICT_LOCKED', `Strict modes can’t be changed or turned off while ${required} required task${required === 1 ? '' : 's'} for today ${required === 1 ? 'is' : 'are'} unfinished.`);
+        const deadline = next.scheduled.enabled ? r.cycle_start + next.scheduled.deadline_minutes * MIN : Infinity;
+        const today = !r.system && now < deadline && !r.flexible.active;
+        const from = today ? r.date : addDate(r.date, 1);
+        const previous = doc?.current && (!doc.current.from || doc.current.from <= r.date) ? doc.current : doc?.previous || null;
+        const saved = { revision: (doc?.revision || 0) + 1, updated_at: now, current: { config: next, from }, previous };
+        await tx.put(strictKey(account), saved);
+        return saved;
+    }
+
     // Returns true for a harmless repeat (nothing to store); throws when the action is not allowed.
-    apply(r, action, body, now) {
-        const open = planningOpen(r, now);
+    apply(r, action, body, now, cfg = null) {
+        const open = planningOpen(r, now), minimum = flexMinimum(cfg);
         if (action === 'lock') {
             if (!['scheduled', 'flexible'].includes(body.system)) throw fail(400, 'INVALID_SYSTEM', 'Choose Scheduled or Flexible.');
             if (r.system === body.system) return true;
@@ -237,20 +381,21 @@ export class BreakSystems {
             if (r.system === 'scheduled') throw fail(409, 'SYSTEM_LOCKED', 'Scheduled Breaks are selected for today.');
             if (r.flexible.active) throw fail(409, 'BREAK_ACTIVE', 'A Flexible break is already running.');
             const remaining = BREAKS.allowance - r.flexible.used;
-            if (remaining < BREAKS.flexMinimum) throw fail(409, 'ALLOWANCE_LOW', `Less than ${BREAKS.flexMinimum} minutes of today’s break allowance remain.`);
-            if (r.cycle_end - now < BREAKS.flexMinimum * MIN) throw fail(409, 'RESET_SOON', `Less than ${BREAKS.flexMinimum} minutes remain before the day resets.`);
+            if (remaining < minimum) throw fail(409, 'ALLOWANCE_LOW', `Less than ${minimum} minutes of today’s break allowance remain.`);
+            if (r.cycle_end - now < minimum * MIN) throw fail(409, 'RESET_SOON', `Less than ${minimum} minutes remain before the day resets.`);
             let minutes = body.minutes;
             if (body.mode === 'preset') {
                 if (!BREAKS.presets.includes(minutes)) throw fail(400, 'INVALID_DURATION', 'Choose a 30-, 45- or 60-minute break.');
+                if (minutes < minimum) throw fail(409, 'STRICT_MINIMUM', `Flexible Strict Mode requires at least ${minimum} minutes.`);
                 if (minutes > remaining) throw fail(409, 'ALLOWANCE_LOW', `Only ${remaining} minutes of allowance remain.`);
             } else if (body.mode === 'custom') {
-                if (!Number.isInteger(minutes) || minutes < BREAKS.flexMinimum || minutes > remaining)
-                    throw fail(400, 'INVALID_DURATION', `Choose a whole number of minutes from ${BREAKS.flexMinimum} to ${remaining}.`);
+                if (!Number.isInteger(minutes) || minutes < minimum || minutes > remaining)
+                    throw fail(400, 'INVALID_DURATION', `Choose a whole number of minutes from ${minimum} to ${remaining}.`);
             } else if (body.mode === 'until') minutes = remaining;
             else throw fail(400, 'INVALID_DURATION', 'Choose a break length.');
             if (r.planning && !r.planning.saved) r.planning = null;
             r.flexible.active = { id: 'brk_' + crypto.randomUUID(), operation_id: op, mode: body.mode, minutes,
-                started_at: now, planned_end: Math.min(now + minutes * MIN, r.cycle_end), minimum_end: now + BREAKS.flexMinimum * MIN };
+                started_at: now, planned_end: Math.min(now + minutes * MIN, r.cycle_end), minimum_end: now + minimum * MIN, minimum };
             lock(r, 'flexible', 'flex_start', now);
             return false;
         }
@@ -261,20 +406,27 @@ export class BreakSystems {
             throw fail(409, 'NO_ACTIVE_BREAK', 'No Flexible break is running.');
         }
         if (body.break_id && body.break_id !== a.id) throw fail(409, 'BREAK_CHANGED', 'This break has already ended. Refresh the break panel.');
-        if (now < a.minimum_end) throw fail(409, 'MINIMUM_NOT_REACHED', `A Flexible break can be ended after ${BREAKS.flexMinimum} minutes.`);
+        if (now < a.minimum_end) throw fail(409, 'MINIMUM_NOT_REACHED', `This Flexible break can be ended after ${a.minimum || BREAKS.flexMinimum} minutes.`);
         finish(r, now, 'manual');
         return false;
     }
 
     // Read-only: current-day server state for /status. Never creates or changes records.
-    async current(store, account, now = Date.now()) {
+    // With Scheduled Strict Mode on, a day nobody has touched is still evaluated, so an
+    // automatic strict schedule works even if the app was closed at its deadline.
+    async current(store, account, now = Date.now(), snapshot = null) {
+        const doc = await this.strictDoc(store, account);
         const index = await store.get(indexKey(account)), date = index?.dates?.at(-1);
-        const r = date ? await store.get(dayKey(account, date)) : null;
-        return r && now >= r.cycle_start && now < r.cycle_end ? settle(r, now) : null;
+        let r = date ? await store.get(dayKey(account, date)) : null;
+        if (!(r && now >= r.cycle_start && now < r.cycle_end)) {
+            if (!doc?.current || !snapshot) return null;
+            r = (await this.resolve(store, account, snapshot, doc.current.config.timezone, now)).record;
+        }
+        return settle(r, now, strictFor(doc, r.date));
     }
-    async inBreak(store, account, now = Date.now()) {
-        const r = await this.current(store, account, now);
-        return { in_break: !!r && flexibleActive(r, now), system: r?.system || null };
+    async inBreak(store, account, now = Date.now(), snapshot = null) {
+        const r = await this.current(store, account, now, snapshot);
+        return { in_break: !!r && (flexibleActive(r, now) || scheduledActive(r, now)), system: r?.system || null };
     }
 
     // Replace synced break records with the server-owned copies for every stored day.
@@ -289,7 +441,7 @@ export class BreakSystems {
 
     async remove(store, account) {
         const days = await store.list({ prefix: dayKey(account, ''), limit: 200 });
-        const keys = [...days.keys(), indexKey(account)];
+        const keys = [...days.keys(), indexKey(account), strictKey(account)];
         for (let i = 0; i < keys.length; i += 100) await store.delete(keys.slice(i, i + 100));
     }
 }

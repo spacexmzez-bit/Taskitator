@@ -2081,3 +2081,22 @@ test('Each break system panel names the system, shows its lock state and basic i
     assert.match(app, /Locked for today/);
     assert.match(app, /Not locked yet/);
 });
+
+test('strict break modes card: locks enabled modes while tasks remain and saves through the Worker',async()=>{
+    const f=browser('2026-11-04T06:00:00Z','Asia/Riyadh');
+    await f.engine.refresh();
+    const card={innerHTML:'',addEventListener(){}};
+    f.context.document={getElementById:id=>id==='strictBreaksCard'?card:null,readyState:'complete'};
+    vm.runInContext(source('strict-breaks-ui.js'),f.context);
+    const ui=f.window.TaskitatorStrictBreaksUI;ui.card=card;ui.load();
+    assert.match(card.innerHTML,/Flexible Strict Mode/);assert.match(card.innerHTML,/zero breaks/);assert.doesNotMatch(card.innerHTML,/required task/);
+    ui.draft.flexible.enabled=true;ui.draft.flexible.minimum=45;ui.draft.scheduled.enabled=true;ui.draft.scheduled.deadline_minutes=600;ui.draft.scheduled.days[3]={mode:'off',breaks:[]};ui.dirty=true;
+    await ui.save();
+    assert.equal(ui.message,'Saved. These rules apply today.');assert.equal(f.engine.current().flexible.minimum,45);
+    ui.render();
+    assert.match(card.innerHTML,/<option value="off" selected>Not covered/);assert.match(card.innerHTML,/Default plan \(no breaks\)/);
+    // With required work today, the enabled switches are disabled and the server refuses changes.
+    const view=f.engine.current();view.strict.locked=true;view.strict.required_tasks=2;ui.view=view;ui.render();
+    assert.match(card.innerHTML,/2 required tasks left today/);
+    assert.match(card.innerHTML,/id="strictFlexToggle"[^>]*checked[^>]*disabled/);
+});

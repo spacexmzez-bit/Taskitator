@@ -2246,6 +2246,8 @@ window.TaskitatorApp = (() => {
                         ['Resets', `${this.clockText(view.cycle_end, view.timezone)} (${view.timezone})`]
                     ];
                     if (view.system !== 'scheduled') items.push(['Allowance', `${this.minutesText(engine.allowance().remaining)} of 3h left`]);
+                    const st = view.strict_today;
+                    if (st?.covered && st.pending) items.push(['Strict deadline', `${this.clockText(st.deadline, view.timezone)} · ${st.breaks.length ? st.breaks.length + ' break' + (st.breaks.length === 1 ? '' : 's') : 'no breaks'}`]);
                     this.summary.innerHTML = items.map(([k, v]) => `<div class="break-summary-item"><span>${this.esc(k)}</span><strong>${this.esc(v)}</strong></div>`).join('');
                 }
             }
@@ -2311,6 +2313,7 @@ window.TaskitatorApp = (() => {
                         <small class="break-panel-note">${s.saved
                             ? `Scheduled is locked for today. You can edit and save again until ${this.esc(this.clockText(planning.deadline, view.timezone))}; after that your last saved schedule is final.`
                             : 'Nothing is locked yet. Saving locks Scheduled for today. Closing this panel without saving cancels the window.'}</small>
+                        ${s.saved ? '' : strictNote}
                     </div>`;
                 const rows = this.draft ?? (s.saved ? s.breaks : []);
                 this.rowsContainer.innerHTML = '';
@@ -2323,11 +2326,14 @@ window.TaskitatorApp = (() => {
                 return;
             }
             this.draft = null;
+            const st = view.strict_today;
+            const strictNote = st?.covered && st.pending ? `<p class="break-panel-note strict-note">🔒 Scheduled Strict Mode: if no system is chosen by <strong>${this.esc(this.clockText(st.deadline, view.timezone))}</strong>, Scheduled locks with ${st.breaks.length ? `today’s plan (${st.breaks.map(b => this.esc(b.start + '–' + b.end)).join(', ')})` : '<strong>no breaks</strong>'}.</p>` : '';
             if (s.can_start_planning) {
                 headerBox.innerHTML = `
                     <div class="break-panel break-panel-start">
                         <p class="break-panel-text">The 10 minutes start when you press Start. Planning closes at <strong>${this.esc(this.clockText(s.closing_at, view.timezone))}</strong>.</p>
                         <button type="button" id="startBreakPlanningBtn" class="icon-btn btn-primary btn-solid-primary btn-block">▶ Start planning (10 minutes)</button>
+                        ${strictNote}
                     </div>`;
                 document.getElementById('startBreakPlanningBtn')?.addEventListener('click', () => this.handleStartPlanning());
                 listSaved([], 'No breaks scheduled yet.');
@@ -2372,10 +2378,12 @@ window.TaskitatorApp = (() => {
                 <div class="flex-presets" role="group" aria-label="Start a break">${presetButtons}</div>
                 <div class="flex-custom">
                     <label for="flexCustomMinutes">Custom (minutes)</label>
-                    <input id="flexCustomMinutes" class="break-time-input" type="number" inputmode="numeric" min="${f.minimum}" max="${f.max_custom}" step="1" value="${Math.min(20, f.max_custom) || ''}" ${reason ? 'disabled' : ''}>
+                    <input id="flexCustomMinutes" class="break-time-input" type="number" inputmode="numeric" min="${f.minimum}" max="${f.max_custom}" step="1" value="${f.max_custom >= f.minimum ? Math.max(f.minimum, Math.min(20, f.max_custom)) : ''}" ${reason ? 'disabled' : ''}>
                     <button type="button" class="icon-btn ${reason ? 'is-unavailable' : ''}" data-flex="custom" aria-disabled="${!!reason}" data-reason="${this.esc(reason)}">Start</button>
                 </div>
                 <button type="button" class="icon-btn btn-block ${reason ? 'is-unavailable' : 'btn-primary btn-solid-primary'}" data-flex="until" aria-disabled="${!!reason}" data-reason="${this.esc(reason)}">Until allowance ends (${this.esc(this.minutesText(f.max_custom))})</button>
+                ${f.strict ? `<p class="break-panel-note strict-note">🔒 Flexible Strict Mode: every break lasts at least <strong>${f.minimum} minutes</strong>.</p>` : ''}
+                ${view.strict_today?.covered && view.strict_today.pending && !view.system ? `<p class="break-panel-note strict-note">Starting a break before ${this.esc(this.clockText(view.strict_today.deadline, view.timezone))} keeps today Flexible; otherwise Scheduled Strict Mode locks Scheduled.</p>` : ''}
                 <small class="break-panel-note">Starts now. It can be ended after ${f.minimum} minutes and stops by itself at its length, when the allowance runs out, or at the day reset. Each started minute counts as a full minute.</small>`;
         },
 

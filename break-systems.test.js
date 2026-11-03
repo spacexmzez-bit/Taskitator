@@ -433,3 +433,231 @@ test('account deletion removes break records', async () => {
         assert.ok(![...f.storage.map.keys()].some(k => k.startsWith('breaks:')));
     } finally { clock = null; }
 });
+
+// ===========================================================================
+// Phase 2 — Strict modes
+// ===========================================================================
+// 2026-11-04 is a Wednesday (weekday 3); the Riyadh logical day starts at 00:00.
+function strictConfig({ flexible = {}, scheduled = {} } = {}) {
+    const days = {}; for (let d = 0; d < 7; d++) days[d] = { mode: 'default', breaks: [] };
+    return { flexible: { enabled: false, minimum: 30, ...flexible },
+        scheduled: { enabled: false, deadline_minutes: 8 * 60, default: [], ...scheduled, days: { ...days, ...(scheduled.days || {}) } } };
+}
+async function strict(f, config, who = 'user_A') {
+    const revision = (await f.breaks(null, who)).body.strict.revision;
+    return f.breaks({ action: 'strict_save', config, revision }, who);
+}
+async function free(iso = '2026-11-04T09:00:00+03:00') {
+    const f = await ready(iso); assert.equal((await f.push({ tasks: [] })).status, 200); return f;
+}
+
+test('Flexible Strict Mode accepts 30–60 minutes only', async () => {
+    try {
+        const f = await free();
+        for (const minimum of [29, 61, 45.5, '30']) assert.equal((await strict(f, strictConfig({ flexible: { enabled: true, minimum } }))).body.code, 'INVALID_STRICT');
+        for (const minimum of [30, 60]) {
+            const saved = await strict(f, strictConfig({ flexible: { enabled: true, minimum } }));
+            assert.equal(saved.status, 200); assert.equal(saved.body.flexible.minimum, minimum); assert.equal(saved.body.strict.pending_from, null);
+        }
+    } finally { clock = null; }
+});
+test('the strict minimum replaces 10 minutes for presets, custom, Until allowance ends and manual ending', async () => {
+    try {
+        const f = await free();
+        await strict(f, strictConfig({ flexible: { enabled: true, minimum: 45 } }));
+        const v = (await f.breaks()).body;
+        assert.deepEqual(v.flexible.presets.map(p => p.available), [false, true, true]);
+        assert.match(v.flexible.presets[0].reason, /at least 45 minutes/);
+        assert.equal((await f.breaks({ action: 'flex_start', mode: 'preset', minutes: 30, operation_id: op() })).body.code, 'STRICT_MINIMUM');
+        assert.equal((await f.breaks({ action: 'flex_start', mode: 'custom', minutes: 44, operation_id: op() })).body.code, 'INVALID_DURATION');
+        const until = (await f.breaks({ action: 'flex_start', mode: 'until', operation_id: op() })).body.flexible.active;
+        assert.equal(until.can_end_at, now() + 45 * MIN); assert.equal(until.minimum, 45);
+        advance(45 * MIN - 1);
+        const early = await f.breaks({ action: 'flex_end', break_id: until.id });
+        assert.equal(early.body.code, 'MINIMUM_NOT_REACHED'); assert.match(early.body.error, /45 minutes/);
+        advance(1);
+        assert.equal((await f.breaks({ action: 'flex_end', break_id: until.id })).body.allowance.used, 45);
+    } finally { clock = null; }
+});
+test('the strict minimum blocks starts when allowance or time before reset is shorter', async () => {
+    try {
+        const f = await free();
+        await strict(f, strictConfig({ flexible: { enabled: true, minimum: 60 } }));
+        await f.breaks({ action: 'flex_start', mode: 'custom', minutes: 121, operation_id: op() }); advance(121 * MIN);
+        const low = (await f.breaks()).body;
+        assert.equal(low.allowance.remaining, 59); assert.equal(low.flexible.can_start, false); assert.match(low.flexible.reason, /Less than 60 minutes of today/);
+        assert.equal((await f.breaks({ action: 'flex_start', mode: 'until', operation_id: op() })).body.code, 'ALLOWANCE_LOW');
+        const g = await free('2026-11-04T23:01:00+03:00');
+        await strict(g, strictConfig({ flexible: { enabled: true, minimum: 60 } }));
+        assert.equal((await g.breaks({ action: 'flex_start', mode: 'preset', minutes: 60, operation_id: op() })).body.code, 'RESET_SOON');
+        assert.match((await g.breaks()).body.flexible.reason, /60 minutes remain before the day resets/);
+    } finally { clock = null; }
+});
+test('strict settings cannot be changed or turned off while required non-bonus tasks remain today', async () => {
+    try {
+        const f = await ready(); // has an unfinished task due today
+        const on = strictConfig({ flexible: { enabled: true, minimum: 40 }, scheduled: { enabled: true, default: [{ start: '20:00', end: '20:30' }] } });
+        const enabled = await strict(f, on);
+        assert.equal(enabled.status, 200, 'turning strict modes on is always allowed');
+        assert.equal(enabled.body.strict.locked, true); assert.equal(enabled.body.strict.required_tasks, 1);
+        for (const change of [strictConfig({ scheduled: on.scheduled }), strictConfig({ flexible: { enabled: true, minimum: 60 }, scheduled: on.scheduled }),
+            strictConfig({ flexible: on.flexible, scheduled: { ...on.scheduled, deadline_minutes: 600 } }), strictConfig({ flexible: on.flexible })]) {
+            const blocked = await strict(f, change);
+            assert.equal(blocked.status, 403); assert.equal(blocked.body.code, 'STRICT_LOCKED');
+        }
+        // Bonus, completed and future tasks do not restrict; overdue and undated ones do.
+        for (const [tasks, locked] of [[[{ id: 'b', title: 'Bonus', status: 'active', due_date: 'today', is_bonus: true }], false],
+            [[{ id: 'c', title: 'Done', status: 'completed', due_date: 'today' }], false], [[{ id: 'n', title: 'Next', status: 'active', due_date: '2026-11-05' }], false],
+            [[{ id: 'o', title: 'Old', status: 'active', due_date: '2026-11-01' }], true], [[{ id: 'u', title: 'Undated', status: 'active' }], true],
+            [[{ id: 'p', title: 'Parent', status: 'active', due_date: '2026-11-09', is_bonus: true }, { id: 'k', title: 'Kid', parent_id: 'p', status: 'active' }], false]]) {
+            assert.equal((await f.push({ tasks })).status, 200);
+            assert.equal((await f.breaks()).body.strict.locked, locked, JSON.stringify(tasks));
+        }
+        assert.equal((await f.push({ tasks: [] })).status, 200);
+        assert.equal((await strict(f, strictConfig())).status, 200, 'with no required work it can be turned off');
+    } finally { clock = null; }
+});
+test('strict settings use a revision so a stale device cannot overwrite them', async () => {
+    try {
+        const f = await free();
+        await strict(f, strictConfig({ flexible: { enabled: true, minimum: 30 } }));
+        const stale = await f.breaks({ action: 'strict_save', config: strictConfig(), revision: 0 });
+        assert.equal(stale.status, 409); assert.equal(stale.body.code, 'STRICT_CHANGED');
+    } finally { clock = null; }
+});
+
+const plan30 = [{ start: '13:00', end: '13:30' }];
+test('Scheduled Strict Mode locks the default plan at the deadline: before, exactly at and after', async () => {
+    try {
+        const f = await free();
+        await strict(f, strictConfig({ scheduled: { enabled: true, deadline_minutes: 11 * 60, default: plan30 } }));
+        at('2026-11-04T10:59:59.999+03:00');
+        const before = (await f.breaks()).body;
+        assert.equal(before.system, null); assert.equal(before.strict_today.pending, true);
+        assert.equal(before.strict_today.deadline, Date.parse('2026-11-04T11:00:00+03:00'));
+        at('2026-11-04T11:00:00+03:00');
+        const atDeadline = (await f.breaks()).body;
+        assert.equal(atDeadline.system, 'scheduled'); assert.equal(atDeadline.lock_source, 'strict');
+        assert.deepEqual(atDeadline.scheduled.breaks.map(b => b.start), ['13:00']);
+        assert.equal(atDeadline.scheduled.can_start_planning, false); assert.match(atDeadline.scheduled.reason, /Strict Mode locked/);
+        assert.equal((await f.breaks({ action: 'plan_start' })).body.code, 'SCHEDULE_SAVED', 'the strict schedule cannot be edited');
+        assert.equal((await f.breaks({ action: 'flex_start', mode: 'until', operation_id: op() })).body.code, 'SYSTEM_LOCKED');
+        at('2026-11-04T13:10:00+03:00');
+        assert.equal((await f.status(await f.phone())).in_break, true);
+    } finally { clock = null; }
+});
+test('weekday overrides replace the default; deselected days stay free; included days without a plan get zero breaks', async () => {
+    try {
+        const cases = [
+            [{ 3: { mode: 'custom', breaks: [{ start: '15:00', end: '16:00' }] } }, 'scheduled', ['15:00']],
+            [{ 3: { mode: 'off' } }, null, null],
+            [{ 3: { mode: 'custom', breaks: [] } }, 'scheduled', []],
+            [{}, 'scheduled', []]   // default plan is empty
+        ];
+        for (const [days, system, starts] of cases) {
+            const f = await free();
+            await strict(f, strictConfig({ scheduled: { enabled: true, deadline_minutes: 10 * 60, default: starts === null || Object.keys(days).length ? plan30 : [], days } }));
+            at('2026-11-04T10:30:00+03:00');
+            const v = (await f.breaks()).body;
+            assert.equal(v.system, system, JSON.stringify(days));
+            if (starts) assert.deepEqual(v.scheduled.breaks.map(b => b.start), starts);
+            if (system === null) { assert.equal(v.strict_today.covered, false); assert.equal(v.scheduled.can_start_planning, true); assert.equal(v.flexible.can_start, true); }
+            else { assert.equal(v.strict_today.covered, true); if (!starts.length) assert.match(v.scheduled.reason, /no breaks/); }
+        }
+    } finally { clock = null; }
+});
+test('a system chosen before the deadline is kept', async () => {
+    try {
+        const cfg = strictConfig({ scheduled: { enabled: true, deadline_minutes: 11 * 60, default: plan30 } });
+        const f = await free(); await strict(f, cfg);
+        await f.breaks({ action: 'lock', system: 'flexible' });
+        at('2026-11-04T12:00:00+03:00');
+        const flex = (await f.breaks()).body;
+        assert.equal(flex.system, 'flexible'); assert.equal(flex.flexible.can_start, true);
+        const g = await free(); await strict(g, cfg);
+        await g.breaks({ action: 'plan_start' }); await g.breaks({ action: 'schedule_save', breaks: [{ start: '16:00', end: '16:15' }] });
+        at('2026-11-04T12:00:00+03:00');
+        const own = (await g.breaks()).body;
+        assert.equal(own.lock_source, 'save'); assert.deepEqual(own.scheduled.breaks.map(b => b.start), ['16:00']);
+    } finally { clock = null; }
+});
+test('an unsaved planning window at the deadline is discarded and the strict plan applies', async () => {
+    try {
+        const f = await free('2026-11-04T10:55:00+03:00');
+        await strict(f, strictConfig({ scheduled: { enabled: true, deadline_minutes: 11 * 60, default: plan30 } }));
+        assert.equal((await f.breaks({ action: 'plan_start' })).status, 200);
+        at('2026-11-04T11:01:00+03:00');
+        const save = await f.breaks({ action: 'schedule_save', breaks: [{ start: '18:00', end: '19:00' }] });
+        assert.equal(save.status, 409);
+        const v = (await f.breaks()).body;
+        assert.equal(v.lock_source, 'strict'); assert.equal(v.scheduled.planning, null); assert.deepEqual(v.scheduled.breaks.map(b => b.start), ['13:00']);
+    } finally { clock = null; }
+});
+test('offline at the deadline: the first later request and phone status see the strict lock', async () => {
+    try {
+        const f = await free('2026-11-03T20:00:00+03:00');
+        await strict(f, strictConfig({ scheduled: { enabled: true, deadline_minutes: 11 * 60, default: plan30 } }));
+        const phone = await f.phone();
+        // No request at all on Nov 4 until the strict break starts.
+        at('2026-11-04T13:05:00+03:00');
+        const s = await f.status(phone);
+        assert.equal(s.in_break, true); assert.equal(s.break_system, 'scheduled'); assert.equal(s.device_unlocked, true);
+        at('2026-11-04T13:40:00+03:00');
+        assert.equal((await f.status(phone)).in_break, false);
+        const first = await f.breaks({ action: 'flex_start', mode: 'until', operation_id: op() });
+        assert.equal(first.body.code, 'SYSTEM_LOCKED', 'the strict lock is applied before a conflicting action');
+        assert.equal((await f.breaks()).body.lock_source, 'strict');
+    } finally { clock = null; }
+});
+test('the deadline counts from the logical day start (3:00 + 8 hours = 11:00)', async () => {
+    try {
+        const f = await ready('2026-11-04T09:00:00+03:00');
+        assert.equal((await f.push({ tasks: [], settings: { day_start_hour: 3 } })).status, 200);
+        await strict(f, strictConfig({ scheduled: { enabled: true, deadline_minutes: 8 * 60, default: plan30 } }));
+        const v = (await f.breaks()).body;
+        assert.equal(v.cycle_start, Date.parse('2026-11-04T03:00:00+03:00'));
+        assert.equal(v.strict_today.deadline, Date.parse('2026-11-04T11:00:00+03:00'));
+    } finally { clock = null; }
+});
+test('strict changes never rewrite a locked day and apply from the next day once today is decided', async () => {
+    try {
+        const f = await free('2026-11-04T12:00:00+03:00');
+        const late = await strict(f, strictConfig({ scheduled: { enabled: true, deadline_minutes: 10 * 60, default: plan30 } }));
+        assert.equal(late.body.strict.pending_from, '2026-11-05', 'today’s deadline already passed');
+        assert.equal(late.body.system, null); assert.equal(late.body.strict_today, null);
+        at('2026-11-05T10:00:00+03:00');
+        assert.equal((await f.breaks()).body.lock_source, 'strict');
+        // Before today's deadline with nothing chosen, a change applies today.
+        const g = await free('2026-11-04T09:00:00+03:00');
+        assert.equal((await strict(g, strictConfig({ flexible: { enabled: true, minimum: 30 } }))).body.strict.pending_from, null);
+        // Once Flexible is locked, a new minimum waits for tomorrow.
+        await g.breaks({ action: 'lock', system: 'flexible' });
+        const next = await strict(g, strictConfig({ flexible: { enabled: true, minimum: 60 } }));
+        assert.equal(next.body.strict.pending_from, '2026-11-05'); assert.equal(next.body.flexible.minimum, 30);
+        at('2026-11-05T09:00:00+03:00');
+        assert.equal((await g.breaks()).body.flexible.minimum, 60);
+    } finally { clock = null; }
+});
+test('strict plans must obey Scheduled rules and the three-hour limit; bad days are rejected', async () => {
+    try {
+        const f = await free();
+        for (const scheduled of [{ enabled: true, default: [{ start: '10:00', end: '12:00' }, { start: '11:00', end: '12:30' }] },
+            { enabled: true, default: [{ start: '10:00', end: '12:00' }, { start: '13:00', end: '14:01' }] },
+            { enabled: true, days: { 2: { mode: 'custom', breaks: [{ start: '10:00', end: '' }] } } },
+            { enabled: true, days: { 5: { mode: 'weekly' } } }, { enabled: true, deadline_minutes: 30 }, { enabled: true, deadline_minutes: 487 },
+            { enabled: true, deadline_minutes: 19 * 60 }])
+            assert.equal((await strict(f, strictConfig({ scheduled }))).body.code, 'INVALID_STRICT', JSON.stringify(scheduled));
+        assert.equal((await f.breaks()).body.strict.revision, 0, 'nothing was saved');
+    } finally { clock = null; }
+});
+test('strict settings are isolated by account and removed with the account', async () => {
+    try {
+        const f = await free();
+        await f.create('user_B');
+        await strict(f, strictConfig({ flexible: { enabled: true, minimum: 60 } }));
+        assert.equal((await f.breaks(null, 'user_B')).body.flexible.minimum, 10);
+        await f.service.breaks.remove(f.storage, 'user_A');
+        assert.equal(await f.storage.get('breaks:strict:user_A'), undefined);
+        assert.equal((await f.breaks()).body.flexible.minimum, 10);
+    } finally { clock = null; }
+});

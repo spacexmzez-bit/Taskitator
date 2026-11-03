@@ -783,6 +783,7 @@ const TaskitatorEngine = {
             catch(error){if(error.status)this._pendingStart=null;throw error;}
         },
         endFlexible(id){return this.request({action:'flex_end',break_id:id});},
+        saveStrict(config,revision){return this.request({action:'strict_save',config,revision});},
         getLogicalDayBounds(dayStartHour=null){
             const v=this.current();
             if(v)return {dateStr:v.date,start:new Date(v.cycle_start),end:new Date(v.cycle_end),cutoff6h:new Date(v.cycle_end-6*3600000),dayStartHour:v.day_start_hour,timezone:v.timezone};
@@ -1163,6 +1164,146 @@ Return strictly valid JSON with this exact schema:
 window.TaskitatorEngine = TaskitatorEngine;
 
 // <<< MODULE_END: audit-engine.js >>>
+// <<< MODULE_START: strict-breaks-ui.js >>>
+// File: strict-breaks-ui.js
+// Settings → Day & week: Flexible and Scheduled Strict Modes. The Worker validates and
+// enforces everything; this card only edits a draft and shows the server's answer.
+(function () {
+    'use strict';
+    const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const esc = v => String(v ?? '').replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
+    const clone = v => JSON.parse(JSON.stringify(v));
+    const ui = {
+        card: null, draft: null, revision: 0, dirty: false, busy: false, view: null, message: '', tone: '',
+        engine() { return window.TaskitatorEngine?.BreakEngine; },
+        init() {
+            this.card = document.getElementById('strictBreaksCard');
+            if (!this.card) return;
+            this.card.addEventListener('change', e => this.onInput(e));
+            this.card.addEventListener('input', e => { if (e.target.matches('input[type="time"]')) this.onInput(e); });
+            this.card.addEventListener('click', e => this.onClick(e));
+            window.addEventListener('taskitator-breaks-changed', () => this.load());
+            this.render();
+            const tryLoad = (n = 0) => { if (window.TaskitatorAuth?.signedIn) this.engine()?.refresh().catch(() => {}); else if (n < 20) setTimeout(() => tryLoad(n + 1), 500); };
+            tryLoad();
+        },
+        load() {
+            const view = this.engine()?.current?.();
+            if (!view?.strict) return;
+            this.view = view;
+            if (!this.dirty) { this.draft = clone(view.strict.config); this.revision = view.strict.revision; }
+            this.render();
+        },
+        deadlineLabel(minutes) {
+            const start = this.view ? new Date(this.view.cycle_start) : null, h = Math.floor(minutes / 60), m = minutes % 60;
+            let clock = '';
+            if (start) try { clock = new Intl.DateTimeFormat('en-GB', { timeZone: this.view.timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(start.getTime() + minutes * 60000); } catch {}
+            return `${h}h${m ? ' ' + m + 'm' : ''} after day start${clock ? ` (${clock})` : ''}`;
+        },
+        plan(list, path, disabled) {
+            const rows = list.map((b, i) => `<div class="break-row-item strict-plan-row">
+                <input type="time" class="break-time-input" aria-label="Break start" data-path="${path}" data-index="${i}" data-field="start" value="${esc(b.start)}" ${disabled ? 'disabled' : ''}>
+                <span class="break-row-sep">to</span>
+                <input type="time" class="break-time-input" aria-label="Break end" data-path="${path}" data-index="${i}" data-field="end" value="${esc(b.end)}" ${disabled ? 'disabled' : ''}>
+                ${disabled ? '' : `<button type="button" class="del-break-row-btn" aria-label="Remove break" data-remove="${path}" data-index="${i}">&times;</button>`}</div>`).join('');
+            return `<div class="strict-plan">${rows || '<p class="setting-hint strict-empty">No breaks — this day gets zero breaks.</p>'}
+                ${disabled || list.length >= 3 ? '' : `<button type="button" class="icon-btn btn-sm" data-add="${path}">+ Add break</button>`}</div>`;
+        },
+        render() {
+            if (!this.card) return;
+            const s = this.view?.strict;
+            if (!s || !this.draft) {
+                this.card.innerHTML = `<h4 class="card-title">Strict break modes</h4><p class="card-desc">Sign in and connect your account to manage strict break modes.</p>`;
+                return;
+            }
+            const d = this.draft, saved = s.config, locked = s.locked;
+            const flexLocked = locked && saved.flexible.enabled, schedLocked = locked && saved.scheduled.enabled;
+            const minOptions = []; for (let m = s.limits.flexMin; m <= s.limits.flexMax; m += 5) minOptions.push(m);
+            const deadlines = []; for (let m = s.limits.deadlineMin; m <= s.limits.deadlineMax; m += s.limits.deadlineStep) deadlines.push(m);
+            const status = locked
+                ? `<span class="status-chip is-locked">🔒 ${s.required_tasks} required task${s.required_tasks === 1 ? '' : 's'} left today. Strict modes that are on can’t be changed or turned off until ${s.required_tasks === 1 ? 'it is' : 'they are'} done. You can still turn a mode on.</span>`
+                : s.pending_from ? `<span class="status-chip is-warn">⏭ Your latest changes apply from ${esc(s.pending_from)}. Today keeps its current rules.</span>` : '';
+            const days = DAYS.map((name, i) => {
+                const day = d.scheduled.days[i];
+                return `<div class="strict-day ${day.mode === 'off' ? 'is-off' : ''}">
+                    <div class="strict-day-head"><label for="strictDay${i}">${name}</label>
+                    <select id="strictDay${i}" data-day="${i}" ${schedLocked ? 'disabled' : ''}>
+                        <option value="default" ${day.mode === 'default' ? 'selected' : ''}>Default plan${d.scheduled.default.length ? '' : ' (no breaks)'}</option>
+                        <option value="custom" ${day.mode === 'custom' ? 'selected' : ''}>Its own plan</option>
+                        <option value="off" ${day.mode === 'off' ? 'selected' : ''}>Not covered (normal rules)</option>
+                    </select></div>
+                    ${day.mode === 'custom' ? this.plan(day.breaks, 'day' + i, schedLocked) : ''}
+                    ${day.mode === 'off' ? '<p class="setting-hint">Strict mode is off this day. Nothing is locked automatically.</p>' : ''}
+                </div>`;
+            }).join('');
+            this.card.innerHTML = `
+                <h4 class="card-title">Strict break modes</h4>
+                <p class="card-desc">Optional rules that make breaks harder to bend. Turning a mode on works any time. Changing or turning off a mode that’s on needs today’s required (non-bonus) tasks to be done.</p>
+                <div class="status-slot" aria-live="polite">${status}</div>
+                <div class="setting-row">
+                    <div class="setting-text"><label for="strictFlexToggle" class="setting-label">Flexible Strict Mode</label>
+                    <p class="setting-hint" id="strictFlexHint">Flexible breaks can’t be ended before your minimum, and shorter presets are unavailable.</p></div>
+                    <input type="checkbox" id="strictFlexToggle" class="switch" role="switch" aria-describedby="strictFlexHint" ${d.flexible.enabled ? 'checked' : ''} ${flexLocked ? 'disabled' : ''}>
+                </div>
+                ${d.flexible.enabled ? `<div class="form-group strict-options"><label for="strictFlexMinimum">Minimum break</label>
+                    <select id="strictFlexMinimum" ${flexLocked ? 'disabled' : ''}>${minOptions.map(m => `<option value="${m}" ${m === d.flexible.minimum ? 'selected' : ''}>${m} minutes</option>`).join('')}</select></div>` : ''}
+                <div class="setting-row">
+                    <div class="setting-text"><label for="strictSchedToggle" class="setting-label">Scheduled Strict Mode</label>
+                    <p class="setting-hint" id="strictSchedHint">If you haven’t chosen a break system by the deadline, Scheduled locks for the day with that weekday’s plan. On a covered day without a plan, that means <strong>zero breaks</strong>.</p></div>
+                    <input type="checkbox" id="strictSchedToggle" class="switch" role="switch" aria-describedby="strictSchedHint" ${d.scheduled.enabled ? 'checked' : ''} ${schedLocked ? 'disabled' : ''}>
+                </div>
+                ${d.scheduled.enabled ? `<div class="strict-options">
+                    <div class="form-group"><label for="strictDeadline">Deadline</label>
+                    <select id="strictDeadline" ${schedLocked ? 'disabled' : ''}>${deadlines.map(m => `<option value="${m}" ${m === d.scheduled.deadline_minutes ? 'selected' : ''}>${esc(this.deadlineLabel(m))}</option>`).join('')}</select></div>
+                    <div class="form-group"><span class="setting-label">Default plan</span>${this.plan(d.scheduled.default, 'default', schedLocked)}</div>
+                    <div class="form-group"><span class="setting-label">Weekdays</span><div class="strict-days">${days}</div></div>
+                </div>` : ''}
+                <div class="strict-actions"><button type="button" class="icon-btn btn-md btn-solid-primary btn-primary" id="strictSaveBtn" ${this.busy || !this.dirty ? 'disabled' : ''}>Save strict modes</button>
+                ${this.dirty ? '<button type="button" class="icon-btn btn-md" id="strictResetBtn">Discard changes</button>' : ''}</div>
+                <p class="setting-hint strict-feedback ${this.tone}" role="status">${esc(this.message)}</p>`;
+        },
+        list(path) { return path === 'default' ? this.draft.scheduled.default : this.draft.scheduled.days[+path.slice(3)].breaks; },
+        change(fn) { fn(); this.dirty = true; this.message = ''; this.render(); },
+        onInput(e) {
+            const t = e.target, d = this.draft;
+            if (!d) return;
+            if (t.id === 'strictFlexToggle') return this.change(() => { d.flexible.enabled = t.checked; });
+            if (t.id === 'strictSchedToggle') return this.change(() => { d.scheduled.enabled = t.checked; });
+            if (t.id === 'strictFlexMinimum') return this.change(() => { d.flexible.minimum = Number(t.value); });
+            if (t.id === 'strictDeadline') return this.change(() => { d.scheduled.deadline_minutes = Number(t.value); });
+            if (t.dataset.day) return this.change(() => { const day = d.scheduled.days[t.dataset.day]; day.mode = t.value; if (t.value !== 'custom') day.breaks = []; });
+            if (t.dataset.path) { this.list(t.dataset.path)[+t.dataset.index][t.dataset.field] = t.value; this.dirty = true; const b = document.getElementById('strictSaveBtn'); if (b) b.disabled = this.busy; }
+        },
+        async onClick(e) {
+            const t = e.target.closest('button');
+            if (!t) return;
+            if (t.dataset.add) return this.change(() => this.list(t.dataset.add).push({ start: '', end: '' }));
+            if (t.dataset.remove) return this.change(() => this.list(t.dataset.remove).splice(+t.dataset.index, 1));
+            if (t.id === 'strictResetBtn') { this.dirty = false; this.message = ''; return this.load(); }
+            if (t.id === 'strictSaveBtn') return this.save();
+        },
+        async save() {
+            const engine = this.engine();
+            if (!engine?.saveStrict || this.busy) return;
+            const clean = clone(this.draft), strip = list => list.filter(b => b.start || b.end);
+            clean.scheduled.default = strip(clean.scheduled.default);
+            for (const day of Object.values(clean.scheduled.days)) day.breaks = strip(day.breaks);
+            this.busy = true; this.render();
+            try {
+                const view = await engine.saveStrict(clean, this.revision);
+                this.dirty = false; this.view = view; this.draft = clone(view.strict.config); this.revision = view.strict.revision;
+                this.tone = 'is-ok';
+                this.message = view.strict.pending_from ? `Saved. Today keeps its current rules; these apply from ${view.strict.pending_from}.` : 'Saved. These rules apply today.';
+            } catch (error) { this.tone = 'is-error'; this.message = error.message || 'Strict settings were not saved.'; }
+            finally { this.busy = false; this.render(); }
+        }
+    };
+    window.TaskitatorStrictBreaksUI = ui;
+    if (typeof document !== 'undefined' && document.getElementById) {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => ui.init()); else ui.init();
+    }
+})();
+// <<< MODULE_END: strict-breaks-ui.js >>>
 // <<< MODULE_START: pro/pro-client.js >>>
 // File: pro/pro-client.js
 // Taskitator Pro Phase 2: Client library for Keyo activation, status, Claude Haiku 5.5 review,

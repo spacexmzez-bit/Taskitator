@@ -1971,7 +1971,7 @@ export class TaskitatorSync {
                     // Precedence (each step may override the previous one):
                     // tasks → active break (Scheduled or Flexible) → Universe lock (unless on a break) → Sleep Lock → Emergency Bypass.
                     const state = evaluateStatus(record);
-                    const flexible = await this.breaks.inBreak(tx, owner);
+                    const flexible = await this.breaks.inBreak(tx, owner, Date.now(), record);
                     if (flexible.in_break) { state.in_break = true; state.device_unlocked = true; }
                     state.break_system = flexible.system;
                     const groupState=await this.universe.lockStatus(identity?.userId||meta.owner_id);
