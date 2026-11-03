@@ -279,6 +279,10 @@ export class KeyoLicenses {
 
 const VERSION=3;
 const protectedTask=t=>Boolean(t.ai_locked || t.require_ai_proof);
+const DYNAMIC_FIELD='dynamic_priority_target';
+// Tiers that unlock Dynamic Priority. Keyo has no tier hierarchy, so MAX is NOT assumed to include Pro.
+// Add 'max' here (and in components.js DYNAMIC_PRIORITY_TIERS) if you decide MAX should also unlock it.
+export const DYNAMIC_PRIORITY_TIERS=['pro'];
 const branch=(tasks,id)=>globalThis.TaskitatorRecurrence.subtree(tasks,id).filter(t=>t.status!=='trash');
 const stable=value=>Array.isArray(value)?value.map(stable):value && typeof value==='object'?
     Object.fromEntries(Object.keys(value).sort().map(k=>[k,stable(value[k])])):value;
@@ -396,6 +400,43 @@ export class TaskProtection {
                 if(!current||!current.strict_prerequisites)throw fail(403,'SHIELD_REQUIRED','The task shield requires Emergency Bypass to remove.');
                 if(old.status==='active'&&current.status==='completed'&&branch(next.tasks,current.id).some(c=>c.id!==current.id&&!c.is_bonus&&c.status!=='completed'))throw fail(403,'CHILDREN_REQUIRED','Complete required subtasks first.');
             }
+        }
+    }
+    // Dynamic Priority (Pro). Only dynamic_priority_target (a priority id, or null/absent when off) is stored;
+    // the effective priority is derived and never written, so completions, AI audits, recurrence and Smart Study
+    // never touch it. This guard covers every way the field can change in a pushed snapshot.
+    //  - Adding or changing it needs verified Pro (fail closed). Removing it never does.
+    //  - It cannot change once the task is already AI-locked or shielded, unless Emergency Bypass is active.
+    //    A lock/shield saved in the same snapshot is allowed because the check uses the PREVIOUS stored task.
+    //  - Unchanged values always pass, so a lapsed Pro plan keeps existing configuration intact.
+    async guardDynamic(tx,account,previous,next,refreshError=null){
+        const raw=t=>t&&t[DYNAMIC_FIELD]!==undefined?t[DYNAMIC_FIELD]:null;
+        const same=(a,b)=>JSON.stringify(stable(a))===JSON.stringify(stable(b));
+        const before=new Map((previous?.tasks||[]).map(t=>[t.id,t]));
+        const changes=[];
+        for(const t of next.tasks){const old=before.get(t.id);if(!same(raw(old),raw(t)))changes.push({old,now:raw(t)});}
+        // Recurring templates create future tasks later, so they are held to the same rule.
+        const templates=s=>{const out=new Map();for(const series of s?.recurrence_state?.series||[])for(const n of series.nodes||[])out.set(series.id+':'+n.key,raw(n.task));return out;};
+        const oldTemplates=templates(previous);
+        for(const [key,now] of templates(next))if(!same(oldTemplates.get(key)??null,now))changes.push({old:null,now});
+        if(!changes.length)return;
+        const bypass=await this.bypass(tx,account);
+        const priorities=next.settings?.custom_priorities;
+        const valid=new Set(Array.isArray(priorities)?priorities.map(p=>p?.id):['prio_high','prio_med','prio_low']);
+        let checked=false;
+        for(const {old,now} of changes){
+            if(old&&old.status!=='trash'&&(protectedTask(old)||old.strict_prerequisites)&&!bypass)
+                throw fail(403,'DYNAMIC_PRIORITY_LOCKED','Dynamic Priority cannot be changed after an AI lock or shield is saved. Enable it before saving the lock or shield, or use Emergency Bypass.');
+            if(now===null)continue;
+            if(typeof now!=='string'||!now||now.length>64||!valid.has(now))
+                throw fail(400,'INVALID_DYNAMIC_PRIORITY','Dynamic Priority must target one of your existing priorities.');
+            if(checked)continue;
+            if(refreshError)throw refreshError; // Keyo unreachable or rejected and no valid signed cache: fail closed.
+            const e=await tx.get('pro:entitlement:'+account); // re-read inside the transaction; no network here
+            if(!e||e.status!=='active'||!DYNAMIC_PRIORITY_TIERS.includes(e.tier)||e.account_id!==account||e.keyo_version!==1||!e.signed_token||
+                !Number.isSafeInteger(e.valid_until)||e.valid_until<=Date.now()||(e.expires_at!==null&&(!Number.isSafeInteger(e.expires_at)||e.expires_at<=Date.now())))
+                throw fail(403,'PRO_REQUIRED','Dynamic Priority is a Taskitator Pro feature. Existing settings are kept, but enabling or changing it needs an active Pro license.');
+            checked=true;
         }
     }
     async bypass(store,account){await liveAccount(store,account);const state=await store.get('pro:emergency:'+account);return !!state&&state.active_until_ms>Date.now();}

@@ -1591,6 +1591,8 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     function sortTasks(tasksArray) {
         const priorities = getGlobalPriorities();
+        // Dynamic Priority: rank by the derived effective priority; stored priority_id is never altered.
+        const dynamicPriority = window.TaskitatorPriority?.effectiveMap(tasks, priorities) ?? new Map();
         const getRank = (pId) => {
             const p = priorities.find(x => x.id === pId);
             return p ? p.rank : 9999;
@@ -1600,8 +1602,8 @@ window.TaskitatorApp = (() => {
         return tasksArray.sort((a, b) => {
             if (mode === 'alpha') return String(a.title||'').localeCompare(String(b.title||''), undefined, {sensitivity:'base'});
             if (mode === 'required' && !!a.is_bonus !== !!b.is_bonus) return a.is_bonus ? 1 : -1;
-            const rA = getRank(a.priority_id);
-            const rB = getRank(b.priority_id);
+            const rA = getRank((dynamicPriority.get(a.id) ?? a.priority_id));
+            const rB = getRank((dynamicPriority.get(b.id) ?? b.priority_id));
             if (rA !== rB) return rA - rB;
 
             const dA = a.due_date || '9999-99-99';
@@ -2470,6 +2472,7 @@ window.TaskitatorApp = (() => {
         const isBypassActive = isBypassActiveSafe();
         const globalPriorities = getGlobalPriorities();
         const globalProjects = getGlobalProjects();
+        const dynamicPriority = window.TaskitatorPriority?.effectiveMap(tasks, globalPriorities) ?? new Map();
 
         const allChildrenMap = new Map();
         const visibleChildrenMap = new Map();
@@ -2521,7 +2524,7 @@ window.TaskitatorApp = (() => {
         if (hasFilters) {
             tasks.forEach(t => {
                 const tagMatch = activeFilters.tags.size === 0 || (t.tags && t.tags.some(tag => activeFilters.tags.has(tag)));
-                const prioMatch = activeFilters.priorities.size === 0 || activeFilters.priorities.has(t.priority_id);
+                const prioMatch = activeFilters.priorities.size === 0 || activeFilters.priorities.has((dynamicPriority.get(t.id) ?? t.priority_id));
                 const projMatch = activeFilters.projects.size === 0 || activeFilters.projects.has(t.project_id || 'inbox');
                 matchMap.set(t.id, tagMatch && prioMatch && projMatch);
             });
@@ -2622,9 +2625,10 @@ window.TaskitatorApp = (() => {
                     row.classList.add('muted-breadcrumb');
                 }
 
-                const pObj = globalPriorities.find(x => x.id === task.priority_id);
+                const pObj = globalPriorities.find(x => x.id === (dynamicPriority.get(task.id) ?? task.priority_id));
                 if (pObj) {
                     row.style.borderLeftColor = pObj.color;
+                    if (dynamicPriority.has(task.id)) row.title = 'Dynamic Priority: only bonus work remains';
                 }
 
                 const main = document.createElement('div');

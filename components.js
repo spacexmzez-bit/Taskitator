@@ -345,7 +345,7 @@
     function updateNode(state, task, fields) {
         const s = seriesFor(state, task); const node = s?.nodes.find(n => n.key === task.recurrence_node_id);
         if (!node) return;
-        const allowed = ['title', 'raw_title', 'description', 'tags', 'priority_id', 'project_id', 'is_bonus', 'strict_prerequisites', 'ai_locked', 'proof_criteria', 'raw_proof_criteria', 'reference_inline_data', 'reference_id'];
+        const allowed = ['title', 'raw_title', 'description', 'tags', 'priority_id', 'dynamic_priority_target', 'project_id', 'is_bonus', 'strict_prerequisites', 'ai_locked', 'proof_criteria', 'raw_proof_criteria', 'reference_inline_data', 'reference_id'];
         for (const key of allowed) if (Object.prototype.hasOwnProperty.call(fields, key)) node.task[key] = copy(fields[key]);
     }
     function validateState(state, tasks) {
@@ -447,6 +447,48 @@
 })(globalThis);
 
 // <<< MODULE_END: recurrence-core.js >>>
+// <<< MODULE_START: dynamic-priority.js >>>
+// Dynamic Priority (Pro): the effective priority is DERIVED from the task tree and never stored.
+// priority_id always keeps the user's configured priority; dynamic_priority_target (a priority id, or
+// absent/null when off) is the level used while only bonus work remains. "Only bonus work remains" reuses
+// the shield/completion gate exactly: no unfinished non-bonus descendant at any depth (trashed tasks are
+// ignored) and at least one unfinished bonus descendant.
+(function(root){
+    function effectiveMap(tasks, priorities) {
+        const out = new Map();
+        if (!Array.isArray(tasks)) return out;
+        const valid = Array.isArray(priorities) ? new Set(priorities.map(p => p && p.id)) : null;
+        let byParent = null;
+        for (const t of tasks) {
+            const target = t && t.dynamic_priority_target;
+            if (typeof target !== 'string' || !target || t.status !== 'active' || target === t.priority_id) continue;
+            if (valid && !valid.has(target)) continue;
+            if (!byParent) {
+                byParent = new Map();
+                for (const c of tasks) if (c && c.parent_id) {
+                    if (!byParent.has(c.parent_id)) byParent.set(c.parent_id, []);
+                    byParent.get(c.parent_id).push(c);
+                }
+            }
+            let required = false, bonus = false;
+            const seen = new Set([t.id]), stack = [...(byParent.get(t.id) || [])];
+            while (stack.length && !required) {
+                const c = stack.pop();
+                if (seen.has(c.id) || c.status === 'trash') continue;
+                seen.add(c.id);
+                if (c.status !== 'trash' && c.status !== 'completed') { if (c.is_bonus) bonus = true; else required = true; }
+                for (const k of byParent.get(c.id) || []) stack.push(k);
+            }
+            if (!required && bonus) out.set(t.id, target);
+        }
+        return out;
+    }
+    function effectiveId(task, map) { return map && map.has(task.id) ? map.get(task.id) : task.priority_id; }
+    const api = { effectiveMap, effectiveId };
+    root.TaskitatorPriority = api;
+    if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(globalThis);
+// <<< MODULE_END: dynamic-priority.js >>>
 // <<< MODULE_START: recurrence-ui.js >>>
 // File: recurrence-ui.js
 (function () {
@@ -561,7 +603,7 @@
         if (document.getElementById('recurrenceEditScope')?.value === 'future') {
             // Keep future-only validated criteria intact when ordinary fields are edited.
             const {title,raw_title,description,tags,priority_id,project_id,is_bonus,strict_prerequisites} = task;
-            const fields={title,raw_title,description,tags,priority_id,project_id,is_bonus,strict_prerequisites};
+            const fields={title,raw_title,description,tags,priority_id,project_id,is_bonus,strict_prerequisites,dynamic_priority_target:task.dynamic_priority_target??null};
             const node=s.nodes.find(n=>n.key===task.recurrence_node_id);
             if(task.ai_locked && !node.task.ai_locked){
                 Object.assign(fields,{ai_locked:true,proof_criteria:task.proof_criteria,raw_proof_criteria:task.raw_proof_criteria});
@@ -687,6 +729,59 @@ window.TaskitatorComponents = Object.freeze({
         function controls(){const m=document.getElementById('taskDetailModal');return JSON.stringify([...(m?.querySelectorAll?.('input,textarea,select,[contenteditable]')||[])].map(e=>[e.id,e.type==='checkbox'?e.checked:e.isContentEditable?e.textContent:e.value,e.files?[...e.files].map(f=>[f.name,f.size]):null]));}
         function dirty(){return draft&&(JSON.stringify(draft.tasks)!==draft.originalTasks||JSON.stringify(draft.recurrence)!==draft.originalRecurrence||draft.savedCriteria||draft.newTags?.length||controls()!==editBaseline||pendingEditExemplarFile||removeEditReference||JSON.stringify([...editModalSelectedTags])!==draft.tags||editModalSelectedPriority!==draft.priority||editModalSelectedProject!==draft.project||editModalIsBonus!==draft.bonus);}
         function discardDraft(){if(dirty()&&!confirm('Changes unsaved. Discard your changes?'))return false;draft=null;window.TaskitatorEditorDraft=null;return true;}
+        // ---- Dynamic Priority (Pro) controls -------------------------------------------------------------
+        // Keep in sync with DYNAMIC_PRIORITY_TIERS in pro-backend.js. The Worker is the authority; this only
+        // decides whether the control is offered. MAX is not assumed to include Pro.
+        const DYNAMIC_PRIORITY_TIERS=['pro'];
+        const dpGeneration={create:0,edit:0};
+        const dpEls=p=>({box:document.getElementById(p+'DynamicPriorityCheckbox'),opts:document.getElementById(p+'DynamicPriorityOptions'),sel:document.getElementById(p+'DynamicPriorityTarget'),note:document.getElementById(p+'DynamicPriorityNotice')});
+        async function dpEntitlement(){
+            try{
+                const s=await window.TaskitatorPro?.getStatus?.();
+                const allowed=s?.isPro===true&&s.status==='active'&&DYNAMIC_PRIORITY_TIERS.includes(String(s.tier).toLowerCase())&&(s.expires_at==null||s.expires_at>Date.now());
+                return {allowed,unavailable:false,status:s?.status||'free',tier:String(s?.tier||'free').toLowerCase()};
+            }catch{return {allowed:false,unavailable:true};}
+        }
+        function dpMessage(ent){
+            if(ent.unavailable)return "Couldn't verify your Pro status. Dynamic Priority can't be changed until it can be checked.";
+            if(ent.status==='active'&&!DYNAMIC_PRIORITY_TIERS.includes(ent.tier))return 'Your current license tier does not include Dynamic Priority.';
+            return ['expired','revoked','invalid'].includes(ent.status)?'Your Taskitator Pro license is not active. Existing Dynamic Priority settings are kept, but they can only be turned off.':'Dynamic Priority is a Taskitator Pro feature.';
+        }
+        // Synchronous part fills the controls (so dirty-form baselines are correct); entitlement is applied after.
+        function dpSetup(p,{target=null,locked=false}){
+            const {box,opts,sel,note}=dpEls(p);if(!box||!sel)return;
+            const gen=++dpGeneration[p],prios=[...(host.catalogs.priorities()||[])].sort((a,b)=>a.rank-b.rank),lowest=host.catalogs.lowestPriority();
+            sel.innerHTML='';
+            for(const pr of prios){const o=document.createElement('option');o.value=pr.id;o.textContent=pr.name;sel.appendChild(o);}
+            const known=target&&prios.some(pr=>pr.id===target);
+            if(target&&!known){const missing=document.createElement('option');missing.value=target;missing.textContent='Unavailable priority';sel.appendChild(missing);}
+            sel.value=target||lowest||'';
+            box.checked=Boolean(target);box.disabled=true;sel.disabled=true;
+            if(opts)opts.style.display=box.checked?'block':'none';
+            if(note){note.style.display='none';note.textContent='';}
+            const show=text=>{if(note){note.textContent=text;note.style.display=text?'block':'none';}};
+            if(target&&!known)show('The previously chosen priority no longer exists. Pick a new one or turn this off.');
+            box.onchange=()=>{if(opts)opts.style.display=box.checked?'block':'none';};
+            (async()=>{
+                const ent=await dpEntitlement();
+                if(gen!==dpGeneration[p]||!box.isConnected)return;
+                if(locked){box.disabled=true;sel.disabled=true;show('Locked: Dynamic Priority cannot change once an AI lock or shield is saved.');return;}
+                if(ent.allowed){box.disabled=false;sel.disabled=false;return;}
+                // Not entitled: new settings are blocked, but an existing one can always be turned off.
+                box.disabled=!target;sel.disabled=true;show(dpMessage(ent));
+            })();
+        }
+        const dpValue=p=>{const {box,sel}=dpEls(p);return box&&sel&&box.checked&&sel.value?sel.value:null;};
+        // Returns false (after telling the user) when a requested change cannot be made.
+        async function dpCommit(p,task,locked,had){
+            const want=dpValue(p),current=had??null;
+            if(!dpEls(p).box || !dpEls(p).sel || want===current||locked)return true;
+            
+            if(want===null){delete task.dynamic_priority_target;return true;}
+            const ent=await dpEntitlement();
+            if(!ent.allowed){window.TaskitatorNotify(dpMessage(ent));return false;}
+            task.dynamic_priority_target=want;return true;
+        }
         async function refreshConsecutive(){for(const id of ['createConsecutiveToggle','detailConsecutiveToggle']){const e=document.getElementById(id);if(e)e.disabled=true;}const check=await window.TaskitatorPro?.checkConsecutiveEntitlement?.();for(const id of ['createConsecutiveToggle','detailConsecutiveToggle']){const e=document.getElementById(id);if(e){e.disabled=!check?.allowed;if(e.disabled)e.checked=false;e.title=e.disabled?'Activate Taskitator Pro to use consecutive numbering.':'';}}}
         function commitDraft(){
             if(!draft)return false;if(draft.session!==localStorage.getItem('taskitator_session_id')){window.TaskitatorNotify('Your account changed. Reopen the editor.');return false;}
@@ -1422,6 +1517,8 @@ window.TaskitatorComponents = Object.freeze({
                 editBonusTaskCheckbox.checked = editModalIsBonus;
             }
 
+            dpSetup('edit',{target:task.dynamic_priority_target||null,locked:(Boolean(task.ai_locked||task.require_ai_proof||task.strict_prerequisites))&&!isBypassActive});
+
             renderModalTagCloud('editTagCloud', editModalSelectedTags);
             renderModalPriorityCloud('editPriorityCloud', true);
             renderModalProjectCloud('editProjectCloud', true);
@@ -1597,6 +1694,7 @@ window.TaskitatorComponents = Object.freeze({
             const bonusCheckbox = document.getElementById('bonusTaskCheckbox');
             createModalIsBonus = false;
             if (bonusCheckbox) bonusCheckbox.checked = false;
+            dpSetup('create',{});
 
             const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
             const mrStudyRewardInputs = document.getElementById('mrstudyRewardInputs');
@@ -2407,6 +2505,16 @@ window.TaskitatorComponents = Object.freeze({
                         completed_at: null
                     };
 
+                    if (dpValue('create')) {
+                        const dpEnt = await dpEntitlement();
+                        if (!dpEnt.allowed) {
+                            window.TaskitatorNotify(dpMessage(dpEnt));
+                            if (submitBtn) { submitBtn.disabled = false, submitBtn.classList.toggle('is-loading', false); submitBtn.textContent = 'Save Task'; }
+                            return;
+                        }
+                        newTask.dynamic_priority_target = dpValue('create');
+                    }
+
                     const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
                     if (mrStudySelect && mrStudySelect.value && isMrStudyLinked) {
                         const ruleId = mrStudySelect.value;
@@ -2528,6 +2636,11 @@ window.TaskitatorComponents = Object.freeze({
                     }
 
                     const isBypassActive = host.rules.bypassActive();
+                    // Judged on the stored task, before this save changes anything: a lock/shield saved in the SAME
+                    // save as Dynamic Priority is allowed; an already-saved one blocks changes (except Emergency Bypass).
+                    const dpLocked = Boolean(task.ai_locked || task.require_ai_proof || task.strict_prerequisites) && !isBypassActive;
+                    const dpHad = task.dynamic_priority_target || null;
+                    if (!(await dpCommit('edit', task, dpLocked, dpHad))) return;
                     const willBeAiLocked = Boolean(document.getElementById('editAiLockCheckbox')?.checked);
                     let willBeStrict = Boolean(document.getElementById('editStrictPrereqCheckbox')?.checked);
                     const editedCriteriaRaw = document.getElementById('editTaskCriteria')?.value.trim() || '';

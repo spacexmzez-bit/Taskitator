@@ -123,7 +123,7 @@ import { ProGateway, TaskProtection, liveAccount } from './pro-backend.js';
     function updateNode(state, task, fields) {
         const s = seriesFor(state, task); const node = s?.nodes.find(n => n.key === task.recurrence_node_id);
         if (!node) return;
-        const allowed = ['title', 'raw_title', 'description', 'tags', 'priority_id', 'project_id', 'is_bonus', 'strict_prerequisites', 'ai_locked', 'proof_criteria', 'raw_proof_criteria', 'reference_inline_data', 'reference_id'];
+        const allowed = ['title', 'raw_title', 'description', 'tags', 'priority_id', 'dynamic_priority_target', 'project_id', 'is_bonus', 'strict_prerequisites', 'ai_locked', 'proof_criteria', 'raw_proof_criteria', 'reference_inline_data', 'reference_id'];
         for (const key of allowed) if (Object.prototype.hasOwnProperty.call(fields, key)) node.task[key] = copy(fields[key]);
     }
     function validateState(state, tasks) {
@@ -1863,6 +1863,14 @@ export class TaskitatorSync {
                 snapshotHash = await sha256(JSON.stringify(snapshot));
             }
 
+            // Refresh Pro entitlement BEFORE the storage transaction (it may call Keyo). The transaction rechecks
+            // the stored entitlement, so a change between this refresh and the commit is still caught.
+            let dynamicRefreshError = null;
+            if (push && identity?.userId && (snapshot.tasks.some(t => t.dynamic_priority_target != null) ||
+                snapshot.recurrence_state?.series?.some(s => s.nodes?.some(n => n.task?.dynamic_priority_target != null)))) {
+                try { await this.pro.licenses.resolve(identity.userId); } catch (e) { dynamicRefreshError = e; }
+            }
+
             return await this.storage.transaction(async tx => {
                 const meta = await tx.get(accountKey(user));
                 if (!meta || meta.deleting || (identity && meta.owner_id !== identity.userId)) throw new HTTPError(403, 'Account access denied.');
@@ -1915,6 +1923,11 @@ export class TaskitatorSync {
                     if (previous?.recurrence_state?.series?.length && body.recurrence_schema !== 1) {
                         throw new HTTPError(428, 'Refresh Taskitator on this device before syncing recurring tasks.');
                     }
+                    // Older clients would silently strip Dynamic Priority settings; make them refresh first.
+                    if (body.dynamic_priority_schema !== 1 && (previous?.tasks?.some(t => t.dynamic_priority_target != null) ||
+                        previous?.recurrence_state?.series?.some(s => s.nodes?.some(n => n.task?.dynamic_priority_target != null)))) {
+                        throw new HTTPError(428, 'Refresh Taskitator on this device before syncing tasks that use Dynamic Priority.');
+                    }
                     try{globalThis.TaskitatorSmartStudy.guard(previous,snapshot);}catch(e){throw new HTTPError(409,e.message);}
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
                     try { Recurrence.reconcile(snapshot); }
@@ -1926,6 +1939,7 @@ export class TaskitatorSync {
                         snapshot.today_breaks = snapshot.today_breaks.map(b => object(b) ? { ...b, date: b.date || date } : b);
                     }
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
+                    await this.protection.guardDynamic(tx,identity.userId,previous,snapshot,dynamicRefreshError);
                     globalThis.TaskitatorSmartStudy.apply(snapshot,previous);
                     try { snapshot.today_breaks=globalThis.TaskitatorBreaks.merge(previous?.today_breaks,snapshot.today_breaks,snapshot.settings); }
                     catch(error){throw new HTTPError(400,error.message);}

@@ -449,6 +449,7 @@ const SyncEngine = {
             force: force,
             recurrence_state: JSON.parse(localStorage.getItem('taskitator_recurrence_state') || '{"series":[],"history":[]}'),
             recurrence_schema: 1,
+            dynamic_priority_schema: 1,
             tasks: tasks,
             projects: projects,
             settings: window.TaskitatorAuth.cleanSettings(settings),

@@ -1790,3 +1790,138 @@ test('Smart Study API: authorized creation, forged metadata denial, server movem
  pull=(await f.call('/sync/pull',a.token)).body;assert.equal(pull.tasks[4].smart_adjusted,true);assert.equal(pull.tasks.filter(t=>t.smart_moved_from).length,1);
  r=await f.call('/sync/push',a.token,'POST',{tasks:pull.tasks,settings:{},base_version:pull.version,mutation_id:'smart_repeated'});assert.equal(r.status,200);assert.equal((await f.call('/sync/pull',a.token)).body.tasks.filter(t=>t.smart_moved_from).length,1);
 });
+
+// ---------------------------------------------------------------------------
+// Dynamic Priority (Pro): Worker enforcement. Only dynamic_priority_target is stored; the effective priority
+// is derived, so these tests focus on who may add/change it and that sync/completion never lose or alter it.
+// ---------------------------------------------------------------------------
+const dpTask=(id,extra={})=>({id,title:'DP '+id,status:'active',priority_id:'prio_high',...extra});
+const dpSave=(f,a,tasks,extras={})=>save(f,a,tasks,{dynamic_priority_schema:1,...extras});
+async function dpFixture({license={},record={},none=false}={}) {
+    const f=fixture(),a=await create(f);Object.assign(f.env,testEnv);
+    if(!none)await f.storage.put('pro:entitlement:user_A',{...await activeLicense('user_A',license),...record});
+    return {f,a};
+}
+const dpStored=async(f,a)=>(await f.call('/sync/pull',a.token)).body.tasks;
+const keyoOffline=async fn=>{
+    const before=globalThis.fetch;
+    globalThis.fetch=async(url,options)=>String(url).startsWith(KEYO_DEFAULTS.endpoint)?Promise.reject(new TypeError('offline')):before(url,options);
+    try{return await fn();}finally{globalThis.fetch=before;}
+};
+
+test('Dynamic Priority: verified Pro can enable it; configured and original priorities stay distinct and survive reload',async()=>{
+    const {f,a}=await dpFixture();
+    assert.equal((await dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'})])).status,200);
+    const [t]=await dpStored(f,a);assert.equal(t.priority_id,'prio_high');assert.equal(t.dynamic_priority_target,'prio_low');
+    assert.equal((await dpSave(f,a,[{...t,description:'edited later'}])).status,200);
+    assert.equal((await dpStored(f,a))[0].dynamic_priority_target,'prio_low');
+});
+
+test('Dynamic Priority: Free, MAX, revoked and expired licenses cannot enable it and nothing is stored',async()=>{
+    const cases={free:{none:true},max:{license:{tier:'MAX'},record:{tier:'max'}},revoked:{record:{status:'revoked'}},
+        expired:{license:{issuedAt:Date.now()-2*86400000,validUntil:Date.now()-86400000,expiresAt:Date.now()-3600000}}};
+    for(const [name,options] of Object.entries(cases)){
+        const {f,a}=await dpFixture(options),r=await dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'})]);
+        assert.equal(r.status,403,name);assert.equal(r.body.code,'PRO_REQUIRED',name);
+        assert.equal((await f.call('/sync/pull',a.token)).body.empty,true,name);
+    }
+});
+
+test('Dynamic Priority: unavailable Keyo fails closed without a valid signed cache, and uses a valid cache otherwise',async()=>{
+    const stale={issuedAt:Date.now()-2*86400000,validUntil:Date.now()-86400000,expiresAt:null};
+    let {f,a}=await dpFixture({license:stale});
+    let r=await keyoOffline(()=>dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'})]));
+    assert.equal(r.status,503);assert.equal(r.body.code,'KEYO_NETWORK_ERROR');
+    ({f,a}=await dpFixture({license:{issuedAt:Date.now()-2*3600000,validUntil:Date.now()+22*3600000}}));
+    r=await keyoOffline(()=>dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'})]));assert.equal(r.status,200);
+    // No Keyo lookup at all when a snapshot does not use the feature.
+    ({f,a}=await dpFixture({license:stale}));
+    assert.equal((await keyoOffline(()=>dpSave(f,a,[dpTask('plain')]))).status,200);
+});
+
+test('Dynamic Priority: entitlement lost between the pre-transaction check and commit is caught',async()=>{
+    const {f,a}=await dpFixture(),licenses=f.service.pro.licenses,real=licenses.resolve.bind(licenses);
+    licenses.resolve=async id=>{const result=await real(id);const e=await f.storage.get('pro:entitlement:'+id);await f.storage.put('pro:entitlement:'+id,{...e,status:'revoked'});return result;};
+    const r=await dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'})]);
+    assert.equal(r.status,403);assert.equal(r.body.code,'PRO_REQUIRED');assert.equal((await f.call('/sync/pull',a.token)).body.empty,true);
+});
+
+test('Dynamic Priority: can be enabled in the same save as an AI lock or shield, then cannot change',async()=>{
+    for(const protection of [{ai_locked:true,proof_criteria:'The saved required artifact'},{strict_prerequisites:true}]){
+        const {f,a}=await dpFixture();
+        assert.equal((await dpSave(f,a,[dpTask('t')])).status,200);
+        assert.equal((await dpSave(f,a,[dpTask('t',{...protection,dynamic_priority_target:'prio_low'})])).status,200);
+        const saved=(await dpStored(f,a))[0],again=extra=>dpSave(f,a,[{...saved,...extra}]);
+        assert.equal((await again({description:'ordinary edit'})).status,200);
+        for(const change of [{dynamic_priority_target:'prio_med'},{dynamic_priority_target:null},{dynamic_priority_target:undefined}]){
+            const r=await again(change);assert.equal(r.status,403,JSON.stringify(change));assert.equal(r.body.code,'DYNAMIC_PRIORITY_LOCKED');
+        }
+        assert.equal((await dpStored(f,a))[0].dynamic_priority_target,'prio_low');
+    }
+});
+
+test('Dynamic Priority: a locked or shielded task without it cannot add it later; new tasks may be created with both',async()=>{
+    for(const protection of [{ai_locked:true,proof_criteria:'The saved required artifact'},{strict_prerequisites:true}]){
+        const {f,a}=await dpFixture();
+        assert.equal((await dpSave(f,a,[dpTask('t',protection)])).status,200);
+        const r=await dpSave(f,a,[dpTask('t',{...protection,dynamic_priority_target:'prio_low'})]);
+        assert.equal(r.status,403);assert.equal(r.body.code,'DYNAMIC_PRIORITY_LOCKED');
+        assert.equal((await dpSave(f,a,[dpTask('t',protection),dpTask('new',{...protection,dynamic_priority_target:'prio_low'})])).status,200);
+    }
+});
+
+test('Dynamic Priority: Emergency Bypass unlocks changes the way it does for other protected fields, but never grants Pro',async()=>{
+    let {f,a}=await dpFixture();
+    const lock={ai_locked:true,proof_criteria:'The saved required artifact'};
+    assert.equal((await dpSave(f,a,[dpTask('t',{...lock,dynamic_priority_target:'prio_low'})])).status,200);
+    assert.equal((await f.call('/pro/emergency',a.token,'POST',{})).status,200);
+    assert.equal((await dpSave(f,a,[dpTask('t',{...lock,dynamic_priority_target:'prio_med'})])).status,200);
+    assert.equal((await dpStored(f,a))[0].dynamic_priority_target,'prio_med');
+    ({f,a}=await dpFixture({none:true}));
+    assert.equal((await dpSave(f,a,[dpTask('t',lock)])).status,200);
+    assert.equal((await f.call('/pro/emergency',a.token,'POST',{})).status,200);
+    assert.equal((await dpSave(f,a,[dpTask('t',{...lock,dynamic_priority_target:'prio_low'})])).body.code,'PRO_REQUIRED');
+});
+
+test('Dynamic Priority: losing Pro keeps existing settings; they can be saved unchanged or removed but not added or changed',async()=>{
+    const {f,a}=await dpFixture();
+    assert.equal((await dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'}),dpTask('u')])).status,200);
+    await f.storage.put('pro:entitlement:user_A',{...await f.storage.get('pro:entitlement:user_A'),status:'revoked'});
+    const [t,u]=await dpStored(f,a);
+    assert.equal((await dpSave(f,a,[{...t,description:'still fine'},u])).status,200);
+    assert.equal((await dpSave(f,a,[{...t,dynamic_priority_target:'prio_med'},u])).body.code,'PRO_REQUIRED');
+    assert.equal((await dpSave(f,a,[t,{...u,dynamic_priority_target:'prio_low'}])).body.code,'PRO_REQUIRED');
+    assert.equal((await dpSave(f,a,[{...t,dynamic_priority_target:null},u])).status,200);
+    assert.equal((await dpStored(f,a))[0].dynamic_priority_target,null);
+});
+
+test('Dynamic Priority: malformed or tampered targets are rejected, including recurring templates',async()=>{
+    const {f,a}=await dpFixture();
+    for(const bad of [5,true,['prio_low'],{id:'prio_low'},'','missing_priority','x'.repeat(65)]){
+        const r=await dpSave(f,a,[dpTask('t',{dynamic_priority_target:bad})]);assert.equal(r.status,400,JSON.stringify(bad));assert.equal(r.body.code,'INVALID_DYNAMIC_PRIORITY');
+    }
+    assert.equal((await dpSave(f,a,[dpTask('t',{dynamic_priority_target:'custom_1'})],{settings:{custom_priorities:[{id:'custom_1',name:'Later',rank:9}]}})).status,200);
+    // A Free user cannot smuggle the setting in through a recurrence template that the Worker would instantiate later.
+    const free=await dpFixture({none:true}),tasks=[dpTask('t')],state={series:[],history:[]};
+    globalThis.TaskitatorRecurrence.start(tasks,state,'t',{kind:'daily',start:globalThis.TaskitatorRecurrence.today(Date.now(),0)},'series_template_dp');
+    state.series[0].nodes[0].task.dynamic_priority_target='prio_low';
+    const r=await dpSave(free.f,free.a,tasks,{recurrence_state:state});assert.equal(r.status,403);assert.equal(r.body.code,'PRO_REQUIRED');
+});
+
+test('Dynamic Priority: older clients cannot strip it; stale snapshots conflict without changing it',async()=>{
+    const {f,a}=await dpFixture();
+    assert.equal((await dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'})])).status,200);
+    const pulled=(await f.call('/sync/pull',a.token)).body;
+    const stripped=await save(f,a,[{...pulled.tasks[0],dynamic_priority_target:undefined}]);
+    assert.equal(stripped.status,428);
+    assert.equal((await f.call('/sync/push',a.token,'POST',{tasks:[dpTask('t')],settings:{},recurrence_schema:1,dynamic_priority_schema:1,base_version:pulled.version-1,mutation_id:'stale_device_one'})).status,409);
+    assert.equal((await dpStored(f,a))[0].dynamic_priority_target,'prio_low');
+});
+
+test('Dynamic Priority: AI-reviewed completion keeps the original priority and the setting untouched',async()=>{
+    const {f,a,review,confirm}=await setup([task('t',{priority_id:'prio_high',dynamic_priority_target:'prio_low'})],{dynamic_priority_schema:1});
+    const result=await review();assert.equal((await confirm(result.job_id)).status,200);
+    const [t]=(await f.call('/sync/pull',a.token)).body.tasks;
+    assert.equal(t.status,'completed');assert.equal(t.priority_id,'prio_high');assert.equal(t.dynamic_priority_target,'prio_low');
+    const ledger=(await f.call('/sync/pull',a.token)).body.completed_audit_ledger.at(-1);assert.equal(ledger.priority_rank,3);
+});

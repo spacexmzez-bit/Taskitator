@@ -797,6 +797,24 @@
                 </small>
             </div>
 
+
+            <!-- Dynamic Priority (Pro) -->
+            <div class="form-group dynamic-priority-box" id="createDynamicPriorityContainer">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="createDynamicPriorityCheckbox">
+                    <span>Dynamic Priority</span>
+                    <span class="pro-feature-pill">PRO</span>
+                </label>
+                <div id="createDynamicPriorityOptions" style="display: none; padding-left: 28px; margin-top: 6px;">
+                    <label for="createDynamicPriorityTarget" style="font-size: 0.78rem; color: var(--text-muted);">While only bonus work remains, use priority:</label>
+                    <select id="createDynamicPriorityTarget" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.85rem;"></select>
+                </div>
+                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                    Lowers this task's priority while only bonus subtasks remain, and restores it automatically when required work becomes unfinished.
+                </small>
+                <small id="createDynamicPriorityNotice" class="pro-consecutive-notice" style="display: none; margin-left: 28px;" role="status" aria-live="polite"></small>
+            </div>
+
             <!-- AI Proof Verification Option -->
             <div class="form-group">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -980,6 +998,23 @@
             <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
                 Bonus items won't block the parent task from completion if time or energy runs out.
             </small>
+        </div>
+
+        <!-- Dynamic Priority (Pro) -->
+        <div class="form-group dynamic-priority-box" id="editDynamicPriorityContainer">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="editDynamicPriorityCheckbox">
+                <span>Dynamic Priority</span>
+                <span class="pro-feature-pill">PRO</span>
+            </label>
+            <div id="editDynamicPriorityOptions" style="display: none; padding-left: 28px; margin-top: 6px;">
+                <label for="editDynamicPriorityTarget" style="font-size: 0.78rem; color: var(--text-muted);">While only bonus work remains, use priority:</label>
+                <select id="editDynamicPriorityTarget" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.85rem;"></select>
+            </div>
+            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                Lowers this task's priority while only bonus subtasks remain, and restores it automatically when required work becomes unfinished.
+            </small>
+            <small id="editDynamicPriorityNotice" class="pro-consecutive-notice" style="display: none; margin-left: 28px;" role="status" aria-live="polite"></small>
         </div>
 
         <!-- AI Proof Verification in Details -->
