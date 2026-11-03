@@ -2220,6 +2220,7 @@ window.TaskitatorApp = (() => {
                 if (cd) cd.textContent = `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
                 if (bar) bar.style.width = `${Math.max(0, Math.min(100, remaining / engine.PLANNING_WINDOW_MS * 100))}%`;
             } else if (planning?.open) { this.draft = null; this.refresh(); }
+            if (view.flexible?.gap_until && now >= view.flexible.gap_until) this.refresh();
             const active = view.flexible?.active;
             if (active) {
                 const left = document.getElementById('flexAllowanceLeft');
@@ -2245,7 +2246,7 @@ window.TaskitatorApp = (() => {
                         ['Break', active ? `Active until ${this.clockText(active.endTime, view.timezone)}` : 'None active'],
                         ['Resets', `${this.clockText(view.cycle_end, view.timezone)} (${view.timezone})`]
                     ];
-                    if (view.system !== 'scheduled') items.push(['Allowance', `${this.minutesText(engine.allowance().remaining)} of 3h left`]);
+                    if (view.system !== 'scheduled') { const al = engine.allowance(); items.push(['Allowance', `${this.minutesText(al.remaining)} of ${this.minutesText(al.total)} left`]); }
                     const st = view.strict_today;
                     if (st?.covered && st.pending) items.push(['Strict deadline', `${this.clockText(st.deadline, view.timezone)} · ${st.breaks.length ? st.breaks.length + ' break' + (st.breaks.length === 1 ? '' : 's') : 'no breaks'}`]);
                     this.summary.innerHTML = items.map(([k, v]) => `<div class="break-summary-item"><span>${this.esc(k)}</span><strong>${this.esc(v)}</strong></div>`).join('');
@@ -2261,6 +2262,9 @@ window.TaskitatorApp = (() => {
                 tab.title = blocked ? `${names[name]} becomes available after the next day reset.` : '';
             });
             this.modal.querySelectorAll('[role="tabpanel"][data-break-panel]').forEach(panel => { panel.hidden = panel.dataset.breakPanel !== this.tab; });
+            // Static instructions follow today's daily maximum (Settings → Day & week).
+            const total = this.minutesText(view?.allowance?.total || 180);
+            this.modal.querySelectorAll('[data-allowance-total]').forEach(el => { el.textContent = total; });
             this.modal.querySelectorAll('[data-break-state]').forEach(chip => {
                 const name = chip.dataset.breakState;
                 const [state, text] = !view ? ['', ''] : view.system === name ? ['locked', '🔒 Locked for today']
@@ -2355,7 +2359,7 @@ window.TaskitatorApp = (() => {
             if (view.system === 'scheduled') { this.flexBody.innerHTML = this.blocked(view, 'flexible'); return; }
             const engine = this.engine(), f = view.flexible, a = f.active, allowance = engine.allowance(), zone = view.timezone;
             const tone = this.allowanceTone(allowance.percent);
-            const meter = `<div class="flex-allowance-meter flex-${tone}" role="meter" aria-label="Break allowance left" aria-valuemin="0" aria-valuemax="180" aria-valuenow="${allowance.remaining}">
+            const meter = `<div class="flex-allowance-meter flex-${tone}" role="meter" aria-label="Break allowance left" aria-valuemin="0" aria-valuemax="${allowance.total}" aria-valuenow="${allowance.remaining}">
                 <div class="flex-allowance-head"><span>Allowance left</span><strong id="flexAllowanceLeft">${this.esc(this.minutesText(allowance.remaining))}</strong></div>
                 <div class="flex-allowance-track"><div class="flex-allowance-fill" style="width:${Math.max(0, Math.min(100, allowance.percent))}%"></div></div></div>`;
             if (a) {
@@ -2370,7 +2374,9 @@ window.TaskitatorApp = (() => {
                     </div>`;
                 return;
             }
-            const reason = f.reason;
+            // The strict gap is shown as a clock time so the message never goes stale.
+            const gapOpen = f.gap_until && now < f.gap_until;
+            const reason = gapOpen ? `Flexible Strict Mode needs ${f.gap_minutes} minutes between breaks. Your next break can start at ${this.clockText(f.gap_until, zone)}.` : f.reason;
             const presetButtons = f.presets.map(p => `<button type="button" class="icon-btn flex-preset ${p.available ? '' : 'is-unavailable'}" data-flex="preset" data-minutes="${p.minutes}"
                 aria-disabled="${!p.available}" data-reason="${this.esc(p.reason)}" title="${this.esc(p.reason)}">${p.minutes === 60 ? '1 hour' : p.minutes + ' min'}</button>`).join('');
             this.flexBody.innerHTML = `${meter}
@@ -2382,7 +2388,7 @@ window.TaskitatorApp = (() => {
                     <button type="button" class="icon-btn ${reason ? 'is-unavailable' : ''}" data-flex="custom" aria-disabled="${!!reason}" data-reason="${this.esc(reason)}">Start</button>
                 </div>
                 <button type="button" class="icon-btn btn-block ${reason ? 'is-unavailable' : 'btn-primary btn-solid-primary'}" data-flex="until" aria-disabled="${!!reason}" data-reason="${this.esc(reason)}">Until allowance ends (${this.esc(this.minutesText(f.max_custom))})</button>
-                ${f.strict ? `<p class="break-panel-note strict-note">🔒 Flexible Strict Mode: every break lasts at least <strong>${f.minimum} minutes</strong>.</p>` : ''}
+                ${f.strict ? `<p class="break-panel-note strict-note">🔒 Flexible Strict Mode: every break lasts at least <strong>${f.minimum} minutes</strong>, and at least <strong>${f.minimum} minutes</strong> must pass before the next one.</p>` : ''}
                 ${view.strict_today?.covered && view.strict_today.pending && !view.system ? `<p class="break-panel-note strict-note">Starting a break before ${this.esc(this.clockText(view.strict_today.deadline, view.timezone))} keeps today Flexible; otherwise Scheduled Strict Mode locks Scheduled.</p>` : ''}
                 <small class="break-panel-note">Starts now. It can be ended after ${f.minimum} minutes and stops by itself at its length, when the allowance runs out, or at the day reset. Each started minute counts as a full minute.</small>`;
         },
@@ -2451,7 +2457,7 @@ window.TaskitatorApp = (() => {
             const rows = this.getCurrentRowsData().filter(r => r.start || r.end);
             const saved = view.scheduled.saved;
             if (rows.length || !saved) {
-                const check = TaskitatorBreaks.validate(rows, engine.getLogicalDayBounds());
+                const check = TaskitatorBreaks.validate(rows, engine.getLogicalDayBounds(), view.allowance?.total || 180);
                 if (!check.valid) { this.showError(check.error); return; }
             }
             if (!saved) {

@@ -1547,7 +1547,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-dual-breaks-v2'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-dual-breaks-v3'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);
@@ -2099,4 +2099,52 @@ test('strict break modes card: locks enabled modes while tasks remain and saves 
     const view=f.engine.current();view.strict.locked=true;view.strict.required_tasks=2;ui.view=view;ui.render();
     assert.match(card.innerHTML,/2 required tasks left today/);
     assert.match(card.innerHTML,/id="strictFlexToggle"[^>]*checked[^>]*disabled/);
+});
+
+test('break settings card: daily maximum, minimum capped at the maximum, tight-limit warning and bypass unlock',async()=>{
+    const f=browser('2026-11-04T06:00:00Z','Asia/Riyadh');
+    await f.engine.refresh();
+    const card={innerHTML:'',addEventListener(){}};
+    f.context.document={getElementById:id=>id==='strictBreaksCard'?card:null,readyState:'complete'};
+    vm.runInContext(source('strict-breaks-ui.js'),f.context);
+    const ui=f.window.TaskitatorStrictBreaksUI;ui.card=card;ui.load();
+    assert.match(card.innerHTML,/Daily break maximum/);
+    assert.match(card.innerHTML,/<option value="180" selected>3 hours \(default\)/);
+    assert.match(card.innerHTML,/<option value="60" >1 hour<\/option>/);assert.match(card.innerHTML,/<option value="75" >1h 15m/);
+    assert.equal((card.innerHTML.match(/<option value="\d+"[^>]*>(?:\d+ hours?|\d+h \d+m)/g)||[]).length,9,'1h to 3h in 15-minute steps');
+    // Lowering the maximum caps the minimum and shows the warning when minimum >= 75% of it.
+    ui.onInput({target:{id:'strictFlexToggle',checked:true,dataset:{}}});
+    ui.onInput({target:{id:'strictFlexMinimum',value:'60',dataset:{}}});
+    ui.onInput({target:{id:'strictAllowance',value:'60',dataset:{}}});
+    assert.equal(ui.draft.allowance,60);assert.equal(ui.draft.flexible.minimum,60);
+    assert.match(card.innerHTML,/strict-warning[^>]*>⚠️ With a 60-minute minimum and a 1 hour daily maximum, you get at most 1 Flexible break a day/);
+    ui.onInput({target:{id:'strictFlexMinimum',value:'40',dataset:{}}});
+    assert.doesNotMatch(card.innerHTML,/strict-warning/,'40 is under 75% of 60');
+    ui.onInput({target:{id:'strictFlexMinimum',value:'45',dataset:{}}});
+    // The warning asks before saving; declining saves nothing.
+    let asked=null;f.window.TaskitatorConfirm=async o=>{asked=o;return false;};
+    await ui.save();
+    assert.equal(asked.title,'Very few Flexible breaks');assert.equal(f.engine.current().allowance.total,180,'not saved');
+    f.window.TaskitatorConfirm=async()=>true;
+    await ui.save();
+    assert.equal(f.engine.current().allowance.total,60);assert.equal(f.engine.current().flexible.minimum,45);
+    // One lock for the whole card; a bypass unlocks it.
+    const view=f.engine.current();view.strict.locked=true;view.strict.required_tasks=1;ui.view=view;ui.render();
+    assert.match(card.innerHTML,/1 required task left today.*emergency bypass/);
+    assert.match(card.innerHTML,/id="strictAllowance"[^>]*disabled/);assert.match(card.innerHTML,/id="strictSchedToggle"[^>]*disabled/);
+    view.strict.locked=false;view.strict.bypass=true;ui.render();
+    assert.match(card.innerHTML,/Emergency bypass is on/);assert.doesNotMatch(card.innerHTML,/id="strictAllowance"[^>]*disabled/);
+});
+
+test('break panel text follows the daily maximum and shows the strict gap as a clock time',()=>{
+    const app=fs.readFileSync(new URL('app.js',TEST_ROOT),'utf8'),html=fs.readFileSync(new URL('index.html',TEST_ROOT),'utf8');
+    assert.equal((html.match(/data-allowance-total/g)||[]).length,3);
+    assert.doesNotMatch(html.slice(html.indexOf('id="breakModal"'),html.indexOf('<!-- Modal: Completed Tasks -->')),/3 hours|3-hour/);
+    assert.match(app,/of \$\{this\.minutesText\(al\.total\)\} left/);
+    assert.match(app,/Your next break can start at \$\{this\.clockText\(f\.gap_until, zone\)\}/);
+    assert.match(app,/TaskitatorBreaks\.validate\(rows, engine\.getLogicalDayBounds\(\), view\.allowance\?\.total \|\| 180\)/);
+    const tour=fs.readFileSync(new URL('tutorial-integration.js',TEST_ROOT),'utf8');
+    assert.match(tour,/lower this maximum in \*\*Settings → Day & week\*\*/);
+    assert.match(tour,/same time must pass before the next one/);
+    assert.match(tour,/during an emergency bypass/);
 });

@@ -642,12 +642,12 @@
                 <div class="break-system-title"><strong>📅 Scheduled Breaks</strong><span class="break-system-state" data-break-state="scheduled"></span></div>
                 <ol class="break-system-steps">
                     <li>Press Start planning. You get 10 minutes to enter your breaks.</li>
-                    <li>Add up to 3 breaks that don't overlap, 3 hours in total.</li>
+                    <li>Add up to 3 breaks that don't overlap, <span data-allowance-total>3h</span> in total.</li>
                     <li>Saving locks Scheduled for today.</li>
                 </ol>
             </div>
             <p id="breakModalStatusDesc" class="break-tab-desc">
-                Plan up to 3 non-overlapping breaks (≤ 3 hours total) in one 10-minute window.
+                Plan up to 3 non-overlapping breaks (≤ <span data-allowance-total>3h</span> total) in one 10-minute window.
             </p>
             <div id="breakRowsContainer" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px;"></div>
             <div class="break-edit-actions">
@@ -661,7 +661,7 @@
                 <div class="break-system-title"><strong>☕ Flexible Breaks</strong><span class="break-system-state" data-break-state="flexible"></span></div>
                 <ol class="break-system-steps">
                     <li>Pick 30 min, 45 min, 1 hour, a custom length, or until your allowance ends.</li>
-                    <li>The break starts immediately and counts every started minute from your 3-hour daily allowance.</li>
+                    <li>The break starts immediately and counts every started minute from your daily allowance (<span data-allowance-total>3h</span>).</li>
                     <li>End it after the minimum, or let it stop by itself. Starting a break locks Flexible for today.</li>
                 </ol>
             </div>

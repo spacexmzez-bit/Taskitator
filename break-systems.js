@@ -6,7 +6,9 @@
 import { fail } from './pro-backend.js';
 
 export const BREAKS = Object.freeze({
-    allowance: 180,          // minutes per logical day, shared by both systems
+    allowance: 180,          // default (and largest) minutes per logical day, shared by both systems
+    allowanceMin: 60,        // smallest daily maximum a user can choose
+    allowanceStep: 15,       // daily maximum is chosen in 15-minute steps
     flexMinimum: 10,         // minutes before a Flexible break can be ended manually
     presets: Object.freeze([30, 45, 60]),
     window: 600000,          // Scheduled planning window (10 minutes)
@@ -70,8 +72,18 @@ export function migrateLegacy(r, old, now) {
 export function defaultStrict() {
     const days = {};
     for (let d = 0; d < 7; d++) days[d] = { mode: 'default', breaks: [] };
-    return { flexible: { enabled: false, minimum: STRICT.flexMin },
+    return { allowance: BREAKS.allowance, flexible: { enabled: false, minimum: STRICT.flexMin },
         scheduled: { enabled: false, deadline_minutes: 8 * 60, default: [], days }, timezone: null };
+}
+// Daily maximum for a config (older saved configs have none: 3 hours). A day keeps the
+// maximum it was locked with, so a later change never rewrites a chosen day.
+export const allowanceOf = cfg => Number.isInteger(cfg?.allowance) ? cfg.allowance : BREAKS.allowance;
+const limitOf = (r, cfg) => Number.isInteger(r?.allowance) ? r.allowance : allowanceOf(cfg);
+// Flexible Strict Mode: after a break ends, the next one can start only once a gap as long
+// as the strict minimum has passed. Normal Flexible Breaks have no gap.
+export function flexGapUntil(r, cfg) {
+    if (!cfg?.flexible?.enabled || r.flexible.active || !r.flexible.sessions.length) return 0;
+    return Math.max(...r.flexible.sessions.map(s => s.ended_at)) + cfg.flexible.minimum * MIN;
 }
 // Strict configs never change a day that already used the previous one: each saved
 // version starts on `from` (a logical date); earlier days keep the version before it.
@@ -91,10 +103,10 @@ export function strictDay(r, cfg) {
         breaks: day.mode === 'custom' ? day.breaks : s.default };
 }
 // Validate a strict plan's clock times against a real day; strict plans may be empty.
-function strictPlan(list, b, label) {
+function strictPlan(list, b, label, limit) {
     if (!Array.isArray(list) || list.length > 3) throw fail(400, 'INVALID_STRICT', `${label}: use at most 3 breaks.`);
     if (!list.length) return [];
-    const checked = core().validate(list.map(x => ({ start: x?.start, end: x?.end })), b);
+    const checked = core().validate(list.map(x => ({ start: x?.start, end: x?.end })), b, limit);
     if (!checked.valid) throw fail(400, 'INVALID_STRICT', `${label}: ${checked.error}`);
     return checked.breaks.map(x => ({ start: x.start, end: x.end }));
 }
@@ -102,19 +114,24 @@ export function normalizeStrict(input, b) {
     if (!input || typeof input !== 'object') throw fail(400, 'INVALID_STRICT', 'Strict settings are missing.');
     const f = input.flexible || {}, s = input.scheduled || {}, out = defaultStrict();
     if (typeof f.enabled !== 'boolean' || typeof s.enabled !== 'boolean') throw fail(400, 'INVALID_STRICT', 'Turn each strict mode on or off.');
+    const allowance = input.allowance ?? BREAKS.allowance;
+    if (!Number.isInteger(allowance) || allowance < BREAKS.allowanceMin || allowance > BREAKS.allowance || allowance % BREAKS.allowanceStep)
+        throw fail(400, 'INVALID_ALLOWANCE', 'Choose a daily maximum from 1 to 3 hours, in 15-minute steps.');
     if (!Number.isInteger(f.minimum) || f.minimum < STRICT.flexMin || f.minimum > STRICT.flexMax)
         throw fail(400, 'INVALID_STRICT', `The Flexible minimum must be ${STRICT.flexMin} to ${STRICT.flexMax} minutes.`);
     const d = s.deadline_minutes;
     if (!Number.isInteger(d) || d < STRICT.deadlineMin || d > STRICT.deadlineMax || d % STRICT.deadlineStep)
         throw fail(400, 'INVALID_STRICT', 'Choose a deadline between 1 and 18 hours after your day starts, in 15-minute steps.');
+    if (f.minimum > allowance) throw fail(400, 'INVALID_STRICT', 'The Flexible minimum can’t be longer than your daily maximum.');
+    out.allowance = allowance;
     out.flexible = { enabled: f.enabled, minimum: f.minimum };
     out.scheduled.enabled = s.enabled; out.scheduled.deadline_minutes = d;
-    out.scheduled.default = strictPlan(s.default ?? [], b, 'Default plan');
+    out.scheduled.default = strictPlan(s.default ?? [], b, 'Default plan', allowance);
     const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     for (let i = 0; i < 7; i++) {
         const day = s.days?.[i] ?? s.days?.[String(i)] ?? { mode: 'default' };
         if (!['default', 'custom', 'off'].includes(day.mode)) throw fail(400, 'INVALID_STRICT', `${names[i]}: choose the default plan, its own plan, or not covered.`);
-        out.scheduled.days[i] = { mode: day.mode, breaks: day.mode === 'custom' ? strictPlan(day.breaks ?? [], b, names[i]) : [] };
+        out.scheduled.days[i] = { mode: day.mode, breaks: day.mode === 'custom' ? strictPlan(day.breaks ?? [], b, names[i], allowance) : [] };
     }
     out.timezone = typeof input.timezone === 'string' ? core().timezone(input.timezone) : null;
     return out;
@@ -151,27 +168,28 @@ export function requiredTasksToday(snapshot, now = Date.now()) {
 export function settle(r, now, cfg = null) {
     if (r.planning && !r.planning.saved && now >= r.planning.deadline) r.planning = null;
     const a = r.flexible.active;
-    if (a && now >= a.planned_end) finish(r, a.planned_end, 'automatic');
+    if (a && now >= a.planned_end) finish(r, a.planned_end, 'automatic', limitOf(r, cfg));
     const strict = strictDay(r, cfg);
     if (strict?.covered && !r.system && now >= strict.deadline) {
         let breaks = [], invalid = false;
-        if (strict.breaks.length) { const c = core().validate(strict.breaks, bounds(r)); breaks = c.valid ? c.breaks : []; invalid = !c.valid; }
+        if (strict.breaks.length) { const c = core().validate(strict.breaks, bounds(r), allowanceOf(cfg)); breaks = c.valid ? c.breaks : []; invalid = !c.valid; }
+        r.allowance = limitOf(r, cfg);
         r.planning = null; // an unsaved planning window is discarded
         r.system = 'scheduled'; r.locked_at = strict.deadline; r.lock_source = 'strict';
         r.scheduled = { breaks, saved_at: strict.deadline, strict: true, ...(invalid ? { strict_invalid: true } : {}) };
     }
     return r;
 }
-function finish(r, endedAt, reason) {
+function finish(r, endedAt, reason, limit = limitOf(r)) {
     const a = r.flexible.active, charged = chargeMinutes(a.started_at, endedAt);
-    r.flexible.used = Math.min(BREAKS.allowance, r.flexible.used + charged);
+    r.flexible.used = Math.min(limit, r.flexible.used + charged);
     r.flexible.sessions.push({ id: a.id, operation_id: a.operation_id, mode: a.mode, minutes: a.minutes,
         started_at: a.started_at, ended_at: endedAt, charged, reason });
     r.flexible.active = null;
 }
-function usedNow(r, now) {
+function usedNow(r, now, limit = limitOf(r)) {
     const a = r.flexible.active;
-    return Math.min(BREAKS.allowance, r.flexible.used + (a ? chargeMinutes(a.started_at, Math.min(now, a.planned_end)) : 0));
+    return Math.min(limit, r.flexible.used + (a ? chargeMinutes(a.started_at, Math.min(now, a.planned_end)) : 0));
 }
 function scheduledActive(r, now) {
     if (r.system !== 'scheduled' || planningOpen(r, now)) return false;
@@ -230,7 +248,8 @@ export class BreakSystems {
     }
 
     view(r, now, cfg = null, extra = {}) {
-        const used = usedNow(r, now), remaining = BREAKS.allowance - used, a = r.flexible.active, minimum = flexMinimum(cfg);
+        const total = limitOf(r, cfg), used = usedNow(r, now, total), remaining = total - used, a = r.flexible.active, minimum = flexMinimum(cfg);
+        const gapUntil = flexGapUntil(r, cfg), gap = gapUntil > now ? gapUntil : null;
         const untilReset = r.cycle_end - now, saved = !!r.scheduled.saved_at, open = planningOpen(r, now);
         let planReason = '';
         if (r.system === 'flexible') planReason = 'Flexible Breaks are selected for today. Scheduled becomes available after the day resets.';
@@ -243,6 +262,7 @@ export class BreakSystems {
         let flexReason = '';
         if (r.system === 'scheduled') flexReason = 'Scheduled Breaks are selected for today. Flexible becomes available after the day resets.';
         else if (a) flexReason = 'A Flexible break is already running.';
+        else if (gap) flexReason = `Flexible Strict Mode needs ${minimum} minutes between breaks. You can start again in ${Math.ceil((gap - now) / MIN)} min.`;
         else if (remaining < minimum) flexReason = `Less than ${minimum} minutes of today’s break allowance remain.`;
         else if (untilReset < minimum * MIN) flexReason = `Less than ${minimum} minutes remain before the day resets.`;
         const presets = BREAKS.presets.map(minutes => ({ minutes, available: !flexReason && minutes <= remaining && minutes >= minimum,
@@ -252,13 +272,13 @@ export class BreakSystems {
             date: r.date, timezone: r.timezone, day_start_hour: r.day_start_hour, cycle_start: r.cycle_start, cycle_end: r.cycle_end,
             reset_at: new Date(r.cycle_end).toISOString(), server_now: now, revision: r.revision,
             system: r.system, locked_at: r.locked_at, lock_source: r.lock_source,
-            allowance: { total: BREAKS.allowance, used, remaining },
+            allowance: { total, used, remaining },
             scheduled: { breaks: r.scheduled.breaks, saved, saved_at: r.scheduled.saved_at, closing_at: r.cycle_end - BREAKS.closing,
                 planning: r.planning ? { started_at: r.planning.started_at, deadline: r.planning.deadline, saved: !!r.planning.saved, open } : null,
                 can_start_planning: !planReason && !open, can_edit: r.system !== 'flexible' && open, reason: planReason, final: saved && !open },
             flexible: {
                 active: a ? { id: a.id, mode: a.mode, minutes: a.minutes, started_at: a.started_at, ends_at: a.planned_end, can_end_at: a.minimum_end, minimum: a.minimum || BREAKS.flexMinimum } : null,
-                minimum, strict: !!cfg?.flexible?.enabled, presets, max_custom: Math.max(0, remaining), can_start: !flexReason, reason: flexReason,
+                minimum, strict: !!cfg?.flexible?.enabled, gap_until: gap, gap_minutes: cfg?.flexible?.enabled ? minimum : 0, presets, max_custom: Math.max(0, remaining), can_start: !flexReason, reason: flexReason,
                 sessions: r.flexible.sessions.map(({ operation_id, ...s }) => s)
             },
             strict_today: strict ? { covered: strict.covered, weekday: strict.weekday, ...(strict.covered ? { deadline: strict.deadline, mode: strict.mode,
@@ -272,20 +292,26 @@ export class BreakSystems {
     async snapshot(store, account) { return (await this.service.readTaskSnapshot(store, account)).snapshot; }
 
     async strictDoc(store, account) { return await store.get(strictKey(account)) || null; }
-    strictInfo(doc, snapshot, today, now) {
+    // Break settings (daily maximum and strict modes) are locked while today's required tasks
+    // remain, exactly like the phone. A break does not unlock them; an emergency bypass does.
+    async bypassActive(store, account) {
+        try { return !!(await this.service.protection?.bypass(store, account)); } catch { return false; }
+    }
+    strictInfo(doc, snapshot, today, now, bypass = false) {
         const required = requiredTasksToday(snapshot, now);
-        return { strict: { config: doc?.current?.config || defaultStrict(), effective_today: strictFor(doc, today.date),
+        return { strict: { config: { ...defaultStrict(), ...(doc?.current?.config || {}), allowance: allowanceOf(doc?.current?.config) },
+            effective_today: strictFor(doc, today.date),
             pending_from: doc?.current?.from && doc.current.from > today.date ? doc.current.from : null,
-            revision: doc?.revision || 0, locked: required > 0, required_tasks: required,
-            limits: STRICT } };
+            revision: doc?.revision || 0, locked: required > 0 && !bypass, required_tasks: required, bypass: !!bypass,
+            limits: { ...STRICT, allowanceMin: BREAKS.allowanceMin, allowanceMax: BREAKS.allowance, allowanceStep: BREAKS.allowanceStep } } };
     }
 
     async state(account, zone, now = Date.now()) {
         return this.storage.transaction(async tx => {
             const snapshot = await this.snapshot(tx, account), doc = await this.strictDoc(tx, account);
             const { record } = await this.resolve(tx, account, snapshot, zone || doc?.current?.config?.timezone, now);
-            const cfg = strictFor(doc, record.date);
-            return this.view(settle(record, now, cfg), now, cfg, this.strictInfo(doc, snapshot, record, now));
+            const cfg = strictFor(doc, record.date), bypass = await this.bypassActive(tx, account);
+            return this.view(settle(record, now, cfg), now, cfg, this.strictInfo(doc, snapshot, record, now, bypass));
         });
     }
 
@@ -298,32 +324,37 @@ export class BreakSystems {
             const { record: r, index, created } = await this.resolve(tx, account, snapshot, body.timezone, now);
             const cfg = strictFor(doc, r.date);
             settle(r, now, cfg); // a passed strict deadline is applied before any conflicting action
+            const bypass = await this.bypassActive(tx, account);
             if (action === 'strict_save') {
-                const next = await this.saveStrict(tx, account, doc, r, snapshot, body, now);
+                const next = await this.saveStrict(tx, account, doc, r, snapshot, body, now, bypass);
                 await this.persist(tx, account, r, index, created);
-                return this.view(r, now, strictFor(next, r.date), this.strictInfo(next, snapshot, r, now));
+                return this.view(r, now, strictFor(next, r.date), this.strictInfo(next, snapshot, r, now, bypass));
             }
             const replay = this.apply(r, action, body, now, cfg);
-            const info = this.strictInfo(doc, snapshot, r, now);
+            if (r.system && !Number.isInteger(r.allowance)) r.allowance = allowanceOf(cfg); // the day keeps its maximum
+            const info = this.strictInfo(doc, snapshot, r, now, bypass);
             if (replay) return { ...this.view(r, now, cfg, info), replayed: true };
             await this.persist(tx, account, r, index, created);
             return this.view(r, now, cfg, info);
         });
     }
 
-    // Strict settings can be turned on at any time. Changing or turning off a strict mode
-    // that is on requires no required (non-bonus) tasks for today. A change applies today
-    // only while today has no system yet and today's strict deadline has not passed;
-    // otherwise it applies from the next logical day, so a locked day is never rewritten.
-    async saveStrict(tx, account, doc, r, snapshot, body, now) {
+    // Any change to break settings (daily maximum, either strict mode) needs today's required
+    // (non-bonus) tasks to be done, or an active emergency bypass; a break never unlocks it.
+    // A change applies today only while today has no system yet and today's strict deadline
+    // has not passed; otherwise it applies from the next logical day, so a locked day is
+    // never rewritten.
+    async saveStrict(tx, account, doc, r, snapshot, body, now, bypass = false) {
         if (!Number.isSafeInteger(body.revision) || body.revision !== (doc?.revision || 0))
-            throw fail(409, 'STRICT_CHANGED', 'Strict settings changed on another device. Reload them before saving.');
-        const next = normalizeStrict({ ...body.config, timezone: body.timezone ?? body.config?.timezone }, bounds(r));
-        const latest = doc?.current?.config || defaultStrict();
-        const touched = mode => latest[mode].enabled && !same(latest[mode], next[mode]);
+            throw fail(409, 'STRICT_CHANGED', 'Break settings changed on another device. Reload them before saving.');
+        const latest = { ...defaultStrict(), ...(doc?.current?.config || {}), allowance: allowanceOf(doc?.current?.config) };
+        // An older page that doesn't know the daily maximum keeps the saved one.
+        const allowance = body.config?.allowance ?? latest.allowance;
+        const next = normalizeStrict({ ...body.config, allowance, timezone: body.timezone ?? body.config?.timezone }, bounds(r));
+        const changed = ['allowance', 'flexible', 'scheduled'].some(k => !same(latest[k], next[k]));
         const required = requiredTasksToday(snapshot, now);
-        if (required && (touched('flexible') || touched('scheduled')))
-            throw fail(403, 'STRICT_LOCKED', `Strict modes can’t be changed or turned off while ${required} required task${required === 1 ? '' : 's'} for today ${required === 1 ? 'is' : 'are'} unfinished.`);
+        if (required && changed && !bypass)
+            throw fail(403, 'STRICT_LOCKED', `Break settings can’t be changed while ${required} required task${required === 1 ? '' : 's'} for today ${required === 1 ? 'is' : 'are'} unfinished. An emergency bypass lifts this.`);
         const deadline = next.scheduled.enabled ? r.cycle_start + next.scheduled.deadline_minutes * MIN : Infinity;
         const today = !r.system && now < deadline && !r.flexible.active;
         const from = today ? r.date : addDate(r.date, 1);
@@ -365,7 +396,7 @@ export class BreakSystems {
             if (!Array.isArray(list) || list.length > 3) throw fail(400, 'INVALID_SCHEDULE', 'Enter between 1 and 3 complete break times.');
             let breaks = [];
             if (list.length) {
-                const checked = core().validate(list, bounds(r));
+                const checked = core().validate(list, bounds(r), limitOf(r, cfg));
                 if (!checked.valid) throw fail(400, 'INVALID_SCHEDULE', checked.error);
                 breaks = checked.breaks;
             } else if (!r.scheduled.saved_at) throw fail(400, 'INVALID_SCHEDULE', 'Add at least one break before the first save.');
@@ -380,7 +411,9 @@ export class BreakSystems {
             if (r.flexible.active?.operation_id === op || r.flexible.sessions.some(s => s.operation_id === op)) return true;
             if (r.system === 'scheduled') throw fail(409, 'SYSTEM_LOCKED', 'Scheduled Breaks are selected for today.');
             if (r.flexible.active) throw fail(409, 'BREAK_ACTIVE', 'A Flexible break is already running.');
-            const remaining = BREAKS.allowance - r.flexible.used;
+            const gap = flexGapUntil(r, cfg);
+            if (gap > now) throw fail(409, 'STRICT_GAP', `Flexible Strict Mode needs ${minimum} minutes between breaks. You can start again in ${Math.ceil((gap - now) / MIN)} min.`);
+            const remaining = limitOf(r, cfg) - r.flexible.used;
             if (remaining < minimum) throw fail(409, 'ALLOWANCE_LOW', `Less than ${minimum} minutes of today’s break allowance remain.`);
             if (r.cycle_end - now < minimum * MIN) throw fail(409, 'RESET_SOON', `Less than ${minimum} minutes remain before the day resets.`);
             let minutes = body.minutes;
@@ -407,7 +440,7 @@ export class BreakSystems {
         }
         if (body.break_id && body.break_id !== a.id) throw fail(409, 'BREAK_CHANGED', 'This break has already ended. Refresh the break panel.');
         if (now < a.minimum_end) throw fail(409, 'MINIMUM_NOT_REACHED', `This Flexible break can be ended after ${a.minimum || BREAKS.flexMinimum} minutes.`);
-        finish(r, now, 'manual');
+        finish(r, now, 'manual', limitOf(r, cfg));
         return false;
     }
 

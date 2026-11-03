@@ -263,7 +263,8 @@ import { BreakSystems } from './break-systems.js';
         if(endTime<=startTime)endTime=wall(addDate(endDate,1),end,z);
         return {startTime,endTime};
     }
-    function validate(list,bounds){
+    // limit: the day's maximum total in minutes (default 3 hours).
+    function validate(list,bounds,limit=180){
         if(!Array.isArray(list)||!list.length||list.length>3)return {valid:false,error:'Enter between 1 and 3 complete break times before locking the schedule.'};
         const result=[];let total=0;
         try{for(const b of list){
@@ -275,7 +276,7 @@ import { BreakSystems } from './break-systems.js';
             const clock=value=>{const p=parts(value,bounds.timezone);return String(p.h).padStart(2,'0')+':'+String(p.m).padStart(2,'0')+(p.s?':'+String(p.s).padStart(2,'0'):'');};
             total+=duration;result.push({start:String(b.start).includes('T')?clock(startTime):b.start,end:String(b.end).includes('T')?clock(endTime):b.end,start_at:new Date(startTime).toISOString(),end_at:new Date(endTime).toISOString()});
         }
-        if(total>180)throw Error('Total break time exceeds the 3-hour daily limit.');
+        if(total>limit)throw Error(limit===180?'Total break time exceeds the 3-hour daily limit.':`Total break time exceeds your daily maximum of ${Math.floor(limit/60)}h${limit%60?' '+limit%60+'m':''}.`);
         const sorted=[...result].sort((a,b)=>Date.parse(a.start_at)-Date.parse(b.start_at));
         if(sorted.some((b,i)=>i&&Date.parse(sorted[i-1].end_at)>Date.parse(b.start_at)))throw Error('Breaks cannot overlap.');
         return {valid:true,breaks:result,totalMinutes:total};

@@ -336,7 +336,8 @@ window.TaskitatorSafety = {
         if(endTime<=startTime)endTime=wall(addDate(endDate,1),end,z);
         return {startTime,endTime};
     }
-    function validate(list,bounds){
+    // limit: the day's maximum total in minutes (default 3 hours).
+    function validate(list,bounds,limit=180){
         if(!Array.isArray(list)||!list.length||list.length>3)return {valid:false,error:'Enter between 1 and 3 complete break times before locking the schedule.'};
         const result=[];let total=0;
         try{for(const b of list){
@@ -348,7 +349,7 @@ window.TaskitatorSafety = {
             const clock=value=>{const p=parts(value,bounds.timezone);return String(p.h).padStart(2,'0')+':'+String(p.m).padStart(2,'0')+(p.s?':'+String(p.s).padStart(2,'0'):'');};
             total+=duration;result.push({start:String(b.start).includes('T')?clock(startTime):b.start,end:String(b.end).includes('T')?clock(endTime):b.end,start_at:new Date(startTime).toISOString(),end_at:new Date(endTime).toISOString()});
         }
-        if(total>180)throw Error('Total break time exceeds the 3-hour daily limit.');
+        if(total>limit)throw Error(limit===180?'Total break time exceeds the 3-hour daily limit.':`Total break time exceeds your daily maximum of ${Math.floor(limit/60)}h${limit%60?' '+limit%60+'m':''}.`);
         const sorted=[...result].sort((a,b)=>Date.parse(a.start_at)-Date.parse(b.start_at));
         if(sorted.some((b,i)=>i&&Date.parse(sorted[i-1].end_at)>Date.parse(b.start_at)))throw Error('Breaks cannot overlap.');
         return {valid:true,breaks:result,totalMinutes:total};
@@ -813,8 +814,8 @@ const TaskitatorEngine = {
             const v=this.current();if(!v)return null;
             const a=v.flexible?.active,now=this.serverNow();
             const live=a?Math.ceil((Math.min(now,a.ends_at)-a.started_at)/60000)-Math.ceil((Math.min(v.server_now,a.ends_at)-a.started_at)/60000):0;
-            const used=Math.min(this.ALLOWANCE_MINUTES,v.allowance.used+Math.max(0,live));
-            return {total:this.ALLOWANCE_MINUTES,used,remaining:this.ALLOWANCE_MINUTES-used,percent:(this.ALLOWANCE_MINUTES-used)/this.ALLOWANCE_MINUTES*100};
+            const total=v.allowance.total||this.ALLOWANCE_MINUTES,used=Math.min(total,v.allowance.used+Math.max(0,live));
+            return {total,used,remaining:total-used,percent:(total-used)/total*100};
         },
         getActiveBreak(){
             const now=this.serverNow(),v=this.current(),a=v?.flexible?.active;
@@ -1166,13 +1167,19 @@ window.TaskitatorEngine = TaskitatorEngine;
 // <<< MODULE_END: audit-engine.js >>>
 // <<< MODULE_START: strict-breaks-ui.js >>>
 // File: strict-breaks-ui.js
-// Settings → Day & week: Flexible and Scheduled Strict Modes. The Worker validates and
-// enforces everything; this card only edits a draft and shows the server's answer.
+// Settings → Day & week: daily break maximum plus Flexible and Scheduled Strict Modes.
+// The Worker validates and enforces everything; this card only edits a draft and shows
+// the server's answer.
 (function () {
     'use strict';
     const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const esc = v => String(v ?? '').replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
     const clone = v => JSON.parse(JSON.stringify(v));
+    const hm = m => { const h = Math.floor(m / 60), r = m % 60; return r ? `${h}h ${r}m` : `${h} hour${h === 1 ? '' : 's'}`; };
+    // A strict minimum this close to the daily maximum leaves room for very few breaks.
+    const tight = d => d.flexible.enabled && d.flexible.minimum >= 0.75 * d.allowance;
+    const tightText = d => { const n = Math.floor(d.allowance / d.flexible.minimum);
+        return `With a ${d.flexible.minimum}-minute minimum and a ${hm(d.allowance)} daily maximum, you get at most ${n} Flexible break${n === 1 ? '' : 's'} a day.`; };
     const ui = {
         card: null, draft: null, revision: 0, dirty: false, busy: false, view: null, message: '', tone: '',
         engine() { return window.TaskitatorEngine?.BreakEngine; },
@@ -1192,6 +1199,7 @@ window.TaskitatorEngine = TaskitatorEngine;
             if (!view?.strict) return;
             this.view = view;
             if (!this.dirty) { this.draft = clone(view.strict.config); this.revision = view.strict.revision; }
+            if (!Number.isInteger(this.draft.allowance)) this.draft.allowance = view.strict.limits?.allowanceMax || 180;
             this.render();
         },
         deadlineLabel(minutes) {
@@ -1213,15 +1221,18 @@ window.TaskitatorEngine = TaskitatorEngine;
             if (!this.card) return;
             const s = this.view?.strict;
             if (!s || !this.draft) {
-                this.card.innerHTML = `<h4 class="card-title">Strict break modes</h4><p class="card-desc">Sign in and connect your account to manage strict break modes.</p>`;
+                this.card.innerHTML = `<h4 class="card-title">Break limits & strict modes</h4><p class="card-desc">Sign in and connect your account to manage your break limits.</p>`;
                 return;
             }
-            const d = this.draft, saved = s.config, locked = s.locked;
-            const flexLocked = locked && saved.flexible.enabled, schedLocked = locked && saved.scheduled.enabled;
-            const minOptions = []; for (let m = s.limits.flexMin; m <= s.limits.flexMax; m += 5) minOptions.push(m);
+            const d = this.draft, locked = s.locked;
+            // One lock for the whole card: today's required tasks left and no emergency bypass.
+            const flexLocked = locked, schedLocked = locked;
+            const minOptions = []; for (let m = s.limits.flexMin; m <= Math.min(s.limits.flexMax, d.allowance); m += 5) minOptions.push(m);
+            const allowances = []; for (let m = s.limits.allowanceMin; m <= s.limits.allowanceMax; m += s.limits.allowanceStep) allowances.push(m);
             const deadlines = []; for (let m = s.limits.deadlineMin; m <= s.limits.deadlineMax; m += s.limits.deadlineStep) deadlines.push(m);
             const status = locked
-                ? `<span class="status-chip is-locked">🔒 ${s.required_tasks} required task${s.required_tasks === 1 ? '' : 's'} left today. Strict modes that are on can’t be changed or turned off until ${s.required_tasks === 1 ? 'it is' : 'they are'} done. You can still turn a mode on.</span>`
+                ? `<span class="status-chip is-locked">🔒 ${s.required_tasks} required task${s.required_tasks === 1 ? '' : 's'} left today. These settings can’t be changed until ${s.required_tasks === 1 ? 'it is' : 'they are'} done, or during an emergency bypass.</span>`
+                : s.bypass && s.required_tasks ? `<span class="status-chip is-warn">🚨 Emergency bypass is on, so you can change these settings now.</span>`
                 : s.pending_from ? `<span class="status-chip is-warn">⏭ Your latest changes apply from ${esc(s.pending_from)}. Today keeps its current rules.</span>` : '';
             const days = DAYS.map((name, i) => {
                 const day = d.scheduled.days[i];
@@ -1237,16 +1248,20 @@ window.TaskitatorEngine = TaskitatorEngine;
                 </div>`;
             }).join('');
             this.card.innerHTML = `
-                <h4 class="card-title">Strict break modes</h4>
-                <p class="card-desc">Optional rules that make breaks harder to bend. Turning a mode on works any time. Changing or turning off a mode that’s on needs today’s required (non-bonus) tasks to be done.</p>
+                <h4 class="card-title">Break limits & strict modes</h4>
+                <p class="card-desc">Your daily break maximum and optional rules that make breaks harder to bend. Changes need today’s required (non-bonus) tasks to be done, or an emergency bypass. If today’s break system is already chosen, they apply from tomorrow.</p>
                 <div class="status-slot" aria-live="polite">${status}</div>
+                <div class="form-group strict-options strict-allowance"><label for="strictAllowance" class="setting-label">Daily break maximum</label>
+                    <p class="setting-hint" id="strictAllowanceHint">Shared by Scheduled and Flexible Breaks. 3 hours is the most you can choose.</p>
+                    <select id="strictAllowance" aria-describedby="strictAllowanceHint" ${locked ? 'disabled' : ''}>${allowances.map(m => `<option value="${m}" ${m === d.allowance ? 'selected' : ''}>${hm(m)}${m === s.limits.allowanceMax ? ' (default)' : ''}</option>`).join('')}</select></div>
                 <div class="setting-row">
                     <div class="setting-text"><label for="strictFlexToggle" class="setting-label">Flexible Strict Mode</label>
-                    <p class="setting-hint" id="strictFlexHint">Flexible breaks can’t be ended before your minimum, and shorter presets are unavailable.</p></div>
+                    <p class="setting-hint" id="strictFlexHint">Flexible breaks can’t be ended before your minimum, shorter presets are unavailable, and the same amount of time must pass before your next break.</p></div>
                     <input type="checkbox" id="strictFlexToggle" class="switch" role="switch" aria-describedby="strictFlexHint" ${d.flexible.enabled ? 'checked' : ''} ${flexLocked ? 'disabled' : ''}>
                 </div>
                 ${d.flexible.enabled ? `<div class="form-group strict-options"><label for="strictFlexMinimum">Minimum break</label>
                     <select id="strictFlexMinimum" ${flexLocked ? 'disabled' : ''}>${minOptions.map(m => `<option value="${m}" ${m === d.flexible.minimum ? 'selected' : ''}>${m} minutes</option>`).join('')}</select></div>` : ''}
+                ${tight(d) ? `<p class="setting-hint strict-warning" role="note">⚠️ ${esc(tightText(d))}</p>` : ''}
                 <div class="setting-row">
                     <div class="setting-text"><label for="strictSchedToggle" class="setting-label">Scheduled Strict Mode</label>
                     <p class="setting-hint" id="strictSchedHint">If you haven’t chosen a break system by the deadline, Scheduled locks for the day with that weekday’s plan. On a covered day without a plan, that means <strong>zero breaks</strong>.</p></div>
@@ -1258,7 +1273,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                     <div class="form-group"><span class="setting-label">Default plan</span>${this.plan(d.scheduled.default, 'default', schedLocked)}</div>
                     <div class="form-group"><span class="setting-label">Weekdays</span><div class="strict-days">${days}</div></div>
                 </div>` : ''}
-                <div class="strict-actions"><button type="button" class="icon-btn btn-md btn-solid-primary btn-primary" id="strictSaveBtn" ${this.busy || !this.dirty ? 'disabled' : ''}>Save strict modes</button>
+                <div class="strict-actions"><button type="button" class="icon-btn btn-md btn-solid-primary btn-primary" id="strictSaveBtn" ${this.busy || !this.dirty || locked ? 'disabled' : ''}>Save break settings</button>
                 ${this.dirty ? '<button type="button" class="icon-btn btn-md" id="strictResetBtn">Discard changes</button>' : ''}</div>
                 <p class="setting-hint strict-feedback ${this.tone}" role="status">${esc(this.message)}</p>`;
         },
@@ -1270,6 +1285,8 @@ window.TaskitatorEngine = TaskitatorEngine;
             if (t.id === 'strictFlexToggle') return this.change(() => { d.flexible.enabled = t.checked; });
             if (t.id === 'strictSchedToggle') return this.change(() => { d.scheduled.enabled = t.checked; });
             if (t.id === 'strictFlexMinimum') return this.change(() => { d.flexible.minimum = Number(t.value); });
+            // The minimum can never be longer than the maximum; it caps at the maximum.
+            if (t.id === 'strictAllowance') return this.change(() => { d.allowance = Number(t.value); d.flexible.minimum = Math.min(d.flexible.minimum, d.allowance); });
             if (t.id === 'strictDeadline') return this.change(() => { d.scheduled.deadline_minutes = Number(t.value); });
             if (t.dataset.day) return this.change(() => { const day = d.scheduled.days[t.dataset.day]; day.mode = t.value; if (t.value !== 'custom') day.breaks = []; });
             if (t.dataset.path) { this.list(t.dataset.path)[+t.dataset.index][t.dataset.field] = t.value; this.dirty = true; const b = document.getElementById('strictSaveBtn'); if (b) b.disabled = this.busy; }
@@ -1288,6 +1305,11 @@ window.TaskitatorEngine = TaskitatorEngine;
             const clean = clone(this.draft), strip = list => list.filter(b => b.start || b.end);
             clean.scheduled.default = strip(clean.scheduled.default);
             for (const day of Object.values(clean.scheduled.days)) day.breaks = strip(day.breaks);
+            if (tight(clean) && window.TaskitatorConfirm) {
+                const ok = await window.TaskitatorConfirm({ title: 'Very few Flexible breaks', confirmLabel: 'Save anyway',
+                    message: `${tightText(clean)} Flexible Strict Mode also needs ${clean.flexible.minimum} minutes between breaks.` });
+                if (!ok) return;
+            }
             this.busy = true; this.render();
             try {
                 const view = await engine.saveStrict(clean, this.revision);
