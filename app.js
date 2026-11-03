@@ -2030,6 +2030,20 @@ window.TaskitatorApp = (() => {
         addBtn: null,
         closeBtn: null,
         planningTimerInterval: null,
+        tab: 'scheduled',
+        draft: null,
+        busy: false,
+        lastKey: '',
+
+        engine() { return window.TaskitatorEngine?.BreakEngine || null; },
+        esc(value) { return TaskitatorSafety.escapeHtml(String(value ?? '')); },
+        clockText(ms, zone) {
+            try { return new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ms); }
+            catch { return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+        },
+        minutesText(m) { m = Math.max(0, Math.round(m)); const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r}m`; },
+        // Flexible header color by remaining allowance: >35% green, 10–35% yellow, <10% red.
+        allowanceTone(percent) { return percent > 35 ? 'green' : percent >= 10 ? 'yellow' : 'red'; },
 
         init() {
             this.pill = document.getElementById('breakStatusPill');
@@ -2041,384 +2055,412 @@ window.TaskitatorApp = (() => {
             this.saveBtn = document.getElementById('saveBreaksModalBtn');
             this.addBtn = document.getElementById('addBreakRowModalBtn');
             this.closeBtn = document.getElementById('closeBreakModalBtn');
+            this.summary = document.getElementById('breakDaySummary');
+            this.flexBody = document.getElementById('flexBreakBody');
 
             if (!this.pill || !this.modal) return;
             this.pill.addEventListener('click', () => this.openModal());
             if (this.closeBtn) this.closeBtn.addEventListener('click', () => this.closeModal());
-            if (this.addBtn) this.addBtn.addEventListener('click', () => this.addBreakRow());
+            if (this.addBtn) this.addBtn.addEventListener('click', () => { this.addBreakRow(); this.captureDraft(); });
             if (this.saveBtn) this.saveBtn.addEventListener('click', () => this.saveBreaks());
-            this.modal.addEventListener('click', (e) => {
-                if (e.target === this.modal) this.closeModal();
+            this.modal.addEventListener('click', (e) => { if (e.target === this.modal) this.closeModal(); });
+            this.modal.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.modal.classList.contains('open')) this.closeModal(); });
+            const tabs = [...this.modal.querySelectorAll('[data-break-tab]')];
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => this.selectTab(tab.dataset.breakTab));
+                tab.addEventListener('keydown', (e) => {
+                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+                    e.preventDefault();
+                    const next = e.key === 'Home' ? tabs[0] : e.key === 'End' ? tabs.at(-1) : tabs[(tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+                    this.selectTab(next.dataset.breakTab); next.focus();
+                });
             });
+            this.modal.querySelectorAll('[data-break-lock]').forEach(btn => btn.addEventListener('click', () => this.lockToday(btn.dataset.breakLock)));
+            if (this.flexBody) this.flexBody.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-flex]');
+                if (!btn || btn.getAttribute('aria-disabled') === 'true') {
+                    if (btn?.dataset.reason) this.showError(btn.dataset.reason);
+                    return;
+                }
+                const kind = btn.dataset.flex;
+                if (kind === 'preset') this.startFlexible('preset', Number(btn.dataset.minutes));
+                else if (kind === 'custom') this.startFlexible('custom', Number(document.getElementById('flexCustomMinutes')?.value));
+                else if (kind === 'until') this.startFlexible('until');
+                else if (kind === 'end') this.endFlexible(btn.dataset.id);
+            });
+
             this.updateStatusPill();
-            setInterval(() => this.updateStatusPill(), 1000);
-            window.addEventListener('taskitator-breaks-changed',()=>this.updateStatusPill());
-            window.addEventListener('storage',event=>{if(event.key==='taskitator_daily_breaks'){this.updateStatusPill();if(this.modal.classList.contains('open'))this.renderModal();}});
-            document.addEventListener('visibilitychange',()=>this.updateStatusPill());
-            if(TaskitatorEngine.BreakEngine.getPlanningStatus().isRunning)this.startCountdownTimer();
+            setInterval(() => { this.updateStatusPill(); this.tick(); }, 1000);
+            setInterval(() => { if (document.visibilityState !== 'hidden') this.refresh(); }, 60000);
+            window.addEventListener('taskitator-breaks-changed', () => { this.updateStatusPill(); if (this.modal.classList.contains('open')) this.renderModal(); });
+            window.addEventListener('storage', event => {
+                if (['taskitator_daily_breaks', 'taskitator_break_state'].includes(event.key)) { this.updateStatusPill(); if (this.modal.classList.contains('open')) this.renderModal(); }
+            });
+            document.addEventListener('visibilitychange', () => { this.updateStatusPill(); if (document.visibilityState === 'visible') this.refresh(); });
+            setTimeout(() => this.refresh(), 1500);
+        },
+
+        async refresh(force = false) {
+            const engine = this.engine();
+            if (!engine?.refresh || !window.TaskitatorAuth?.signedIn) return null;
+            // Deadline checks run every second; at most one background refresh per 5 seconds.
+            if (!force && Date.now() - (this.refreshedAt || 0) < 5000) return null;
+            this.refreshedAt = Date.now();
+            try { return await engine.refresh(); } catch { return null; }
         },
 
         updateStatusPill() {
             if (!this.pill) return;
             this.pill.style.display = 'inline-flex';
-
-            const status = window.TaskitatorEngine?.BreakEngine?.getPlanningStatus 
-                ? TaskitatorEngine.BreakEngine.getPlanningStatus() 
-                : { canStart: true, canEdit: false, isRunning: false, isLocked: false, isInBuffer: false, remainingWindowMs: 0, bounds: { start: new Date() } };
-
-            const isCurrentlyOnBreak = window.TaskitatorEngine?.BreakEngine?.isCurrentlyOnBreak 
-                ? TaskitatorEngine.BreakEngine.isCurrentlyOnBreak() 
-                : false;
-
-            const breaks = window.TaskitatorEngine?.BreakEngine?.getTodayBreaks 
-                ? TaskitatorEngine.BreakEngine.getTodayBreaks() 
-                : getTodayBreaksSafe();
-
+            const engine = this.engine();
+            const view = engine?.current?.() || null;
+            const status = engine?.getPlanningStatus ? engine.getPlanningStatus() : { isRunning: false, remainingWindowMs: 0, bounds: { start: new Date() } };
+            const active = engine?.getActiveBreak ? engine.getActiveBreak() : null;
+            const breaks = engine?.getTodayBreaks ? engine.getTodayBreaks() : getTodayBreaksSafe();
+            const set = (icon, text, label = text) => {
+                if (this.pillIcon) this.pillIcon.textContent = icon;
+                if (this.pillText) this.pillText.textContent = text;
+                this.pill.setAttribute('aria-label', label + '. Open daily breaks.');
+            };
             this.pill.className = 'break-status-pill';
-
-            if (isCurrentlyOnBreak) {
-                const nowTime = Date.now();
-                const activeBreak = TaskitatorEngine.BreakEngine.getActiveBreak();
-                const minsLeft=activeBreak?Math.max(1,Math.ceil((activeBreak.endTime-nowTime)/60000)):0;
-
-                this.pill.classList.add('active-break');
-                if (this.pillIcon) this.pillIcon.textContent = '🟢';
-                if (this.pillText) this.pillText.textContent = `${minsLeft}m left`;
-                return;
+            delete this.pill.dataset.allowance;
+            if (view?.system === 'flexible') {
+                const allowance = engine.allowance();
+                const tone = this.allowanceTone(allowance.percent);
+                this.pill.classList.add('flex-allowance', 'flex-' + tone);
+                this.pill.dataset.allowance = tone;
+                if (active) {
+                    const left = Math.max(1, Math.ceil((active.endTime - engine.serverNow()) / 60000));
+                    this.pill.classList.add('is-on-break');
+                    return set('🟢', `On break · ${left}m`, `On a Flexible break, ${left} minutes left, ${this.minutesText(allowance.remaining)} of allowance left`);
+                }
+                return set('☕', `${this.minutesText(allowance.remaining)} left`, `Flexible Breaks, ${this.minutesText(allowance.remaining)} of allowance left, no break active`);
             }
-
-            if(status.isRepair){if(this.pillIcon)this.pillIcon.textContent='⚠️';if(this.pillText)this.pillText.textContent='Repair Breaks';return;}
+            if (active) {
+                const left = Math.max(1, Math.ceil((active.endTime - (engine?.serverNow?.() ?? Date.now())) / 60000));
+                this.pill.classList.add('active-break', 'is-on-break');
+                return set('🟢', `On break · ${left}m`, `On a scheduled break, ${left} minutes left`);
+            }
             if (status.isRunning) {
                 const remSec = Math.ceil(status.remainingWindowMs / 1000);
-                const remMin = Math.floor(remSec / 60);
-                const remSecOnly = remSec % 60;
                 this.pill.classList.add('window-open');
-                if (this.pillIcon) this.pillIcon.textContent = '⏳';
-                if (this.pillText) this.pillText.textContent = `Plan (${remMin}:${String(remSecOnly).padStart(2, '0')})`;
-                return;
+                return set('⏳', `Plan (${Math.floor(remSec / 60)}:${String(remSec % 60).padStart(2, '0')})`, 'Break planning window open');
             }
-
-            const nowTime = Date.now();
-            const upcomingBreak = breaks
-                .map(b => {
-                    if (!b.start || !window.TaskitatorEngine?.BreakEngine?.getBreakTimestamps) return null;
-                    const { startTime } = TaskitatorEngine.BreakEngine.getBreakTimestamps(b, status.bounds);
-                    return { ...b, startTime };
-                })
+            const nowTime = engine?.serverNow?.() ?? Date.now();
+            const upcoming = view?.system === 'scheduled' ? breaks
+                .map(b => { try { return { ...b, startTime: engine.getBreakTimestamps(b, status.bounds).startTime }; } catch { return null; } })
                 .filter(b => b && b.startTime > nowTime)
-                .sort((a, b) => a.startTime - b.startTime)[0];
-
-            if (upcomingBreak) {
-                if (this.pillIcon) this.pillIcon.textContent = '☕';
-                if (this.pillText) this.pillText.textContent = `Next: ${upcomingBreak.start}`;
-                return;
-            }
-
-            if (status.canStart) {
-                this.pill.classList.add('window-open');
-                if (this.pillIcon) this.pillIcon.textContent = '⏸️';
-                if (this.pillText) this.pillText.textContent = 'Plan Breaks';
-            } else if (status.isLocked) {
-                if (this.pillIcon) this.pillIcon.textContent = '🔒';
-                if (this.pillText) this.pillText.textContent = 'Breaks Locked';
-            } else if (status.isInBuffer) {
-                if (this.pillIcon) this.pillIcon.textContent = '⚠️';
-                if (this.pillText) this.pillText.textContent = 'Planning Closed';
-            } else {
-                if (this.pillIcon) this.pillIcon.textContent = '⏸️';
-                if (this.pillText) this.pillText.textContent = 'Breaks';
-            }
+                .sort((a, b) => a.startTime - b.startTime)[0] : null;
+            if (upcoming) return set('☕', `Next: ${String(upcoming.start).slice(0, 5)}`, `Next scheduled break at ${String(upcoming.start).slice(0, 5)}`);
+            if (!view) return set('⏸️', 'Breaks', 'Daily breaks');
+            if (!view.system) { this.pill.classList.add('window-open'); return set('⏸️', 'Choose Breaks', 'No break system chosen for today'); }
+            return set('🔒', 'Breaks Locked', 'Scheduled Breaks locked for today');
         },
 
-        openModal() {
+        async openModal() {
             this.hideError();
+            const view = this.engine()?.current?.();
+            this.tab = view?.system || this.tab;
             this.renderModal();
             if (this.modal) this.modal.classList.add('open');
+            const fresh = await this.refresh(true);
+            if (fresh && !view) { this.tab = fresh.system || this.tab; this.renderModal(); }
         },
 
         closeModal() {
-            this.captureDraft();
-            if(this.modal)this.modal.classList.remove('open');
+            const engine = this.engine(), view = engine?.current?.();
+            // Closing before the first save cancels the planning window; nothing is locked.
+            if (view?.scheduled?.planning?.open && !view.scheduled.saved) engine.cancelPlanning().catch(() => {});
+            this.draft = null;
+            if (this.planningTimerInterval) { clearInterval(this.planningTimerInterval); this.planningTimerInterval = null; }
+            if (this.modal) this.modal.classList.remove('open');
         },
-        captureDraft(){
-            const engine=window.TaskitatorEngine?.BreakEngine;
-            if(!engine||!engine.getPlanningStatus().canEdit)return;
-            const rows=this.getCurrentRowsData();
-            const result=engine.getPlanningStatus().isRepair?{valid:false,error:'Complete valid times, then confirm the repaired schedule.'}:engine.saveTodayBreaks(rows,false);
-            const status=engine.getPlanningStatus();
-            status.record.draft=rows;engine.saveBreakRecord(status.bounds.dateStr,status.record);
-            if(!result.valid)this.showError(result.error);else this.hideError();
+
+        // Draft rows stay on this device until saved; typing never counts as saving.
+        captureDraft() {
+            if (!this.rowsContainer || !this.engine()?.getPlanningStatus().canEdit) return;
+            this.draft = this.getCurrentRowsData();
+        },
+
+        selectTab(name) {
+            if (!['scheduled', 'flexible'].includes(name)) return;
+            this.tab = name;
+            this.hideError();
+            this.renderModal();
         },
 
         startCountdownTimer() {
-            if (this.planningTimerInterval) clearInterval(this.planningTimerInterval);
-            this.planningTimerInterval = setInterval(() => {
-                if (!window.TaskitatorEngine?.BreakEngine?.getPlanningStatus) return;
-                const status = TaskitatorEngine.BreakEngine.getPlanningStatus();
-                
-                if (!status.isRunning) {
-                    clearInterval(this.planningTimerInterval);
-                    this.planningTimerInterval = null;
-                    this.autoCommitAndLock();
-                    return;
-                }
-
-                const remSec = Math.ceil(status.remainingWindowMs / 1000);
-                const remMin = Math.floor(remSec / 60);
-                const remSecOnly = remSec % 60;
-                const formatted = `${String(remMin).padStart(2, '0')}:${String(remSecOnly).padStart(2, '0')}`;
-
-                const cdDisplay = document.getElementById('breakPlanningCountdown');
-                const progBar = document.getElementById('breakPlanningProgress');
-                if (cdDisplay) cdDisplay.textContent = formatted;
-                if (progBar) {
-                    const totalMs = TaskitatorEngine.BreakEngine.PLANNING_WINDOW_MS || (10 * 60 * 1000);
-                    const pct = Math.max(0, Math.min(100, (status.remainingWindowMs / totalMs) * 100));
-                    progBar.style.width = `${pct}%`;
-                }
-                this.updateStatusPill();
-            }, 1000);
+            if (this.planningTimerInterval) return;
+            this.planningTimerInterval = setInterval(() => this.tick(), 1000);
         },
 
-        autoCommitAndLock() {
-            const status=TaskitatorEngine.BreakEngine.getPlanningStatus();
-            if(this.modal?.classList.contains('open')){
-                if(status.isRepair)this.showError(status.reason);
-                else SoundFX.playTimeoutAlert();
-                this.renderModal();
+        // Update the live numbers; ask the server again when a deadline passes.
+        tick() {
+            if (!this.modal?.classList.contains('open')) return;
+            const engine = this.engine(), view = engine?.current?.();
+            if (!view) return;
+            const now = engine.serverNow(), planning = view.scheduled?.planning;
+            const key = [view.system, view.revision, !!view.flexible?.active, planning?.open && now < planning.deadline,
+                view.flexible?.active && now >= view.flexible.active.can_end_at].join('|');
+            if (key !== this.lastKey) { this.renderModal(); return; }
+            if (planning && now < planning.deadline) {
+                const remaining = planning.deadline - now, sec = Math.ceil(remaining / 1000);
+                const cd = document.getElementById('breakPlanningCountdown'), bar = document.getElementById('breakPlanningProgress');
+                if (cd) cd.textContent = `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+                if (bar) bar.style.width = `${Math.max(0, Math.min(100, remaining / engine.PLANNING_WINDOW_MS * 100))}%`;
+            } else if (planning?.open) { this.draft = null; this.refresh(); }
+            const active = view.flexible?.active;
+            if (active) {
+                const left = document.getElementById('flexAllowanceLeft');
+                if (left) left.textContent = this.minutesText(engine.allowance().remaining);
+                if (now >= active.ends_at) this.refresh();
             }
-            this.updateStatusPill();
-        },
-
-        getCurrentRowsData() {
-            if (!this.rowsContainer) return [];
-            const rows = this.rowsContainer.querySelectorAll('.break-row-item');
-            const list = [];
-            rows.forEach(r => {
-                const start = r.querySelector('.b-start')?.value;
-                const end = r.querySelector('.b-end')?.value;
-                list.push({ start:start||'', end:end||'' });
-            });
-            return list;
         },
 
         renderModal() {
             if (!this.modal || !this.rowsContainer) return;
-            const status = window.TaskitatorEngine?.BreakEngine?.getPlanningStatus 
-                ? TaskitatorEngine.BreakEngine.getPlanningStatus() 
-                : { canStart: true, canEdit: false, isRunning: false, isLocked: false, isInBuffer: false, remainingWindowMs: 0, bounds: { start: new Date() } };
+            const engine = this.engine(), view = engine?.current?.() || null;
+            const now = engine?.serverNow?.() ?? Date.now();
+            this.lastKey = view ? [view.system, view.revision, !!view.flexible?.active, view.scheduled?.planning?.open && now < view.scheduled.planning.deadline,
+                view.flexible?.active && now >= view.flexible.active.can_end_at].join('|') : '';
+            const names = { scheduled: 'Scheduled', flexible: 'Flexible' };
+            if (this.summary) {
+                if (!view) this.summary.innerHTML = '<span class="break-summary-loading">Loading today’s breaks…</span>';
+                else {
+                    const active = engine.getActiveBreak();
+                    const items = [
+                        ['System', view.system ? `${names[view.system]} · locked for today` : 'Not chosen yet'],
+                        ['Break', active ? `Active until ${this.clockText(active.endTime, view.timezone)}` : 'None active'],
+                        ['Resets', `${this.clockText(view.cycle_end, view.timezone)} (${view.timezone})`]
+                    ];
+                    if (view.system !== 'scheduled') items.push(['Allowance', `${this.minutesText(engine.allowance().remaining)} of 3h left`]);
+                    this.summary.innerHTML = items.map(([k, v]) => `<div class="break-summary-item"><span>${this.esc(k)}</span><strong>${this.esc(v)}</strong></div>`).join('');
+                }
+            }
+            this.modal.querySelectorAll('[data-break-tab]').forEach(tab => {
+                const name = tab.dataset.breakTab, selected = name === this.tab, blocked = !!view?.system && view.system !== name;
+                tab.setAttribute('aria-selected', String(selected));
+                tab.tabIndex = selected ? 0 : -1;
+                tab.classList.toggle('is-active', selected);
+                tab.classList.toggle('is-unavailable', blocked);
+                tab.toggleAttribute('data-locked', view?.system === name);
+                tab.title = blocked ? `${names[name]} becomes available after the next day reset.` : '';
+            });
+            this.modal.querySelectorAll('[role="tabpanel"][data-break-panel]').forEach(panel => { panel.hidden = panel.dataset.breakPanel !== this.tab; });
+            this.modal.querySelectorAll('[data-break-lock]').forEach(btn => {
+                const name = btn.dataset.breakLock;
+                btn.hidden = !view || !!view.system;
+                btn.textContent = `🔒 Lock ${names[name]} for Today`;
+            });
+            this.renderScheduled(view, now);
+            this.renderFlexible(view, now);
+        },
 
-            const breaks = window.TaskitatorEngine?.BreakEngine?.getTodayBreaks 
-                ? TaskitatorEngine.BreakEngine.getTodayBreaks() 
-                : getTodayBreaksSafe();
+        blocked(view, name) {
+            const other = name === 'scheduled' ? 'Flexible' : 'Scheduled';
+            return `<div class="break-panel break-panel-locked" role="status"><div class="break-panel-row"><span class="break-panel-emoji" aria-hidden="true">🔒</span>
+                <div class="break-panel-reason"><strong>${other} Breaks are selected for today.</strong> ${name === 'scheduled' ? 'Scheduled' : 'Flexible'} becomes available after the day resets at ${this.esc(this.clockText(view.cycle_end, view.timezone))}.</div></div></div>`;
+        },
 
+        renderScheduled(view, now) {
             let headerBox = document.getElementById('breakPlanningHeaderBox');
+            const desc = document.getElementById('breakModalStatusDesc');
             if (!headerBox) {
                 headerBox = document.createElement('div');
                 headerBox.id = 'breakPlanningHeaderBox';
-                const desc = document.getElementById('breakModalStatusDesc');
-                if (desc && desc.parentNode) {
-                    desc.parentNode.insertBefore(headerBox, desc.nextSibling);
-                }
+                if (desc?.parentNode) desc.parentNode.insertBefore(headerBox, desc.nextSibling);
             }
-
-            const desc = document.getElementById('breakModalStatusDesc');
-
-            if (status.isRunning || status.isRepair) {
-                if (desc) desc.style.display = 'none';
-                const totalMs = TaskitatorEngine.BreakEngine.PLANNING_WINDOW_MS || (10 * 60 * 1000);
-                const pct = Math.max(0, Math.min(100, (status.remainingWindowMs / totalMs) * 100));
-                const remSec = Math.ceil(status.remainingWindowMs / 1000);
-                const remMin = Math.floor(remSec / 60);
-                const remSecOnly = remSec % 60;
-                const formatted = `${String(remMin).padStart(2, '0')}:${String(remSecOnly).padStart(2, '0')}`;
-
+            const hideEdit = () => { if (this.addBtn) this.addBtn.style.display = 'none'; if (this.saveBtn) this.saveBtn.style.display = 'none'; };
+            const listSaved = (breaks, empty) => {
+                this.rowsContainer.innerHTML = '';
+                if (breaks?.length) breaks.forEach(b => this.addBreakRow(b.start, b.end, true));
+                else this.rowsContainer.innerHTML = `<div class="empty-state empty-state-sm">${this.esc(empty)}</div>`;
+            };
+            if (!view) { headerBox.innerHTML = ''; listSaved([], 'Loading…'); hideEdit(); return; }
+            if (view.system === 'flexible') { headerBox.innerHTML = this.blocked(view, 'scheduled'); this.rowsContainer.innerHTML = ''; hideEdit(); if (desc) desc.style.display = 'none'; return; }
+            if (desc) desc.style.display = '';
+            const s = view.scheduled, planning = s.planning, open = !!planning && now < planning.deadline;
+            if (open) {
+                const remaining = planning.deadline - now, sec = Math.ceil(remaining / 1000);
+                const pct = Math.max(0, Math.min(100, remaining / this.engine().PLANNING_WINDOW_MS * 100));
                 headerBox.innerHTML = `
                     <div class="break-panel break-panel-active">
                         <div class="break-panel-head">
-                            <strong class="break-panel-title">
-                                <span aria-hidden="true">⏳</span> ${status.isRepair?'Repair Break Schedule':'Planning Active'}
-                            </strong>
-                            <span id="breakPlanningCountdown" class="break-panel-countdown">${formatted}</span>
+                            <strong class="break-panel-title"><span aria-hidden="true">⏳</span> Planning window</strong>
+                            <span id="breakPlanningCountdown" class="break-panel-countdown" role="timer" aria-label="Time left to plan">${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}</span>
                         </div>
-                        <div class="break-panel-track">
-                            <div id="breakPlanningProgress" class="break-panel-progress" style="width: ${pct}%;"></div>
-                        </div>
-                        <small class="break-panel-note">
-                            Adjust up to 3 non-overlapping breaks (≤ 3 hours). At expiry, your last valid schedule is locked. If none is valid, enter a valid schedule once to repair it. Times use the planning device’s timezone.
-                        </small>
-                    </div>
-                `;
-
+                        <div class="break-panel-track"><div id="breakPlanningProgress" class="break-panel-progress" style="width: ${pct}%;"></div></div>
+                        <small class="break-panel-note">${s.saved
+                            ? `Scheduled is locked for today. You can edit and save again until ${this.esc(this.clockText(planning.deadline, view.timezone))}; after that your last saved schedule is final.`
+                            : 'Nothing is locked yet. Saving locks Scheduled for today. Closing this panel without saving cancels the window.'}</small>
+                    </div>`;
+                const rows = this.draft ?? (s.saved ? s.breaks : []);
                 this.rowsContainer.innerHTML = '';
-                const editable=status.record?.draft?.length?status.record.draft:breaks;
-                if (Array.isArray(editable) && editable.length > 0) {
-                    editable.forEach(b => this.addBreakRow(b.start, b.end, false));
-                } else {
-                    this.addBreakRow('', '', false);
-                }
-
+                if (rows.length) rows.forEach(b => this.addBreakRow(b.start, b.end, false));
+                else if (!s.saved) this.addBreakRow('', '', false);
+                else this.rowsContainer.innerHTML = '<div class="empty-state empty-state-sm">No breaks saved. Add a break or save an empty schedule.</div>';
                 if (this.addBtn) this.addBtn.style.display = 'inline-block';
-                if (this.saveBtn) {
-                    this.saveBtn.style.display = 'inline-block';
-                    this.saveBtn.textContent = 'Confirm & Lock Breaks';
-                }
-
-                if(status.isRunning)this.startCountdownTimer();
-                if(status.isRepair)this.showError(status.reason);
-
-            } else if (status.canStart) {
-                if (this.planningTimerInterval) {
-                    clearInterval(this.planningTimerInterval);
-                    this.planningTimerInterval = null;
-                }
-                if (desc) desc.style.display = 'none';
-
-                headerBox.innerHTML = `
-                    <div class="break-panel break-panel-start">
-                        <p class="break-panel-text">
-                            You have <strong>10 minutes</strong> to set your breaks.
-                        </p>
-                        <button type="button" id="startBreakPlanningBtn" class="icon-btn btn-primary btn-solid-primary btn-block">
-                            ▶ Set breaks (10 minutes)
-                        </button>
-                    </div>
-                `;
-
-                const startBtn = document.getElementById('startBreakPlanningBtn');
-                if (startBtn) {
-                    startBtn.addEventListener('click', () => this.handleStartPlanning());
-                }
-
-                this.rowsContainer.innerHTML = '';
-                if (Array.isArray(breaks) && breaks.length > 0) {
-                    breaks.forEach(b => this.addBreakRow(b.start, b.end, true));
-                } else {
-                    this.rowsContainer.innerHTML = '<div class="empty-state empty-state-sm">No breaks scheduled. Click "Start 10m Planning Window" to configure.</div>';
-                }
-
-                if (this.addBtn) this.addBtn.style.display = 'none';
-                if (this.saveBtn) this.saveBtn.style.display = 'none';
-
-            } else {
-                if (this.planningTimerInterval) {
-                    clearInterval(this.planningTimerInterval);
-                    this.planningTimerInterval = null;
-                }
-                if (desc) desc.style.display = 'none';
-
-                headerBox.innerHTML = `
-                    <div class="break-panel ${status.isLocked ? 'break-panel-locked' : 'break-panel-warn'}">
-                        <div class="break-panel-row">
-                            <span class="break-panel-emoji" aria-hidden="true">${status.isLocked ? '🔒' : '⚠️'}</span>
-                            <div class="break-panel-reason">
-                                <strong>${status.isLocked ? 'Schedule Locked' : 'Planning Buffer Closed'}:</strong> ${status.reason}
-                            </div>
-                        </div>
-                        <button type="button" id="startBreakPlanningDisabledBtn" class="icon-btn btn-block is-unavailable" aria-disabled="true">
-                            🔒 Start Planning Window (Unavailable)
-                        </button>
-                    </div>
-                `;
-
-                const disabledBtn = document.getElementById('startBreakPlanningDisabledBtn');
-                if (disabledBtn) {
-                    disabledBtn.addEventListener('click', () => {
-                        const curStatus = window.TaskitatorEngine?.BreakEngine?.getPlanningStatus 
-                            ? TaskitatorEngine.BreakEngine.getPlanningStatus() 
-                            : status;
-                        window.TaskitatorNotify(curStatus.reason || 'Planning window is currently unavailable.', 'info');
-                    });
-                }
-
-                this.rowsContainer.innerHTML = '';
-                if (Array.isArray(breaks) && breaks.length > 0) {
-                    breaks.forEach(b => this.addBreakRow(b.start, b.end, true));
-                } else {
-                    this.rowsContainer.innerHTML = '<div class="empty-state empty-state-sm">No breaks were scheduled for this cycle.</div>';
-                }
-
-                if (this.addBtn) this.addBtn.style.display = 'none';
-                if (this.saveBtn) this.saveBtn.style.display = 'none';
-            }
-        },
-
-        handleStartPlanning() {
-            if (!window.TaskitatorEngine?.BreakEngine?.startPlanningWindow) return;
-            const res = TaskitatorEngine.BreakEngine.startPlanningWindow();
-            if (!res.success) {
-                window.TaskitatorNotify(res.error);
-                this.renderModal();
+                if (this.saveBtn) { this.saveBtn.style.display = 'inline-block'; this.saveBtn.textContent = s.saved ? 'Save changes' : 'Save schedule'; }
+                this.startCountdownTimer();
                 return;
             }
-            saveStorageAndPush();
-            this.renderModal();
-            this.updateStatusPill();
+            this.draft = null;
+            if (s.can_start_planning) {
+                headerBox.innerHTML = `
+                    <div class="break-panel break-panel-start">
+                        <p class="break-panel-text">The 10 minutes start when you press Start. Planning closes at <strong>${this.esc(this.clockText(s.closing_at, view.timezone))}</strong>.</p>
+                        <button type="button" id="startBreakPlanningBtn" class="icon-btn btn-primary btn-solid-primary btn-block">▶ Start planning (10 minutes)</button>
+                    </div>`;
+                document.getElementById('startBreakPlanningBtn')?.addEventListener('click', () => this.handleStartPlanning());
+                listSaved([], 'No breaks scheduled yet.');
+                hideEdit();
+                return;
+            }
+            headerBox.innerHTML = `
+                <div class="break-panel ${s.final || view.system ? 'break-panel-locked' : 'break-panel-warn'}" role="status">
+                    <div class="break-panel-row"><span class="break-panel-emoji" aria-hidden="true">${s.final || view.system ? '🔒' : '⚠️'}</span>
+                    <div class="break-panel-reason">${this.esc(s.reason || 'Scheduled planning is unavailable right now.')}</div></div>
+                </div>`;
+            listSaved(s.breaks, s.final ? 'No breaks were scheduled for this day.' : 'No breaks scheduled.');
+            hideEdit();
+        },
+
+        renderFlexible(view, now) {
+            if (!this.flexBody) return;
+            if (!view) { this.flexBody.innerHTML = '<div class="empty-state empty-state-sm">Loading…</div>'; return; }
+            if (view.system === 'scheduled') { this.flexBody.innerHTML = this.blocked(view, 'flexible'); return; }
+            const engine = this.engine(), f = view.flexible, a = f.active, allowance = engine.allowance(), zone = view.timezone;
+            const tone = this.allowanceTone(allowance.percent);
+            const meter = `<div class="flex-allowance-meter flex-${tone}" role="meter" aria-label="Break allowance left" aria-valuemin="0" aria-valuemax="180" aria-valuenow="${allowance.remaining}">
+                <div class="flex-allowance-head"><span>Allowance left</span><strong id="flexAllowanceLeft">${this.esc(this.minutesText(allowance.remaining))}</strong></div>
+                <div class="flex-allowance-track"><div class="flex-allowance-fill" style="width:${Math.max(0, Math.min(100, allowance.percent))}%"></div></div></div>`;
+            if (a) {
+                const canEnd = now >= a.can_end_at;
+                this.flexBody.innerHTML = `${meter}
+                    <div class="break-panel break-panel-active" role="status">
+                        <div class="break-panel-head"><strong class="break-panel-title"><span aria-hidden="true">🟢</span> On a Flexible break</strong></div>
+                        <p class="break-panel-text">Ends automatically at <strong>${this.esc(this.clockText(a.ends_at, zone))}</strong>${a.ends_at >= view.cycle_end ? ' (day reset)' : ''}.
+                        ${canEnd ? 'You can end it now.' : `You can end it from <strong>${this.esc(this.clockText(a.can_end_at, zone))}</strong>.`}</p>
+                        <button type="button" class="icon-btn btn-block ${canEnd ? 'btn-primary btn-solid-primary' : 'is-unavailable'}" data-flex="end" data-id="${this.esc(a.id)}"
+                            aria-disabled="${!canEnd}" data-reason="${canEnd ? '' : `A Flexible break can be ended after ${f.minimum} minutes.`}">${canEnd ? '■ End break now' : `■ End break (from ${this.esc(this.clockText(a.can_end_at, zone))})`}</button>
+                    </div>`;
+                return;
+            }
+            const reason = f.reason;
+            const presetButtons = f.presets.map(p => `<button type="button" class="icon-btn flex-preset ${p.available ? '' : 'is-unavailable'}" data-flex="preset" data-minutes="${p.minutes}"
+                aria-disabled="${!p.available}" data-reason="${this.esc(p.reason)}" title="${this.esc(p.reason)}">${p.minutes === 60 ? '1 hour' : p.minutes + ' min'}</button>`).join('');
+            this.flexBody.innerHTML = `${meter}
+                ${reason ? `<div class="break-panel break-panel-warn" role="status"><div class="break-panel-row"><span class="break-panel-emoji" aria-hidden="true">⚠️</span><div class="break-panel-reason">${this.esc(reason)}</div></div></div>` : ''}
+                <div class="flex-presets" role="group" aria-label="Start a break">${presetButtons}</div>
+                <div class="flex-custom">
+                    <label for="flexCustomMinutes">Custom (minutes)</label>
+                    <input id="flexCustomMinutes" class="break-time-input" type="number" inputmode="numeric" min="${f.minimum}" max="${f.max_custom}" step="1" value="${Math.min(20, f.max_custom) || ''}" ${reason ? 'disabled' : ''}>
+                    <button type="button" class="icon-btn ${reason ? 'is-unavailable' : ''}" data-flex="custom" aria-disabled="${!!reason}" data-reason="${this.esc(reason)}">Start</button>
+                </div>
+                <button type="button" class="icon-btn btn-block ${reason ? 'is-unavailable' : 'btn-primary btn-solid-primary'}" data-flex="until" aria-disabled="${!!reason}" data-reason="${this.esc(reason)}">Until allowance ends (${this.esc(this.minutesText(f.max_custom))})</button>
+                <small class="break-panel-note">Starts now. It can be ended after ${f.minimum} minutes and stops by itself at its length, when the allowance runs out, or at the day reset. Each started minute counts as a full minute.</small>`;
+        },
+
+        confirmMessage(lines) { return lines.map(line => '• ' + line).join('\n'); },
+
+        async run(task, success) {
+            if (this.busy) return null;
+            this.busy = true; this.hideError();
+            try { const view = await task(); if (success) window.TaskitatorNotify?.(success); return view; }
+            catch (error) { this.showError(error.message || 'The break request failed.'); this.refresh(); return null; }
+            finally { this.busy = false; this.renderModal(); this.updateStatusPill(); }
+        },
+
+        async lockToday(system) {
+            const engine = this.engine(), view = engine?.current?.();
+            if (!view) return;
+            const name = system === 'scheduled' ? 'Scheduled' : 'Flexible', other = system === 'scheduled' ? 'Flexible' : 'Scheduled';
+            const ok = await window.TaskitatorConfirm({ title: `Lock ${name} for today?`, tone: 'danger', confirmLabel: `Lock ${name}`,
+                message: this.confirmMessage([`This choice is irreversible until the day resets at ${this.clockText(view.cycle_end, view.timezone)}.`,
+                    `${other} Breaks become unavailable for the rest of today.`,
+                    system === 'scheduled' ? 'This does not open a planning window or create a break.' : 'This does not start a break or use any allowance.',
+                    `You can still use ${name} Breaks later today under their normal rules.`]) });
+            if (!ok) return;
+            await this.run(() => engine.lock(system), `${name} Breaks locked for today.`);
+        },
+
+        async handleStartPlanning() {
+            const engine = this.engine();
+            if (!engine?.startPlanning) return;
+            const ok = await window.TaskitatorConfirm({ title: 'Start the 10-minute planning window?', confirmLabel: 'Start planning',
+                message: this.confirmMessage(['The window lasts 10 minutes from now.', 'Adding or editing rows does not save them.',
+                    'Closing the panel without saving cancels the window, and you can choose either system again.',
+                    'Your first save locks Scheduled for the rest of the day.', 'After saving, you can edit only until this window ends.']) });
+            if (!ok) return;
+            this.draft = [];
+            await this.run(() => engine.startPlanning());
+        },
+
+        getCurrentRowsData() {
+            if (!this.rowsContainer) return [];
+            return [...this.rowsContainer.querySelectorAll('.break-row-item')].map(r => ({ start: r.querySelector('.b-start')?.value || '', end: r.querySelector('.b-end')?.value || '' }));
         },
 
         addBreakRow(startVal = '', endVal = '', disabled = false) {
             if (!this.rowsContainer) return;
-            const rows = this.rowsContainer.querySelectorAll('.break-row-item');
-            if (rows.length >= 3) {
-                this.showError('Maximum 3 breaks allowed per day.');
-                return;
-            }
-
+            if (this.rowsContainer.querySelectorAll('.break-row-item').length >= 3) { this.showError('Maximum 3 breaks allowed per day.'); return; }
+            this.rowsContainer.querySelector('.empty-state')?.remove();
             const row = document.createElement('div');
             row.className = 'break-row-item';
-
             row.innerHTML = `
-                <input type="time" class="b-start break-time-input" aria-label="Break start" value="${TaskitatorSafety.escapeHtml(startVal)}" ${disabled ? 'disabled' : ''}>
+                <input type="time" class="b-start break-time-input" aria-label="Break start" value="${this.esc(startVal)}" ${disabled ? 'disabled' : ''}>
                 <span class="break-row-sep">to</span>
-                <input type="time" class="b-end break-time-input" aria-label="Break end" value="${TaskitatorSafety.escapeHtml(endVal)}" ${disabled ? 'disabled' : ''}>
-                ${!disabled ? '<button type="button" class="del-break-row-btn" aria-label="Remove break">&times;</button>' : ''}
-            `;
-
+                <input type="time" class="b-end break-time-input" aria-label="Break end" value="${this.esc(endVal)}" ${disabled ? 'disabled' : ''}>
+                ${!disabled ? '<button type="button" class="del-break-row-btn" aria-label="Remove break">&times;</button>' : ''}`;
             if (!disabled) {
-                row.querySelector('.del-break-row-btn').addEventListener('click', () => {
-                    row.remove();
-                    this.captureDraft();
-                });
+                row.querySelector('.del-break-row-btn').addEventListener('click', () => { row.remove(); this.captureDraft(); });
+                row.querySelectorAll('input').forEach(input => { input.addEventListener('change', () => this.captureDraft()); input.addEventListener('input', () => this.captureDraft()); });
             }
             this.rowsContainer.appendChild(row);
-            if(!disabled)row.querySelectorAll('input').forEach(input=>{input.addEventListener('change',()=>this.captureDraft());input.addEventListener('input',()=>this.captureDraft());});
         },
 
         async saveBreaks() {
-            if (!this.rowsContainer) return;
-            const breaksArray = this.getCurrentRowsData();
-            const check=TaskitatorBreaks.validate(breaksArray,TaskitatorEngine.BreakEngine.getLogicalDayBounds());
-            if(!check.valid){this.showError(check.error);return;}
-
-            const confirmed = await window.TaskitatorConfirm(
-                "⚠️️ CONFIRM & LOCK DAILY SCHEDULE ⚠️\n\n" +
-                "Once locked, your breaks cannot be edited, added, or cleared for the remainder of this cycle.\n\n" +
-                "Do you want to permanently lock this schedule now?"
-            );
-            if (!confirmed) return;
-
-            if (window.TaskitatorEngine?.BreakEngine?.saveTodayBreaks) {
-                const res = TaskitatorEngine.BreakEngine.saveTodayBreaks(breaksArray, true);
-                if (!res.valid) {
-                    this.showError(res.error);
-                    return;
-                }
-            } else {
-                localStorage.setItem('taskitator_daily_breaks', JSON.stringify(breaksArray));
+            const engine = this.engine(), view = engine?.current?.();
+            if (!view || !this.rowsContainer) return;
+            const rows = this.getCurrentRowsData().filter(r => r.start || r.end);
+            const saved = view.scheduled.saved;
+            if (rows.length || !saved) {
+                const check = TaskitatorBreaks.validate(rows, engine.getLogicalDayBounds());
+                if (!check.valid) { this.showError(check.error); return; }
             }
-
-            if (this.planningTimerInterval) {
-                clearInterval(this.planningTimerInterval);
-                this.planningTimerInterval = null;
+            if (!saved) {
+                const ok = await window.TaskitatorConfirm({ title: 'Save and lock Scheduled for today?', tone: 'danger', confirmLabel: 'Save schedule',
+                    message: this.confirmMessage(['Saving locks Scheduled Breaks for the rest of the day, even if you later remove every break.',
+                        `You can edit and save again until ${this.clockText(view.scheduled.planning.deadline, view.timezone)}.`,
+                        'After that, your last saved schedule is final.']) });
+                if (!ok) return;
             }
+            const result = await this.run(() => engine.saveSchedule(rows), saved ? 'Schedule updated.' : 'Schedule saved. Scheduled Breaks are locked for today.');
+            if (result) this.draft = null;
+            if (result) this.renderModal();
+        },
 
-            saveStorageAndPush();
-            this.renderModal();
-            this.updateStatusPill();
+        async startFlexible(mode, minutes) {
+            const engine = this.engine(), view = engine?.current?.();
+            if (!view) return;
+            const f = view.flexible, length = mode === 'until' ? f.max_custom : minutes;
+            if (mode === 'custom' && (!Number.isInteger(minutes) || minutes < f.minimum || minutes > f.max_custom)) {
+                this.showError(`Choose a whole number of minutes from ${f.minimum} to ${f.max_custom}.`); return;
+            }
+            const ok = await window.TaskitatorConfirm({ title: `Start a ${mode === 'until' ? 'break until your allowance ends' : this.minutesText(length) + ' break'} now?`, confirmLabel: 'Start break',
+                message: this.confirmMessage([...(view.system ? [] : ['Flexible Breaks will be locked for the rest of today.']),
+                    `You can't end it during its first ${f.minimum} minutes.`, 'It uses your daily break allowance; each started minute counts as a full minute.',
+                    'It ends automatically at its length, when the allowance runs out, or at the day reset — whichever comes first.']) });
+            if (!ok) return;
+            await this.run(() => engine.startFlexible(mode, mode === 'until' ? null : minutes), 'Break started.');
+        },
 
-
-            window.TaskitatorNotify("Daily breaks locked successfully.");
-            this.closeModal();
+        async endFlexible(id) {
+            const engine = this.engine();
+            if (!engine?.endFlexible) return;
+            const ok = await window.TaskitatorConfirm({ title: 'End this break now?', confirmLabel: 'End break', message: 'The time used so far is charged by started minute.' });
+            if (!ok) return;
+            await this.run(() => engine.endFlexible(id), 'Break ended.');
         },
 
         showError(msg) {
@@ -2430,6 +2472,7 @@ window.TaskitatorApp = (() => {
         hideError() {
             if (!this.errorBox) return;
             this.errorBox.textContent = '';
+            this.errorBox.style.display = 'none';
         }
     };
 

@@ -7,6 +7,7 @@ import './pro/study-plan.js';
 // deletion, vault, ai-gateway, and worker router.
 // ============================================================================
 import { ProGateway, TaskProtection, liveAccount } from './pro-backend.js';
+import { BreakSystems } from './break-systems.js';
 
 // File: recurrence-core.js
 // Shared deterministic recurrence rules, used by the browser and Cloudflare Worker.
@@ -714,7 +715,7 @@ export class AccountDeletion {
                         (key.startsWith('pro:binding:') && value?.account_id===job.userId) ||
                         (key.startsWith('pro:username:map:') && value?.accountId===job.userId) ||
                         (key.startsWith('pro:attestation:') && value?.account_id===job.userId));
-                    else if (job.stage==='legacy') {await this.storage.delete('sleep-lock:'+job.userId);next=await this.page(job,'sleep-delay:'+job.userId+':')&&await this.legacy(job);}
+                    else if (job.stage==='legacy') {await this.storage.delete('sleep-lock:'+job.userId);await this.service.breaks.remove(this.storage,job.userId);next=await this.page(job,'sleep-delay:'+job.userId+':')&&await this.legacy(job);}
                     else if (job.stage==='clerk') {
                         if(this.env.TASKITATOR_DB){
                             try{await this.env.TASKITATOR_DB.prepare('DELETE FROM entitlements WHERE account_id = ?').bind(job.userId).run();}
@@ -1508,6 +1509,7 @@ export class TaskitatorSync {
         this.protection = new TaskProtection(this);
         this.pro = new ProGateway(this);
         this.universe = new UniverseRules(this);
+        this.breaks = new BreakSystems(this);
     }
 
     async readTaskSnapshot(store, accountId) {
@@ -1788,9 +1790,10 @@ export class TaskitatorSync {
             const proRoute = path.startsWith('/pro/') && !emergencyRoute;
             const universeRoute = path.startsWith('/universe/');
             const sleepRoute = path === '/sleep-lock';
+            const breaksRoute = path === '/breaks';
             const studyRoute = path === '/study-plan';
             if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
-                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute && !sleepRoute && !studyRoute) {
+                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute && !sleepRoute && !breaksRoute && !studyRoute) {
                 return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
             }
             await this.rateLimit(request);
@@ -1896,6 +1899,12 @@ export class TaskitatorSync {
                         const schedule={enabled:b.enabled,bedtime:b.bedtime,wake_time:b.wake_time,timezone:'Asia/Riyadh',revision:old.revision+1};await tx.put(key,schedule);return json({schedule});
                     });
                 }
+                if (breaksRoute) {
+                    if (!account) throw new HTTPError(403, 'Connect your Taskitator account first.');
+                    if (method === 'GET') return json(await this.breaks.state(identity.userId, url.searchParams.get('tz')));
+                    if (method !== 'POST') throw new HTTPError(405, 'Method not allowed.');
+                    return json(await this.breaks.act(identity.userId, await readJson(request, 4096)));
+                }
                 if (emergencyRoute) {
                     if (!account) throw new HTTPError(403, 'Connect your Taskitator account on the login page first.');
                     if (!['GET','POST'].includes(method)) throw new HTTPError(405, 'Method not allowed.');
@@ -1955,8 +1964,16 @@ export class TaskitatorSync {
                             record={...record,version:meta.version,saved_at:meta.saved_at};
                         }
                     }
+                    // Break records are server-owned: replace synced copies before anyone reads them.
+                    const owner = identity?.userId || meta.owner_id;
+                    if (record) record = { ...record, today_breaks: await this.breaks.overlay(tx, owner, record.today_breaks) };
                     if (pull) return json(record ? publicRecord(record) : { empty: true, version: meta.version });
+                    // Precedence (each step may override the previous one):
+                    // tasks → active break (Scheduled or Flexible) → Universe lock (unless on a break) → Sleep Lock → Emergency Bypass.
                     const state = evaluateStatus(record);
+                    const flexible = await this.breaks.inBreak(tx, owner);
+                    if (flexible.in_break) { state.in_break = true; state.device_unlocked = true; }
+                    state.break_system = flexible.system;
                     const groupState=await this.universe.lockStatus(identity?.userId||meta.owner_id);
                     state.universe_degraded=groupState.degraded;
                     state.universe_locks=groupState.count||0;
@@ -2001,24 +2018,19 @@ export class TaskitatorSync {
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
                     try { Recurrence.reconcile(snapshot); }
                     catch (err) { throw new HTTPError(400, err.message); }
-                    // Preserve array dates before replacing the client timestamp.
-                    if (Array.isArray(snapshot.today_breaks)) {
-                        const edited = timestamp(body.updated_at);
-                        const date = logicalDate(Number.isFinite(edited) ? edited : Date.now(), dayHour(snapshot.settings));
-                        snapshot.today_breaks = snapshot.today_breaks.map(b => object(b) ? { ...b, date: b.date || date } : b);
-                    }
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
                     await this.protection.guardDynamic(tx,identity.userId,previous,snapshot,dynamicRefreshError);
                     globalThis.TaskitatorSmartStudy.apply(snapshot,previous);
-                    try { snapshot.today_breaks=globalThis.TaskitatorBreaks.merge(previous?.today_breaks,snapshot.today_breaks,snapshot.settings); }
-                    catch(error){throw new HTTPError(400,error.message);}
+                    // Breaks are changed only through /breaks. Sync keeps the stored copy, so a stale or
+                    // modified device cannot erase a system lock, edit a schedule or restore spent allowance.
+                    snapshot.today_breaks = globalThis.TaskitatorBreaks.normalize(previous?.today_breaks || {}, null);
                     snapshot.updated_at = now;
                     await saveSnapshot(tx, user, meta, snapshot);
                     meta.version++;
                     meta.saved_at = now;
                     meta.last_write = { mutation_id: body.mutation_id, hash: snapshotHash, base_version: body.base_version, version:meta.version, saved_at:now };
                     await tx.put(accountKey(user), meta);
-                    return json({ success: true, version: meta.version, updated_at: now,today_breaks:snapshot.today_breaks });
+                    return json({ success: true, version: meta.version, updated_at: now,today_breaks:await this.breaks.overlay(tx,identity.userId,snapshot.today_breaks) });
                 }
                 throw new HTTPError(405, 'Method not allowed.');
             });

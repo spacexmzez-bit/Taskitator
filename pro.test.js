@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { evaluateStatus } from './worker.js';
+import { BreakSystems } from './break-systems.js';
 import {
     ProGateway, TaskProtection, HostedAudits, KeyoLicenses,
     KEYO_DEFAULTS, keyoConfig, verifyKeyoToken, liveAccount,
@@ -399,10 +400,26 @@ function browser(time='2026-10-23T12:00:00Z',zone='Europe/London'){
     storage.setItem('taskitator_settings',JSON.stringify({break_timezone:zone,day_start_hour:0}));
     class Clock extends Date{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
     const window={dispatchEvent(){},addEventListener(){},SyncEngine:{isConfigured:()=>true,markLocalModified:()=>dirty++,push:async()=>{pushes++;}}};
-    const context=vm.createContext({window,localStorage:storage,Date:Clock,Intl,console,CustomEvent:class{},setTimeout,clearTimeout});
+    const context=vm.createContext({window,localStorage:storage,Date:Clock,Intl,console,CustomEvent:class{},setTimeout,clearTimeout,crypto});
     vm.runInContext(source('pro/break-core.js'),context);vm.runInContext(source('audit-engine.js'),context);
     context.TaskitatorEngine=window.TaskitatorEngine;
-    return {context,window,storage,values,engine:window.TaskitatorEngine.BreakEngine,advance:ms=>{now+=ms},dirty:()=>dirty,pushes:()=>pushes};
+    // The browser engine talks to a real BreakSystems backend through a fake authenticated API.
+    const store=new BreakStore(),calls=[];
+    const systems=new BreakSystems({storage:store,readTaskSnapshot:async()=>({snapshot:{settings:{}}})});
+    window.TaskitatorAuth={signedIn:true,userId:'user_A',api:async(path,options)=>{
+        calls.push({path,options});
+        try{return structuredClone(options.method==='GET'?await systems.state('user_A',zone,now):await systems.act('user_A',JSON.parse(options.body),now));}
+        catch(e){const error=new Error(e.message);error.status=e.status;error.code=e.code;throw error;}
+    }};
+    return {context,window,storage,values,engine:window.TaskitatorEngine.BreakEngine,advance:ms=>{now+=ms},now:()=>now,dirty:()=>dirty,pushes:()=>pushes,calls,store};
+}
+class BreakStore {
+    map=new Map();tail=Promise.resolve();
+    async get(k){return Array.isArray(k)?new Map(k.filter(x=>this.map.has(x)).map(x=>[x,structuredClone(this.map.get(x))])):structuredClone(this.map.get(k));}
+    async put(k,v){this.map.set(k,structuredClone(v));}
+    async delete(k){for(const x of Array.isArray(k)?k:[k])this.map.delete(x);}
+    async list({prefix=''}={}){return new Map([...this.map].filter(([k])=>k.startsWith(prefix)));}
+    async transaction(fn){const run=async()=>{const before=structuredClone(this.map);try{return await fn(this);}catch(e){this.map=before;throw e;}};const r=this.tail.then(run,run);this.tail=r.catch(()=>{});return r;}
 }
 
 test('browser and Worker agree outside Riyadh, accept seconds, and use the same exclusive end',()=>{
@@ -424,37 +441,45 @@ test('midnight-crossing breaks total 60 minutes and remain active after the date
     assert.equal(B.active(data,{},Date.parse(result.breaks[0].start_at)+45*60000),true);
 });
 
-test('invalid, incomplete, overlapping and oversized break schedules are rejected without saving',()=>{
-    const f=browser();assert.equal(f.engine.startPlanningWindow().success,true);
+test('invalid, incomplete, overlapping and oversized break schedules are rejected without saving',async()=>{
+    const f=browser();await f.engine.startPlanning();
     for(const list of [[],[{start:'',end:''}],[{start:'12:00',end:''}],[{start:'14:00',end:'13:00'}],
         [{start:'10:00',end:'12:00'},{start:'11:00',end:'12:00'}],[{start:'10:00',end:'13:01'}],Array.from({length:4},()=>({start:'10:00',end:'10:10'}))]){
-        assert.equal(f.engine.saveTodayBreaks(list,true).valid,false);
-        assert.equal(f.engine.getPlanningStatus().isLocked,false);
+        await assert.rejects(f.engine.saveSchedule(list));
+        await f.engine.refresh();
+        assert.equal(f.engine.getPlanningStatus().isLocked,false);assert.equal(f.engine.current().system,null);
     }
 });
 
-test('expiry seals the last valid schedule even if newer draft rows are invalid',()=>{
-    const f=browser();f.engine.startPlanningWindow();assert.equal(f.engine.saveTodayBreaks([{start:'14:00',end:'14:30'}]).valid,true);
-    assert.equal(f.engine.saveTodayBreaks([{start:'14:00',end:''}]).valid,false);
-    f.advance(600001);const s=f.engine.getPlanningStatus();assert.equal(s.isLocked,true);assert.equal(s.record.breaks.length,1);
-    assert.equal(s.record.breaks[0].end,'14:30');assert.ok(f.dirty()>=3);
+test('expiry keeps the last saved schedule; rejected or unsaved edits never replace it',async()=>{
+    const f=browser();await f.engine.startPlanning();await f.engine.saveSchedule([{start:'14:00',end:'14:30'}]);
+    await assert.rejects(f.engine.saveSchedule([{start:'14:00',end:''}]));
+    f.advance(600001);await f.engine.refresh();const s=f.engine.getPlanningStatus();
+    assert.equal(s.isLocked,true);assert.equal(s.system,'scheduled');assert.equal(f.engine.getTodayBreaks().length,1);
+    assert.equal(f.engine.getTodayBreaks()[0].end,'14:30');
+    await assert.rejects(f.engine.saveSchedule([{start:'15:00',end:'15:30'}]),/planning window has ended/);
 });
 
-test('empty expiry and old empty lockouts permit one valid repair without restarting the planning timer',()=>{
-    const f=browser();f.engine.startPlanningWindow();const original=f.engine.getPlanningStatus().record.window_started_at;
-    f.advance(600001);let s=f.engine.getPlanningStatus();assert.equal(s.isRepair,true);assert.equal(s.canEdit,true);assert.equal(s.canStart,false);
-    assert.equal(f.engine.saveTodayBreaks([],true).valid,false);
-    assert.equal(f.engine.saveTodayBreaks([{start:'14:00',end:'14:30'}],true).valid,true);
-    s=f.engine.getPlanningStatus();assert.equal(s.isLocked,true);assert.equal(s.record.window_started_at,original);
-    const other=browser();const b=other.engine.getLogicalDayBounds();
-    other.storage.setItem('taskitator_daily_breaks',JSON.stringify({[b.dateStr]:{locked:true,breaks:[]}}));
-    assert.equal(other.engine.getPlanningStatus().isRepair,true);
+test('a planning window that expires without a save leaves both systems available',async()=>{
+    const f=browser();await f.engine.startPlanning();
+    assert.equal(f.engine.getPlanningStatus().isRunning,true);assert.equal(f.engine.current().system,null);
+    f.advance(600001);await f.engine.refresh();const s=f.engine.getPlanningStatus();
+    assert.equal(s.isRunning,false);assert.equal(s.canStart,true);assert.equal(s.isLocked,false);
+    assert.equal(f.engine.current().flexible.can_start,true);
+    // An old local "locked" record without a server lock no longer blocks anything.
+    const b=f.engine.getLogicalDayBounds();
+    f.storage.setItem('taskitator_daily_breaks',JSON.stringify({[b.dateStr]:{locked:true,breaks:[]}}));
+    assert.equal(f.engine.getPlanningStatus().canStart,true);
 });
 
-test('planning start and background expiry mark data dirty and trigger a sync push',async()=>{
-    const f=browser();f.engine.startPlanningWindow();await Promise.resolve();assert.equal(f.pushes(),1);
-    f.engine.saveTodayBreaks([{start:'14:00',end:'14:30'}]);f.advance(600001);f.engine.getPlanningStatus();
-    await Promise.resolve();assert.equal(f.pushes(),2);
+test('break actions go to the Worker and are never uploaded through snapshot sync',async()=>{
+    const f=browser();await f.engine.startPlanning();await f.engine.saveSchedule([{start:'14:00',end:'14:30'}]);
+    assert.deepEqual(f.calls.map(c=>JSON.parse(c.options.body).action),['plan_start','schedule_save']);
+    assert.ok(f.calls.every(c=>c.path==='/breaks'&&JSON.parse(c.options.body).timezone==='Europe/London'));
+    await Promise.resolve();assert.equal(f.pushes(),0);assert.equal(f.dirty(),0);
+    const state=JSON.parse(f.storage.getItem('taskitator_break_state'));
+    assert.equal(state.owner,'user_A');assert.equal(state.view.system,'scheduled');
+    f.window.TaskitatorAuth.userId='user_B';assert.equal(f.engine.current(),null,'another account never sees this cache');
 });
 
 test('history pruning is bounded, accepts legacy arrays and ignores malformed dates',()=>{
@@ -481,8 +506,9 @@ test('DST gaps reject nonexistent times and valid dates use the correct timezone
     assert.equal(valid.breaks[0].start_at,'2026-03-08T07:15:00.000Z');
 });
 
-test('statistics executes against dictionary breaks and counts an overnight break correctly',()=>{
-    const f=browser();f.engine.startPlanningWindow();f.engine.saveTodayBreaks([{start:'23:30',end:'00:30'}],true);
+test('statistics executes against dictionary breaks and counts an overnight break correctly',async()=>{
+    const f=browser();await f.engine.startPlanning();await f.engine.saveSchedule([{start:'23:30',end:'00:30'}]);
+    f.window.TaskitatorAuth.account={user:'rd'};f.storage.setItem('taskitator_local_owner','rd');
     const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',style:{},innerHTML:'',appendChild(){},addEventListener(){}});return nodes.get(id)};
     f.context.navigator={};
     f.context.document={getElementById:node,createElement:()=>({style:{},appendChild(){},querySelector:()=>({addEventListener(){}}),replaceChildren(){}})};
@@ -493,20 +519,32 @@ test('statistics executes against dictionary breaks and counts an overnight brea
     assert.equal(node('breakSlotsCount').textContent,'1 break window configured');assert.equal(node('totalBreakTime').textContent,'60m');
 });
 
-test('closing the planner keeps the countdown and the status pill remains visible outside Today',()=>{
-    const f=browser(),code=source('app.js'),start=code.indexOf('    const BreakUI = {'),end=code.indexOf('\n    };',start)+7;
-    let hidden=false,intervals=0;
-    f.context.currentView='all';f.context.setInterval=()=>{intervals++;return intervals};f.context.clearInterval=()=>{throw Error('Closing must not cancel the deadline');};
-    f.context.saveStorageAndPush=()=>{};f.context.getTodayBreaksSafe=()=>[];f.context.SoundFX={};
+function breakUI(f){
+    const code=source('app.js'),start=code.indexOf('    const BreakUI = {'),end=code.indexOf('\n    };',start)+7;
+    f.context.currentView='all';f.context.getTodayBreaksSafe=()=>[];f.context.SoundFX={};
+    f.context.TaskitatorSafety={escapeHtml:v=>String(v).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';')};
     vm.runInContext(code.slice(start,end)+'\nglobalThis.testBreakUI=BreakUI;',f.context);
-    const ui=f.context.testBreakUI;ui.captureDraft=()=>{};ui.planningTimerInterval=123;ui.modal={classList:{remove:()=>{hidden=true}}};
-    ui.closeModal();assert.equal(hidden,true);assert.equal(ui.planningTimerInterval,123);
-    ui.pill={style:{},classList:{add(){}}};ui.pillText={};ui.pillIcon={};ui.updateStatusPill();
-    assert.equal(ui.pill.style.display,'inline-flex');
+    const ui=f.context.testBreakUI,classes=new Set(),attrs={};
+    ui.pill={style:{},dataset:{},set className(v){classes.clear();},classList:{add:(...c)=>c.forEach(x=>classes.add(x))},setAttribute:(k,v)=>{attrs[k]=v;}};
+    ui.pillText={};ui.pillIcon={};
+    return {ui,classes,attrs};
+}
+test('closing the planner before the first save cancels the window; after saving it keeps the deadline',async()=>{
+    const f=browser(),{ui}=breakUI(f);let hidden=0;
+    ui.modal={classList:{remove:()=>{hidden++;}}};
+    await f.engine.startPlanning();ui.closeModal();await new Promise(r=>setTimeout(r,0));
+    assert.equal(hidden,1);assert.equal(f.calls.at(-1).options.body.includes('plan_cancel'),true);
+    await f.engine.refresh();assert.equal(f.engine.current().scheduled.planning,null);assert.equal(f.engine.current().system,null);
+    await f.engine.startPlanning();const deadline=f.engine.current().scheduled.planning.deadline;
+    await f.engine.saveSchedule([{start:'14:00',end:'14:30'}]);const before=f.calls.length;
+    ui.closeModal();await new Promise(r=>setTimeout(r,0));
+    assert.equal(f.calls.length,before,'a saved window is never cancelled');
+    assert.equal(f.engine.current().scheduled.planning.deadline,deadline);
+    ui.updateStatusPill();assert.equal(ui.pill.style.display,'inline-flex');
 });
 
 test('Ari stats context reports the current dictionary break count',async()=>{
-    const f=browser();f.engine.startPlanningWindow();f.engine.saveTodayBreaks([{start:'14:00',end:'14:30'}],true);
+    const f=browser();await f.engine.startPlanning();await f.engine.saveSchedule([{start:'14:00',end:'14:30'}]);
     f.window.location={pathname:'/stats.html'};f.context.document={readyState:'loading'};
     f.context.sessionStorage={getItem:()=>null,setItem(){},removeItem(){}};
     f.context.fetch=async()=>new Response('<!-- taskitator-system-prompt:v1 --> Taskitator Focus Copilot');
@@ -519,19 +557,19 @@ test('Ari stats context reports the current dictionary break count',async()=>{
     assert.match(prompt,/Scheduled Breaks Today: 1/);assert.doesNotMatch(prompt,/Scheduled Breaks Today: undefined/);
 });
 
-test('draft schedules become active only when confirmed or when their planning deadline expires',()=>{
-    const f=browser('2026-10-23T12:00:00Z','Europe/London');f.engine.startPlanningWindow();
-    f.engine.saveTodayBreaks([{start:'13:00',end:'13:30'}]);
+test('saved schedules become active only after their planning deadline',async()=>{
+    const f=browser('2026-10-23T12:00:00Z','Europe/London');await f.engine.startPlanning();
+    await f.engine.saveSchedule([{start:'13:00',end:'13:30'}]);
     assert.equal(f.engine.isCurrentlyOnBreak(),false);
     f.advance(600001);assert.equal(f.engine.isCurrentlyOnBreak(),true);
 });
 
-test('legacy local schedules gain explicit timezone timestamps before uploading',()=>{
+test('legacy local schedules are read with explicit timezone timestamps',()=>{
     const f=browser('2026-10-23T12:00:00Z','America/New_York');
     f.storage.setItem('taskitator_daily_breaks',JSON.stringify({'2026-10-23':{locked:true,breaks:[{start:'14:00',end:'14:30'}]}}));
-    const record=f.engine.getAllBreakData()['2026-10-23'];assert.equal(record.timezone,'America/New_York');
+    const data=f.engine.getAllBreakData(),record=data['2026-10-23'];assert.equal(record.timezone,'America/New_York');
     assert.equal(record.breaks[0].start_at,'2026-10-23T18:00:00.000Z');
-    assert.equal(B.active(JSON.parse(f.storage.getItem('taskitator_daily_breaks')),{},Date.parse('2026-10-23T18:00:00Z')),true);
+    assert.equal(B.active(data,{},Date.parse('2026-10-23T18:00:00Z')),true);
 });
 
 test('a cycle beginning in the spring DST gap starts at the next valid clock time',()=>{
@@ -539,15 +577,44 @@ test('a cycle beginning in the spring DST gap starts at the next valid clock tim
     assert.equal(b.start.toISOString(),'2026-03-08T07:00:00.000Z');assert.equal(b.end.toISOString(),'2026-03-09T06:00:00.000Z');
 });
 
-test('the break pill counts down a previous-cycle break after midnight',()=>{
-    const f=browser('2026-10-23T12:00:00Z','Europe/London');f.engine.startPlanningWindow();f.engine.saveTodayBreaks([{start:'23:30',end:'00:30'}],true);
+test('the break pill counts down a previous-cycle break after midnight',async()=>{
+    const f=browser('2026-10-23T12:00:00Z','Europe/London');await f.engine.startPlanning();await f.engine.saveSchedule([{start:'23:30',end:'00:30'}]);
     f.advance(Date.parse('2026-10-23T23:00:00Z')-Date.parse('2026-10-23T12:00:00Z'));
-    assert.equal(f.engine.getTodayBreaks().length,0);assert.ok(f.engine.getActiveBreak());
-    const code=source('app.js'),start=code.indexOf('    const BreakUI = {'),end=code.indexOf('\n    };',start)+7;
-    f.context.currentView='all';f.context.getTodayBreaksSafe=()=>[];
-    vm.runInContext(code.slice(start,end)+'\nglobalThis.testBreakUI=BreakUI;',f.context);
-    const ui=f.context.testBreakUI;ui.pill={style:{},classList:{add(){}}};ui.pillText={};ui.pillIcon={};ui.updateStatusPill();
-    assert.equal(ui.pillText.textContent,'30m left');
+    assert.equal(f.engine.current(),null);assert.ok(f.engine.getActiveBreak());
+    const {ui}=breakUI(f);ui.updateStatusPill();
+    assert.equal(ui.pillText.textContent,'On break · 30m');
+});
+test('Flexible header colors switch at exactly 35% and 10% and the label shows an active break',async()=>{
+    const f=browser(),{ui,classes,attrs}=breakUI(f);
+    const tone=()=>[...classes].find(c=>/^flex-(green|yellow|red)$/.test(c));
+    // 180 × 35% = 63 minutes and 180 × 10% = 18 minutes, both inclusive in yellow.
+    for(const [used,expected] of [[0,'flex-green'],[116,'flex-green'],[117,'flex-yellow'],[162,'flex-yellow'],[163,'flex-red']]){
+        const g=browser(),{ui:u,classes:c}=breakUI(g);
+        if(used){await g.engine.startFlexible('custom',used);g.advance(used*60000);await g.engine.refresh();}
+        else await g.engine.lock('flexible');
+        u.updateStatusPill();assert.equal([...c].find(x=>/^flex-(green|yellow|red)$/.test(x)),expected,'used '+used);
+        assert.match(u.pillText.textContent,/left$/);
+    }
+    await f.engine.startFlexible('preset',30);ui.updateStatusPill();
+    assert.equal(tone(),'flex-green');assert.equal(ui.pillText.textContent,'On break · 30m');assert.match(attrs['aria-label'],/On a Flexible break/);
+    assert.equal(ui.allowanceTone(35),'flex-yellow'.slice(5));assert.equal(ui.allowanceTone(10),'yellow');assert.equal(ui.allowanceTone(9.99),'red');
+});
+test('a retried Flexible start after a lost response reuses its request ID',async()=>{
+    const f=browser(),api=f.window.TaskitatorAuth.api;let lose=true;
+    f.window.TaskitatorAuth.api=async(path,options)=>{const result=await api(path,options);if(lose){lose=false;throw new TypeError('Network lost');}return result;};
+    await assert.rejects(f.engine.startFlexible('preset',30),/Network lost/);
+    const view=await f.engine.startFlexible('preset',30);
+    assert.equal(view.replayed,true);assert.equal(view.allowance.used,0);
+    const ids=f.calls.map(c=>JSON.parse(c.options.body).operation_id);assert.equal(ids[0],ids[1]);
+});
+test('breaks tutorial explains both systems and targets elements that exist',()=>{
+    const code=fs.readFileSync(new URL('tutorial-integration.js',TEST_ROOT),'utf8'),html=fs.readFileSync(new URL('index.html',TEST_ROOT),'utf8');
+    const block=code.slice(code.indexOf('    breaks: {'),code.indexOf('    ai: {'));
+    for(const id of new Set([...block.matchAll(/selector: '#([A-Za-z]+)'/g)].map(m=>m[1])))assert.match(html,new RegExp('id="'+id+'"'),id);
+    for(const topic of [/Scheduled/,/Flexible/,/3 hours/,/Lock for Today/,/first save/,/10 minutes/,/30 minutes 1 second uses 31/,/35%/,/10–35%/,/not Sleep Lock/,/Universe locks/,/never ends a break/])
+        assert.match(block,topic);
+    for(const id of ['breakTabScheduled','breakTabFlexible','flexBreakBody','breakDaySummary','breakRowsContainer','saveBreaksModalBtn'])assert.match(html,new RegExp('id="'+id+'"'));
+    assert.equal((html.match(/data-break-lock="/g)||[]).length,2);
 });
 
 
@@ -1480,7 +1547,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-credit-limits-v1'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-dual-breaks-v1'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);

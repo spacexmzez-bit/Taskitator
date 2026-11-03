@@ -740,69 +740,87 @@ const TaskitatorEngine = {
     _criteriaValidationCache: new Map(),
 
     // =========================================================================
-    // 1. Break Engine (10m Floating Window, Day-Start Offset, 6h Cutoff Buffer)
+    // 1. Break Engine: Scheduled and Flexible systems, owned by the Worker
     // =========================================================================
+    // The browser keeps only the last server answer for display. Every action goes to
+    // /breaks; the Worker decides locks, deadlines, active breaks and allowance.
     BreakEngine: {
-        PLANNING_WINDOW_MS:600000,
+        PLANNING_WINDOW_MS:600000,ALLOWANCE_MINUTES:180,FLEX_MINIMUM_MINUTES:10,STATE_KEY:'taskitator_break_state',
         core(){if(!globalThis.TaskitatorBreaks)throw new Error('Refresh Taskitator to load break scheduling.');return globalThis.TaskitatorBreaks;},
         settings(){try{return JSON.parse(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_SETTINGS)||'{}');}catch{return {}; }},
+        zone(){const pinned=this.settings().break_timezone;if(pinned)return pinned;try{return Intl.DateTimeFormat().resolvedOptions().timeZone||'Asia/Riyadh';}catch{return 'Asia/Riyadh';}},
+        owner(){return window.TaskitatorAuth?.userId||null;},
         getDayStartHour(){return Math.max(0,Math.min(4,Number(this.settings().day_start_hour)||0));},
+        state(){try{const s=JSON.parse(localStorage.getItem(this.STATE_KEY)||'null');return s&&s.view&&s.owner===this.owner()?s:null;}catch{return null;}},
+        serverNow(){return Date.now()+(this.state()?.offset||0);},
+        // Server view for the logical day in progress, or null when it is unknown or has ended.
+        current(){const s=this.state(),now=Date.now()+(s?.offset||0);return s&&now>=s.view.cycle_start&&now<s.view.cycle_end?s.view:null;},
+        accept(view){
+            if(!view||typeof view!=='object'||!view.date)throw new Error('The break service returned an invalid answer.');
+            try{localStorage.setItem(this.STATE_KEY,JSON.stringify({owner:this.owner(),offset:view.server_now-Date.now(),view}));}catch{}
+            if(view.record){const data=this.getAllBreakData();data[view.date]=view.record;
+                try{localStorage.setItem(TaskitatorEngine.STORAGE_KEY_BREAKS,JSON.stringify(this.core().normalize(data)));}catch{}}
+            window.dispatchEvent?.(new CustomEvent('taskitator-breaks-changed'));
+            return view;
+        },
+        async request(body){
+            const auth=window.TaskitatorAuth;
+            if(!auth?.api||!auth.signedIn)throw new Error('Sign in to manage breaks.');
+            const view=body?await auth.api('/breaks',{method:'POST',body:JSON.stringify({timezone:this.zone(),...body})})
+                :await auth.api('/breaks?tz='+encodeURIComponent(this.zone()),{method:'GET'});
+            return this.accept(view);
+        },
+        refresh(){return this.request(null);},
+        lock(system){return this.request({action:'lock',system});},
+        startPlanning(){return this.request({action:'plan_start'});},
+        cancelPlanning(){return this.request({action:'plan_cancel'});},
+        saveSchedule(breaks){return this.request({action:'schedule_save',breaks});},
+        // A retried start (lost response) reuses its request ID, so the server never starts two breaks.
+        async startFlexible(mode,minutes=null){
+            const key=mode+':'+minutes;
+            if(this._pendingStart?.key!==key)this._pendingStart={key,id:'brk_'+crypto.randomUUID().replace(/-/g,'')};
+            try{const view=await this.request({action:'flex_start',mode,...(minutes===null?{}:{minutes}),operation_id:this._pendingStart.id});this._pendingStart=null;return view;}
+            catch(error){if(error.status)this._pendingStart=null;throw error;}
+        },
+        endFlexible(id){return this.request({action:'flex_end',break_id:id});},
         getLogicalDayBounds(dayStartHour=null){
+            const v=this.current();
+            if(v)return {dateStr:v.date,start:new Date(v.cycle_start),end:new Date(v.cycle_end),cutoff6h:new Date(v.cycle_end-6*3600000),dayStartHour:v.day_start_hour,timezone:v.timezone};
             const settings=this.settings();if(dayStartHour!==null)settings.day_start_hour=dayStartHour;
-            const raw=this.getAllBreakData(),now=Date.now();
-            const pinned=Object.values(raw).find(r=>r.cycle_start<=now&&now<r.cycle_end);
-            return this.core().bounds({...settings,day_start_hour:pinned?.day_start_hour??settings.day_start_hour},now,pinned?.timezone||settings.break_timezone||Intl.DateTimeFormat().resolvedOptions().timeZone);
+            return this.core().bounds(settings,this.serverNow(),settings.break_timezone||this.zone());
         },
         getAllBreakData(){try{
-            const key=TaskitatorEngine.STORAGE_KEY_BREAKS,raw=localStorage.getItem(key)||'{}',settings=this.settings();
-            const data=this.core().migrate(JSON.parse(raw),settings,settings.break_timezone||Intl.DateTimeFormat().resolvedOptions().timeZone);
-            const normalized=JSON.stringify(data);
-            if(raw!==normalized){localStorage.setItem(key,normalized);if(window.SyncEngine?.isConfigured?.())window.SyncEngine.markLocalModified();}
-            return data;
+            const settings=this.settings();
+            return this.core().migrate(JSON.parse(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_BREAKS)||'{}'),settings,settings.break_timezone||this.zone());
         }catch{return {}; }},
         getBreakRecord(date){return {date,window_started_at:null,locked:false,breaks:[],...this.getAllBreakData()[date]};},
-        saveBreakRecord(date,record){
-            const data=this.getAllBreakData(),settings=this.settings(),b=this.getLogicalDayBounds();
-            const previous=data[date];
-            data[date]={...record,date,timezone:record.timezone||b.timezone,day_start_hour:b.dayStartHour,cycle_start:+b.start,cycle_end:+b.end};
-            const value=JSON.stringify(this.core().normalize(data));
-            if(localStorage.getItem(TaskitatorEngine.STORAGE_KEY_BREAKS)!==value){
-                localStorage.setItem(TaskitatorEngine.STORAGE_KEY_BREAKS,value);
-                if(window.SyncEngine?.isConfigured?.())window.SyncEngine.markLocalModified();
-                window.dispatchEvent?.(new CustomEvent('taskitator-breaks-changed'));
-                if(window.SyncEngine?.isConfigured?.() && (previous?.window_started_at!==record.window_started_at||previous?.locked!==record.locked))
-                    Promise.resolve().then(()=>window.SyncEngine.push()).catch(()=>{});
-            }
-        },
+        // Compatibility view for Settings and older callers.
         getPlanningStatus(){
-            const bounds=this.getLogicalDayBounds(),record=this.getBreakRecord(bounds.dateStr),now=Date.now();
-            const expired=record.window_started_at&&now-record.window_started_at>=this.PLANNING_WINDOW_MS;
-            const valid=this.core().validate(record.breaks,bounds);
-            if((expired||record.locked)&&!valid.valid){
-                if(!record.repair_required||record.locked){record.repair_required=true;record.locked=false;this.saveBreakRecord(bounds.dateStr,record);}
-            }else if(expired&&!record.locked){record.locked=true;this.saveBreakRecord(bounds.dateStr,record);}
-            const repair=!!record.repair_required&&!valid.valid;
-            const running=!!record.window_started_at&&!expired&&!record.locked;
-            const buffer=now>=+bounds.cutoff6h;
-            return {bounds,record,isRepair:repair,isRunning:running,isLocked:record.locked,isInBuffer:buffer&&!repair,
-                canStart:!record.window_started_at&&!record.locked&&!buffer&&!repair,canEdit:running||repair,
-                remainingWindowMs:running?Math.max(0,this.PLANNING_WINDOW_MS-(now-record.window_started_at)):0,
-                reason:repair?'The planning window ended without a valid schedule. Enter valid breaks once to repair and lock it.':
-                    record.locked?'The break schedule is locked until the next day cycle.':buffer?'Planning is closed during the final 6 hours of this cycle.':''};
+            const v=this.current(),bounds=this.getLogicalDayBounds(),now=this.serverNow(),s=v?.scheduled,planning=s?.planning;
+            const open=!!planning&&now<planning.deadline,closed=now>=+bounds.cutoff6h,flexible=v?.system==='flexible';
+            const reason=flexible?'Flexible Breaks are selected for today.':s?.saved&&!open?'Today’s schedule is final until the next day cycle.':
+                v?.system==='scheduled'&&!s?.saved&&closed?'Planning is closed during the final 6 hours of this cycle.':!v?'Open the break panel to load today’s breaks.':closed&&!open?'Planning is closed during the final 6 hours of this cycle.':'';
+            return {bounds,record:this.getBreakRecord(bounds.dateStr),view:v,system:v?.system||null,isRepair:false,isRunning:open&&!flexible,
+                isLocked:!!v?.system&&!open,isInBuffer:closed&&!open,canStart:!!v&&!open&&!flexible&&!s?.saved&&!closed,canEdit:open&&!flexible,
+                remainingWindowMs:open?Math.max(0,planning.deadline-now):0,reason};
         },
-        startPlanningWindow(){const s=this.getPlanningStatus();if(!s.canStart)return {success:false,error:s.reason};
-            s.record.window_started_at=Date.now();s.record.locked=false;this.saveBreakRecord(s.bounds.dateStr,s.record);return {success:true,record:s.record};},
-        lockTodayBreaks(){const s=this.getPlanningStatus();const result=this.core().validate(s.record.breaks,s.bounds);if(!result.valid)return {success:false,error:result.error};s.record.locked=true;this.saveBreakRecord(s.bounds.dateStr,s.record);return {success:true,record:s.record};},
         isSelectionWindowOpen(){const s=this.getPlanningStatus();return s.canStart||s.canEdit;},
         getTodayBreaks(){const b=this.getLogicalDayBounds();return this.getBreakRecord(b.dateStr).breaks;},
         getBreakTimestamps(b,bounds){return this.core().interval(b,bounds);},
-        saveTodayBreaks(list,lockImmediately=false){
-            const status=this.getPlanningStatus();if(status.isLocked||!status.canEdit)return {valid:false,error:status.reason||'Start the planning window first.'};
-            const result=this.core().validate(list,status.bounds);if(!result.valid)return result;
-            status.record.breaks=result.breaks;status.record.locked=!!lockImmediately||status.isRepair;status.record.repair_required=false;
-            this.saveBreakRecord(status.bounds.dateStr,status.record);return {valid:true,record:status.record};
+        // Remaining Flexible allowance as of now, from the last server answer.
+        allowance(){
+            const v=this.current();if(!v)return null;
+            const a=v.flexible?.active,now=this.serverNow();
+            const live=a?Math.ceil((Math.min(now,a.ends_at)-a.started_at)/60000)-Math.ceil((Math.min(v.server_now,a.ends_at)-a.started_at)/60000):0;
+            const used=Math.min(this.ALLOWANCE_MINUTES,v.allowance.used+Math.max(0,live));
+            return {total:this.ALLOWANCE_MINUTES,used,remaining:this.ALLOWANCE_MINUTES-used,percent:(this.ALLOWANCE_MINUTES-used)/this.ALLOWANCE_MINUTES*100};
         },
-        getActiveBreak(){return this.core().activeBreak(this.getAllBreakData(),{...this.settings(),break_timezone:this.getLogicalDayBounds().timezone});},
+        getActiveBreak(){
+            const now=this.serverNow(),v=this.current(),a=v?.flexible?.active;
+            if(a&&now>=a.started_at&&now<a.ends_at)return {break:{start_at:new Date(a.started_at).toISOString(),end_at:new Date(a.ends_at).toISOString(),kind:'flexible'},startTime:a.started_at,endTime:a.ends_at,flexible:true,id:a.id,canEndAt:a.can_end_at,timezone:v.timezone,date:v.date};
+            if(v?.system==='flexible')return null;
+            return this.core().activeBreak(this.getAllBreakData(),{...this.settings(),break_timezone:this.getLogicalDayBounds().timezone},now);
+        },
         isCurrentlyOnBreak(){return !!this.getActiveBreak();}
     },
 

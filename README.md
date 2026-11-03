@@ -113,7 +113,8 @@ Local browser data is a working copy. The connected account's cloud snapshot is 
 | `taskitator_tasks` | Personal task array: IDs, `parent_id`, project, title/description, status, due dates, bonus flag, priority, tags, proof/lock/shield and optional recurrence/study metadata. |
 | `taskitator_projects` | Personal project catalogue; `project_id` connects tasks to these records. |
 | `taskitator_settings` | Preferences, tag/priority catalogues, schedule settings, tutorial progress and account connection metadata. Credentials are stripped from ordinary sync/export paths. |
-| `taskitator_daily_breaks` | Date-keyed break-cycle records including planning, locking, pinned cycle bounds/timezone, and break intervals. |
+| `taskitator_daily_breaks` | Read-only, server-written copy of date-keyed break records (system, planning window, pinned cycle bounds/timezone and intervals). Sync never uploads changes to it. |
+| `taskitator_break_state` | Account-scoped cache of the last `/breaks` answer, used for display only. |
 | `taskitator_audit_ledger` | Client productivity/completion history; not the authoritative hosted billing ledger. |
 | `taskitator_saved_criteria` | Reusable proof requirements managed by the task editor. |
 | `taskitator_recurrence_state` | Recurrence series/templates, history and reference associations. Must remain consistent with tasks. |
@@ -261,7 +262,7 @@ The final `pomodoro.js` section retains an older injected timer, oscillator bell
 | `pro/profile-ui.js` | Fetches/paints the account's display username, provides availability/edit UI and ignores old-session results. The display label is distinct from the immutable login/account identity. |
 | `pro/tier-ui.js` | Restores an account-scoped display cache, interprets status/expiry, renders tier cards, sets presentation classes, and refreshes from verified server status. A cached badge does not authorize a Worker operation. |
 
-Break planning has a ten-minute editing window and a cutoff before the logical day's end. The shared validator permits one to three intervals, bounded total duration and no overlap. Emergency Bypass is server-managed, with four uses per cycle and a fifteen-minute active window; its exact cycle is derived from account settings on the server. Timer breaks are not automatically scheduled phone-access breaks.
+Breaks offer two systems per logical day, **Scheduled** and **Flexible**, sharing a three-hour allowance. Choosing one (first Scheduled save, first Flexible start, or Lock for Today) locks it until the day resets. Scheduled planning has a ten-minute window from its start and closes six hours before the day ends; the shared validator permits one to three intervals, bounded total duration and no overlap. Flexible breaks (30/45/60 minutes, custom, or until the allowance ends) cannot be ended in their first ten minutes and are charged per started minute. Both systems are owned by the Worker (`break-systems.js`, `/breaks`); the browser `BreakEngine` only caches the last server answer. Emergency Bypass is server-managed, with four uses per cycle and a fifteen-minute active window; its exact cycle is derived from account settings on the server. Timer breaks are not automatically scheduled phone-access breaks.
 
 ### `pro/smart-study.js` and `pro/study-plan.js`
 
@@ -370,7 +371,7 @@ The top of the file embeds server copies of recurrence and break rules. Their AP
 | `sleepWindow`, `sleepLockActive` | Calculate Riyadh bedtime/wake windows, including overnight periods and valid one-night delays. |
 | `TaskitatorSync.fetch` | Classify routes, authenticate, dispatch services and transactionally process sync/status requests. |
 
-Phone tokens matching the `tkp_` format are accepted only for status reads. Ordinary writes require Clerk authentication. Final `/status` combines personal task/break evaluation, eligible Universe assignment locks and Sleep Lock, then applies an active server-managed Emergency Bypass. `format=text` returns `device_unlocked = true/false` for integration clients; normal JSON carries additional status fields.
+Phone tokens matching the `tkp_` format are accepted only for status reads. Ordinary writes require Clerk authentication. Final `/status` applies, in order: personal tasks, an active Scheduled or Flexible break (server state), eligible Universe assignment locks (skipped during a break), Sleep Lock (breaks do not bypass it), then an active server-managed Emergency Bypass. `format=text` returns `device_unlocked = true/false` for integration clients; normal JSON carries additional status fields.
 
 ### `pro-backend.js`
 

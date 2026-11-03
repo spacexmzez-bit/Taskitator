@@ -987,17 +987,17 @@ test('personal Claude proof uses the same protected requirements, one-use comple
     assert.equal((await f.call('/sync/pull',a.token)).body.tasks[0].status,'completed');
 });
 
-test('break planning sync acknowledges the shared timer and sealed schedule on another session',async()=>{
+test('break planning cannot be created, sealed or overwritten through snapshot sync',async()=>{
     const {f,a}=await setup();const now=Date.now(),zone='America/New_York',bounds=globalThis.TaskitatorBreaks.bounds({},now,zone);
-    const date=bounds.dateStr,first={window_started_at:now-10000,timezone:zone,day_start_hour:0,locked:false,breaks:[{start:'14:00:00',end:'14:30:00'}]};
-    const upload=await save(f,a,[task()],{today_breaks:{[date]:first}});assert.equal(upload.status,200);assert.equal(upload.body.today_breaks[date].window_started_at,first.window_started_at);
-    const another=await f.call('/sync/pull',a.token);assert.equal(another.body.today_breaks[date].timezone,zone);
-    const seal=await save(f,a,[task()],{today_breaks:{[date]:{...first,locked:true}}});assert.equal(seal.status,200);
-    const overwrite=await save(f,a,[task()],{today_breaks:{[date]:{...first,window_started_at:now,locked:false,breaks:[]}}});assert.equal(overwrite.status,200);
-    assert.equal(overwrite.body.today_breaks[date].locked,true);assert.equal(overwrite.body.today_breaks[date].breaks.length,1);
-    const interval=globalThis.TaskitatorBreaks.interval(overwrite.body.today_breaks[date].breaks[0],bounds);
-    const status=globalThis.TaskitatorBreaks.active(overwrite.body.today_breaks,{},interval.startTime);
-    assert.equal(status,true);
+    const date=bounds.dateStr,first={window_started_at:now-10000,timezone:zone,day_start_hour:0,locked:true,breaks:[{start:'14:00:00',end:'14:30:00'}]};
+    const upload=await save(f,a,[task()],{today_breaks:{[date]:first}});assert.equal(upload.status,200);
+    assert.equal(upload.body.today_breaks[date],undefined);
+    assert.equal((await f.call('/sync/pull',a.token)).body.today_breaks[date],undefined);
+    // Server-owned state comes from /breaks and is returned to every session on sync.
+    assert.equal((await f.call('/breaks',a.token,'POST',{action:'lock',system:'scheduled',timezone:zone})).status,200);
+    const synced=await save(f,a,[task()],{today_breaks:{}});
+    const record=Object.values(synced.body.today_breaks).find(r=>r.server_managed);
+    assert.equal(record.system,'scheduled');assert.equal(record.locked,true);
 });
 
 test('expired completed-operation cleanup cannot cause the same paid request to execute again',async()=>{
