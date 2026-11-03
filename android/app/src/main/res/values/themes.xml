@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Taskitator" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#081226</item>
+        <item name="android:navigationBarColor">#081226</item>
+    </style>
+</resources>
