@@ -5234,18 +5234,35 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 }
 .break-summary-item strong { color: var(--text-color); font-size: 0.8rem; font-weight: 700; }
 .break-summary-loading { font-size: 0.8rem; color: var(--text-muted); }
-.break-tabs { display: flex; gap: 6px; margin-bottom: 12px; border-bottom: 1px solid var(--border-color); }
-.break-tab {
-    flex: 1; padding: 8px 10px; border: 0; border-bottom: 2.5px solid transparent; background: none; color: var(--text-muted);
-    font: inherit; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: color var(--dur-fast) ease, border-color var(--dur-fast) ease;
+/* System selector: same raised, rounded buttons as the rest of Taskitator; the chosen one is filled blue. */
+.break-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.icon-btn.break-tab {
+    height: auto; min-height: 42px; padding: 8px 10px; font-size: 0.88rem; font-weight: 700;
+    color: var(--text-muted); background: var(--card-subtle); white-space: nowrap;
 }
-.break-tab:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: 6px 6px 0 0; }
-.break-tab.is-active { color: var(--primary); border-bottom-color: var(--primary); }
-.break-tab.is-unavailable { opacity: 0.55; }
+.icon-btn.break-tab:hover { color: var(--primary); }
+.icon-btn.break-tab:focus-visible { box-shadow: var(--focus-ring); }
+.icon-btn.break-tab.is-active,
+.icon-btn.break-tab.is-active:hover {
+    background: var(--primary); border-color: var(--primary); color: #fff;
+    box-shadow: 0 3px 0 var(--depth-primary), 0 2px 8px rgba(29, 78, 216, 0.25);
+}
+.icon-btn.break-tab.is-active:hover { background: var(--primary-hover); }
+.icon-btn.break-tab.is-active:focus-visible { box-shadow: 0 3px 0 var(--depth-primary), var(--focus-ring); }
+.icon-btn.break-tab.is-unavailable { opacity: 0.75; cursor: pointer; }
 .break-tab[data-locked]::after { content: ' 🔒'; }
+.break-system-intro { margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; background: var(--card-subtle); border: 1px solid var(--border-color); }
+.break-system-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--primary); font-size: 0.95rem; }
+.break-system-state { font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-color); color: var(--text-muted); background: var(--card-bg); }
+.break-system-state[data-state="locked"] { color: #86efac; border-color: var(--success); background: rgba(34, 197, 94, 0.12); }
+.break-system-state[data-state="blocked"] { color: #fca5a5; border-color: var(--danger); background: rgba(239, 68, 68, 0.12); }
+.break-system-steps { margin: 8px 0 0; padding-left: 1.2em; font-size: 0.8rem; line-height: 1.45; color: var(--text-muted); }
+.break-system-steps li + li { margin-top: 3px; }
 .break-tab-desc { font-size: 0.82rem; color: var(--text-muted); margin: 0 0 12px; line-height: 1.4; }
 .break-edit-actions { display: flex; gap: 8px; justify-content: flex-end; }
-.break-lock-btn { margin-top: 12px; }
+.icon-btn.break-lock-btn { margin-top: 12px; height: auto; min-height: 40px; padding: 9px 14px; font-size: 0.85rem; }
+.icon-btn.break-action-btn { height: auto; min-height: 40px; padding: 8px 16px; font-size: 0.85rem; }
+.break-load-error { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 0.8rem; color: #fca5a5; }
 .break-lock-btn[hidden], .break-tabpanel[hidden] { display: none !important; }
 .flex-allowance-meter { margin-bottom: 12px; }
 .flex-allowance-head { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; }

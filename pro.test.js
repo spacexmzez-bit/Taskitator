@@ -1547,7 +1547,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-dual-breaks-v1'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-dual-breaks-v2'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);
@@ -2050,4 +2050,34 @@ test('Settings shows the numberless three-state Free limits card, Pro hosted num
     const ui=readConsolidatedSource('pro/pro-ui.js');
     assert.match(ui,/Taskitator credit limits don't apply to your own API key on Pro/);
     assert.match(ui,/AI credits this 30-day cycle/);
+});
+
+test('Daily Breaks system selector uses the shared button style and can recover from a failed load', () => {
+    const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+    const css = fs.readFileSync(new URL('./style.css', import.meta.url), 'utf8');
+    const app = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+    for (const name of ['scheduled', 'flexible']) {
+        const tag = html.match(new RegExp(`<button[^>]*data-break-tab="${name}"[^>]*>`))?.[0] || '';
+        assert.match(tag, /class="icon-btn break-tab/, `${name} tab uses the shared .icon-btn button`);
+        assert.match(tag, /role="tab"/);
+    }
+    const save = html.match(/<button id="saveBreaksModalBtn"[^>]*>/)[0];
+    assert.match(save, /btn-primary btn-solid-primary/);
+    assert.doesNotMatch(save, /style=/, 'Save uses shared classes, not inline colours');
+    assert.match(css, /\.icon-btn\.break-tab\.is-active[\s\S]*?background: var\(--primary\)/);
+    assert.match(app, /data-break-retry/, 'a failed load shows a retry button instead of "Loading…" forever');
+    assert.match(app, /this\.loadError/);
+});
+
+test('Each break system panel names the system, shows its lock state and basic instructions', () => {
+    const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+    const app = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+    for (const [name, title] of [['scheduled', 'Scheduled Breaks'], ['flexible', 'Flexible Breaks']]) {
+        const panel = html.match(new RegExp(`data-break-panel="${name}"[\\s\\S]*?</section>`))[0];
+        assert.match(panel, new RegExp(`<strong>[^<]*${title}</strong>`));
+        assert.match(panel, new RegExp(`data-break-state="${name}"`));
+        assert.equal((panel.match(/<li>/g) || []).length, 3, `${name} shows three basic steps`);
+    }
+    assert.match(app, /Locked for today/);
+    assert.match(app, /Not locked yet/);
 });

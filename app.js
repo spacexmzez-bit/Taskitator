@@ -2076,6 +2076,10 @@ window.TaskitatorApp = (() => {
                 });
             });
             this.modal.querySelectorAll('[data-break-lock]').forEach(btn => btn.addEventListener('click', () => this.lockToday(btn.dataset.breakLock)));
+            if (this.summary) this.summary.addEventListener('click', (e) => {
+                if (!e.target.closest('[data-break-retry]')) return;
+                this.loadError = ''; this.renderModal(); this.refresh(true);
+            });
             if (this.flexBody) this.flexBody.addEventListener('click', (e) => {
                 const btn = e.target.closest('[data-flex]');
                 if (!btn || btn.getAttribute('aria-disabled') === 'true') {
@@ -2106,7 +2110,14 @@ window.TaskitatorApp = (() => {
             // Deadline checks run every second; at most one background refresh per 5 seconds.
             if (!force && Date.now() - (this.refreshedAt || 0) < 5000) return null;
             this.refreshedAt = Date.now();
-            try { return await engine.refresh(); } catch { return null; }
+            try { const view = await engine.refresh(); this.loadError = ''; return view; }
+            catch (error) {
+                // Never leave the panel on "Loading…" with no way forward.
+                this.loadError = error?.status === 404 || /not found/i.test(error?.message || '')
+                    ? 'The website is newer than its Worker. Deploy the Worker, then reload.' : (error?.message || 'Could not reach the server.');
+                if (this.modal?.classList.contains('open') && !engine.current?.()) this.renderModal();
+                return null;
+            }
         },
 
         updateStatusPill() {
@@ -2225,7 +2236,8 @@ window.TaskitatorApp = (() => {
                 view.flexible?.active && now >= view.flexible.active.can_end_at].join('|') : '';
             const names = { scheduled: 'Scheduled', flexible: 'Flexible' };
             if (this.summary) {
-                if (!view) this.summary.innerHTML = '<span class="break-summary-loading">Loading today’s breaks…</span>';
+                if (!view && this.loadError) this.summary.innerHTML = `<div class="break-load-error" role="alert"><span>Could not load today’s breaks. ${this.esc(this.loadError)}</span><button type="button" class="icon-btn" data-break-retry>Try again</button></div>`;
+                else if (!view) this.summary.innerHTML = '<span class="break-summary-loading">Loading today’s breaks…</span>';
                 else {
                     const active = engine.getActiveBreak();
                     const items = [
@@ -2247,6 +2259,12 @@ window.TaskitatorApp = (() => {
                 tab.title = blocked ? `${names[name]} becomes available after the next day reset.` : '';
             });
             this.modal.querySelectorAll('[role="tabpanel"][data-break-panel]').forEach(panel => { panel.hidden = panel.dataset.breakPanel !== this.tab; });
+            this.modal.querySelectorAll('[data-break-state]').forEach(chip => {
+                const name = chip.dataset.breakState;
+                const [state, text] = !view ? ['', ''] : view.system === name ? ['locked', '🔒 Locked for today']
+                    : view.system ? ['blocked', 'Unavailable until reset'] : ['', 'Not locked yet'];
+                chip.dataset.state = state; chip.textContent = text;
+            });
             this.modal.querySelectorAll('[data-break-lock]').forEach(btn => {
                 const name = btn.dataset.breakLock;
                 btn.hidden = !view || !!view.system;

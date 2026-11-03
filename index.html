@@ -634,22 +634,37 @@
         </div>
         <div id="breakDaySummary" class="break-day-summary" aria-live="polite"></div>
         <div class="break-tabs" role="tablist" aria-label="Break systems">
-            <button type="button" role="tab" id="breakTabScheduled" class="break-tab is-active" data-break-tab="scheduled" aria-controls="breakPanelScheduled" aria-selected="true">📅 Scheduled</button>
-            <button type="button" role="tab" id="breakTabFlexible" class="break-tab" data-break-tab="flexible" aria-controls="breakPanelFlexible" aria-selected="false" tabindex="-1">☕ Flexible</button>
+            <button type="button" role="tab" id="breakTabScheduled" class="icon-btn break-tab is-active" data-break-tab="scheduled" aria-controls="breakPanelScheduled" aria-selected="true">📅 Scheduled</button>
+            <button type="button" role="tab" id="breakTabFlexible" class="icon-btn break-tab" data-break-tab="flexible" aria-controls="breakPanelFlexible" aria-selected="false" tabindex="-1">☕ Flexible</button>
         </div>
         <section id="breakPanelScheduled" class="break-tabpanel" role="tabpanel" data-break-panel="scheduled" aria-labelledby="breakTabScheduled">
+            <div class="break-system-intro" aria-live="polite">
+                <div class="break-system-title"><strong>📅 Scheduled Breaks</strong><span class="break-system-state" data-break-state="scheduled"></span></div>
+                <ol class="break-system-steps">
+                    <li>Press Start planning. You get 10 minutes to enter your breaks.</li>
+                    <li>Add up to 3 breaks that don't overlap, 3 hours in total.</li>
+                    <li>Saving locks Scheduled for today.</li>
+                </ol>
+            </div>
             <p id="breakModalStatusDesc" class="break-tab-desc">
                 Plan up to 3 non-overlapping breaks (≤ 3 hours total) in one 10-minute window.
             </p>
             <div id="breakRowsContainer" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px;"></div>
             <div class="break-edit-actions">
-                <button id="addBreakRowModalBtn" type="button" class="icon-btn" style="padding: 6px 12px; font-size: 0.82rem;">+ Add Break</button>
-                <button id="saveBreaksModalBtn" type="button" class="icon-btn btn-primary" style="padding: 6px 14px; font-size: 0.82rem; background: var(--primary); color: #fff; border: none; font-weight: 600;">Save schedule</button>
+                <button id="addBreakRowModalBtn" type="button" class="icon-btn break-action-btn">+ Add Break</button>
+                <button id="saveBreaksModalBtn" type="button" class="icon-btn btn-primary btn-solid-primary break-action-btn">Save schedule</button>
             </div>
             <button type="button" class="icon-btn btn-block break-lock-btn" data-break-lock="scheduled" hidden>🔒 Lock Scheduled for Today</button>
         </section>
         <section id="breakPanelFlexible" class="break-tabpanel" role="tabpanel" data-break-panel="flexible" aria-labelledby="breakTabFlexible" hidden>
-            <p class="break-tab-desc">Start a break now and end it after the minimum, or let it stop by itself. Uses the same 3-hour daily allowance.</p>
+            <div class="break-system-intro" aria-live="polite">
+                <div class="break-system-title"><strong>☕ Flexible Breaks</strong><span class="break-system-state" data-break-state="flexible"></span></div>
+                <ol class="break-system-steps">
+                    <li>Pick 30 min, 45 min, 1 hour, a custom length, or until your allowance ends.</li>
+                    <li>The break starts immediately and counts every started minute from your 3-hour daily allowance.</li>
+                    <li>End it after the minimum, or let it stop by itself. Starting a break locks Flexible for today.</li>
+                </ol>
+            </div>
             <div id="flexBreakBody"></div>
             <button type="button" class="icon-btn btn-block break-lock-btn" data-break-lock="flexible" hidden>🔒 Lock Flexible for Today</button>
         </section>
