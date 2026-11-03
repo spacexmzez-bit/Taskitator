@@ -13,8 +13,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Security regression tests
-        run: npm test
+      - name: Run regression tests
+        run: |
+          npm test
+          node --experimental-global-webcrypto --test uni/*.test.js
       - name: Deploy existing Cloudflare Worker
         run: npx wrangler@4 deploy --config wrangler.toml
         env:
