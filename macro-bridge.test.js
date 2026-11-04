@@ -58,6 +58,8 @@ test('settings, guide and service worker are wired', () => {
     assert.match(guide, /href="macros\/Taskitator_Cloud_Bridge\.macro"/);
     assert.match(guide, /href="macros\/App_Blocker\.macro"/);
     assert.match(guide, /Do not change the macro's title/);
+    assert.match(guide, /id="blocker-offline-sync"/);
+    assert.match(guide, /Nothing is uploaded until you press Apply/);
     assert.match(guide, /Import\/Export<\/strong> section/);
     assert.match(guide, /three dots<\/strong>, then <strong>Save macro/);
     assert.doesNotMatch(guide, /data:application\/octet-stream;base64/);

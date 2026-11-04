@@ -685,6 +685,16 @@
                 </tbody>
             </table>
         </div>
+        <details class="recommendation-box" id="blocker-offline-sync">
+            <summary><strong>Working offline and syncing back</strong></summary>
+            <ul>
+                <li><strong>The blocker follows the cloud, not your device.</strong> The Bridge reads your status from the Taskitator server. Tasks you complete while offline do not unlock your apps until this device reconnects and syncs.</li>
+                <li><strong>Edits merge automatically.</strong> When you reconnect, changes made on this device are merged with the cloud field by field (for example, a title edited here and a due date edited elsewhere both stay). Tags from both sides are kept.</li>
+                <li><strong>Only real clashes ask you.</strong> If the same field was changed differently on both sides, or a task was deleted on one side and edited on the other, a panel on this device asks you to pick <em>This device</em> or <em>Cloud</em> for each. Nothing is uploaded until you press Apply.</li>
+                <li><strong>"Decide later" is safe.</strong> Your offline edits stay on this device and the blocker keeps following the last cloud state. The panel returns on the next sync.</li>
+                <li><strong>Phone token and macros need no changes.</strong> The token and the Bridge keep working the same way. Creating or disconnecting a phone token needs a connection.</li>
+            </ul>
+        </details>
         <p><strong>Sleep Lock:</strong> there is no separate sleep macro. The same App Blocker is used for both task blocking and Sleep Lock. Emergency Bypass turns both off.</p>
         <details class="recommendation-box">
             <summary><strong>Not working?</strong></summary>

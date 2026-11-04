@@ -523,6 +523,259 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
 })();
 
 // <<< MODULE_END: auth-client.js >>>
+// <<< MODULE_START: merge.js >>>
+// Field-level three-way merge for edits made on this device while the cloud also changed
+// (typically after working offline). Compares base (last synced copy), local and remote:
+// a change on one side wins, identical changes agree, and only a field changed differently
+// on both sides, or a delete against an edit, is a conflict the user decides on this device.
+// Conflicts are recomputed from the three copies on every sync; none are stored.
+(function () {
+    'use strict';
+    const DB_NAME = 'taskitator-merge', STORE = 'base';
+    const LIST_SCOPES = ['tasks', 'projects'];
+    const WHOLE_SCOPES = ['recurrence_state', 'saved_criteria'];
+    // Per-device bookkeeping that is never a real disagreement.
+    const VOLATILE_SETTINGS = new Set(['last_synced', 'worker_username', 'worker_url', 'worker_passkey']);
+
+    function canon(value) {
+        if (Array.isArray(value)) return '[' + value.map(canon).join(',') + ']';
+        if (value && typeof value === 'object') {
+            return '{' + Object.keys(value).sort().filter(k => value[k] !== undefined)
+                .map(k => JSON.stringify(k) + ':' + canon(value[k])).join(',') + '}';
+        }
+        return JSON.stringify(value === undefined ? null : value);
+    }
+    const same = (a, b) => canon(a) === canon(b);
+    const isPrimitiveList = v => Array.isArray(v) && v.every(x => x === null || typeof x !== 'object');
+    const clone = v => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+
+    // Tags and other primitive lists merge as sets: additions from both sides are kept and a
+    // removal on either side sticks, so they never conflict.
+    function mergeSet(base, local, remote) {
+        const b = new Set(base), l = new Set(local), r = new Set(remote);
+        const out = [];
+        for (const x of [...remote, ...local]) {
+            if (out.includes(x)) continue;
+            const removed = (b.has(x) && (!l.has(x) || !r.has(x)));
+            if (!removed) out.push(x);
+        }
+        return out;
+    }
+
+    function mergeItem(scope, id, base, local, remote, add, choice) {
+        const out = {};
+        const keys = new Set([...Object.keys(base || {}), ...Object.keys(local), ...Object.keys(remote)]);
+        for (const key of keys) {
+            const b = base?.[key], l = local[key], r = remote[key];
+            if (same(l, r)) { if (l !== undefined) out[key] = clone(l); continue; }
+            if (base && same(l, b)) { if (r !== undefined) out[key] = clone(r); continue; }
+            if (base && same(r, b)) { if (l !== undefined) out[key] = clone(l); continue; }
+            if (isPrimitiveList(l) && isPrimitiveList(r) && (b === undefined || isPrimitiveList(b))) {
+                out[key] = mergeSet(b || [], l, r); continue;
+            }
+            const cid = `${scope}:${id}:${key}`;
+            add({ id: cid, kind: 'field', scope, itemId: id, field: key, mine: clone(l), theirs: clone(r),
+                label: String(local.title ?? remote.title ?? base?.title ?? id) });
+            const pick = choice(cid) === 'theirs' ? r : l;
+            if (pick !== undefined) out[key] = clone(pick);
+        }
+        return out;
+    }
+
+    function mergeList(scope, base, local, remote, add, choice) {
+        const byId = list => new Map((Array.isArray(list) ? list : []).filter(x => x && x.id !== undefined).map(x => [x.id, x]));
+        const B = byId(base), L = byId(local), R = byId(remote);
+        const result = new Map();
+        const ids = [...R.keys(), ...[...L.keys()].filter(id => !R.has(id))];
+        for (const id of [...new Set([...ids, ...B.keys()])]) {
+            const b = B.get(id), l = L.get(id), r = R.get(id);
+            if (!l && !r) continue; // gone on both sides
+            if (l && r) { result.set(id, mergeItem(scope, id, b, l, r, add, choice)); continue; }
+            const survivor = l || r, deletedHere = !l;
+            if (!b) { result.set(id, clone(survivor)); continue; } // added on one side only
+            if (same(survivor, b)) continue; // deleted on one side, untouched on the other
+            const cid = `${scope}:${id}:deleted`;
+            add({ id: cid, kind: 'delete', scope, itemId: id, field: null, deletedOn: deletedHere ? 'device' : 'cloud',
+                mine: deletedHere ? undefined : clone(l), theirs: deletedHere ? clone(r) : undefined,
+                label: String(survivor.title ?? b.title ?? id) });
+            // "mine" = this device's version of the item (deleted, or edited); "theirs" = the cloud's.
+            const theirs = choice(cid) === 'theirs';
+            const keep = deletedHere ? theirs : !theirs;
+            if (keep) result.set(id, clone(survivor));
+        }
+        // A subtask whose parent disappeared must not be left dangling.
+        if (scope === 'tasks') {
+            for (const [id, task] of [...result]) {
+                if (task.parent_id && !result.has(task.parent_id)) {
+                    const cid = `tasks:${id}:orphan`;
+                    add({ id: cid, kind: 'orphan', scope, itemId: id, field: 'parent_id', mine: 'Keep as a main task', theirs: 'Remove it',
+                        label: String(task.title ?? id) });
+                    if (choice(cid) === 'theirs') result.delete(id);
+                    else result.set(id, { ...task, parent_id: null });
+                }
+            }
+        }
+        return [...result.values()];
+    }
+
+    function mergeWhole(scope, base, local, remote, add, choice) {
+        if (same(local, remote)) return clone(local);
+        if (same(local, base)) return clone(remote);
+        if (same(remote, base)) return clone(local);
+        const cid = `${scope}::whole`;
+        add({ id: cid, kind: 'whole', scope, itemId: null, field: null, mine: clone(local), theirs: clone(remote), label: scope });
+        return clone(choice(cid) === 'theirs' ? remote : local);
+    }
+
+    function mergeKeys(scope, base, local, remote, add, choice) {
+        const out = {};
+        const keys = new Set([...Object.keys(base || {}), ...Object.keys(local || {}), ...Object.keys(remote || {})]);
+        for (const key of keys) {
+            if (VOLATILE_SETTINGS.has(key)) continue;
+            const b = base?.[key], l = local?.[key], r = remote?.[key];
+            let v;
+            if (same(l, r) || same(r, b)) v = l;
+            else if (same(l, b)) v = r;
+            else {
+                const cid = `${scope}::${key}`;
+                add({ id: cid, kind: 'setting', scope, itemId: null, field: key, mine: clone(l), theirs: clone(r), label: key });
+                v = choice(cid) === 'theirs' ? r : l;
+            }
+            if (v !== undefined) out[key] = clone(v);
+        }
+        return out;
+    }
+
+    // choices: { [conflictId]: 'mine' | 'theirs' }. Unchosen conflicts default to this device's value.
+    function merge3(base, local, remote, choices = {}) {
+        const conflicts = [];
+        const add = c => conflicts.push(c);
+        const choice = id => choices[id];
+        const merged = {};
+        for (const scope of LIST_SCOPES) merged[scope] = mergeList(scope, base[scope], local[scope], remote[scope], add, choice);
+        merged.settings = mergeKeys('settings', base.settings, local.settings, remote.settings, add, choice);
+        for (const scope of WHOLE_SCOPES) merged[scope] = mergeWhole(scope, base[scope], local[scope], remote[scope], add, choice);
+        // The audit ledger only grows: keep every entry from both sides.
+        const seen = new Set(), ledger = [];
+        for (const entry of [...(remote.completed_audit_ledger || []), ...(local.completed_audit_ledger || [])]) {
+            const k = canon(entry);
+            if (!seen.has(k)) { seen.add(k); ledger.push(entry); }
+        }
+        merged.completed_audit_ledger = ledger;
+        return { merged, conflicts, unresolved: conflicts.filter(c => !(c.id in choices)) };
+    }
+
+    // ---- Base snapshot (last copy known to match the cloud), kept in IndexedDB ----
+    function openDb() {
+        return new Promise((resolve, reject) => {
+            if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB unavailable'));
+            const req = indexedDB.open(DB_NAME, 1);
+            req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function withStore(mode, fn) {
+        const db = await openDb();
+        try {
+            return await new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE, mode), req = fn(tx.objectStore(STORE));
+                tx.oncomplete = () => resolve(req?.result);
+                tx.onerror = tx.onabort = () => reject(tx.error);
+            });
+        } finally { db.close(); }
+    }
+    const SNAPSHOT_KEYS = ['tasks', 'projects', 'settings', 'recurrence_state', 'saved_criteria', 'completed_audit_ledger'];
+    function snapshotOf(version, source) {
+        const snap = { version };
+        for (const key of SNAPSHOT_KEYS) snap[key] = clone(source[key]);
+        return snap;
+    }
+    async function saveBase(user, version, source) {
+        try { await withStore('readwrite', s => s.put(snapshotOf(version, source), user)); } catch { /* merge falls back to the copy chooser */ }
+    }
+    async function loadBase(user) {
+        try { return (await withStore('readonly', s => s.get(user))) || null; } catch { return null; }
+    }
+    async function clearBase(user) {
+        try { await withStore('readwrite', s => s.delete(user)); } catch { /* ignore */ }
+    }
+
+    // ---- Conflict panel (runs on this device only) ----
+    let panelOpen = false;
+    const FIELD_NAMES = { title: 'Title', description: 'Description', due_date: 'Due date', priority_id: 'Priority', project_id: 'Project',
+        status: 'Status', completed_at: 'Completed', parent_id: 'Parent', proof_criteria: 'Proof criteria' };
+    function show(value) {
+        if (value === undefined || value === null || value === '') return '(empty)';
+        const text = typeof value === 'string' ? value : JSON.stringify(value);
+        return text.length > 200 ? text.slice(0, 200) + '…' : text;
+    }
+    function describe(c) {
+        if (c.kind === 'delete') return { title: c.label, line: c.deletedOn === 'device' ? 'Deleted on this device, edited in the cloud' : 'Edited on this device, deleted in the cloud',
+            mine: c.deletedOn === 'device' ? 'Delete it' : 'Keep my edited version', theirs: c.deletedOn === 'device' ? 'Keep the cloud version' : 'Delete it' };
+        if (c.kind === 'orphan') return { title: c.label, line: 'Its parent task was removed in the cloud', mine: c.mine, theirs: c.theirs };
+        if (c.kind === 'whole') return { title: c.scope === 'recurrence_state' ? 'Repeating tasks' : 'Saved criteria', line: 'Changed on both sides', mine: show(c.mine), theirs: show(c.theirs) };
+        return { title: c.label, line: (FIELD_NAMES[c.field] || c.field) + ' changed on both sides', mine: show(c.mine), theirs: show(c.theirs) };
+    }
+    // Resolves with a choices map, or null when the user decides later.
+    function askUser(conflicts, times = {}) {
+        if (panelOpen || typeof document === 'undefined' || !document.body) return Promise.resolve(null);
+        panelOpen = true;
+        return new Promise(resolve => {
+            const choices = {};
+            const dialog = document.createElement('dialog');
+            dialog.id = 'taskitatorMergePanel';
+            dialog.className = 'modal-overlay open';
+            dialog.style.cssText = 'display:block;position:fixed;inset:0;margin:auto;width:min(94vw,560px);height:fit-content;max-height:90vh;overflow:auto;padding:20px;border:1px solid #777;border-radius:12px;background:#171b24;color:#fff;z-index:2147483647;';
+            const el = (tag, text, css) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (css) n.style.cssText = css; return n; };
+            dialog.append(el('h2', 'Choose what to keep', 'margin-top:0'),
+                el('p', `${conflicts.length} item${conflicts.length === 1 ? ' was' : 's were'} changed differently on this device and in the cloud. Everything else merged automatically. Nothing is saved until you press Apply.`));
+            const when = el('p', `This device last edited: ${times.local ? new Date(times.local).toLocaleString() : 'time unknown'} · Cloud saved: ${times.remote ? new Date(times.remote).toLocaleString() : 'time unknown'}`, 'font-size:.8rem;opacity:.75');
+            dialog.append(when);
+            const apply = el('button', 'Apply', 'margin:6px;padding:10px;border-radius:6px;cursor:pointer;');
+            apply.type = 'button'; apply.disabled = true;
+            const refresh = () => { apply.disabled = conflicts.some(c => !choices[c.id]); };
+            for (const c of conflicts) {
+                const d = describe(c);
+                const card = el('div', undefined, 'border:1px solid #444;border-radius:8px;padding:10px;margin:10px 0;');
+                card.dataset.conflictId = c.id;
+                card.append(el('strong', d.title), el('div', d.line, 'font-size:.8rem;opacity:.75;margin-bottom:6px'));
+                const row = el('div', undefined, 'display:flex;gap:8px;flex-wrap:wrap');
+                const buttons = {};
+                for (const [side, heading, text] of [['mine', 'This device', d.mine], ['theirs', 'Cloud', d.theirs]]) {
+                    const b = el('button', undefined, 'flex:1 1 200px;text-align:left;padding:8px;border-radius:6px;cursor:pointer;');
+                    b.type = 'button';
+                    b.append(el('div', heading, 'font-size:.7rem;opacity:.7'), el('div', text, 'word-break:break-word'));
+                    b.addEventListener('click', () => {
+                        choices[c.id] = side;
+                        for (const [s, other] of Object.entries(buttons)) other.style.outline = s === side ? '2px solid #4c8dff' : 'none';
+                        refresh();
+                    });
+                    buttons[side] = b; row.append(b);
+                }
+                card.append(row); dialog.append(card);
+            }
+            const finish = value => { dialog.remove(); panelOpen = false; resolve(value); };
+            const all = side => { for (const c of conflicts) choices[c.id] = side; finish({ ...choices }); };
+            const bar = el('div', undefined, 'display:flex;flex-wrap:wrap;gap:4px;margin-top:8px');
+            const mineAll = el('button', 'Keep all mine'), theirsAll = el('button', 'Use all cloud'), later = el('button', 'Decide later');
+            for (const b of [mineAll, theirsAll, later]) { b.type = 'button'; b.style.cssText = 'margin:6px;padding:10px;border-radius:6px;cursor:pointer;'; }
+            mineAll.addEventListener('click', () => all('mine'));
+            theirsAll.addEventListener('click', () => all('theirs'));
+            later.addEventListener('click', () => finish(null));
+            apply.addEventListener('click', () => { if (!apply.disabled) finish({ ...choices }); });
+            dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
+            bar.append(apply, mineAll, theirsAll, later);
+            dialog.append(bar);
+            document.body.appendChild(dialog);
+            dialog.showModal();
+        });
+    }
+
+    window.TaskitatorMerge = Object.freeze({ merge3, saveBase, loadBase, clearBase, askUser, canon });
+})();
+
+// <<< MODULE_END: merge.js >>>
 // <<< MODULE_START: sync-engine.js >>>
 // File: sync-engine.js
 // sync-engine.js
@@ -810,13 +1063,14 @@ const SyncEngine = {
             });
             const data = await res.json();
             if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
-            if (res.status === 409) return this.reportConflict(data);
+            if (res.status === 409) return this.resolveConflict(data, this.mergeInFlight ? this.mergeAttempt : 0);
             if(res.status===403 && ['PROOF_REQUIRED','REQUIREMENTS_LOCKED','SHIELD_REQUIRED'].includes(data.code))
                 return this.reportConflict({...data,remote_version:payload.base_version,error:data.error+' Keep a backup of local changes, then use the cloud copy and submit proof, or activate Emergency Bypass for the intended change.'});
             if (!res.ok || data.success !== true || data.version !== payload.base_version + 1) {
                 throw new Error(data.error || 'Upload acknowledgement is invalid. Local changes were retained.');
             }
             this.rememberRemoteVersion(data.version);
+            await window.TaskitatorMerge?.saveBase(config.username, data.version, payload);
             const settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
             settings.last_synced = data.updated_at;
             localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
@@ -1078,7 +1332,7 @@ const SyncEngine = {
                 localStorage.removeItem(this.STORAGE_KEY_INITIAL_PULL);
                 this.hasUnsavedChanges = true;
                 localStorage.setItem(this.STORAGE_KEY_DIRTY, 'true');
-                return this.reportConflict({ remote_version: data.version });
+                return this.resolveConflict({ remote_version: data.version });
             }
             if (data.empty && !options.discardLocal) {
                 this.rememberRemoteVersion(data.version);
@@ -1126,6 +1380,8 @@ const SyncEngine = {
                 for (const [key, value] of before) if (value !== null) localStorage.setItem(key, value);
                 throw err;
             }
+            await window.TaskitatorMerge?.saveBase(config.username, data.version,
+                { ...data, settings: window.TaskitatorAuth.cleanSettings(data.settings || {}) });
             localStorage.removeItem(this.STORAGE_KEY_INITIAL_PULL);
             localStorage.removeItem(this.STORAGE_KEY_VERSION_PENDING);
             this.hasUnsavedChanges = false;
@@ -1139,6 +1395,69 @@ const SyncEngine = {
             if (err?.offline) return { success: false, reason: 'offline' };
             this.notify('error', err.message);
             return { success: false, error: err.message };
+        }
+    },
+
+    // Merge this device's edits with the cloud copy field by field. Only items changed
+    // differently on both sides reach the user; anything that cannot be merged safely
+    // (no base copy, older cloud revision, repeated races) falls back to the copy chooser.
+    async resolveConflict(info = {}, attempt = 0) {
+        const merge = window.TaskitatorMerge;
+        const fallback = () => this.reportConflict(info);
+        if (attempt === 0 && this.mergeInFlight) {
+            return { success: false, conflict: true, deferred: true, error: 'A merge is already waiting for your decision.' };
+        }
+        if (!merge || attempt >= 3) return fallback();
+        const config = this.getConfig(), sessionId = this.sessionId;
+        const top = attempt === 0;
+        if (top) { this.mergeInFlight = true; this.mergeAttempt = 0; }
+        try {
+            const base = await merge.loadBase(config.username);
+            if (!base) return fallback();
+            const remote = await this.readCloud(config);
+            if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
+            if (remote.empty || !Array.isArray(remote.tasks) || base.version > remote.version) return fallback();
+            const revision = localStorage.getItem(this.STORAGE_KEY_REVISION);
+            const local = this.getPayload();
+            const first = merge.merge3(base, local, remote);
+            let choices = {};
+            if (first.conflicts.length) {
+                this.notify('conflict', { ...info, merge: true });
+                choices = await merge.askUser(first.conflicts, {
+                    local: localStorage.getItem(this.STORAGE_KEY_LAST_MODIFIED), remote: remote.updated_at });
+                if (!choices) return { success: false, conflict: true, deferred: true, error: 'Conflicts are waiting for your decision on this device.' };
+                if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
+            }
+            if (revision !== localStorage.getItem(this.STORAGE_KEY_REVISION)) {
+                return { success: false, error: 'Local edits changed during the merge. Sync again to retry.' };
+            }
+            const { merged } = merge.merge3(base, local, remote, choices);
+            const settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
+            const updates = {
+                [this.STORAGE_KEY_TASKS]: JSON.stringify(merged.tasks),
+                [this.STORAGE_KEY_PROJECTS]: JSON.stringify(merged.projects),
+                [this.STORAGE_KEY_SETTINGS]: JSON.stringify({ ...settings, ...merged.settings }),
+                [this.STORAGE_KEY_LEDGER]: JSON.stringify(merged.completed_audit_ledger),
+                [this.STORAGE_KEY_SAVED_CRITERIA]: JSON.stringify(merged.saved_criteria || []),
+                taskitator_recurrence_state: JSON.stringify(merged.recurrence_state || { series: [], history: [] })
+            };
+            for (const [key, value] of Object.entries(updates)) localStorage.setItem(key, value);
+            this.rememberRemoteVersion(remote.version);
+            localStorage.removeItem(this.STORAGE_KEY_INITIAL_PULL);
+            localStorage.setItem(this.STORAGE_KEY_REVISION, crypto.randomUUID());
+            this.hasUnsavedChanges = true;
+            localStorage.setItem(this.STORAGE_KEY_DIRTY, 'true');
+            window.dispatchEvent(new CustomEvent('taskitator-merged', { detail: { conflicts: first.conflicts.length } }));
+            this.mergeAttempt = attempt + 1;
+            const result = await this.performPush(false);
+            if (result.success && !result.pending) this.pendingPageRefresh = true;
+            return result;
+        } catch (err) {
+            if (err?.offline) return { success: false, reason: 'offline' };
+            this.notify('error', err.message);
+            return { success: false, error: err.message };
+        } finally {
+            if (top) this.mergeInFlight = false;
         }
     },
 
