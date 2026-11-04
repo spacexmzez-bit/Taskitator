@@ -42,7 +42,7 @@
         { selector: '#syncStatusDot', icon: '🔄', title: 'Sync status', text: 'This dot shows whether your changes are saved to your account.', visual: { type: 'legend', items: [{ color: '#94a3b8', label: 'This device only' }, { color: '#3b82f6', label: 'Syncing' }, { color: '#22c55e', label: 'Up to date' }, { color: '#ef4444', label: 'Needs attention' }] } },
         { selector: ['#openCopilotFabBtn', '#openCopilotNavBtn'], icon: '✨', title: 'Copilot', text: 'Ask Copilot to plan, reschedule or review your tasks. It needs an AI key first, which you add in Settings.' },
         { kind: 'center', icon: '✅', title: 'You’re set. What next?', text: 'These three take a few minutes each and unlock the rest of the app:', visual: { type: 'checklist', items: [
-          { icon: '🤖', label: 'Connect an AI provider', sub: 'Needed for Copilot and proof checks', href: 'settings.html#ai' },
+          { icon: '🤖', label: 'Connect an AI provider', sub: 'Free: needed for Copilot and proof checks. Pro: already included', href: 'settings.html#ai' },
           { icon: '📱', label: 'Link your phone', sub: 'So breaks and rules reach your phone', href: 'settings.html#phone' },
           { icon: '🗓️', label: 'Set your day & week', sub: 'When your day starts, your weekend and break limits', href: 'settings.html#schedule' }] } }
       ]
@@ -69,6 +69,7 @@
       page: 'settings', icon: '🤖', title: 'Set up AI', chapter: 'AI setup',
       summary: 'Add a key, test it, and see what strict checking does.',
       steps: () => [
+        { kind: 'center', icon: '◆', title: 'On Pro? Nothing to set up', text: 'With **Taskitator Pro**, Copilot, proof checks and criteria validation work right away on Taskitator AI. No key needed. The steps below are only for using **your own key**.' },
         { selector: '#aiProviderSelect', before: () => tab('tab-ai'), icon: '🔀', title: 'Pick a provider', text: 'Choose **Gemini** or **Claude**. Each has its own saved key, so you can add both and switch whenever you like.' },
         { selector: '#vaultSaveBtn', before: () => tab('tab-ai'), icon: '🔑', title: 'Add your key', text: 'Paste a key from Google AI Studio (Gemini) or the Claude Console. It’s encrypted before it’s saved, and you confirm with your password or Google first.', why: 'The key is how Taskitator pays for AI on your behalf. Nobody else can use it.' },
         { selector: '#vaultTestBtn', before: () => tab('tab-ai'), icon: '🧪', title: 'Test it', text: 'Run a quick check to make sure the key works. If it fails, re-copy the key and try again.' },
@@ -94,10 +95,10 @@
       steps: () => tierName() === 'pro' ? [
         { selector: '#pro-settings-container', before: () => tab('tab-ai'), icon: '◆', title: 'You have Pro', text: 'Your plan and expiry show here.', visual: { type: 'list', items: [{ icon: '📚', text: 'Study plans and **Smart Study**' }, { icon: '🔢', text: 'Consecutive subtask numbering' }, { icon: '🧾', text: 'Batch review: one proof for several tasks' }, { icon: '🌌', text: 'Create a **Universe** for shared work' }] } },
         { selector: '.pro-quota-grid', before: () => tab('tab-ai'), icon: '📊', title: 'Hosted credits', text: 'Your included AI usage and what’s left of it.' },
-        { selector: '.pro-byok-box', before: () => tab('tab-ai'), icon: '🔑', title: 'Or use your own key', text: 'You can still use your own Gemini or Claude key alongside hosted credits.' },
+        { selector: '.pro-byok-box', before: () => tab('tab-ai'), icon: '🔑', title: 'Or use your own key', text: 'AI works without a key on Pro. If you prefer, switch to your own Gemini or Claude key here.' },
         { selector: '#proComparePageLink', before: () => tab('tab-ai'), icon: '⚖️', title: 'Compare plans', text: 'See exactly what Free and Pro include.' }
       ] : [
-        { selector: '#pro-settings-container', before: () => tab('tab-ai'), icon: '◇', title: 'You’re on Free', text: 'Free covers tasks, breaks, phone rules and Copilot with your own key. Pro adds:', visual: { type: 'list', items: [{ icon: '📚', text: 'Study plans and **Smart Study**' }, { icon: '🔢', text: 'Consecutive subtask numbering' }, { icon: '🧾', text: 'Batch review: one proof for several tasks' }, { icon: '🌌', text: 'Create a **Universe** for shared work' }] } },
+        { selector: '#pro-settings-container', before: () => tab('tab-ai'), icon: '◇', title: 'You’re on Free', text: 'Free covers tasks, breaks, phone rules and Copilot with your own key. Pro adds:', visual: { type: 'list', items: [{ icon: '📚', text: 'Study plans and **Smart Study**' }, { icon: '🔢', text: 'Consecutive subtask numbering' }, { icon: '🧾', text: 'Batch review: one proof for several tasks' }, { icon: '🌌', text: 'Create a **Universe** for shared work' }, { icon: '🤖', text: 'AI with **no key to set up**' }] } },
         { selector: '#pro-activation-form', before: () => tab('tab-ai'), icon: '🎟️', title: 'Activate a code', text: 'Have a Pro code? Enter it here.' },
         { selector: '#proComparePageLink', before: () => tab('tab-ai'), icon: '⚖️', title: 'Compare plans', text: 'See what Free and Pro include side by side.' }
       ]

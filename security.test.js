@@ -2016,7 +2016,8 @@ test('Free simultaneous personal-key requests cannot overdraw the remaining allo
 });
 test('Pro personal-key requests are unmetered and never consume hosted credits',async()=>{
     const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);f.env.KEYO_PUBLIC_JWK=testEnv.KEYO_PUBLIC_JWK;
-    await f.storage.put('pro:entitlement:user_A',{...await activeLicense('user_A'),activated_at:Date.now()-86400000});
+    // Personal-key mode: without it, Pro uses hosted AI by default (hosted-ai.test.js).
+    await f.storage.put('pro:entitlement:user_A',{...await activeLicense('user_A'),activated_at:Date.now()-86400000,use_byok:true});
     const status=(await f.call('/pro/status',a.token)).body;assert.equal(status.isPro,true);assert.equal(status.byok_credit_limits,false);
     const l=await freeLedger(f);assert.equal(l.plan,'pro');
     for(let i=0;i<25;i++)assert.equal((await f.call('/ai/generate',a.token,'POST',gemini())).status,200);
@@ -2030,4 +2031,20 @@ test('Free accounts cannot reach hosted AI through any hosted route',async()=>{
         const r=await f.call(path,a.token,'POST',{operation_id:newOperation(),task_id:'t',criteria:'c',files:[{mime_type:'image/png',data:'YWJj'}],isPro:true});
         assert.equal(r.status,403,path);assert.equal(r.body.code,'PRO_REQUIRED',path);
     }
+});
+
+test('Pro without a saved key gets hosted AI through the real Worker routes; the daily cap is hidden',async()=>{
+    const f=fixture(),a=await create(f);f.env.KEYO_PUBLIC_JWK=testEnv.KEYO_PUBLIC_JWK;f.env.CLAUDE_API_KEY='hosted-test-key';
+    await f.storage.put('pro:entitlement:user_A',{...await activeLicense('user_A'),activated_at:Date.now()-86400000});
+    const keys=await f.call('/ai/keys',a.token);assert.equal(keys.status,200);assert.equal(keys.body.hosted,true);
+    assert.equal(JSON.stringify(keys.body).includes('validation'),false,'no limits are exposed');
+    const result=await f.call('/ai/generate',a.token,'POST',gemini('Plan my day'));
+    assert.equal(result.status,200,JSON.stringify(result.body));
+    const call=f.providerCalls.at(-1);assert.match(call.url,/api\.anthropic\.com\/v1\/messages$/);
+    assert.equal(call.options.headers['x-api-key'],'hosted-test-key');
+    const status=(await f.call('/pro/status',a.token)).body;assert.equal(status.credits.daily_remaining,45,'hosted Copilot does not use credits');
+    const day=new Date(Date.now()+3*3600000).toISOString().slice(0,10);
+    await f.storage.put('ai-hosted:user_A:'+day+':copilot',500);
+    const refused=await f.call('/ai/generate',a.token,'POST',gemini('Again'));
+    assert.equal(refused.status,503);assert.equal(refused.body.error,'Service unavailable temporarily.');
 });

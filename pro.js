@@ -421,7 +421,7 @@ window.TaskitatorSafety = {
     const models={gemini:['gemini-3.5-flash-lite','gemini-3.1-flash-lite'],claude:['claude-haiku-5-5']};
     const names={gemini:'Gemini',claude:'Claude'};
     let metadata = {ready:false,saved:false,pending:[]}, owner = null, revealed = '', revealTimer;
-    let providers={gemini:metadata,claude:{ready:false,saved:false,pending:[]}},activeProvider='gemini',viewedProvider='gemini',inflight=0;
+    let providers={gemini:metadata,claude:{ready:false,saved:false,pending:[]}},activeProvider='gemini',viewedProvider='gemini',inflight=0,hosted=false;
     let operation = null, proofId = null, verified = false, busy = false;
     const api = (path,body,method='POST',extra={}) => auth().api(path,{method,...extra,...(body?{body:JSON.stringify(body)}:{})});
     function status(message, isTest = null) {
@@ -439,6 +439,8 @@ window.TaskitatorSafety = {
         }
     }
     function acceptMetadata(data,follow=false){
+        // Pro accounts not in personal-key mode use Taskitator's hosted AI: no key needed.
+        if(Object.hasOwn(data,'hosted'))hosted=Boolean(data.hosted);
         const previous=activeProvider+':'+(providers[activeProvider]?.version||'empty');
         if(data.providers)providers=data.providers;
         else providers[data.provider||'gemini']=data;
@@ -480,7 +482,8 @@ window.TaskitatorSafety = {
         return entries;
     }
     function render() {
-        for(const chip of document.querySelectorAll?.('.copilot-model-chip')||[])chip.textContent=names[activeProvider];
+        for(const chip of document.querySelectorAll?.('.copilot-model-chip')||[])chip.textContent=hosted?'Taskitator AI':names[activeProvider];
+        if(byId('vaultHostedNote'))byId('vaultHostedNote').hidden=!hosted;
         if(!byId('vaultStatus'))return;
         byId('vaultStatus').textContent=!metadata.ready?'Key storage isn\'t set up on the server yet.':metadata.saved?
             '✓ '+names[viewedProvider]+' key saved · ends in '+metadata.suffix:'No '+names[viewedProvider]+' key saved yet.';
@@ -513,8 +516,10 @@ window.TaskitatorSafety = {
     }
     const vault = {
         get provider(){return activeProvider;},
-        get available(){return owner===auth()?.account?.user && Boolean(providers[activeProvider]?.ready && providers[activeProvider]?.saved);},
-        selection(){return {provider:activeProvider,primary:models[activeProvider][0],fallback:models[activeProvider][1]||null,keyVersion:providers[activeProvider]?.version};},
+        get hosted(){return owner===auth()?.account?.user && hosted;},
+        get available(){return owner===auth()?.account?.user && (hosted || Boolean(providers[activeProvider]?.ready && providers[activeProvider]?.saved));},
+        // Hosted requests never fall back to another model; the Worker picks the hosted model.
+        selection(){return {provider:activeProvider,primary:models[activeProvider][0],fallback:hosted?null:(models[activeProvider][1]||null),keyVersion:providers[activeProvider]?.version};},
         async refresh(follow=false){
             const user=auth().account?.user,session=window.Clerk.session?.id;
             const data=await api('/ai/keys',null,'GET');
@@ -2141,7 +2146,8 @@ window.TaskitatorEngine = TaskitatorEngine;
                 const client = getClient();
                 try {
                     await client.setUseByok(byokToggle.checked);
-                    showMsg(byokToggle.checked ? 'Now using your own API key. Your credits are untouched.' : 'Now using your Pro credits.', 'success');
+                    showMsg(byokToggle.checked ? 'Now using your own API key. Your credits are untouched.' : 'Now using Taskitator AI. No key needed.', 'success');
+                    window.TaskitatorVault?.refresh?.().catch(() => {});
                 } catch (err) {
                     showMsg(err.message || 'Couldn\'t switch modes. Try again.', 'error');
                     byokToggle.checked = !byokToggle.checked;

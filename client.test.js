@@ -312,7 +312,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-dual-breaks-v3'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-hosted-ai-v1'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -868,4 +868,23 @@ test('new account sets tutorial marker; import and failed creation do not',async
  const failed=await loginFixture([]);failed.auth.connect=async()=>{throw Error('creation failed')};
  await failed.element('newAccountBtn').onclick({target:failed.element('newAccountBtn')});
  assert.equal(failed.context.sessionStorage.getItem('taskitator_new_tutorial'),null);
+});
+
+test('Pro hosted AI: no saved key is needed, the hosted note shows and no fallback model is used',async()=>{
+    const f=client(),events=new Map(),nodes=new Map();let hosted=true;
+    const node=id=>{
+        if(!nodes.has(id))nodes.set(id,{value:'',hidden:true,disabled:false,textContent:'',style:{},handlers:{},addEventListener(k,fn){this.handlers[k]=fn;},replaceChildren(){},append(){},setAttribute(){},showModal(){},close(){}});
+        return nodes.get(id);
+    };
+    f.context.document.getElementById=node;f.context.document.querySelectorAll=()=>[];
+    f.context.document.querySelector=()=>({click(){}});f.window.addEventListener=(name,fn)=>events.set(name,fn);
+    f.auth.account={user:'rd'};
+    const empty={ready:true,saved:false,pending:[]};
+    f.auth.api=async()=>({...empty,providers:{gemini:{...empty,provider:'gemini'},claude:{...empty,provider:'claude'}},selected_provider:'gemini',hosted});
+    const vault=loadVault(f);await vault.initialize();
+    assert.equal(vault.hosted,true);assert.equal(vault.available,true,'Copilot and validation work without a key');
+    assert.equal(node('vaultHostedNote').hidden,false);assert.equal(vault.selection().fallback,null);
+    hosted=false;await vault.refresh();
+    assert.equal(vault.available,false,'personal-key mode without a key still needs one');assert.equal(node('vaultHostedNote').hidden,true);
+    assert.equal(vault.selection().fallback,'gemini-3.1-flash-lite');
 });

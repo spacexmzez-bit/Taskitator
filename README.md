@@ -355,6 +355,8 @@ The top of the file embeds server copies of recurrence and break rules. Their AP
 
 `AIGateway.generate` validates provider/model, verifies account/key ownership and selected provider, rate-limits account requests, permits at most two in-flight requests per account in its current service instance, decrypts the saved key server-side and makes the provider call. After the response, it rechecks ownership, provider and key version before returning results. It supports Gemini and Claude; a provider switch does not silently use the other provider's secret. **This current gateway does not implement the proposed Free 10/220 credit quota.**
 
+**Pro hosted AI.** For an active Pro account not in personal-key mode, `AIGateway.generate` routes Copilot, notes cleanup and criteria validation (including study-plan and Universe criteria) to Taskitator's hosted Claude key (`HOSTED_AI.model`), so no personal key is needed; `/ai/keys` reports `hosted: true` and the browser vault treats AI as available. Usage is limited by hidden per-account daily caps (`HOSTED_AI.daily`: 30 validations, 500 Copilot/notes requests, Asia/Riyadh day) plus a silent daily provider-spend backstop and a 30,000-token input cap; these are separate from credit allowances, are not exposed to clients, and a reached cap returns `503 Service unavailable temporarily.` A request that produced no answer does not use a slot. Proof reviews keep the hosted review service and its credit ledger.
+
 #### Snapshot, phone and route helpers
 
 | Functions | Responsibility |
@@ -546,7 +548,7 @@ The exact allowed methods/fields are validated in their handlers; this table loc
 | `/status` and status query aliases | Phone-access JSON/text evaluation. |
 | `/sync/bridge/mrstudy-rules` | Compatibility bridge returning no linked rules in this source. |
 | `/ai/keys`, `/stage`, `/reveal`, `/test`, `/ai/provider` | Encrypted key metadata/actions/provider selection. Suffixes here belong under `/ai/keys` except `/ai/provider`. |
-| `/ai/generate` | Authenticated selected-provider BYOK gateway. |
+| `/ai/generate` | Authenticated AI gateway: Pro hosted AI by default, otherwise the selected personal-key provider. |
 | `/pro/status`, `/pro/activate`, `/pro/byok` | License/status/mode through `ProGateway`. |
 | `/pro/ai/quote`, `/review`, `/batch-review`, `/personal-review` | Under `/pro/ai`; audit quotes and inference. |
 | `/pro/ai/batch-confirm` | Explicit protected completion confirmation, also used by personal single-review handling. |

@@ -6,7 +6,7 @@ import './pro/study-plan.js';
 // Combines: recurrence-core, break-core, auth, ai-models, verification,
 // deletion, vault, ai-gateway, and worker router.
 // ============================================================================
-import { ProGateway, TaskProtection, liveAccount } from './pro-backend.js';
+import { ProGateway, TaskProtection, liveAccount, POLICY, planOf, periods } from './pro-backend.js';
 import { BreakSystems } from './break-systems.js';
 
 // File: recurrence-core.js
@@ -1206,9 +1206,84 @@ export function providerUsage(provider,raw){
     const input=u.promptTokenCount+extra[0],output=Math.max(extra[1]+extra[2],extra[3]-input);
     return {input,output};
 }
+// Pro hosted AI. Copilot, notes cleanup and criteria validation run on Taskitator's own
+// Claude key for Pro accounts that have not chosen personal-key mode: no key needed.
+// Hidden per-account daily caps (Asia/Riyadh day) and a daily provider-spend backstop are
+// separate from the account's credit allowances and are never shown to the user; when one
+// is reached the request is refused with UNAVAILABLE. Proof reviews keep their own service.
+export const HOSTED_AI = Object.freeze({
+    model: 'claude-haiku-5-5',
+    daily: Object.freeze({ validation: 30, copilot: 500 }),
+    dailySpend: 1_000_000_000,   // nanodollars per account per day (silent cost backstop)
+    maxInput: 30_000, maxOutput: 4096
+});
+export const UNAVAILABLE = 'Service unavailable temporarily.';
+export const hostedBucket = format => format === 'criteria' ? 'validation' : 'copilot';
+const hostedKey = (account, day, name) => `ai-hosted:${account}:${day}:${name}`;
+
 export class AIGateway {
     constructor(service){this.service=service;this.inflight=new Map();}
+    // True when this account's AI runs on Taskitator's hosted key (active Pro, not personal-key mode).
+    async hostedFor(identity, refresh = false){
+        const pro=this.service.pro;
+        if(!pro || !identity?.userId)return false;
+        if(refresh)try{await pro.credits?.refreshLicense(identity.userId);}catch{}
+        const e=await this.service.storage.get('pro:entitlement:'+identity.userId);
+        return Boolean(e && e.account_id===identity.userId && planOf(e)==='pro' && !e.use_byok);
+    }
+    claim(identity){
+        const count=this.inflight.get(identity.userId)||0;
+        if(count>=2)throw new SecurityError(429,'Two AI requests are already running. Wait for one to finish.');
+        this.inflight.set(identity.userId,count+1);
+    }
+    release(identity){
+        const remaining=(this.inflight.get(identity.userId)||1)-1;if(remaining)this.inflight.set(identity.userId,remaining);else this.inflight.delete(identity.userId);
+    }
+    async generateHosted(identity,body){
+        const payload=validatePayload(body.payload),format=payload.taskitatorFormat;
+        if(format==='proof' || format==='batch-proof')throw new SecurityError(409,'Pro proof reviews use the hosted review service. Reload and retry.');
+        const storage=this.service.storage,account=identity.userId,bucket=hostedBucket(format);
+        await liveAccount(storage,account);
+        const key=this.service.pro.audits.headers()['x-api-key'];
+        const forward=toClaudeRequest(payload);
+        delete forward.taskitatorFormat;
+        forward.model=HOSTED_AI.model;
+        forward.max_tokens=Math.min(Number(forward.max_tokens)||HOSTED_AI.maxOutput,HOSTED_AI.maxOutput);
+        await this.service.rateBucket('ai-user:'+account,30);
+        this.claim(identity);
+        let reserved=false;const day=periods().day,countKey=hostedKey(account,day,bucket),spendKey=hostedKey(account,day,'spend');
+        try{
+            const input=await countInputTokens('claude',HOSTED_AI.model,forward,key);
+            if(input>HOSTED_AI.maxInput)throw new SecurityError(413,'This request is too long. Start a new conversation or shorten the text.');
+            await storage.transaction(async tx=>{
+                const used=(await tx.get(countKey))||0,spend=(await tx.get(spendKey))||0;
+                if(used>=HOSTED_AI.daily[bucket] || spend>=HOSTED_AI.dailySpend)throw new SecurityError(503,UNAVAILABLE);
+                await tx.put(countKey,used+1);
+            });
+            reserved=true;
+            let response;
+            try{response=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},body:JSON.stringify(forward),signal:AbortSignal.timeout(55000)});}
+            catch{throw new SecurityError(504,'Taskitator AI timed out. Retry in a moment.');}
+            if(!response.ok){
+                try{await response.body?.cancel();}catch{}
+                throw new SecurityError(response.status===400||response.status===413?400:503,response.status===400||response.status===413?'Taskitator AI rejected this request. Check the file format and content.':UNAVAILABLE);
+            }
+            const raw=await responseJSON(response,key);
+            // A completed generation counts and is costed even if its output is later rejected.
+            reserved=false;
+            const usage=providerUsage('claude',raw),cost=usage?usage.input*POLICY.inputPrice+usage.output*POLICY.outputPrice:(input*POLICY.inputPrice+forward.max_tokens*POLICY.outputPrice);
+            await storage.transaction(async tx=>{await tx.put(spendKey,((await tx.get(spendKey))||0)+cost);});
+            const data=fromClaudeResponse(raw);
+            validateOutput(data,format);
+            return data;
+        }finally{
+            // A request that never produced an answer does not use a daily slot.
+            if(reserved)await storage.transaction(async tx=>{const used=(await tx.get(countKey))||0;await tx.put(countKey,Math.max(0,used-1));}).catch(()=>{});
+            this.release(identity);
+        }
+    }
     async generate(identity,body){
+        if(await this.hostedFor(identity,true))return this.generateHosted(identity,body);
         const provider=providerId(body.provider),config=PROVIDERS[provider];
         if(!config.models.includes(body.model))throw new SecurityError(400,'This model is not enabled for the selected AI provider.');
         const payload=validatePayload(body.payload);
@@ -1917,7 +1992,7 @@ export class TaskitatorSync {
                 user = account.user;
                 if (phoneAdmin) return await this.phoneAccess(request, user);
                 if (keyRoute) {
-                    if (path === '/ai/keys' && method === 'GET') return json(await this.vault.metadata(identity,url.searchParams.get('provider')||'gemini'));
+                    if (path === '/ai/keys' && method === 'GET') return json({...await this.vault.metadata(identity,url.searchParams.get('provider')||'gemini'),hosted:await this.ai.hostedFor(identity)});
                     const body=await readJson(request,path === '/ai/generate' ? MAX_BODY_BYTES : 65536);
                     if (path === '/ai/keys/test' && method === 'POST') return json(await this.vault.testSaved(identity,body.provider));
                     if (path === '/ai/provider' && method === 'POST') return json(await this.vault.select(identity,body.provider));

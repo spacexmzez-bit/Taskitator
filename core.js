@@ -1384,7 +1384,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-dual-breaks-v3');
+                    resolve(event.data?.version === 'taskitator-hosted-ai-v1');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
