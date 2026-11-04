@@ -569,7 +569,8 @@ test('acceptance immediately blocks account reads/writes and makes its phone tok
     assert.equal((await f.call('/sync/pull',phone)).status,403);
     assert.equal((await f.call('/sync/pull',b.token)).status,200);
     const text=await f.service.fetch(new Request('https://worker.test/status?format=text',{headers:{Authorization:'Bearer '+phone}}));
-    assert.equal(await text.text(),'device_unlocked = true');
+    assert.equal(await text.text(),'device_unlocked = true\nsleep = false');
+    assert.equal((await f.call('/status',phone)).body.sleep,false);
     const key='phone:'+await sha256(phone),record=await f.storage.get(key);
     assert.deepEqual(Object.keys(record).sort(),['expires','scope']);record.expires=Date.now()-1;await f.storage.put(key,record);
     assert.equal((await f.call('/status',phone)).status,401);
@@ -1125,9 +1126,9 @@ test('Sleep delay: postpones bedtime across midnight without changing wake time 
 test('Sleep delay: server persists one daily use across schedule edits and rejects invalid or stale requests',async()=>{
  const f=fixture(),a=await create(f),date=new Date(Date.now()+3*3600000),n=date.getUTCHours()*60+date.getUTCMinutes(),time=m=>String(Math.floor((m%1440)/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
  const schedule={enabled:true,bedtime:time(n+1435),wake_time:time(n+180),revision:0};assert.equal((await f.call('/sleep-lock',a.token,'POST',schedule)).status,200);
- const phone=(await f.call('/auth/phone',a.token,'POST')).body.token;assert.equal((await f.call('/status',phone)).body.device_unlocked,false);
+ const phone=(await f.call('/auth/phone',a.token,'POST')).body.token;assert.equal((await f.call('/status',phone)).body.sleep,true);
  assert.equal((await f.call('/sleep-lock',a.token,'POST',{action:'delay',minutes:45,revision:1})).status,400);
- const r=await f.call('/sleep-lock',a.token,'POST',{action:'delay',minutes:30,revision:1});assert.equal(r.status,200);assert.equal(r.body.delay.minutes,30);assert.equal((await f.call('/sleep-lock',a.token)).body.delay.minutes,30);assert.equal((await f.call('/status',phone)).body.device_unlocked,true);
+ const r=await f.call('/sleep-lock',a.token,'POST',{action:'delay',minutes:30,revision:1});assert.equal(r.status,200);assert.equal(r.body.delay.minutes,30);assert.equal((await f.call('/sleep-lock',a.token)).body.delay.minutes,30);assert.equal((await f.call('/status',phone)).body.sleep,false,'a sleep delay lifts the sleep line');
  assert.equal((await f.call('/sleep-lock',a.token,'POST',{action:'delay',minutes:60,revision:1})).status,409);
  assert.equal((await f.call('/sleep-lock',a.token,'POST',{...schedule,revision:1})).status,200);
  assert.equal((await f.call('/sleep-lock',a.token,'POST',{action:'delay',minutes:60,revision:2})).status,409);
@@ -1163,10 +1164,12 @@ test('Sleep Lock: Riyadh overnight and daytime boundaries, disabled and invalid 
 test('Sleep Lock: server settings, stale saves, overnight status, bypass and disabling',async()=>{
  const f=fixture(),a=await create(f);let r=await f.call('/sleep-lock',a.token);assert.equal(r.body.schedule.enabled,false);
  const current=new Date(Date.now()+3*3600000),minute=current.getUTCHours()*60+current.getUTCMinutes(),time=m=>String(Math.floor(((m+1440)%1440)/60)).padStart(2,'0')+':'+String((m+1440)%60).padStart(2,'0');
- const body={enabled:true,bedtime:time(minute-1),wake_time:time(minute+2),revision:0};r=await f.call('/sleep-lock',a.token,'POST',body);assert.equal(r.status,200);assert.equal((await f.call('/status',a.token)).body.device_unlocked,false);
+ const body={enabled:true,bedtime:time(minute-1),wake_time:time(minute+2),revision:0};r=await f.call('/sleep-lock',a.token,'POST',body);assert.equal(r.status,200);{const s=(await f.call('/status',a.token)).body;assert.equal(s.sleep,true);assert.equal(s.device_unlocked,true,'Sleep Lock no longer changes device_unlocked');}
  assert.equal((await f.call('/sleep-lock',a.token,'POST',body)).status,409);assert.equal((await f.call('/sleep-lock',a.token,'POST',{...body,wake_time:body.bedtime,revision:1})).status,400);
- const phone=(await f.call('/auth/phone',a.token,'POST')).body.token;assert.equal((await f.call('/status',phone)).body.device_unlocked,false);assert.equal((await f.call('/sleep-lock',phone)).status,403);
- await f.call('/emergency',a.token,'POST',{});assert.equal((await f.call('/status',a.token)).body.device_unlocked,true);assert.equal((await f.call('/status',phone)).body.device_unlocked,true);
+ const phone=(await f.call('/auth/phone',a.token,'POST')).body.token;assert.equal((await f.call('/status',phone)).body.sleep,true);assert.equal((await f.call('/sleep-lock',phone)).status,403);
+ {const t=await f.service.fetch(new Request('https://worker.test/status?format=text',{headers:{Authorization:'Bearer '+phone}}));assert.equal(await t.text(),'device_unlocked = true\nsleep = true');}
+ await f.call('/emergency',a.token,'POST',{});assert.equal((await f.call('/status',a.token)).body.sleep,false);assert.equal((await f.call('/status',phone)).body.sleep,false);assert.equal((await f.call('/status',phone)).body.device_unlocked,true);
+ {const t=await f.service.fetch(new Request('https://worker.test/status?format=text',{headers:{Authorization:'Bearer '+phone}}));assert.equal(await t.text(),'device_unlocked = true\nsleep = false','a bypass frees both lines');}
  assert.equal((await f.call('/sleep-lock',a.token,'POST',{...body,enabled:false,revision:1})).status,200);
 });
 import { DatabaseSync } from 'node:sqlite';
@@ -1457,7 +1460,7 @@ test('Major Phase 5: imports reject corrupt schemas, dangling IDs and duplicate 
  const u=await releaseFixture(),e=await u.call('/transfer',{full:false}),{manifest}=await u.call('/transfer/'+e.id);assert.throws(()=>u.svc.validateManifest({...manifest,version:9}));const broken=structuredClone(manifest);broken.tasks[0].project_id='missing';assert.throws(()=>u.svc.validateManifest(broken));const duplicate=structuredClone(manifest);duplicate.projects.push(duplicate.projects[0]);assert.throws(()=>u.svc.validateManifest(duplicate));assert.equal(u.db.sql.prepare('SELECT count(*) n FROM universe_reservations').get().n,0);
 });
 test('Major Phase 5: phone status combines group locks and keeps Emergency Bypass and text contract',async()=>{
- const f=fixture(),a=await create(f);f.service.universe.lockStatus=async()=>({locked:true,count:1,degraded:false});const s=await f.call('/status',a.token);assert.equal(s.body.device_unlocked,false);assert.equal(s.body.universe_locks,1);const text=await f.service.fetch(new Request('https://worker.test/status?format=text',{headers:{Authorization:'Bearer '+a.token}}));assert.equal(await text.text(),'device_unlocked = false');await f.call('/emergency',a.token,'POST',{});assert.equal((await f.call('/status',a.token)).body.device_unlocked,true);
+ const f=fixture(),a=await create(f);f.service.universe.lockStatus=async()=>({locked:true,count:1,degraded:false});const s=await f.call('/status',a.token);assert.equal(s.body.device_unlocked,false);assert.equal(s.body.universe_locks,1);const text=await f.service.fetch(new Request('https://worker.test/status?format=text',{headers:{Authorization:'Bearer '+a.token}}));assert.equal(await text.text(),'device_unlocked = false\nsleep = false');await f.call('/emergency',a.token,'POST',{});assert.equal((await f.call('/status',a.token)).body.device_unlocked,true);
 });
 test('Major Phase 5: group outage does not erase unfinished personal requirements',async()=>{
  const {f,a}=await setup();f.service.universe.lockStatus=async()=>({locked:false,degraded:true});const s=await f.call('/status',a.token);assert.equal(s.body.device_unlocked,false);assert.equal(s.body.universe_degraded,true);
@@ -2047,4 +2050,18 @@ test('Pro without a saved key gets hosted AI through the real Worker routes; the
     await f.storage.put('ai-hosted:user_A:'+day+':copilot',500);
     const refused=await f.call('/ai/generate',a.token,'POST',gemini('Again'));
     assert.equal(refused.status,503);assert.equal(refused.body.error,'Service unavailable temporarily.');
+});
+
+import { statusText } from './worker.js';
+test('status text: two independent lines that full-line "contains" rules can tell apart', () => {
+    for (const unlocked of [true, false]) for (const sleep of [true, false]) {
+        const body = statusText({ device_unlocked: unlocked, sleep });
+        assert.equal(body, `device_unlocked = ${unlocked}\nsleep = ${sleep}`);
+        // The App Blocker macro and the Sleep Lock macro each read only their own line.
+        assert.equal(body.includes('device_unlocked = true'), unlocked);
+        assert.equal(body.includes('sleep = true'), sleep);
+        // A bare "true" matches either line, which is why the macros must match the full line.
+        assert.equal(body.includes('true'), unlocked || sleep);
+    }
+    assert.equal(statusText({}), 'device_unlocked = false\nsleep = false', 'unknown values never read as unlocked or locked by accident');
 });

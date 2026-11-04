@@ -79,8 +79,10 @@ for (const finished of [false, true]) for (const universe of [false, true]) for 
             await f.storage.put('sleep-lock:user_A', { enabled: sleep, bedtime: '09:00', wake_time: '11:00', timezone: 'Asia/Riyadh', revision: 1 });
             if (bypass) await f.storage.put('pro:emergency:user_A', { cycle_id: 'x', uses_left: 3, active_until_ms: now() + 10 * MIN, reset_at: now() + 86400000 });
             const s = await f.status(await f.phone());
-            const expected = bypass ? true : sleep ? false : universe ? false : finished;
+            // Sleep Lock is its own line now: it never changes device_unlocked.
+            const expected = bypass ? true : universe ? false : finished;
             assert.equal(s.device_unlocked, expected);
+            assert.equal(s.sleep, bypass ? false : sleep, 'an active bypass frees Sleep Lock too');
             assert.equal(s.in_break, false);
             assert.equal(s.sleep_lock_active, sleep);
             assert.equal(!!s.emergency_bypass, bypass);
@@ -314,7 +316,8 @@ for (const kind of ['scheduled', 'flexible']) for (const universe of [false, tru
             const s = await f.status(await f.phone());
             assert.equal(s.in_break, true);
             assert.equal(s.break_system, kind);
-            assert.equal(s.device_unlocked, bypass ? true : !sleep, 'breaks override Universe locks but not Sleep Lock');
+            assert.equal(s.device_unlocked, true, 'breaks override tasks and Universe locks');
+            assert.equal(s.sleep, bypass ? false : sleep, 'breaks do not override Sleep Lock');
             assert.equal((await f.breaks()).body.allowance.used, before, 'status and bypass do not change break usage');
             at('2026-11-04T10:40:00+03:00');
             const later = await f.status(await f.phone());

@@ -1420,6 +1420,11 @@ export function evaluateStatus(record, now = Date.now()) {
     return { status: 'ok', device_unlocked: !unfinished || inBreak,
         finished: !unfinished, in_break: inBreak };
 }
+// Plain-text status for MacroDroid. Match the FULL line with a "contains" rule (for example
+// `device_unlocked = true` or `sleep = true`), never a bare `true`, which both lines contain.
+export function statusText(state) {
+    return `device_unlocked = ${state.device_unlocked === true}\nsleep = ${state.sleep === true}`;
+}
 export function sleepWindow(schedule, now = Date.now()) {
     const valid=t=>typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
     if(!schedule?.enabled||!valid(schedule.bedtime)||!valid(schedule.wake_time)||schedule.bedtime===schedule.wake_time)return null;
@@ -1885,8 +1890,8 @@ export class TaskitatorSync {
                 const access = await this.storage.get('phone:' + await sha256(token));
                 if (access?.scope === 'deleted-unlock' && access.expires > Date.now()) {
                     return url.searchParams.get('format') === 'text'
-                        ? new Response('device_unlocked = true', {headers:{...CORS,'Content-Type':'text/plain; charset=utf-8'}})
-                        : json({status:'ok',device_unlocked:true,finished:true,in_break:false,account_deleted:true,
+                        ? new Response(statusText({device_unlocked:true,sleep:false}), {headers:{...CORS,'Content-Type':'text/plain; charset=utf-8'}})
+                        : json({status:'ok',device_unlocked:true,sleep:false,finished:true,in_break:false,account_deleted:true,
                             recovery_until:access.expires});
                 }
                 if (!access || access.scope !== 'status') throw new HTTPError(401, 'Phone access was revoked or is invalid.');
@@ -2056,12 +2061,15 @@ export class TaskitatorSync {
                     if(groupState.locked&&!state.in_break){state.device_unlocked=false;state.finished=false;}
                     const schedule=await tx.get('sleep-lock:'+(identity?.userId||meta.owner_id));
                     const sleepPeriod=sleepWindow(schedule),delay=sleepPeriod?await tx.get('sleep-delay:'+(identity?.userId||meta.owner_id)+':'+sleepPeriod.day):null;
+                    // Sleep Lock is reported on its own line. It no longer changes device_unlocked, so the
+                    // App Blocker macro follows tasks/breaks/Universe and the Sleep Lock macro follows `sleep`.
                     state.sleep_lock_active=sleepLockActive(schedule,Date.now(),delay);
-                    if(state.sleep_lock_active)state.device_unlocked=false;
-                    if(identity && await this.protection.bypass(tx,identity.userId)) { state.device_unlocked=true;state.emergency_bypass=true; }
-                    else if(!identity) { const owner=meta.owner_id; if(owner && await this.protection.bypass(tx,owner)){state.device_unlocked=true;state.emergency_bypass=true;} }
+                    state.sleep=state.sleep_lock_active;
+                    // An active Emergency Bypass frees the device from every lock, Sleep Lock included.
+                    if(identity && await this.protection.bypass(tx,identity.userId)) { state.device_unlocked=true;state.sleep=false;state.emergency_bypass=true; }
+                    else if(!identity) { const owner=meta.owner_id; if(owner && await this.protection.bypass(tx,owner)){state.device_unlocked=true;state.sleep=false;state.emergency_bypass=true;} }
                     return url.searchParams.get('format') === 'text'
-                        ? new Response(`device_unlocked = ${state.device_unlocked}`, { headers: { ...CORS, 'Content-Type': 'text/plain; charset=utf-8' } })
+                        ? new Response(statusText(state), { headers: { ...CORS, 'Content-Type': 'text/plain; charset=utf-8' } })
                         : json(state);
                 }
                 if (push && meta.last_write?.mutation_id === body.mutation_id &&
