@@ -725,10 +725,32 @@ window.TaskitatorComponents = Object.freeze({
         let activeDetailTaskId = null;
         const liveHost=host;
         let draft=null,editBaseline='',removeEditReference=false;
+        // The Pro check for consecutive numbering runs once, when the box is ticked. Its result is held here (as a
+        // promise, so overlapping requests share the one check) until Save Changes or until the editor is discarded.
+        // Every quick subtask after the tick reads it instantly instead of asking the server again.
+        // Denials and errors are dropped, so the next tick checks again; an allowed result lapses at its expiry.
+        let consecutiveGrant=null;
+        function clearConsecutiveGrant(){consecutiveGrant=null;}
+        function grantConsecutive(){
+            const held=consecutiveGrant;
+            if(held&&!(held.expires_at!==null&&held.expires_at<=Date.now()))return held.promise;
+            const grant={expires_at:null};
+            grant.promise=(async()=>{
+                const client=window.TaskitatorPro;
+                if(!client?.checkConsecutiveEntitlement)return {allowed:false,status:'error',message:'Could not verify Taskitator Pro status right now. Ordinary manual subtask creation remains available — please retry the Pro consecutive option in a moment.'};
+                const check=await client.checkConsecutiveEntitlement();
+                if(check.allowed)grant.expires_at=check.expires_at??null;
+                return check;
+            })();
+            consecutiveGrant=grant;
+            const drop=()=>{if(consecutiveGrant===grant)consecutiveGrant=null;};
+            grant.promise.then(check=>{if(!check.allowed)drop();},drop);
+            return grant.promise;
+        }
         const copy=v=>JSON.parse(JSON.stringify(v));
         function controls(){const m=document.getElementById('taskDetailModal');return JSON.stringify([...(m?.querySelectorAll?.('input,textarea,select,[contenteditable]')||[])].map(e=>[e.id,e.type==='checkbox'?e.checked:e.isContentEditable?e.textContent:e.value,e.files?[...e.files].map(f=>[f.name,f.size]):null]));}
         function dirty(){return draft&&(JSON.stringify(draft.tasks)!==draft.originalTasks||JSON.stringify(draft.recurrence)!==draft.originalRecurrence||draft.savedCriteria||draft.newTags?.length||controls()!==editBaseline||pendingEditExemplarFile||removeEditReference||JSON.stringify([...editModalSelectedTags])!==draft.tags||editModalSelectedPriority!==draft.priority||editModalSelectedProject!==draft.project||editModalIsBonus!==draft.bonus);}
-        function discardDraft(){if(dirty()&&!confirm('Changes unsaved. Discard your changes?'))return false;draft=null;window.TaskitatorEditorDraft=null;return true;}
+        function discardDraft(){if(dirty()&&!confirm('Changes unsaved. Discard your changes?'))return false;draft=null;clearConsecutiveGrant();window.TaskitatorEditorDraft=null;return true;}
         // ---- Dynamic Priority (Pro) controls -------------------------------------------------------------
         // Keep in sync with DYNAMIC_PRIORITY_TIERS in pro-backend.js. The Worker is the authority; this only
         // decides whether the control is offered. MAX is not assumed to include Pro.
@@ -782,7 +804,8 @@ window.TaskitatorComponents = Object.freeze({
             if(!ent.allowed){window.TaskitatorNotify(dpMessage(ent));return false;}
             task.dynamic_priority_target=want;return true;
         }
-        async function refreshConsecutive(){for(const id of ['createConsecutiveToggle','detailConsecutiveToggle']){const e=document.getElementById(id);if(e)e.disabled=true;}const check=await window.TaskitatorPro?.checkConsecutiveEntitlement?.();for(const id of ['createConsecutiveToggle','detailConsecutiveToggle']){const e=document.getElementById(id);if(e){e.disabled=!check?.allowed;if(e.disabled)e.checked=false;e.title=e.disabled?'Activate Taskitator Pro to use consecutive numbering.':'';}}}
+        // Opening an editor makes no network call. Ticking the box performs the one online check.
+        function refreshConsecutive(){for(const id of ['createConsecutiveToggle','detailConsecutiveToggle']){const e=document.getElementById(id);if(e){e.disabled=false;e.title='';}}}
         function commitDraft(){
             if(!draft)return false;if(draft.session!==localStorage.getItem('taskitator_session_id')){window.TaskitatorNotify('Your account changed. Reopen the editor.');return false;}
             liveHost.tasks.reload();const current=liveHost.tasks.getAll(),original=JSON.parse(draft.originalTasks),changes=draft.tasks.filter(t=>JSON.stringify(t)!==JSON.stringify(original.find(o=>o.id===t.id)));
@@ -793,7 +816,7 @@ window.TaskitatorComponents = Object.freeze({
             for(const tag of draft.newTags||[])liveHost.catalogs.addTag(tag);
             if(draft.savedCriteria)localStorage.setItem('taskitator_saved_criteria',JSON.stringify(draft.savedCriteria));
             for(const t of changes){const i=current.findIndex(o=>o.id===t.id);if(i<0)current.push(t);else current[i]=t;}
-            draft=null;window.TaskitatorEditorDraft=null;liveHost.tasks.save();return true;
+            draft=null;window.TaskitatorEditorDraft=null;clearConsecutiveGrant();liveHost.tasks.save();return true;
         }
         host={...host,tasks:{...host.tasks,getAll:()=>draft?draft.tasks:liveHost.tasks.getAll(),reload:()=>{if(!draft)liveHost.tasks.reload();},save:()=>{if(!draft)liveHost.tasks.save();},moveProject:(id,project)=>{if(draft){for(const t of TaskitatorRecurrence.subtree(draft.tasks,id))t.project_id=project;}else liveHost.tasks.moveProject(id,project);}}};
         host.catalogs={...host.catalogs,tags:()=>[...liveHost.catalogs.tags(),...(draft?.newTags||[])],addTag:tag=>{if(draft){draft.newTags||=[];if(!draft.newTags.includes(tag))draft.newTags.push(tag);}else liveHost.catalogs.addTag(tag);}};
@@ -1919,9 +1942,7 @@ window.TaskitatorComponents = Object.freeze({
                         if (consecutiveCb && consecutiveCb.checked && /\{num==\d+\}/i.test(rawSubInput)) {
                             detailQuickSubtaskInput._pendingConsecutiveText = rawSubInput;
                             try {
-                                const check = window.TaskitatorPro?.checkConsecutiveEntitlement
-                                    ? await window.TaskitatorPro.checkConsecutiveEntitlement()
-                                    : { allowed: false, status: 'error', message: 'Could not verify Taskitator Pro status right now. Ordinary manual subtask creation remains available — please retry the Pro consecutive option in a moment.' };
+                                const check = await grantConsecutive();
                                 if (generation !== detailQuickSubtaskInput._quickGeneration || !consecutiveCb.checked) return;
                                 if (check.allowed) {
                                     if (noticeEl) { noticeEl.style.display = 'none'; noticeEl.textContent = ''; }
@@ -1979,9 +2000,7 @@ window.TaskitatorComponents = Object.freeze({
                         if (consecutiveCb && consecutiveCb.checked && /\{num==\d+\}/i.test(rawText)) {
                             createQuickSubtaskInput._pendingConsecutiveText = rawText;
                             try {
-                                const check = window.TaskitatorPro?.checkConsecutiveEntitlement
-                                    ? await window.TaskitatorPro.checkConsecutiveEntitlement()
-                                    : { allowed: false, status: 'error', message: 'Could not verify Taskitator Pro status right now. Ordinary manual subtask creation remains available — please retry the Pro consecutive option in a moment.' };
+                                const check = await grantConsecutive();
                                 if (generation !== createQuickSubtaskInput._quickGeneration || !consecutiveCb.checked) return;
                                 if (check.allowed) {
                                     if (noticeEl) { noticeEl.style.display = 'none'; noticeEl.textContent = ''; }
@@ -2016,9 +2035,7 @@ window.TaskitatorComponents = Object.freeze({
                         if (noticeEl) { noticeEl.style.display = 'none'; noticeEl.textContent = ''; }
                         return;
                     }
-                    const check = window.TaskitatorPro?.checkConsecutiveEntitlement
-                        ? await window.TaskitatorPro.checkConsecutiveEntitlement()
-                        : { allowed: false, status: 'error', message: 'Could not verify Taskitator Pro status right now. Ordinary manual subtask creation remains available — please retry the Pro consecutive option in a moment.' };
+                    const check = await grantConsecutive();
                     if (check.allowed) {
                         if (noticeEl) { noticeEl.style.display = 'none'; noticeEl.textContent = ''; }
                     } else {
@@ -2039,7 +2056,7 @@ window.TaskitatorComponents = Object.freeze({
             window.addEventListener('beforeunload',e=>{if(dirty()){e.preventDefault();e.returnValue='';}});
             document.addEventListener('keydown',e=>{if(e.key==='Escape'&&draft&&document.getElementById('taskDetailModal')?.classList.contains('open')){e.preventDefault();e.stopImmediatePropagation();if(discardDraft()){document.getElementById('taskDetailModal').classList.remove('open');activeDetailTaskId=null;}}},true);
             document.addEventListener('click',e=>{if(!draft)return;const link=e.target.closest?.('a[href]');if(link&&!discardDraft()){e.preventDefault();e.stopImmediatePropagation();}},true);
-            window.addEventListener('taskitator-auth-ready',()=>{if(draft&&draft.session!==localStorage.getItem('taskitator_session_id')){draft=null;window.TaskitatorEditorDraft=null;activeDetailTaskId=null;pendingEditExemplarFile=null;document.getElementById('taskDetailModal')?.classList.remove('open');}});
+            window.addEventListener('taskitator-auth-ready',()=>{if(draft&&draft.session!==localStorage.getItem('taskitator_session_id')){draft=null;clearConsecutiveGrant();window.TaskitatorEditorDraft=null;activeDetailTaskId=null;pendingEditExemplarFile=null;document.getElementById('taskDetailModal')?.classList.remove('open');}});
 
             const openRootAddModalBtn = document.getElementById('openRootAddModalBtn');
             if (openRootAddModalBtn) {

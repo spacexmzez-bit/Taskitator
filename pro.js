@@ -1443,7 +1443,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                 const status = await this.getStatus();
                 if (global.Clerk?.session?.id !== owner) throw new Error('Your session changed. Retry the Pro option.');
                 if (status?.isPro === true && status.status === 'active' && (status.expires_at === null || (Number.isFinite(status.expires_at) && status.expires_at > Date.now()))) {
-                    return { allowed: true, status: 'active', message: '' };
+                    return { allowed: true, status: 'active', message: '', expires_at: status.expires_at ?? null };
                 }
                 const st = status?.status || 'free';
                 if (st === 'expired' || st === 'revoked' || st === 'invalid') {

@@ -1486,8 +1486,8 @@ test("Consecutive subtask creation is gated to active Pro accounts across active
     assert.ok(indexHtml.includes('id="detailConsecutiveNotice"'));
 
     const compJs = readConsolidatedSource("components.js");
-    const matches = compJs.match(/checkConsecutiveEntitlement\(\)/g) || [];
-    assert.ok(matches.length >= 3, "components.js must check entitlement in both quick-creation handlers and toggle listeners");
+    const matches = compJs.match(/await grantConsecutive\(\)/g) || [];
+    assert.ok(matches.length >= 3, "components.js must route both quick-creation handlers and the toggle through the single Pro grant");
 });
 
 test("Free-versus-Pro comparison page covers limits, dynamic charges, ×2 exemplar, 25% batch discount, BYOK, consecutive subtasks, and omits pricing", () => {
@@ -1686,7 +1686,7 @@ test("Slow consecutive entitlement checks do not duplicate subtasks on double-En
 
     // User types a new title before entitlement response arrives
     detailInput.value = "Custom next title";
-    resolveCheck({ allowed: true, status: "active", message: "" });
+    resolveCheck({ allowed: true, status: "active", message: "", expires_at: 1 });
     await p1;
     await p2;
     assert.equal(detailInput.value, "Custom next title", "Late entitlement response must not overwrite user typing");
@@ -1698,21 +1698,23 @@ test("Slow consecutive entitlement checks do not duplicate subtasks on double-En
     const cp1 = createInput.listeners.keydown({ key: "Enter", preventDefault() {} });
     const cp2 = createInput.listeners.keydown({ key: "Enter", preventDefault() {} });
     assert.equal(builderList.children.length, 1, "Double-Enter in Create Task must not duplicate builder items");
-    resolveCheck({ allowed: true, status: "active", message: "" });
+    resolveCheck({ allowed: true, status: "active", message: "", expires_at: 1 });
     await cp1;
     await cp2;
     assert.equal(createInput.value, "Step {num==2}", "When input remains empty, active Pro increments consecutive number");
-    // Overlapping submissions: older replies must not refill the next input.
-    for (const [input,prefix] of [[createInput,'Create'],[detailInput,'Details']]) {
-        const checks=[];
+    // Overlapping submissions share one Pro check; older replies must not refill the next input.
+    {
+        const input=createInput,prefix='Create',checks=[];
         f.window.TaskitatorPro.checkConsecutiveEntitlement=()=>new Promise(resolve=>checks.push(resolve));
         input.value='Chapter {num==1}';const first=input.listeners.keydown({key:'Enter',preventDefault(){}});
         input.value='Chapter {num==2}';input.listeners.input();const second=input.listeners.keydown({key:'Enter',preventDefault(){}});
-        checks[0]({allowed:true});await first;assert.equal(input.value,'',prefix+' ignores stale first reply');
-        checks[1]({allowed:true});await second;assert.equal(input.value,'Chapter {num==3}',prefix+' advances newest submission');
-        input.value='Chapter {num==3}';const pending=input.listeners.keydown({key:'Enter',preventDefault(){}});
-        input.value='New draft';input.listeners.input();input.value='';input.listeners.input();
-        checks[2]({allowed:true});await pending;assert.equal(input.value,'',prefix+' preserves edits even after clearing');
+        assert.equal(checks.length,1,'Overlapping submissions share one Pro check');
+        checks[0]({allowed:true,expires_at:null});
+        await first;await second;
+        assert.equal(input.value,'Chapter {num==3}',prefix+' advances only from the newest submission, never from the stale first one');
+        // The allowed result is held for this editor: later iterations never ask the server again.
+        input.value='Chapter {num==3}';await input.listeners.keydown({key:'Enter',preventDefault(){}});
+        assert.equal(checks.length,1,'No Pro check after the grant is held');
     }
     let prevented=false,stopped=false;
     builderList.listeners.keydown({key:'Enter',target:{matches:()=>true},preventDefault(){prevented=true},stopPropagation(){stopped=true}});
@@ -1738,9 +1740,30 @@ test("Slow consecutive entitlement checks do not duplicate subtasks on double-En
     detailInput.value='Discard this';await detailInput.listeners.keydown({key:'Enter',preventDefault(){}});
     f.context.confirm=()=>false;elements.get('closeDetailModalBtn').listeners.click();assert.ok(f.window.TaskitatorEditorDraft,'Declining discard keeps the draft');
     f.context.confirm=()=>true;elements.get('closeDetailModalBtn').listeners.click();assert.equal(f.window.TaskitatorEditorDraft,null);assert.equal(createdTasks.length,expected);assert.equal(saved,1);
-    f.window.TaskitatorPro.checkConsecutiveEntitlement=async()=>({allowed:false});await compInstance.openDetail('parent_1',()=>{});await Promise.resolve();
-    assert.equal(elements.get('detailConsecutiveToggle').disabled,true);assert.equal(elements.get('createConsecutiveToggle').disabled,true);
+    // Opening an editor makes no Pro check. Ticking the box makes exactly one, and a denial unticks it.
+    let proChecks=0;
+    f.window.TaskitatorPro.checkConsecutiveEntitlement=async()=>{proChecks++;return {allowed:false,status:'free',message:'Pro only'};};
+    await compInstance.openDetail('parent_1',()=>{});await Promise.resolve();
+    assert.equal(proChecks,0,'Opening the editor makes no Pro check');
+    assert.equal(elements.get('detailConsecutiveToggle').disabled,false);assert.equal(elements.get('createConsecutiveToggle').disabled,false);
+    const tick=elements.get('detailConsecutiveToggle');tick.checked=true;await tick.listeners.change();
+    assert.equal(proChecks,1,'Ticking the box makes exactly one Pro check');assert.equal(tick.checked,false,'A denied tick unticks the box');
     f.window.TaskitatorPro.checkConsecutiveEntitlement=async()=>({allowed:true});await compInstance.openDetail('parent_1',()=>{});await Promise.resolve();assert.equal(elements.get('detailConsecutiveToggle').disabled,false);
+
+    // One check when the box is ticked; every later subtask reads the held result; Save Changes clears it.
+    proChecks=0;
+    f.window.TaskitatorPro.checkConsecutiveEntitlement=async()=>{proChecks++;return {allowed:true,status:'active',message:'',expires_at:null};};
+    await compInstance.openDetail('parent_1',()=>{});
+    tick.checked=true;await tick.listeners.change();
+    assert.equal(proChecks,1,'The tick makes the one online check');assert.equal(tick.checked,true);
+    for(const title of ['Lesson {num==1}','Lesson {num==2}','Lesson {num==3}']){
+        detailInput.value=title;await detailInput.listeners.keydown({key:'Enter',preventDefault(){}});
+    }
+    assert.equal(proChecks,1,'Subtasks after the tick make no further Pro check');
+    await elements.get('saveTaskDetailsBtn').listeners.click();
+    await compInstance.openDetail('parent_1',()=>{});
+    tick.checked=true;await tick.listeners.change();
+    assert.equal(proChecks,2,'Save Changes clears the held result, so the next tick checks again');
 });
 
 test("Opening another review cost preview cancels and resolves the first review promise instead of stranding it", async () => {
