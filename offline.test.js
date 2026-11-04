@@ -30,7 +30,7 @@ function load({ reachable = true, publicKey = null, session = null } = {}) {
     const document = {
         readyState: 'complete', body: { append() {} }, documentElement: { classList: { toggle() {} } },
         addEventListener() {}, getElementById: () => null, querySelectorAll: () => [],
-        createElement: () => ({ setAttribute() {}, remove() {} })
+        createElement: () => ({ setAttribute() {}, remove() {}, addEventListener() {}, append() {}, textContent: '' })
     };
     const sandbox = { window, document, localStorage: local, sessionStorage: session_, crypto: webcrypto, TextEncoder, TextDecoder,
         atob, btoa, AbortSignal, Date, Math, Number, JSON, Promise, Uint8Array, Array, String, Object, Error, console,
@@ -250,4 +250,28 @@ test('connectivity-gated features are refused at the action layer, not only hidd
     assert.match(source, /async request\(url, options\) \{\s+const offline = window\.TaskitatorOffline;\s+offline\?\.assertOnline\(\);/);
     const pro = fs.readFileSync(new URL('pro.js', root), 'utf8');
     assert.match(pro, /global\.TaskitatorOffline\?\.assertOnline\(\);/);
+});
+
+test('offline banner is small, dismissible and gates AI actions in source', async () => {
+    const pro = fs.readFileSync(new URL('pro.js', root), 'utf8');
+    const comp = fs.readFileSync(new URL('components.js', root), 'utf8');
+    const app = fs.readFileSync(new URL('app.js', root), 'utf8');
+    assert.match(core, /aria-label', 'Dismiss offline notice'/);
+    assert.match(core, /bannerDismissed = false;/);
+    assert.doesNotMatch(core, /Changes are saved on this device and sync when you reconnect/);
+    assert.match(pro, /validateCriteria\(criteriaText[\s\S]{0,160}TaskitatorOffline\?\.active[\s\S]{0,160}internet connection/);
+    assert.match(comp, /AI-locked tasks can\\'t be created offline/);
+    assert.match(comp, /AI-locked tasks can\\'t be changed offline/);
+    assert.match(comp, /Proof can\\'t be submitted offline/);
+    assert.match(app, /async function sendMessage\(userText\) \{\n\s+if \(window\.TaskitatorOffline\?\.active\)/);
+});
+
+test('Pro activation, phone token and Sleep Lock setup need a connection or a MacroDroid token', () => {
+    const pro = fs.readFileSync(new URL('pro.js', root), 'utf8');
+    const sleep = fs.readFileSync(new URL('sleep.html', root), 'utf8');
+    assert.match(core, /'#pro-activate-btn', '#generatePhoneTokenBtn', '#revokePhoneTokenBtn'/);
+    assert.match(pro, /Activating Pro needs an internet connection/);
+    assert.match(sleep, /id="macroNeeded"[^>]*hidden/);
+    assert.match(sleep, /TaskitatorAuth\.api\('\/auth\/phone'\);phoneMissing=!phone\.active/);
+    assert.match(sleep, /\|\|phoneMissing;/);
 });

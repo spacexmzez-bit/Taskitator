@@ -1351,15 +1351,29 @@ body {
 /* Offline mode: banner and connection-dependent controls */
 #offlineBanner {
     position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 12px;
     z-index: 2147483000;
-    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100vw - 32px);
+    padding: 4px 6px 4px 12px;
     background: #334155;
     color: #e2e8f0;
-    font-size: 0.8rem;
-    text-align: center;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+#offlineBanner button {
+    background: none;
+    border: 0;
+    color: inherit;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 2px 6px;
+    cursor: pointer;
 }
 
 html.is-offline [data-requires-online] {

@@ -35,6 +35,7 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
     const GATED = ['#openCopilotNavBtn', '#openCopilotFabBtn', '#startCopilotBtn', '#copilotForm',
         '[data-switch-view="universe"]', 'a[href*="view=universe"]', '#vaultSaveBtn', '#vaultUseProviderBtn',
         '#vaultTestBtn', '#vaultShowBtn', '#vaultCopyBtn', '#vaultRefreshBtn', '#vaultDeleteBtn',
+        '#pro-activate-btn', '#generatePhoneTokenBtn', '#revokePhoneTokenBtn',
         '[data-requires-online]'].join(',');
     let active = false, bootOffline = false, timer = null, delay = MIN_DELAY_MS, probing = null, recovering = false;
 
@@ -188,16 +189,19 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
     }
 
     // ----- Connectivity state, banner and interface gating -----
+    let bannerDismissed = false;
     function renderBanner() {
         let bar = document.getElementById('offlineBanner');
-        if (!active) { bar?.remove(); return; }
+        if (!active || bannerDismissed) { bar?.remove(); return; }
         if (!bar) {
             bar = document.createElement('div'); bar.id = 'offlineBanner'; bar.setAttribute('role', 'status');
+            const text = document.createElement('span'); text.textContent = 'Offline. Changes sync when you reconnect.';
+            const close = document.createElement('button');
+            close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Dismiss offline notice');
+            close.addEventListener('click', () => { bannerDismissed = true; bar.remove(); });
+            bar.append(text, close);
             document.body?.append(bar);
         }
-        const last = number(KEY.online);
-        bar.textContent = 'Offline. Changes are saved on this device and sync when you reconnect.' +
-            (last ? ' Last online ' + new Date(last).toLocaleString() + '.' : '');
     }
     function applyUI() {
         document.querySelectorAll?.(GATED).forEach(node => {
@@ -208,6 +212,7 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
     function setActive(next) {
         if (next === active) return;
         active = next;
+        if (active) bannerDismissed = false;
         document.documentElement.classList.toggle('is-offline', active);
         renderBanner(); applyUI();
         window.dispatchEvent(new CustomEvent('taskitator-connectivity', { detail: { offline: active } }));

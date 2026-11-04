@@ -990,6 +990,9 @@ const TaskitatorEngine = {
         },
 
         async validateCriteria(criteriaText, taskTitle = '', exemplarFile = null) {
+            if (window.TaskitatorOffline?.active) {
+                return { success: false, error: 'AI validation needs an internet connection. Reconnect to validate this criteria.' };
+            }
             const selection=this.selection();
             const trimmedCriteria = (criteriaText || '').trim();
             const trimmedTitle = (taskTitle || '').trim();
@@ -2140,6 +2143,7 @@ window.TaskitatorEngine = TaskitatorEngine;
 
         if (btn && input) {
             btn.addEventListener('click', async () => {
+                if (window.TaskitatorOffline?.active) { showMsg('Activating Pro needs an internet connection.', 'error'); return; }
                 const key = input.value.trim();
                 if (!key) {
                     showMsg('Enter your license key first.', 'error');

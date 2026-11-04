@@ -2446,6 +2446,10 @@ window.TaskitatorComponents = Object.freeze({
 
                     const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(rawTitle);
 
+                    if (isAi && window.TaskitatorOffline?.active) {
+                        window.TaskitatorNotify('AI-locked tasks can\'t be created offline. Reconnect to create one.');
+                        return;
+                    }
                     let finalCriteria = rawCriteria;
                     if (isAi && rawCriteria) {
                         const gate = SmartCriteriaEngine.validateCriteriaForSubmission(rawCriteria, varMap);
@@ -2728,6 +2732,10 @@ window.TaskitatorComponents = Object.freeze({
                         willBeStrict = true;
                     }
 
+                    if (window.TaskitatorOffline?.active && (willBeAiLocked || (task.ai_locked && editedCriteriaRaw !== (task.raw_proof_criteria || task.proof_criteria || '')))) {
+                        window.TaskitatorNotify('AI-locked tasks can\'t be changed offline. Reconnect to make this change.');
+                        return;
+                    }
                     let finalEditedCriteria = editedCriteriaRaw;
                     if (willBeAiLocked && (!task.ai_locked || isBypassActive)) {
                         if (editedCriteriaRaw) {
@@ -2855,6 +2863,10 @@ window.TaskitatorComponents = Object.freeze({
                     if (!pendingAuditTaskId) return;
                     const task = host.tasks.getAll().find(t => t.id === pendingAuditTaskId);
                     if (!task) return;
+                    if (window.TaskitatorOffline?.active) {
+                        window.TaskitatorNotify('Proof can\'t be submitted offline. The task stays locked until you reconnect or use Emergency Bypass.');
+                        return;
+                    }
 
                     const auditSession = localStorage.getItem('taskitator_session_id');
                     const auditedId = task.id;

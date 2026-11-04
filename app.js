@@ -512,6 +512,7 @@ window.TaskitatorAgent = (() => {
     // 8. Conversational Turn Execution
     // =========================================================================
     async function sendMessage(userText) {
+        if (window.TaskitatorOffline?.active) return { text: 'The assistant needs an internet connection. Reconnect to use it.' };
         if(/study recurrence|study plan|(?:chapters?|lessons?|units?).*(?:days?|daily)|(?:split|distribute|spread).*(?:chapters?|lessons?|units?)/i.test(userText)&&window.TaskitatorPro?.checkConsecutiveEntitlement){
             const access=await window.TaskitatorPro.checkConsecutiveEntitlement();
             if(!access.allowed)return {text:access.status==='unavailable'?'I couldn’t check Pro status right now. Please retry shortly.':'Study recurrence is a Pro feature. With Pro, I can distribute your units across study days and show you an editable schedule before creating anything.'};
