@@ -8,10 +8,255 @@
 // PUBLIC configuration only. Never put a Clerk secret key in this file.
 window.TASKITATOR_AUTH_CONFIG = Object.freeze({
     publishableKey: 'pk_live_Y2xlcmsubWF6ZW5kZXYuY29tJA',
-    workerUrl: 'https://taskitator-sync.spacexmzez.workers.dev'
+    workerUrl: 'https://taskitator-sync.spacexmzez.workers.dev',
+    // Public ES256 (P-256) JWK that verifies the Worker-signed offline Pro entitlement.
+    // Generate the pair with tools/offline-pro-keygen.mjs. While this is null, offline Pro stays off.
+    offlineProPublicKey: null
 });
 
 // <<< MODULE_END: auth-config.js >>>
+// <<< MODULE_START: offline.js >>>
+// Offline access. A previously signed-in device keeps using its cached workspace;
+// this module tracks whether the Taskitator backend is reachable, enforces a fresh
+// sign-in after seven days without a server-confirmed response, gates features that
+// need a connection, and verifies the Worker-signed offline Pro entitlement.
+// Nothing here grants server-side access: the Worker still checks every request.
+(function () {
+    'use strict';
+    const KEY = {
+        identity: 'taskitator_offline_identity_v1',
+        online: 'taskitator_last_online_at',
+        clock: 'taskitator_clock_high_water',
+        pro: 'taskitator_offline_pro_token_v1'
+    };
+    const NOTICE = 'taskitator_reauth_notice', REAUTH_SESSION = 'taskitator_reauth_session';
+    const REAUTH_MS = 7 * 86400000, PROBE_TIMEOUT_MS = 6000, MIN_DELAY_MS = 10000, MAX_DELAY_MS = 60000;
+    // Connection-dependent controls. Clicks on these are stopped while offline.
+    const GATED = ['#openCopilotNavBtn', '#openCopilotFabBtn', '#startCopilotBtn', '#copilotForm',
+        '[data-switch-view="universe"]', 'a[href*="view=universe"]', '#vaultSaveBtn', '#vaultUseProviderBtn',
+        '#vaultTestBtn', '#vaultShowBtn', '#vaultCopyBtn', '#vaultRefreshBtn', '#vaultDeleteBtn',
+        '[data-requires-online]'].join(',');
+    let active = false, bootOffline = false, timer = null, delay = MIN_DELAY_MS, probing = null, recovering = false;
+
+    class OfflineError extends Error {
+        constructor(message) {
+            super(message || 'You are offline. This needs an internet connection.');
+            this.name = 'OfflineError'; this.offline = true;
+        }
+    }
+    const workerUrl = () => String(window.TASKITATOR_AUTH_CONFIG?.workerUrl || '').replace(/\/+$/, '');
+    const readJson = key => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
+    const writeJson = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} };
+    const number = key => { const n = Number(localStorage.getItem(key)); return Number.isFinite(n) && n > 0 ? n : 0; };
+
+    // A failed request never proves the whole device is offline: the Worker, Clerk or
+    // another service can fail alone. Only HTTP-less failures count as network-class.
+    function isNetworkError(error) {
+        if (!error || error.status) return false;
+        if (error.offline || error.network || error.code === 'network_error') return true;
+        if (error.name === 'AbortError' || error.name === 'TimeoutError') return true;
+        return error.name === 'TypeError' && /fetch|network|load failed/i.test(String(error.message || ''));
+    }
+    // Reachability of the Taskitator Worker. Any HTTP answer, even 401, proves it is up.
+    function probe() {
+        if (probing) return probing;
+        probing = (async () => {
+            try {
+                await fetch(workerUrl() + '/status', { cache: 'no-store', signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+                return true;
+            } catch { return false; }
+        })().finally(() => { probing = null; });
+        return probing;
+    }
+    async function confirmFailure() {
+        if (active) return true;
+        if (await probe()) return false;
+        setActive(true);
+        return true;
+    }
+    async function translate(error) {
+        if (!error || error.status || error.offline) return error;
+        const network = isNetworkError(error) || /session ended/i.test(String(error.message || ''));
+        if (network && await confirmFailure()) return new OfflineError();
+        return error;
+    }
+    function assertOnline() { if (active) throw new OfflineError(); }
+
+    function identity() {
+        const record = readJson(KEY.identity);
+        return record && record.account && typeof record.account.user === 'string' ? record : null;
+    }
+    function noteConfirmed(serverNow) {
+        try {
+            localStorage.setItem(KEY.online, String(Date.now()));
+            if (Number.isFinite(serverNow) && serverNow > 0) localStorage.setItem(KEY.clock, String(serverNow));
+            sessionStorage.removeItem(REAUTH_SESSION); sessionStorage.removeItem(NOTICE);
+        } catch {}
+    }
+    function recordConfirmed(account, clerkUser) {
+        if (account && typeof account.user === 'string') {
+            writeJson(KEY.identity, { account, clerk_user: clerkUser || window.Clerk?.user?.id || null, confirmed_at: Date.now() });
+        }
+        noteConfirmed();
+    }
+    function forget() {
+        try { [KEY.identity, KEY.online, KEY.pro].forEach(key => localStorage.removeItem(key)); } catch {}
+    }
+    function touchClock() {
+        try { const now = Date.now(); if (now > number(KEY.clock)) localStorage.setItem(KEY.clock, String(now)); } catch {}
+    }
+    // The latest time this device has seen. A rolled-back clock cannot move it backwards.
+    const trustedNow = () => Math.max(Date.now(), number(KEY.clock));
+
+    function freshSession(lastOnline) {
+        const session = window.Clerk?.session;
+        if (!session) return false;
+        let previous = null;
+        try { previous = sessionStorage.getItem(REAUTH_SESSION); } catch {}
+        if (previous) return session.id !== previous;
+        const created = session.createdAt instanceof Date ? session.createdAt.getTime() : Date.parse(session.createdAt || '');
+        return Number.isFinite(created) && created > lastOnline;
+    }
+    // More than seven days (in either direction) since the last server-confirmed
+    // response requires a sign-in that happened after that gap.
+    function reauthRequired() {
+        const last = number(KEY.online);
+        if (!last || Math.abs(trustedNow() - last) <= REAUTH_MS) return false;
+        return !freshSession(last);
+    }
+    function markReauthStarted() {
+        try {
+            sessionStorage.setItem(NOTICE, '1');
+            if (window.Clerk?.session?.id) sessionStorage.setItem(REAUTH_SESSION, window.Clerk.session.id);
+        } catch {}
+    }
+    // Open the cached account only for a network-class failure, never after an HTTP
+    // answer (401, deletion), a deliberate logout, or when the data belongs to someone else.
+    async function canOpenOffline(error) {
+        if (error?.status) return false;
+        try { if (sessionStorage.getItem('taskitator_logout_pending') === '1') return false; } catch {}
+        const known = identity();
+        if (!known || localStorage.getItem('taskitator_local_owner') !== known.account.user) return false;
+        return isNetworkError(error) || !(await probe());
+    }
+    function enterBootOffline() {
+        const known = identity();
+        bootOffline = true;
+        if (window.TaskitatorAuth) { window.TaskitatorAuth.account = known.account; window.TaskitatorAuth.deletion = null; }
+        setActive(true);
+    }
+    function leaveBootOffline() { bootOffline = false; setActive(false); }
+    const cachedUserId = () => (bootOffline ? identity()?.clerk_user || null : null);
+
+    // ----- Worker-signed offline Pro entitlement (ES256 compact JWS, type TKOP) -----
+    const bytes = text => {
+        const padded = text.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(text.length / 4) * 4, '=');
+        return Uint8Array.from(atob(padded), c => c.charCodeAt(0));
+    };
+    async function verifyToken(token, jwk) {
+        try {
+            const [head, body, signature] = String(token).split('.');
+            if (!head || !body || !signature) return null;
+            const header = JSON.parse(new TextDecoder().decode(bytes(head)));
+            if (header.alg !== 'ES256' || header.typ !== 'TKOP') return null;
+            const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+            const valid = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, bytes(signature),
+                new TextEncoder().encode(head + '.' + body));
+            if (!valid) return null;
+            const claims = JSON.parse(new TextDecoder().decode(bytes(body)));
+            return claims && claims.v === 1 && typeof claims.sub === 'string' && Number.isFinite(claims.valid_until) ? claims : null;
+        } catch { return null; }
+    }
+    function saveProToken(token, serverNow) {
+        try {
+            if (typeof token === 'string' && token) localStorage.setItem(KEY.pro, token); else localStorage.removeItem(KEY.pro);
+            if (Number.isFinite(serverNow) && serverNow > 0) localStorage.setItem(KEY.clock, String(serverNow));
+        } catch {}
+    }
+    // Same shape the Worker returns, so existing Pro checks work unchanged. Fails closed.
+    async function proStatus() {
+        const none = status => ({ isPro: false, tier: 'free', plan: 'free', status, offline: true, expires_at: null, credits: null });
+        const jwk = window.TASKITATOR_AUTH_CONFIG?.offlineProPublicKey;
+        const token = localStorage.getItem(KEY.pro);
+        if (!jwk || !token) return none('free');
+        const claims = await verifyToken(token, jwk);
+        const known = identity();
+        if (!claims || !known || !known.clerk_user || claims.sub !== known.clerk_user) return none('invalid');
+        if (trustedNow() >= claims.valid_until) return none('expired');
+        return { isPro: true, tier: 'pro', plan: 'pro', status: 'active', offline: true,
+            expires_at: Number.isFinite(claims.exp) ? claims.exp : null, valid_until: claims.valid_until, credits: null };
+    }
+
+    // ----- Connectivity state, banner and interface gating -----
+    function renderBanner() {
+        let bar = document.getElementById('offlineBanner');
+        if (!active) { bar?.remove(); return; }
+        if (!bar) {
+            bar = document.createElement('div'); bar.id = 'offlineBanner'; bar.setAttribute('role', 'status');
+            document.body?.append(bar);
+        }
+        const last = number(KEY.online);
+        bar.textContent = 'Offline. Changes are saved on this device and sync when you reconnect.' +
+            (last ? ' Last online ' + new Date(last).toLocaleString() + '.' : '');
+    }
+    function applyUI() {
+        document.querySelectorAll?.(GATED).forEach(node => {
+            node.toggleAttribute('data-requires-online', active);
+            if (active) node.setAttribute('aria-disabled', 'true'); else node.removeAttribute('aria-disabled');
+        });
+    }
+    function setActive(next) {
+        if (next === active) return;
+        active = next;
+        document.documentElement.classList.toggle('is-offline', active);
+        renderBanner(); applyUI();
+        window.dispatchEvent(new CustomEvent('taskitator-connectivity', { detail: { offline: active } }));
+        if (active) schedule(); else { clearTimeout(timer); delay = MIN_DELAY_MS; }
+    }
+    function schedule() {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+            if (!active) return;
+            if (await probe()) await recover();
+            if (active) { delay = Math.min(delay * 2, MAX_DELAY_MS); schedule(); }
+        }, delay);
+    }
+    async function recover() {
+        if (recovering) return;
+        recovering = true;
+        try { await window.TaskitatorAuth?.reconnect(); }
+        catch (error) { if (!isNetworkError(error)) console.warn('[Offline] Reconnect failed:', error?.message || error); }
+        finally { recovering = false; }
+    }
+    function notifyBlocked(event) {
+        if (!active) return;
+        const target = event.target?.closest?.(GATED);
+        if (!target) return;
+        event.preventDefault(); event.stopImmediatePropagation();
+        window.TaskitatorNotify?.('This needs an internet connection and is turned off while you are offline.');
+    }
+    document.addEventListener('click', notifyBlocked, true);
+    document.addEventListener('submit', notifyBlocked, true);
+    window.addEventListener('offline', () => { void confirmFailure(); });
+    window.addEventListener('online', () => { if (active) { delay = 1000; schedule(); } });
+    document.addEventListener('visibilitychange', () => {
+        touchClock();
+        if (!document.hidden && active) { delay = 1000; schedule(); }
+    });
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', applyUI);
+    setInterval(touchClock, 60000);
+    touchClock();
+
+    window.TaskitatorOffline = Object.freeze({
+        OfflineError, isNetworkError, probe, confirmFailure, translate, assertOnline,
+        get active() { return active; }, get bootOffline() { return bootOffline; },
+        identity, recordConfirmed, noteConfirmed, forget, reauthRequired, markReauthStarted,
+        canOpenOffline, enterBootOffline, leaveBootOffline, cachedUserId, setActive, applyUI,
+        proStatus, saveProToken, trustedNow, lastOnline: () => number(KEY.online)
+    });
+})();
+
+// <<< MODULE_END: offline.js >>>
 // <<< MODULE_START: auth-client.js >>>
 (function () {
     'use strict';
@@ -116,7 +361,11 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             script.src = src; script.async = true; script.crossOrigin = 'anonymous';
             Object.entries(attributes).forEach(([key, value]) => script.setAttribute(key, value));
             script.onload = resolve;
-            script.onerror = () => reject(new Error('Could not load secure sign-in. Check your connection and authentication settings.'));
+            script.onerror = () => {
+                const error = new Error('Could not load secure sign-in. Check your connection and authentication settings.');
+                error.network = true;
+                reject(error);
+            };
             document.head.append(script);
         });
     }
@@ -126,8 +375,10 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
         cleanLegacyStorage,
         storageWarnings,
         recoveryCopies,
-        get userId() { return window.Clerk?.user?.id || null; },
-        get signedIn() { return Boolean(window.Clerk?.session && this.account); },
+        get userId() { return window.Clerk?.user?.id || window.TaskitatorOffline?.cachedUserId() || null; },
+        // Offline, the cached account stands in for the live Clerk session. Every network
+        // call is refused by api(), so this only unlocks local features.
+        get signedIn() { return Boolean((window.Clerk?.session || window.TaskitatorOffline?.bootOffline) && this.account); },
         async token(fresh = false) {
             if (!window.Clerk?.session) throw new Error('Your session ended. Sign in again.');
             const token = await window.Clerk.session.getToken({skipCache:fresh});
@@ -135,13 +386,19 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             return token;
         },
         async api(path, options = {}) {
-            const { freshToken = false, timeoutMs = 30000, ...requestOptions } = options;
+            const { freshToken = false, timeoutMs = 30000, reconnect = false, ...requestOptions } = options;
+            const offline = window.TaskitatorOffline;
+            if (!reconnect) offline?.assertOnline();
             const headers = new Headers(options.headers);
-            headers.set('Authorization', 'Bearer ' + await this.token(freshToken));
-            if (options.body) headers.set('Content-Type', 'application/json');
-            const res = await fetch(config.workerUrl.replace(/\/$/, '') + path,
-                { ...requestOptions, headers, cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
-            const data = await res.json();
+            let res, data;
+            try {
+                headers.set('Authorization', 'Bearer ' + await this.token(freshToken));
+                if (options.body) headers.set('Content-Type', 'application/json');
+                res = await fetch(config.workerUrl.replace(/\/$/, '') + path,
+                    { ...requestOptions, headers, cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
+                data = await res.json();
+            } catch (error) { throw (await offline?.translate(error)) ?? error; }
+            if (res.ok) offline?.noteConfirmed();
             if (!res.ok) {
                 const message=res.status===404 && path.startsWith('/ai/') && /Endpoint not found/i.test(data.error||'')?
                     'The website is newer than its Worker. In GitHub Actions, run Deploy Taskitator security Worker on the branch you uploaded, wait for success, then reload. Your local data has been retained.':data.error || 'Account request failed.';
@@ -176,10 +433,12 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
                 throw new Error('Taskitator could not confirm that your sign-in session ended. Please try Log Out again.');
             }
             this.account = null;
+            // A deliberate logout must never reopen offline from the cached account.
+            window.TaskitatorOffline?.forget();
         },
         async manageAccount() { window.Clerk.openUserProfile(); },
-        async init() {
-            cleanLegacyStorage();
+        async loadClerk() {
+            if (window.Clerk?.loaded) return;
             if (!/^pk_(test|live)_[A-Za-z0-9+/=]+$/.test(config.publishableKey || '')) {
                 throw new Error('Secure sign-in needs one-time setup. Follow SECURITY-SETUP.txt and fill in auth-config.js.');
             }
@@ -192,6 +451,43 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
                 signInUrl: location.origin + '/login.html', signUpUrl: location.origin + '/login.html',
                 signInForceRedirectUrl: location.origin + '/login.html',
                 signUpForceRedirectUrl: location.origin + '/login.html' });
+        },
+        // Seven days without a server-confirmed response: end the Clerk session (keeping
+        // every local edit) so the user signs in again before anything syncs.
+        async forceReauth() {
+            window.TaskitatorReauthInProgress = true;
+            window.TaskitatorOffline?.markReauthStarted();
+            try { await window.Clerk.signOut(); }
+            catch (error) { if (window.Clerk?.session) { window.TaskitatorReauthInProgress = false; throw error; } }
+            this.account = null;
+        },
+        // Called when the backend becomes reachable again after an offline period.
+        async reconnect() {
+            const offline = window.TaskitatorOffline;
+            await this.loadClerk();
+            if (!window.Clerk.session) { location.replace('login.html'); return; }
+            if (offline.reauthRequired()) { await this.forceReauth(); location.replace('login.html'); return; }
+            const data = await this.api('/auth/me', { reconnect: true });
+            if (data.deletion) {
+                offline.forget();
+                if (data.deletion.receipt) sessionStorage.setItem('taskitator_deletion_receipt', data.deletion.receipt);
+                location.replace('settings.html?view=deletion-status'); return;
+            }
+            const known = offline.identity();
+            if (!data.account || (known && known.account.user !== data.account.user)) { location.replace('login.html'); return; }
+            this.account = data.account; this.deletion = null;
+            offline.recordConfirmed(data.account, window.Clerk.user?.id);
+            offline.leaveBootOffline();
+            await window.TaskitatorVault?.initialize();
+            window.TaskitatorWatchSession?.();
+            window.dispatchEvent(new Event('taskitator-reconnected'));
+            window.TaskitatorTier?.refresh?.();
+            const engine = window.SyncEngine;
+            if (engine?.isConfigured() && engine.isDirty()) { engine.armAutoSync(); void engine.syncNow({ origin: 'auto' }); }
+        },
+        async init() {
+            cleanLegacyStorage();
+            await this.loadClerk();
 
             // A logout may trigger the old page's session listener before its
             // explicit redirect completes. Never auto-enter an account while
@@ -211,10 +507,15 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
                 return;
             }
             if (window.Clerk.session) {
+                if (window.TaskitatorOffline?.reauthRequired()) { await this.forceReauth(); return; }
                 const data = await this.api('/auth/me');
                 this.account = data.account;
                 this.deletion = data.deletion || null;
-                if (this.account && !this.deletion) await window.TaskitatorVault?.initialize();
+                if (this.deletion) window.TaskitatorOffline?.forget();
+                if (this.account && !this.deletion) {
+                    window.TaskitatorOffline?.recordConfirmed(this.account, window.Clerk.user?.id);
+                    await window.TaskitatorVault?.initialize();
+                }
             }
         }
     };
@@ -477,6 +778,8 @@ const SyncEngine = {
         if (!recovered.success) return recovered;
         const config = this.getConfig(), sessionId = this.sessionId;
         if (!this.isConfigured()) return { success: false, reason: 'unconfigured' };
+        // Offline: keep the dirty flag and every local edit; sync resumes on reconnect.
+        if (window.TaskitatorOffline?.active) return { success: false, reason: 'offline' };
         if (this.needsInitialPull()) return { success: false, reason: 'initial_pull_required' };
         let revision = localStorage.getItem(this.STORAGE_KEY_REVISION);
         if (!revision) {
@@ -526,6 +829,8 @@ const SyncEngine = {
             return { success: true, pending, data };
         } catch (err) {
             if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
+            // Losing the connection is not a sync failure: the edits stay queued.
+            if (err?.offline) { this.hasUnsavedChanges = true; return { success: false, reason: 'offline' }; }
             this.notify('error', err.message);
             return { success: false, error: err.message };
         }
@@ -547,6 +852,8 @@ const SyncEngine = {
     },
 
     async request(url, options) {
+        const offline = window.TaskitatorOffline;
+        offline?.assertOnline();
         const headers = new Headers(options.headers);
         headers.set('Authorization', 'Bearer ' + await window.TaskitatorAuth.token());
         headers.delete('X-Taskitator-User');
@@ -557,8 +864,10 @@ const SyncEngine = {
             const response = await fetch(url, { ...options, signal: controller.signal });
             // Keep the timeout active until the body has finished downloading.
             const data = await response.json();
+            if (response.ok) offline?.noteConfirmed();
             return { ok: response.ok, status: response.status, json: async () => data };
-        } finally { clearTimeout(timer); }
+        } catch (error) { throw (await offline?.translate(error)) ?? error; }
+        finally { clearTimeout(timer); }
     },
 
     scheduleAutoPush(delayMs, extraData = {}) {
@@ -609,6 +918,8 @@ const SyncEngine = {
             if (localStorage.getItem(this.STORAGE_KEY_AUTO_DEADLINE) !== String(deadline)) return;
             if (Date.now() < deadline) { this.armAutoSync(); return; }
             if (!this.isConfigured() || this.needsInitialPull()) return;
+            // Offline: keep the batch queued. Reconnecting re-arms it.
+            if (window.TaskitatorOffline?.active) return;
             // Consume this batch once. Failed attempts wait for manual sync or a
             // new saved edit, rather than retrying every two minutes forever.
             this.cancelAutoWindow();
@@ -646,6 +957,7 @@ const SyncEngine = {
             }
             config = this.getConfig();
             if (!this.isConfigured()) return { success: false, reason: 'unconfigured' };
+            if (window.TaskitatorOffline?.active) return { success: false, reason: 'offline' };
             if (this.isDirty()) {
                 const sent = await this.push(false, extraData);
                 if (!sent.success || sent.pending || this.isDirty()) return sent;
@@ -734,6 +1046,7 @@ const SyncEngine = {
         if (!recovered.success) return recovered;
         const config = this.getConfig(), sessionId = this.sessionId;
         if (!this.isConfigured()) return { success: false, reason: 'unconfigured' };
+        if (window.TaskitatorOffline?.active) return { success: false, reason: 'offline' };
         const initial = this.needsInitialPull();
         const revision = localStorage.getItem(this.STORAGE_KEY_REVISION);
         if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
@@ -823,6 +1136,7 @@ const SyncEngine = {
             return { success: true, data };
         } catch (err) {
             if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
+            if (err?.offline) return { success: false, reason: 'offline' };
             this.notify('error', err.message);
             return { success: false, error: err.message };
         }
@@ -1294,6 +1608,11 @@ function runTaskitatorLoginPage() {
     const choices = document.getElementById('loginChoices');
     const heading = document.getElementById('loginHeading'), intro = document.getElementById('loginIntro');
     if (!window.Clerk.session) {
+        try {
+            if (sessionStorage.getItem('taskitator_reauth_notice') === '1') {
+                show('For your security, sign in again after this long away. Your unsynced changes are kept on this device.');
+            }
+        } catch {}
         let mode = 'signIn';
         const render = next => {
             if (mode === 'signUp') window.Clerk.unmountSignUp?.(signInNode);
@@ -1388,7 +1707,8 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
-            if (!(await versionMatches())) {
+            // Offline, the cached files are all there is; waiting for a new worker would strand the user.
+            if (!(await versionMatches()) && navigator.onLine !== false) {
                 status.textContent = 'Updating secure app files…';
                 await new Promise((resolve, reject) => {
                     let complete = false;
@@ -1466,7 +1786,14 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
             status.remove();
             return;
         }
-        await TaskitatorAuth.init();
+        try { await TaskitatorAuth.init(); }
+        catch (error) {
+            const offline = window.TaskitatorOffline;
+            // An HTTP answer that ends the account's access is final: no cached fallback.
+            if (error?.status === 401 || error?.status === 403 || error?.status === 410) offline?.forget();
+            if (!loginPage && offline && await offline.canOpenOffline(error)) offline.enterBootOffline();
+            else throw error;
+        }
         if (TaskitatorAuth.deletion) {
             if (TaskitatorAuth.deletion.receipt) sessionStorage.setItem('taskitator_deletion_receipt', TaskitatorAuth.deletion.receipt);
             location.replace('settings.html?view=deletion-status'); return;
@@ -1488,23 +1815,29 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
             } else { script.textContent = original.textContent; document.body.append(script); }
         }
         // Initialize existing page controls after asynchronous authentication.
-        if (TaskitatorAuth.account && !TaskitatorAuth.deletion && window.TaskitatorVault) { await window.TaskitatorVault.initialize(); }
+        if (TaskitatorAuth.account && !TaskitatorAuth.deletion && window.TaskitatorVault && !window.TaskitatorOffline?.active) { await window.TaskitatorVault.initialize(); }
         window.dispatchEvent(new Event('taskitator-auth-ready'));
         document.documentElement.classList.remove('auth-pending');
         status.remove();
-        if (window.Clerk) {
+        // Also called after an offline period ends, once Clerk has loaded.
+        let watching = false;
+        window.TaskitatorWatchSession = () => {
+            if (watching || !window.Clerk) return;
+            watching = true;
             const initialSession = window.Clerk.session?.id;
             window.Clerk.addListener(({ session }) => {
                 window.TaskitatorProfile?.refresh();
                 if (initialSession && session?.id !== initialSession) {
-                    if (window.TaskitatorDeletionAccepted) return;
+                    if (window.TaskitatorDeletionAccepted || window.TaskitatorReauthInProgress) return;
                     window.TaskitatorVault?.clear();
                     window.SyncEngine?.archiveLocalAccount();
                     window.SyncEngine?.clearLocalAccount();
                     location.replace('login.html');
                 }
             });
-        }
+        };
+        window.TaskitatorWatchSession();
+        window.TaskitatorOffline?.applyUI();
     } catch (err) {
         if (err.status === 401 && sessionStorage.getItem('taskitator_deletion_receipt')) {
             location.replace('settings.html?view=deletion-status'); return;

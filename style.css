@@ -1340,6 +1340,33 @@ body {
     box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
 }
 
+/* Offline: grey like Local Only, but hollow so the two stay distinguishable */
+.sync-dot.offline {
+    background-color: transparent;
+    border: 2px solid #64748b;
+    box-sizing: border-box;
+    box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.2);
+}
+
+/* Offline mode: banner and connection-dependent controls */
+#offlineBanner {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2147483000;
+    padding: 8px 14px;
+    background: #334155;
+    color: #e2e8f0;
+    font-size: 0.8rem;
+    text-align: center;
+}
+
+html.is-offline [data-requires-online] {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 /* Full Sync Status Badge */
 .sync-badge-word {
     display: inline-flex;

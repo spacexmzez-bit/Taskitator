@@ -770,7 +770,13 @@ const TaskitatorEngine = {
             return view;
         },
         async request(body){
-            const auth=window.TaskitatorAuth;
+            const auth=window.TaskitatorAuth,offline=window.TaskitatorOffline;
+            // Read-only offline: the last server answer stays visible; every change needs the Worker.
+            if(offline?.active&&!body){
+                const view=this.state()?.view;
+                if(view)return view;
+                throw new offline.OfflineError('Break details load when you are back online.');
+            }
             if(!auth?.api||!auth.signedIn)throw new Error('Sign in to manage breaks.');
             const view=body?await auth.api('/breaks',{method:'POST',body:JSON.stringify({timezone:this.zone(),...body})})
                 :await auth.api('/breaks?tz='+encodeURIComponent(this.zone()),{method:'GET'});
@@ -1372,6 +1378,8 @@ window.TaskitatorEngine = TaskitatorEngine;
             if (!baseUrl) {
                 throw new Error('Taskitator Worker URL is missing. Reload the app and check auth-config.js.');
             }
+            // Offline, every Pro request (AI reviews, credits, activation) is refused here.
+            global.TaskitatorOffline?.assertOnline();
             const token = await this.getToken();
             if (!token) {
                 throw new Error('Sign in to continue.');
@@ -1383,13 +1391,17 @@ window.TaskitatorEngine = TaskitatorEngine;
                 ...(options.headers || {})
             };
 
-            const res = await fetch(`${baseUrl}${path}`, {
-                ...options,
-                headers,
-                cache: 'no-store'
-            });
+            let res;
+            try {
+                res = await fetch(`${baseUrl}${path}`, {
+                    ...options,
+                    headers,
+                    cache: 'no-store'
+                });
+            } catch (error) { throw (await global.TaskitatorOffline?.translate(error)) ?? error; }
 
             const data = await res.json().catch(() => ({}));
+            if (res.ok) global.TaskitatorOffline?.noteConfirmed();
 
             if (!res.ok) {
                 const err = new Error(data.error || `Pro API request failed with status ${res.status}`);
@@ -1406,9 +1418,17 @@ window.TaskitatorEngine = TaskitatorEngine;
          * Get Pro tier status and remaining daily/monthly credit balances.
          */
         async getStatus() {
+            const offline=global.TaskitatorOffline;
+            if(offline?.active){
+                // Verified locally from the Worker-signed entitlement; fails closed (free) otherwise.
+                const local=await offline.proStatus();
+                if(typeof global.CustomEvent==='function')global.dispatchEvent(new global.CustomEvent('taskitator-pro-status',{detail:local}));
+                return local;
+            }
             const owner=global.Clerk?.session?.id;
             const data=await this.request('/pro/status', { method: 'GET' });
             if(owner!==global.Clerk?.session?.id)throw new Error('Your session changed. Retry the status check.');
+            offline?.saveProToken(data?.isPro===true?data.offline_token:null,Number(data?.server_now));
             if(typeof global.CustomEvent==='function')global.dispatchEvent(new global.CustomEvent('taskitator-pro-status',{detail:data}));
             return data;
         }
@@ -1568,6 +1588,13 @@ window.TaskitatorEngine = TaskitatorEngine;
             }
         }
         async emergencyStatus() {
+            // Read-only offline: show the last server answer. Activating a bypass needs the Worker.
+            const offline=global.TaskitatorOffline;
+            if(offline?.active){
+                let cached=null;try{cached=JSON.parse(localStorage.getItem('taskitator_emergency_state')||'null');}catch{}
+                if(cached)return cached;
+                throw new offline.OfflineError('Emergency Bypass details load when you are back online.');
+            }
             return this.emergencyRequest({method:'GET'});
         }
         async activateBypass() {

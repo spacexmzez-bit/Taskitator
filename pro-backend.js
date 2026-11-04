@@ -949,6 +949,27 @@ async function readProJSON(request,max=8192) {
     if(!body||typeof body!=='object'||Array.isArray(body))throw fail(400,'INVALID_INPUT','A JSON object is required.');return body;
 }
 
+// Offline Pro entitlement: an ES256 compact JWS the browser verifies with a public key baked into
+// the site (offlineProPublicKey). It binds the account, the subscription expiry and the issue time.
+// A subscription with a fixed expiry works offline until that date; one without gets 30 days.
+// Returns null (offline Pro stays off) until OFFLINE_PRO_PRIVATE_JWK is configured as a secret.
+export const OFFLINE_PRO_NO_EXPIRY_MS = 30 * 86400000;
+export async function signOfflineEntitlement(env, accountId, expiresAt, now = Date.now()) {
+    const raw = env?.OFFLINE_PRO_PRIVATE_JWK;
+    if (!raw || !accountId) return null;
+    try {
+        const jwk = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+        const exp = Number.isFinite(expiresAt) ? expiresAt : null;
+        const claims = { v: 1, sub: accountId, plan: 'pro', iat: now, exp, valid_until: exp === null ? now + OFFLINE_PRO_NO_EXPIRY_MS : exp };
+        const base64url = data => btoa(String.fromCharCode(...new Uint8Array(data))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        const encode = value => base64url(new TextEncoder().encode(JSON.stringify(value)));
+        const head = encode({ alg: 'ES256', typ: 'TKOP' }), body = encode(claims);
+        const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(head + '.' + body));
+        return head + '.' + body + '.' + base64url(signature);
+    } catch { return null; }
+}
+
 export class ProGateway {
     constructor(parent) {
         this.parent = parent;
@@ -1056,6 +1077,8 @@ export class ProGateway {
                 activated_at: entitlement.activated_at,
                 cycle_anchor: state.anchor,
                 expires_at: entitlement.expires_at,
+                server_now: now,
+                offline_token: await signOfflineEntitlement(this.env, accountId, entitlement.expires_at, now),
                 policy_version: entitlement.policy_version || '3.0',
                 hosted_policy: POLICY.version,
                 credits: {
@@ -1087,6 +1110,7 @@ export class ProGateway {
             use_byok: false,
             byok_credit_limits: true,
             limits,
+            server_now: now,
             credits: null,
             ...(status === 'invalid_parameters' ? {code: 'LICENSE_PARAMETERS_INVALID', message: LICENSE_PARAMETERS_MESSAGE} : {})
         });

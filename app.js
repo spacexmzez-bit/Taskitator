@@ -1566,6 +1566,8 @@ window.TaskitatorApp = (() => {
     function updateSyncDot(state) {
         const dot = document.getElementById('syncStatusDot');
         if (!dot) return;
+        // Offline outranks every other state: grey means "saved here, not reachable".
+        if (state !== 'local-only' && window.TaskitatorOffline?.active) state = 'offline';
         const prev = dot.dataset.state;
         dot.className = `sync-dot ${state}`;
         dot.dataset.state = state;
@@ -1573,7 +1575,8 @@ window.TaskitatorApp = (() => {
         if (state === 'error' && prev !== 'error') UIFX.replay(dot, 'just-failed');
         if (state === 'synced') dot.title = 'Sync Status: Synced up to date';
         else if (state === 'pending') dot.title = 'Sync Status: Not synced / Pending';
-        else if (state === 'error') dot.title = 'Sync Status: Sync Failed / Offline';
+        else if (state === 'error') dot.title = 'Sync Status: Sync Failed';
+        else if (state === 'offline') dot.title = 'Sync Status: Offline. Changes are saved on this device';
         else dot.title = 'Sync Status: Local only';
     }
 
@@ -1583,7 +1586,7 @@ window.TaskitatorApp = (() => {
             settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
         } catch (e) {}
         if (!window.SyncEngine?.isConfigured()) updateSyncDot('local-only');
-        else updateSyncDot('synced');
+        else updateSyncDot(window.SyncEngine.isDirty?.() ? 'pending' : 'synced');
     }
 
     // =========================================================================
@@ -3731,6 +3734,9 @@ window.TaskitatorApp = (() => {
         });
         window.addEventListener('taskitator-sync-error', () => {
             updateSyncDot('error');
+        });
+        window.addEventListener('taskitator-connectivity', () => {
+            updateSyncDot(window.SyncEngine?.isDirty?.() ? 'pending' : 'synced');
         });
 
         // Cloud downloads happen through Sync Now or a completed edit batch.
