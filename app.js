@@ -1961,8 +1961,53 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     // Multi-Selection Mode & Batch Editing Controller
     // =========================================================================
+    // Delete mode: only tasks that can be deleted right now (same rule as the row's X button) can be selected.
+    let selectionDeleteMode = false;
+    const deleteBlockReason = id => TaskitatorSafety.deletionError(tasks, id, isBypassActiveSafe());
+    function setDeleteMode(on) {
+        selectionDeleteMode = Boolean(on) && isSelectionModeActive;
+        if (selectionDeleteMode) for (const id of [...selectedTaskIds]) if (deleteBlockReason(id)) selectedTaskIds.delete(id);
+        updateBatchBarUI();
+        renderUnifiedTaskTree();
+    }
+    async function applyBulkDelete() {
+        const chosen = [...selectedTaskIds].filter(id => tasks.some(t => t.id === id && t.status !== 'trash'));
+        if (!chosen.length) { window.TaskitatorNotify('Select at least one task to delete.'); return; }
+        const ok = await window.TaskitatorConfirm({
+            title: `Delete ${chosen.length} task${chosen.length === 1 ? '' : 's'}?`,
+            message: `${chosen.length === 1 ? 'This task' : 'These tasks'} and all subtasks will move to Trash.`,
+            confirmLabel: 'Delete', tone: 'danger'
+        });
+        if (!ok) return;
+        let removed = 0;
+        const visited = new Set();
+        const markTrash = id => {
+            if (visited.has(id)) return;
+            visited.add(id);
+            const target = tasks.find(t => t.id === id);
+            if (target && target.status !== 'trash') { target.status = 'trash'; removed++; window.ExemplarStore?.deleteExemplar(id); }
+            tasks.filter(t => t.parent_id === id).forEach(k => markTrash(k.id));
+        };
+        let skipped = 0;
+        for (const id of chosen) {
+            // Re-check at the moment of deleting: state may have changed since selection.
+            if (deleteBlockReason(id)) { skipped++; continue; }
+            markTrash(id);
+        }
+        if (removed) saveStorageAndPush();
+        selectedTaskIds.clear();
+        selectionDeleteMode = false;
+        isSelectionModeActive = false;
+        document.getElementById('toggleSelectModeBtn')?.classList.remove('active');
+        document.getElementById('toggleSelectModeBtn')?.setAttribute('aria-pressed', 'false');
+        updateBatchBarUI();
+        renderUnifiedView();
+        window.TaskitatorNotify(skipped ? `Moved ${removed} task${removed === 1 ? '' : 's'} to Trash. ${skipped} could not be deleted.` : `Moved ${removed} task${removed === 1 ? '' : 's'} to Trash.`, 'info');
+    }
+
     function toggleSelectionMode() {
         isSelectionModeActive = !isSelectionModeActive;
+        selectionDeleteMode = false;
         selectedTaskIds.clear();
 
         const btn = document.getElementById('toggleSelectModeBtn');
@@ -1981,6 +2026,8 @@ window.TaskitatorApp = (() => {
         if (selectedTaskIds.has(taskId)) {
             selectedTaskIds.delete(taskId);
         } else {
+            const blocked = selectionDeleteMode ? deleteBlockReason(taskId) : null;
+            if (blocked) { window.TaskitatorNotify(blocked); return; }
             selectedTaskIds.add(taskId);
         }
 
@@ -1991,7 +2038,8 @@ window.TaskitatorApp = (() => {
     // "Select all" targets exactly the rows the current render shows as selectable
     // (respects view, overdue items, subtasks, and active filters).
     function eligibleSelectionTasks() {
-        return tasks.filter(t => renderedSelectableIds.has(t.id) && t.status === 'active' && !pendingGraceCompletions.has(t.id));
+        return tasks.filter(t => renderedSelectableIds.has(t.id) && t.status === 'active' && !pendingGraceCompletions.has(t.id)
+            && !(selectionDeleteMode && deleteBlockReason(t.id)));
     }
     function refreshSelectAllLabel() {
         const all = document.getElementById('batchSelectAllBtn');
@@ -2010,10 +2058,13 @@ window.TaskitatorApp = (() => {
         const resize=()=>document.documentElement.style.setProperty('--batch-clearance',bar.classList.contains('open')?(Math.ceil(bar.getBoundingClientRect().height)+32)+'px':'0px');
         if(!bar._sizeObserver&&typeof ResizeObserver!=='undefined'){bar._sizeObserver=new ResizeObserver(resize);bar._sizeObserver.observe(bar);window.addEventListener('resize',resize);}
         requestAnimationFrame(resize);
+        bar.classList.toggle('delete-mode', selectionDeleteMode);
+        const applyDelete = document.getElementById('batchApplyDeleteBtn');
+        if (applyDelete) { applyDelete.disabled = selectedTaskIds.size === 0; applyDelete.textContent = `Apply · delete ${selectedTaskIds.size}`; }
         // Keep the available actions visible while the user chooses tasks.
         if (isSelectionModeActive) {
             bar.classList.add('open');
-            if (label) label.textContent = `${selectedTaskIds.size} Selected`;
+            if (label) label.textContent = selectionDeleteMode ? `${selectedTaskIds.size} to delete` : `${selectedTaskIds.size} Selected`;
         } else {
             bar.classList.remove('open');
             if (label) label.textContent = `0 Selected`;
@@ -2655,6 +2706,8 @@ window.TaskitatorApp = (() => {
                 const isBonus = Boolean(task.is_bonus);
                 li.className = `task-node ${isDone ? 'completed' : ''} ${isOverdue ? 'is-overdue' : ''} ${isSelected ? 'row-selected' : ''} ${isBonus ? 'is-bonus' : ''}`;
 
+                if (isSelectionModeActive && selectionDeleteMode && deleteBlockReason(task.id)) li.classList.add('batch-undeletable');
+
                 let isBreadcrumb = false;
                 if (hasFilters) {
                     const m = matchMap.get(task.id);
@@ -3228,8 +3281,12 @@ window.TaskitatorApp = (() => {
         }
 
         if (batchCancelBtn) {
-            batchCancelBtn.addEventListener('click', toggleSelectionMode);
+            batchCancelBtn.addEventListener('click', () => {
+                if (selectionDeleteMode) setDeleteMode(false); else toggleSelectionMode();
+            });
         }
+        document.getElementById('batchDeleteBtn')?.addEventListener('click', () => setDeleteMode(true));
+        document.getElementById('batchApplyDeleteBtn')?.addEventListener('click', applyBulkDelete);
 
         // Batch Tags Modal
         if (batchOpenTagsBtn && batchTagsModal) {

@@ -5352,3 +5352,13 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .strict-note { margin-top: 8px; }
 .strict-day .break-time-input { padding: 7px 6px; font-size: 0.84rem; }
 .strict-day .strict-plan-row { gap: 6px; }
+
+/* Bulk delete mode: only deletable tasks can be picked; the rest are dimmed. */
+.batch-action-bar #batchApplyDeleteBtn { display: none; }
+.batch-action-bar.delete-mode #batchApplyDeleteBtn { display: inline-flex; }
+.batch-action-bar.delete-mode #batchReviewSelectedBtn,
+.batch-action-bar.delete-mode #batchOpenTagsBtn,
+.batch-action-bar.delete-mode #batchOpenPriorityBtn,
+.batch-action-bar.delete-mode #batchOpenDueDateBtn,
+.batch-action-bar.delete-mode #batchDeleteBtn { display: none; }
+.task-node.batch-undeletable > .task-row { opacity: 0.4; cursor: not-allowed; }
