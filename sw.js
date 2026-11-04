@@ -29,6 +29,7 @@ const STATIC_ASSETS = [
     './tutorial-spotlight.css',
     './tutorial-spotlight.js',
     './tutorial-integration.js',
+    './macro-bridge.js',
     './core.js',
     './pro.js',
     './components.js',
