@@ -1355,6 +1355,7 @@ body {
     transform: translateX(-50%);
     bottom: 12px;
     z-index: 2147483000;
+    pointer-events: none;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1367,6 +1368,9 @@ body {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 #offlineBanner button {
+    pointer-events: auto;
+    min-width: 28px;
+    min-height: 28px;
     background: none;
     border: 0;
     color: inherit;

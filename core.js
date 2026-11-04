@@ -189,7 +189,8 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
     }
 
     // ----- Connectivity state, banner and interface gating -----
-    let bannerDismissed = false;
+    let bannerDismissed = false, bannerTimer = 0;
+    const BANNER_SHOW_MS = 6000;
     function renderBanner() {
         let bar = document.getElementById('offlineBanner');
         if (!active || bannerDismissed) { bar?.remove(); return; }
@@ -198,9 +199,12 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             const text = document.createElement('span'); text.textContent = 'Offline. Changes sync when you reconnect.';
             const close = document.createElement('button');
             close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Dismiss offline notice');
-            close.addEventListener('click', () => { bannerDismissed = true; bar.remove(); });
+            close.addEventListener('click', () => { bannerDismissed = true; clearTimeout(bannerTimer); bar.remove(); });
             bar.append(text, close);
             document.body?.append(bar);
+            // A notice, not a permanent bar: the grey sync dot stays as the lasting indicator.
+            clearTimeout(bannerTimer);
+            bannerTimer = setTimeout(() => { bannerDismissed = true; bar.remove(); }, BANNER_SHOW_MS);
         }
     }
     function applyUI() {
