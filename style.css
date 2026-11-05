@@ -5360,5 +5360,14 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .batch-action-bar.delete-mode #batchOpenTagsBtn,
 .batch-action-bar.delete-mode #batchOpenPriorityBtn,
 .batch-action-bar.delete-mode #batchOpenDueDateBtn,
+.batch-action-bar.delete-mode #batchOpenBonusBtn,
 .batch-action-bar.delete-mode #batchDeleteBtn { display: none; }
 .task-node.batch-undeletable > .task-row { opacity: 0.4; cursor: not-allowed; }
+
+/* Today view: directory of hidden parents above an anchored task */
+.today-path{display:flex;flex-wrap:wrap;align-items:center;gap:2px 4px;margin:0 0 3px 8px;font-size:.74rem;color:var(--text-muted);min-width:0}
+.today-path-crumb{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;max-width:16ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.today-path-crumb:hover,.today-path-crumb:focus-visible{color:var(--accent);text-decoration:underline}
+.today-path-sep{opacity:.6}
+.criteria-actions-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.criteria-test-btn{background:transparent;color:var(--accent);border-color:var(--border-color)}

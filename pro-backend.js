@@ -503,6 +503,7 @@ export class TaskProtection {
         return digest(stable({tasks,references}));
     }
     async bind(store,account,body,batch,personal=false){
+        if(body.test===true)return this.bindTest(store,account,body,batch,personal);
         const {snapshot}=await this.read(store,account);
         if(!snapshot)throw fail(409,'SYNC_REQUIRED','Sync your tasks before submitting proof.');
         const requested=batch?body.tasks:[{id:body.task_id||body.taskId}];
@@ -522,6 +523,19 @@ export class TaskProtection {
         // Caller text and reference files cannot replace the server's saved requirements.
         const canonical=batch?{...body,tasks}:{...body,task_id:tasks[0].id,task_title:tasks[0].title,criteria:tasks[0].criteria,exemplar:tasks[0].exemplar};
         return {...prepare(canonical,batch,{allowHeic:personal}),bindings};
+    }
+    // Criteria test: the caller's draft criteria, title and exemplar go through the exact audit prompt (prepare),
+    // billed like a normal audit, but nothing is attested so a test can never complete or lock a task.
+    // Tests stop once the task's criteria is locked, unless Emergency Bypass is active.
+    async bindTest(store,account,body,batch,personal){
+        if(batch)throw fail(400,'TEST_SINGLE_ONLY','Criteria tests review one task at a time.');
+        const id=body.task_id||body.taskId;
+        if(typeof id!=='string'||!id)throw fail(400,'INVALID_TASKS','A task ID is required for a criteria test.');
+        const {snapshot}=await this.read(store,account);
+        const saved=snapshot?.tasks?.find(t=>t.id===id);
+        if(saved&&saved.status==='active'&&protectedTask(saved)&&!(await this.bypass(store,account)))
+            throw fail(409,'TEST_LOCKED','Criteria tests are unavailable once a task\'s criteria is locked. Use Emergency Bypass to test changes.');
+        return {...prepare({...body,task_id:id},false,{allowHeic:personal}),bindings:{test:id}};
     }
     async attest(tx,account,session,bindings,ids,context){
         await liveAccount(tx,account);
@@ -885,7 +899,8 @@ export class HostedAudits {
             await tx.put(b.spendKey,Math.max(0,b.spend-rec.reservedCost+actualCost));
             if (result) {
                 result.credits_remaining={daily:Math.max(0,this.round(keys.limits.daily-daily)),monthly:Math.max(0,this.round(keys.limits.monthly-monthly))};
-                result.job_id=await this.protection.attest(tx,account,session,bindings,
+                if(body.test===true){result.test=true;result.job_id=null;}
+                else result.job_id=await this.protection.attest(tx,account,session,bindings,
                     batch?result.tasks.filter(t=>t.status==='eligible').map(t=>t.task_id):result.verdict==='approved'?[tasks[0].id]:[],
                     {batch,hash,operation,model:POLICY.model,submittedAt:rec.submitted_at||Date.now()});
             }
@@ -1243,9 +1258,10 @@ export class ProGateway {
             const raw=parseResult({model:POLICY.model,stop_reason:result.candidates[0].finishReason==='MAX_TOKENS'?'max_tokens':'end_turn',content:[{type:'text',text}]},bound.tasks,batch);
             const response=await this.storage.transaction(async tx=>{
                 await liveAccount(tx,account);
-                const job=await this.protection.attest(tx,account,session,bound.bindings,batch?raw.tasks.filter(t=>t.status==='eligible').map(t=>t.task_id):raw.verdict==='approved'?[body.task_id||body.taskId]:[],
+                const test=body.test===true;
+                const job=test?null:await this.protection.attest(tx,account,session,bound.bindings,batch?raw.tasks.filter(t=>t.status==='eligible').map(t=>t.task_id):raw.verdict==='approved'?[body.task_id||body.taskId]:[],
                     {batch,hash,operation:body.operation_id,model,submittedAt});
-                const response={success:true,...raw,model_used:model,job_id:job};
+                const response={success:true,...raw,model_used:model,job_id:job,...(test?{test:true}:{})};
                 await tx.put(opKey,{mode:'personal',state:'done',hash,session,created,retain_until:created+86400000,response,settled_at:Date.now()});return response;
             });
             return json(response);

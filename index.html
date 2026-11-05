@@ -430,6 +430,7 @@
         <button type="button" class="icon-btn" id="batchOpenTagsBtn" style="padding: 5px 10px; font-size: 0.8rem;">🏷️ Tags</button>
         <button type="button" class="icon-btn" id="batchOpenPriorityBtn" style="padding: 5px 10px; font-size: 0.8rem;">🎯 Priority</button>
         <button type="button" class="icon-btn" id="batchOpenDueDateBtn" style="padding: 5px 10px; font-size: 0.8rem;">📅 Due</button>
+        <button type="button" class="icon-btn" id="batchOpenBonusBtn" style="padding: 5px 10px; font-size: 0.8rem;">⭐ Bonus</button>
         <button type="button" class="icon-btn" id="batchDeleteBtn" style="padding: 5px 10px; font-size: 0.8rem;">🗑 Delete</button>
         <button type="button" class="icon-btn" id="batchApplyDeleteBtn" style="padding: 5px 10px; font-size: 0.8rem; color: var(--danger); border-color: rgba(239,68,68,0.4);" disabled>Apply · delete 0</button>
         <button type="button" class="icon-btn" id="batchCancelBtn" style="color: var(--danger); border-color: rgba(239,68,68,0.4); padding: 5px 10px; font-size: 0.8rem;">✕</button>
@@ -480,6 +481,21 @@
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
             <button type="button" class="icon-btn" id="closeBatchDueDateBtn">Cancel</button>
             <button type="button" class="icon-btn btn-primary" id="applyBatchDueDateBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Apply to Selected</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Batch Bonus State -->
+<div class="modal-overlay" id="batchBonusModal">
+    <div class="modal-box" style="max-width: 400px;">
+        <h3 style="margin-top: 0; color: var(--primary);">⭐ Batch Bonus State</h3>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
+            Make the selected tasks bonus or required. Tasks that can't change (shield-protected required work) are skipped.
+        </p>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; flex-wrap: wrap;">
+            <button type="button" class="icon-btn" id="closeBatchBonusBtn">Cancel</button>
+            <button type="button" class="icon-btn" id="applyBatchUnbonusBtn">Make required</button>
+            <button type="button" class="icon-btn btn-primary" id="applyBatchBonusBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Make bonus</button>
         </div>
     </div>
 </div>
@@ -895,6 +911,7 @@
                 <div class="criteria-actions-bar" style="margin-top: 14px;">
                     <button type="button" class="icon-btn" id="openTemplatesBtn" style="font-size: 0.78rem; padding: 4px 10px;">💡 Recommended</button>
                     <button type="button" class="icon-btn" id="validateCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px; background: var(--accent-light); color: var(--accent); border-color: var(--border-color);">🔍 Validate Criteria</button>
+                    <button type="button" class="icon-btn criteria-test-btn" id="testCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px;" title="Send a test proof against this criteria. Doesn't save or lock the task.">🧪 Test your criteria</button>
                 </div>
                 <div id="criteriaFeedbackBox" class="criteria-feedback-box"></div>
             </div>
@@ -1110,6 +1127,7 @@
             <div class="criteria-actions-bar" style="margin-top: 14px;">
                 <button type="button" class="icon-btn" id="editOpenTemplatesBtn" style="font-size: 0.78rem; padding: 4px 10px;">💡 Recommended</button>
                 <button type="button" class="icon-btn" id="editValidateCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px; background: var(--accent-light); color: var(--accent); border-color: var(--border-color);">🔍 Validate Criteria</button>
+                    <button type="button" class="icon-btn criteria-test-btn" id="editTestCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px;" title="Send a test proof against this criteria. Doesn't save or lock the task.">🧪 Test your criteria</button>
             </div>
             <div id="editCriteriaFeedbackBox" class="criteria-feedback-box"></div>
         </div>
@@ -1169,6 +1187,32 @@
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
             <button type="button" class="icon-btn" id="closeAuditModalBtn">Cancel</button>
             <button type="submit" class="icon-btn btn-primary" id="submitProofBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Submit Proof</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Criteria Test (dry-run audit; never saves or locks) -->
+<div class="modal-overlay" id="criteriaTestModal">
+    <div class="modal-box">
+        <h3 style="margin-top: 0; color: var(--primary);">🧪 Test your criteria</h3>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 10px;">Send a sample proof to see how the AI auditor reads this criteria. The test uses the exact same audit as a real proof and returns the same verdicts. It doesn't save, complete or lock the task.</p>
+        <div id="criteriaTestCriteriaDisplay" style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 12px; background: var(--card-subtle); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); white-space: pre-wrap;"></div>
+        <div class="criteria-test-cost" style="font-size: 0.78rem; margin-bottom: 12px; padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(251,191,36,0.4); background: rgba(251,191,36,0.08); color: #fde68a;">
+            ⚠️ AI usage applies exactly like a real proof audit. There are no free tests. On Pro hosted AI you'll see a credit estimate before it runs; with your own API key, your provider bills this request and it counts toward your allowance.
+        </div>
+        <div class="form-group">
+            <label for="criteriaTestFileInput">Test proof (1&ndash;5 Photos or PDFs &le; 5MB each):</label>
+            <input type="file" id="criteriaTestFileInput" multiple accept="image/*,application/pdf" style="display: block; width: 100%; padding: 10px; border: 1.5px solid var(--border-color); border-radius: 8px; background: var(--card-subtle);">
+        </div>
+        <div class="form-group">
+            <label for="criteriaTestContextInput">Optional Note / Clarification:</label>
+            <textarea id="criteriaTestContextInput" rows="2" placeholder="Any details for the auditor..."></textarea>
+        </div>
+        <div id="criteriaTestResult" style="display: none;"></div>
+        <p style="font-size: 0.72rem; color: var(--text-muted); margin: 10px 0 0;">A passing test doesn't guarantee the real audit passes. AI verdicts can vary between runs.</p>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+            <button type="button" class="icon-btn" id="closeCriteriaTestBtn">Close</button>
+            <button type="button" class="icon-btn btn-primary" id="runCriteriaTestBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Run test</button>
         </div>
     </div>
 </div>

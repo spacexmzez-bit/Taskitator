@@ -1121,7 +1121,8 @@ Return strictly valid JSON with this exact schema:
             }
         },
 
-        async verifyProof({ taskId, file, files, taskTitle, criteria, userContext, exemplarPart = null }) {
+        // test: criteria test (dry run). Same prompt and billing; the server never attests, so nothing completes or locks.
+        async verifyProof({ taskId, file, files, taskTitle, criteria, userContext, exemplarPart = null, test = false }) {
             const fileList = Array.isArray(files) && files.length ? files : (file ? [file] : []);
             if (fileList.length > 5) {
                 return { success: false, status: 400, error: 'Maximum 5 evidence files allowed per task.' };
@@ -1150,7 +1151,8 @@ Return strictly valid JSON with this exact schema:
                             title: taskTitle,
                             criteria: combinedCriteria,
                             files: encodedFiles,
-                            exemplar: exemplarPart ? {mime_type:(exemplarPart.inline_data || exemplarPart).mime_type, data:(exemplarPart.inline_data || exemplarPart).data} : null
+                            exemplar: exemplarPart ? {mime_type:(exemplarPart.inline_data || exemplarPart).mime_type, data:(exemplarPart.inline_data || exemplarPart).data} : null,
+                            test
                         });
                         return {
                             success: true,
@@ -1159,6 +1161,8 @@ Return strictly valid JSON with this exact schema:
                             confidence: proRes.confidence,
                             critique: proRes.critique,
                             job_id:proRes.job_id,
+                            test:Boolean(proRes.test),
+                            is_pro:proRes.is_pro, discount_applied:proRes.discount_applied, credits_charged:proRes.credits_charged,
                             model_used: proRes.model_used || 'claude-haiku-5-5'
                         };
                     }
@@ -1172,7 +1176,8 @@ Return strictly valid JSON with this exact schema:
                     const check=this.validateFile(f);if(!check.valid)return {success:false,status:400,error:check.error};
                     const part=(await this.fileToBase64(f)).inline_data;encoded.push({mime_type:part.mime_type,data:part.data});
                 }
-                const result=await window.TaskitatorPro.personalReview({task_id:taskId,files:encoded});
+                const exemplar=exemplarPart?{mime_type:(exemplarPart.inline_data||exemplarPart).mime_type,data:(exemplarPart.inline_data||exemplarPart).data}:null;
+                const result=await window.TaskitatorPro.personalReview(test?{task_id:taskId,task_title:taskTitle,criteria,exemplar,files:encoded,test:true}:{task_id:taskId,files:encoded});
                 return {success:true,approved:result.verdict==='approved',...result};
             } catch(error){return {success:false,status:error.status||0,error:error.message};}
 
@@ -1501,7 +1506,7 @@ window.TaskitatorEngine = TaskitatorEngine;
         /**
          * Submit single or multi-file proof review to hosted Claude Haiku 5.5 gateway.
          */
-        async reviewProof({ taskId, title, criteria, file, files, operationId, exemplar }) {
+        async reviewProof({ taskId, title, criteria, file, files, operationId, exemplar, test = false }) {
             if (!taskId) throw new Error('taskId is required for proof review.');
             if (!criteria) throw new Error('Criteria must be defined for AI-audited review.');
 
@@ -1514,6 +1519,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                 operation_id: opId,
                 exemplar: exemplar || null
             };
+            if (test) payload.test = true;
 
             if (Array.isArray(files) && files.length) {
                 payload.files = files.map(f => ({
@@ -2127,6 +2133,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                         <button class="pro-btn" id="pro-activate-btn">Activate Pro</button>
                     </div>
                     <div class="pro-msg" id="pro-form-msg"></div>
+                    <button type="button" class="pro-btn pro-contact-btn" id="pro-contact-btn" data-contact-email="info@mazendev.com" data-contact-subject="Taskitator Pro" style="margin-top: 10px; width: 100%;">Want pro? Contact developer now!</button>
                 </div>
 
                 <div class="pro-compare-link-row" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(148, 163, 184, 0.2); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
@@ -2253,6 +2260,8 @@ window.TaskitatorEngine = TaskitatorEngine;
 
         try {
             const data = await client.getStatus();
+            const contactBtn = document.getElementById('pro-contact-btn');
+            if (contactBtn) contactBtn.style.display = data.isPro ? 'none' : '';
             if (data.isPro) {
                 hideFreeLimits();
                 if (badge) {
@@ -2757,3 +2766,31 @@ window.TaskitatorEngine = TaskitatorEngine;
     else apply();
 })(window);
 // <<< MODULE_END: pro/tier-ui.js >>>
+
+// <<< MODULE_START: contact.js >>>
+// Any [data-contact-email] button: copy the address (always works) and open the mail app via mailto.
+(function (global) {
+    async function copy(text) {
+        try { await navigator.clipboard.writeText(text); return true; } catch {}
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            const ok = document.execCommand('copy'); ta.remove(); return ok;
+        } catch { return false; }
+    }
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest?.('[data-contact-email]');
+        if (!btn) return;
+        e.preventDefault();
+        const email = btn.getAttribute('data-contact-email');
+        const subject = btn.getAttribute('data-contact-subject') || 'Taskitator';
+        const copied = await copy(email);
+        const a = document.createElement('a');
+        a.href = 'mailto:' + email + '?subject=' + encodeURIComponent(subject);
+        a.rel = 'noopener';
+        document.body.appendChild(a); a.click(); a.remove();
+        global.TaskitatorNotify?.(copied ? `Email copied: ${email}` : `Contact: ${email}`);
+    });
+})(window);
+// <<< MODULE_END: contact.js >>>

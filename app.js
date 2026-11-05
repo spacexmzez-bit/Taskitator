@@ -316,20 +316,23 @@ window.TaskitatorAgent = (() => {
     // Scoped progress data: never include task IDs, dates, criteria or descriptions.
     function todayProgress(tasks, now, dayHour, logicalDate) {
         const day = logicalDate(now, dayHour), byId = new Map(tasks.filter(Boolean).map(t => [t.id, t]));
-        const dueFor = task => {
+        // Matches the Today list: the task or any ancestor is due today/overdue; undated chains are excluded.
+        const qualifies = (node, self) => {
+            const due = String(node.due_date || '').trim().toLowerCase();
+            return due === 'today' || (/^\d{4}-\d{2}-\d{2}$/.test(due) && due <= day) || (self && node.smart_early_date === day);
+        };
+        const inToday = task => {
             const seen = new Set(); let node = task;
             while (node && !seen.has(node.id)) {
                 seen.add(node.id);
-                const due = String(node.due_date || '').trim().toLowerCase();
-                if (due) return due;
+                if (qualifies(node, node === task)) return true;
                 node = byId.get(node.parent_id);
             }
-            return '';
+            return false;
         };
         return tasks.filter(t => {
             if (!t || !['active', 'completed'].includes(t.status)) return false;
-            const due = dueFor(t);
-            if (due && due !== 'today' && (!/^\d{4}-\d{2}-\d{2}$/.test(due) || (due > day && t.smart_early_date !== day))) return false;
+            if (!inToday(t)) return false;
             if (t.status === 'completed') {
                 const completed = Date.parse(t.completed_at);
                 if (!Number.isFinite(completed) || logicalDate(completed, dayHour) !== day) return false;
@@ -372,8 +375,14 @@ window.TaskitatorAgent = (() => {
 
                 if (filter === 'today') {
                     if (t.status === 'completed') return false;
-                    const due = String(t.due_date || 'today').trim().toLowerCase();
-                    return due === 'today' || due === todayStr;
+                    // Same rule as the Today list: the task or an ancestor is due today/overdue.
+                    const byId = new Map(tasks.map(x => [x.id, x])), seen = new Set();
+                    for (let node = t; node && !seen.has(node.id); node = byId.get(node.parent_id)) {
+                        seen.add(node.id);
+                        const due = String(node.due_date || '').trim().toLowerCase();
+                        if (due === 'today' || (/^\d{4}-\d{2}-\d{2}$/.test(due) && due <= todayStr)) return true;
+                    }
+                    return false;
                 }
 
                 return t.status === 'active';
@@ -1609,7 +1618,7 @@ window.TaskitatorApp = (() => {
 
         const mode = localStorage.getItem('taskitator_sort_mode') || 'priority';
         return tasksArray.sort((a, b) => {
-            if (mode === 'alpha') return String(a.title||'').localeCompare(String(b.title||''), undefined, {sensitivity:'base'});
+            if (mode === 'alpha') return String(a.title||'').localeCompare(String(b.title||''), undefined, {sensitivity:'base', numeric:true});
             if (mode === 'required' && !!a.is_bonus !== !!b.is_bonus) return a.is_bonus ? 1 : -1;
             const rA = getRank((dynamicPriority.get(a.id) ?? a.priority_id));
             const rB = getRank((dynamicPriority.get(b.id) ?? b.priority_id));
@@ -2630,16 +2639,27 @@ window.TaskitatorApp = (() => {
             }
         });
 
-        function belongsToCurrentView(task, visited = new Set()) {
+        // Today view: a task is anchored when it is itself due today/overdue and no ancestor is.
+        // Anchors render at root with their whole subtree; their ancestors (and siblings) stay hidden.
+        const displayById = new Map(displayTasks.map(t => [t.id, t]));
+        const isDueTodayOrOverdue = (task) => {
+            const rawDue = String(task.due_date || '').trim().toLowerCase();
+            return rawDue === 'today' || (/^\d{4}-\d{2}-\d{2}$/.test(rawDue) && rawDue <= todayStr);
+        };
+        const hiddenAncestors = (task) => {
+            const chain = [], seen = new Set([task.id]);
+            let parent = displayById.get(task.parent_id);
+            while (parent && !seen.has(parent.id) && parent.status !== 'trash') { seen.add(parent.id); chain.unshift(parent); parent = displayById.get(parent.parent_id); }
+            return chain;
+        };
+        const todayAnchorPaths = new Map();
+        function belongsToCurrentView(task) {
             if (currentView === 'general') return true;
-            if (visited.has(task.id)) return false;
-            visited.add(task.id);
-
-            const rawDue = (task.due_date || '').trim().toLowerCase();
-            if (rawDue === 'today') return true;
-            if (/^\d{4}-\d{2}-\d{2}$/.test(rawDue) && rawDue <= todayStr) return true;
-            const kids = allChildrenMap.get(task.id) || [];
-            return kids.some(k => belongsToCurrentView(k, visited));
+            if (!isDueTodayOrOverdue(task)) return false;
+            const chain = hiddenAncestors(task);
+            if (chain.some(isDueTodayOrOverdue)) return false;
+            todayAnchorPaths.set(task.id, chain);
+            return true;
         }
 
         function hasVisibleDescendant(taskId, visited = new Set()) {
@@ -2680,7 +2700,10 @@ window.TaskitatorApp = (() => {
             tasks.forEach(t => checkDesc(t.id));
         }
 
-        let rootTasks = (allChildrenMap.get('root') || []).filter(t => {
+        const viewCandidates = currentView === 'general'
+            ? (allChildrenMap.get('root') || [])
+            : displayTasks.filter(t => t.status !== 'trash');
+        let rootTasks = viewCandidates.filter(t => {
             if (!belongsToCurrentView(t)) return false;
             if (hasFilters) {
                 const m = matchMap.get(t.id);
@@ -2963,6 +2986,28 @@ window.TaskitatorApp = (() => {
                         openTaskDetailModal(task.id);
                     }
                 });
+
+                const anchorPath = depth === 0 && currentView === 'today' ? todayAnchorPaths.get(task.id) : null;
+                if (anchorPath && anchorPath.length) {
+                    const crumbs = document.createElement('div');
+                    crumbs.className = 'today-path';
+                    crumbs.title = 'Parent tasks (shown in General)';
+                    anchorPath.forEach((ancestor, i) => {
+                        if (i) { const sep = document.createElement('span'); sep.className = 'today-path-sep'; sep.textContent = '›'; crumbs.appendChild(sep); }
+                        const crumb = document.createElement('button');
+                        crumb.type = 'button';
+                        crumb.className = 'today-path-crumb';
+                        crumb.textContent = ancestor.title || 'Untitled';
+                        crumb.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (isSelectionModeActive) return;
+                            UIFX.tap();
+                            openTaskDetailModal(ancestor.id);
+                        });
+                        crumbs.appendChild(crumb);
+                    });
+                    li.appendChild(crumbs);
+                }
 
                 li.appendChild(row);
 
@@ -3407,6 +3452,33 @@ window.TaskitatorApp = (() => {
                 }
             });
         }
+
+        // Batch Bonus State: same rule as the edit modal (shield-protected required work can't become bonus).
+        const batchBonusModal = document.getElementById('batchBonusModal');
+        document.getElementById('batchOpenBonusBtn')?.addEventListener('click', () => {
+            if (selectedTaskIds.size === 0) { window.TaskitatorNotify('Please select at least one task first.'); return; }
+            batchBonusModal?.classList.add('open');
+        });
+        document.getElementById('closeBatchBonusBtn')?.addEventListener('click', () => batchBonusModal?.classList.remove('open'));
+        const applyBatchBonus = (makeBonus) => {
+            const isBypass = isBypassActiveSafe();
+            let changed = 0, skipped = 0;
+            selectedTaskIds.forEach(id => {
+                const t = tasks.find(x => x.id === id);
+                if (!t || t.status !== 'active') { skipped++; return; }
+                if (Boolean(t.is_bonus) === makeBonus) return;
+                if (makeBonus && !isBypass && (t.strict_prerequisites || getShieldedAncestor(t.id))) { skipped++; return; }
+                t.is_bonus = makeBonus;
+                changed++;
+            });
+            if (changed) saveStorageAndPush();
+            batchBonusModal?.classList.remove('open');
+            renderUnifiedView();
+            const what = makeBonus ? 'bonus' : 'required';
+            window.TaskitatorNotify(`${changed} task(s) made ${what}.` + (skipped ? ` ${skipped} skipped (can't change).` : ''));
+        };
+        document.getElementById('applyBatchBonusBtn')?.addEventListener('click', () => applyBatchBonus(true));
+        document.getElementById('applyBatchUnbonusBtn')?.addEventListener('click', () => applyBatchBonus(false));
 
         // Bulk Reschedule Gate Logic
         const rescheduleModal = document.getElementById('bulkRescheduleModal');

@@ -1520,7 +1520,8 @@ window.TaskitatorComponents = Object.freeze({
             const titleH = document.getElementById('detailTaskTitleHeader');
             if (titleH) titleH.textContent = task.title;
             
-            const titleForEdit = task.raw_title !== undefined ? task.raw_title : (task.title || '');
+            // Bonus state lives in is_bonus/the checkbox; a stored "$$" token must not re-force bonus on save.
+            const titleForEdit = String(task.raw_title !== undefined ? task.raw_title : (task.title || '')).replace(/\$\$/g, '').replace(/\s+/g, ' ').trim();
             if (editTaskTitle) {
                 if (editTaskTitle.tagName === 'DIV') editTaskTitle.textContent = titleForEdit;
                 else editTaskTitle.value = titleForEdit;
@@ -1909,7 +1910,7 @@ window.TaskitatorComponents = Object.freeze({
                             id: newTaskId,
                             parent_id: activeDetailTaskId,
                             title: cleanTitle,
-                            raw_title: rawSubInput,
+                            raw_title: cleanedBonusInput,
                             description: '',
                             tags: [],
                             priority_id: host.catalogs.lowestPriority(),
@@ -3198,6 +3199,113 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
+            // Test your criteria: a dry-run audit with the draft criteria, using the same prompt, exemplar and billing
+            // as a real proof. The server never attests a test, so it can't complete, save or lock the task.
+            // Gate: validation >= 7/10 (templates count as 10, saved criteria as 9), skipped when validation is off.
+            // Locked criteria can't be tested unless Emergency Bypass is active.
+            const criteriaTestModal = document.getElementById('criteriaTestModal');
+            let criteriaTestContext = null;
+            function criteriaTestBlock(mode) {
+                const criteria = (document.getElementById(mode === 'edit' ? 'editTaskCriteria' : 'taskCriteriaInput')?.value || '').trim();
+                if (!criteria) return 'Enter proof criteria before testing it.';
+                if (mode === 'edit') {
+                    const task = host.tasks.getAll().find(t => t.id === activeDetailTaskId);
+                    if (task && (task.ai_locked || task.require_ai_proof) && !host.rules.bypassActive())
+                        return 'Criteria tests are unavailable once a task\'s criteria is locked. Use Emergency Bypass to test changes.';
+                }
+                if (host.rules.strictCriteria()) {
+                    const state = mode === 'edit' ? editCriteriaValidationState : criteriaValidationState;
+                    if (!state.validated || !(state.score >= 7)) return 'Validate this criteria first. Tests need a score of at least 7/10.';
+                }
+                return '';
+            }
+            async function openCriteriaTest(mode) {
+                if (window.TaskitatorOffline?.active) { window.TaskitatorNotify('Criteria tests need an internet connection.'); return; }
+                const blocked = criteriaTestBlock(mode);
+                if (blocked) { window.TaskitatorNotify(blocked); return; }
+                const rawTitle = String(NLPEngine.extractCleanTitle(mode === 'edit' ? 'editTaskTitle' : 'taskTitleInput') || '').replace(/\$\$/g, '').trim();
+                const rawCriteria = (document.getElementById(mode === 'edit' ? 'editTaskCriteria' : 'taskCriteriaInput')?.value || '').trim();
+                const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(rawTitle);
+                const gate = SmartCriteriaEngine.validateCriteriaForSubmission(rawCriteria, varMap);
+                if (!gate.valid) return;
+                // Same exemplar the save would store: a newly attached/saved-criteria file first, else the task's current reference.
+                let exemplarPart = null, exemplarFile = null;
+                if (mode === 'edit') {
+                    const task = host.tasks.getAll().find(t => t.id === activeDetailTaskId);
+                    exemplarFile = pendingEditExemplarFile || null;
+                    if (!exemplarFile && task && !removeEditReference) {
+                        const record = await window.ExemplarStore?.getExemplar(task.id);
+                        if (record?.inline_data) exemplarPart = { inline_data: record.inline_data };
+                        else if (task.reference_inline_data) exemplarPart = task.reference_inline_data;
+                        else if (task.reference_id) exemplarPart = TaskitatorRecurrenceUI.state().reference_files?.[task.reference_id] || null;
+                    }
+                } else {
+                    const input = document.getElementById('createExemplarInput');
+                    exemplarFile = input ? (input._savedCriteriaFile || input.files?.[0] || null) : null;
+                }
+                if (exemplarFile) {
+                    const check = TaskitatorEngine.AuditEngine.validateFile(exemplarFile);
+                    if (!check.valid) { window.TaskitatorNotify(check.error); return; }
+                    exemplarPart = await TaskitatorEngine.AuditEngine.fileToBase64(exemplarFile);
+                }
+                criteriaTestContext = {
+                    mode,
+                    taskId: mode === 'edit' && activeDetailTaskId ? activeDetailTaskId : 'test_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
+                    title: cleanTitle || 'Task',
+                    criteria: gate.resolvedText,
+                    exemplarPart
+                };
+                const display = document.getElementById('criteriaTestCriteriaDisplay');
+                if (display) display.textContent = gate.resolvedText + (exemplarPart ? '\n\n📎 Reference exemplar included' : '');
+                const fileInput = document.getElementById('criteriaTestFileInput');
+                if (fileInput) fileInput.value = '';
+                const ctx = document.getElementById('criteriaTestContextInput');
+                if (ctx) ctx.value = '';
+                const result = document.getElementById('criteriaTestResult');
+                if (result) { result.style.display = 'none'; result.innerHTML = ''; }
+                criteriaTestModal?.classList.add('open');
+            }
+            document.getElementById('testCriteriaBtn')?.addEventListener('click', () => openCriteriaTest('create'));
+            document.getElementById('editTestCriteriaBtn')?.addEventListener('click', () => openCriteriaTest('edit'));
+            document.getElementById('closeCriteriaTestBtn')?.addEventListener('click', () => { criteriaTestModal?.classList.remove('open'); criteriaTestContext = null; });
+            const runCriteriaTestBtn = document.getElementById('runCriteriaTestBtn');
+            runCriteriaTestBtn?.addEventListener('click', async () => {
+                const test = criteriaTestContext;
+                if (!test) return;
+                const blocked = criteriaTestBlock(test.mode);
+                if (blocked) { window.TaskitatorNotify(blocked); return; }
+                const fileList = Array.from(document.getElementById('criteriaTestFileInput')?.files || []);
+                if (!fileList.length) { window.TaskitatorNotify('Attach a test proof photo or PDF.'); return; }
+                for (const f of fileList) {
+                    const check = TaskitatorEngine.AuditEngine.validateFile(f);
+                    if (!check.valid) { window.TaskitatorNotify(check.error); return; }
+                }
+                const resultBox = document.getElementById('criteriaTestResult');
+                runCriteriaTestBtn.disabled = true; runCriteriaTestBtn.classList.add('is-loading'); runCriteriaTestBtn.textContent = 'Testing…';
+                let result;
+                try {
+                    result = await TaskitatorEngine.AuditEngine.verifyProof({
+                        taskId: test.taskId, file: fileList[0], files: fileList, taskTitle: test.title, criteria: test.criteria,
+                        userContext: document.getElementById('criteriaTestContextInput')?.value.trim() || '',
+                        exemplarPart: test.exemplarPart, test: true
+                    });
+                } catch (err) { result = { success: false, error: err.message }; }
+                runCriteriaTestBtn.disabled = false; runCriteriaTestBtn.classList.remove('is-loading'); runCriteriaTestBtn.textContent = 'Run test again';
+                if (criteriaTestContext !== test || !resultBox) return;
+                resultBox.style.display = 'block';
+                if (!result?.success) {
+                    resultBox.className = 'audit-critique-box';
+                    resultBox.innerHTML = `<strong>Test failed to run</strong><br>${TaskitatorSafety.escapeHtml(result?.error || 'The audit could not be completed.')}`;
+                    return;
+                }
+                const verdict = String(result.verdict || 'rejected').toLowerCase();
+                const label = verdict === 'approved' ? 'APPROVED' : verdict === 'incomplete' ? 'INSUFFICIENT PROOF' : 'REJECTED';
+                const cost = result.credits_charged != null ? `${TaskitatorSafety.escapeHtml(result.credits_charged)} credits used.` : 'AI usage was consumed for this test.';
+                resultBox.className = verdict === 'approved' ? 'criteria-feedback-box pass' : 'audit-critique-box';
+                resultBox.innerHTML = `<strong>Test verdict: ${label}</strong><br>${TaskitatorSafety.escapeHtml(result.critique || result.reason || '')}` +
+                    `<div style="margin-top: 8px; font-size: 0.75rem; color: var(--text-muted);">🧪 Test only. Nothing was saved or locked. ${cost}</div>`;
+            });
+
             // Template & Saved Criteria Picker Modal
             const templatesModal = document.getElementById('templatesModal');
             const closeTemplatesModalBtn = document.getElementById('closeTemplatesModalBtn');
@@ -3328,7 +3436,7 @@ window.TaskitatorComponents = Object.freeze({
                 }
 
                 stateTarget.validated = true;
-                stateTarget.score = savedItem.score || 10;
+                stateTarget.score = 9; // Manually saved criteria count as 9/10 (templates are 10/10).
                 stateTarget.isTemplate = false;
                 stateTarget.isSavedCriteria = true;
                 stateTarget.savedCriteriaText = savedItem.criteria;
