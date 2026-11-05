@@ -2878,8 +2878,8 @@ window.TaskitatorComponents = Object.freeze({
                         return;
                     }
 
-                    if (window.TaskitatorEngine?.AuditEngine?.validateFile) {
-                        const check = TaskitatorEngine.AuditEngine.validateFile(file);
+                    if (window.TaskitatorEngine?.AuditEngine?.validateProofFiles) {
+                        const check = TaskitatorEngine.AuditEngine.validateProofFiles(fileList);
                         if (!check.valid) {
                             window.TaskitatorNotify(check.error);
                             return;
@@ -3276,10 +3276,8 @@ window.TaskitatorComponents = Object.freeze({
                 if (blocked) { window.TaskitatorNotify(blocked); return; }
                 const fileList = Array.from(document.getElementById('criteriaTestFileInput')?.files || []);
                 if (!fileList.length) { window.TaskitatorNotify('Attach a test proof photo or PDF.'); return; }
-                for (const f of fileList) {
-                    const check = TaskitatorEngine.AuditEngine.validateFile(f);
-                    if (!check.valid) { window.TaskitatorNotify(check.error); return; }
-                }
+                const check = TaskitatorEngine.AuditEngine.validateProofFiles(fileList);
+                if (!check.valid) { window.TaskitatorNotify(check.error); return; }
                 const resultBox = document.getElementById('criteriaTestResult');
                 runCriteriaTestBtn.disabled = true; runCriteriaTestBtn.classList.add('is-loading'); runCriteriaTestBtn.textContent = 'Testing…';
                 let result;

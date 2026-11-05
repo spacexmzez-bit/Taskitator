@@ -8,6 +8,7 @@ import './pro/study-plan.js';
 // ============================================================================
 import { ProGateway, TaskProtection, liveAccount, POLICY, planOf, periods } from './pro-backend.js';
 import { BreakSystems } from './break-systems.js';
+import { proofRequestBody } from './pro-proof-payload.js';
 
 // File: recurrence-core.js
 // Shared deterministic recurrence rules, used by the browser and Cloudflare Worker.
@@ -1009,7 +1010,7 @@ export class KeyVault {
     }
 }
 
-export function validatePayload(payload){
+export function validatePayload(payload, {proofReview=false}={}){
     if(!payload || typeof payload!=='object' || Array.isArray(payload) || !Array.isArray(payload.contents) ||
         !payload.contents.length || payload.contents.length>100)throw new SecurityError(400,'Invalid AI conversation.');
     const allowed=new Set(['contents','systemInstruction','system_instruction','generationConfig','tools','toolConfig','tool_config','safetySettings','taskitatorFormat','taskitatorTask']);
@@ -1025,9 +1026,12 @@ export function validatePayload(payload){
         const file=part.inline_data||part.inlineData;
         if(file){
             const type=file.mime_type||file.mimeType;
+            // Only the personal review endpoint can opt in, after prepare() checks the evidence.
+            const max = proofReview ? (type === 'application/pdf' ? POLICY.maxDocumentBytes : POLICY.maxPhotoBytes)
+                : POLICY.maxExemplarBytes;
             if(!['image/jpeg','image/png','image/webp','image/heic','application/pdf'].includes(type) ||
-                typeof file.data!=='string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(file.data) || file.data.length>Math.ceil(5*1024*1024/3)*4)
-                throw new SecurityError(413,'AI attachments must be supported images/PDFs of at most 5 MB each.');
+                typeof file.data!=='string' || file.data.length>Math.ceil(max/3)*4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(file.data))
+                throw new SecurityError(413,`AI attachments must be supported images or PDFs of at most ${max / (1024 * 1024)} MB each.`);
         }
     };
     for(const content of payload.contents){
@@ -1166,7 +1170,7 @@ async function responseJSON(response,key){
 }
 // Input tokens for a personal-key request, counted by the user's own provider before
 // any Free reservation. Counting is free; a failed count stops the request uncharged.
-async function countInputTokens(provider,model,forward,key){
+async function countInputTokens(provider,model,forward,key,largeProof=false){
     const name=PROVIDERS[provider].name;
     let url,headers,body;
     if(provider==='claude'){
@@ -1181,7 +1185,7 @@ async function countInputTokens(provider,model,forward,key){
         headers={'Content-Type':'application/json','x-goog-api-key':key};body={generateContentRequest:request};
     }
     let response;
-    try{response=await fetch(url,{method:'POST',headers,body:JSON.stringify(body),signal:AbortSignal.timeout(20000)});}
+    try{response=await fetch(url,{method:'POST',headers,body:proofRequestBody(body,largeProof),signal:AbortSignal.timeout(20000)});}
     catch{throw Object.assign(new SecurityError(503,name+' could not check the request size. Nothing was charged; retry later.'),{code:'TOKEN_COUNT_UNAVAILABLE'});}
     if(!response.ok){
         try{await response.body?.cancel();}catch{}
@@ -1294,11 +1298,11 @@ export class AIGateway {
             this.release(identity);
         }
     }
-    async generate(identity,body){
+    async generate(identity,body,{proofReview=false,largeProof=false}={}){
         if(await this.hostedFor(identity,true))return this.generateHosted(identity,body);
         const provider=providerId(body.provider),config=PROVIDERS[provider];
         if(!config.models.includes(body.model))throw new SecurityError(400,'This model is not enabled for the selected AI provider.');
-        const payload=validatePayload(body.payload);
+        const payload=validatePayload(body.payload,{proofReview});
         await this.service.vault.assertOwner(this.service.storage,identity);
         if(await this.service.vault.selectedProvider(identity)!==provider)throw new SecurityError(409,'AI provider changed. Refresh AI status in Settings and start a new request.');
         const forward=provider==='claude'?toClaudeRequest(payload):{...payload};
@@ -1319,7 +1323,7 @@ export class AIGateway {
             const {ledger}=await credits.state(this.service.storage,identity.userId);
             if(ledger.plan!=='pro'){
                 const maxOutput=provider==='claude'?forward.max_tokens:forward.generationConfig.maxOutputTokens;
-                const input=Math.ceil(await countInputTokens(provider,body.model,forward,key)*1.2);
+                const input=Math.ceil(await countInputTokens(provider,body.model,forward,key,largeProof)*1.2);
                 hold=await credits.reserveByok(identity.userId,{model:body.model,inputTokens:input,maxOutput});
                 if(hold){
                     if(provider==='claude')forward.max_tokens=hold.maxOutput;
@@ -1331,7 +1335,7 @@ export class AIGateway {
             const url=provider==='claude'?'https://api.anthropic.com/v1/messages':'https://generativelanguage.googleapis.com/v1beta/models/'+body.model+':generateContent';
             const headers=provider==='claude'?{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'}:{'Content-Type':'application/json','x-goog-api-key':key};
             let response;
-            try{response=await fetch(url,{method:'POST',headers,body:JSON.stringify(forward),signal:AbortSignal.timeout(55000)});}
+            try{response=await fetch(url,{method:'POST',headers,body:proofRequestBody(forward,largeProof),signal:AbortSignal.timeout(55000)});}
             catch{throw new SecurityError(504,config.name+' request timed out or could not connect. Retry carefully; provider usage may already have occurred.');}
             if(!response.ok){
                 // A provider error response is not a completed generation: release the hold.

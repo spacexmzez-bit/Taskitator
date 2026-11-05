@@ -743,8 +743,11 @@ const TaskitatorEngine = {
     PRIMARY_MODEL: 'gemini-3.5-flash-lite',
     FALLBACK_MODEL: 'gemini-3.1-flash-lite',
 
-    // Enforced upload limit across files (Photos, Gallery, PDFs)
+    // Reference exemplars and submitted proof have separate limits.
     MAX_FILE_SIZE_MB: 5,
+    MAX_PROOF_PHOTO_MB: 8,
+    MAX_PROOF_DOCUMENT_MB: 30,
+    MAX_PROOF_TOTAL_MB: 40,
 
     // In-memory cache for pre-flight criteria validations to prevent duplicate API hits
     _criteriaValidationCache: new Map(),
@@ -931,7 +934,7 @@ const TaskitatorEngine = {
                 'application/pdf'
             ];
 
-            const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+            const isPdf = this.isPdf(file);
             const isAllowed = allowedTypes.includes(file.type) || isPdf;
 
             if (!isAllowed) {
@@ -939,6 +942,56 @@ const TaskitatorEngine = {
             }
 
             return { valid: true };
+        },
+
+        isPdf(file) {
+            return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+        },
+
+        validateProofFiles(files) {
+            if (!files.length || files.length > 5)
+                return { valid: false, error: 'Attach between 1 and 5 proof files.' };
+            let bytes = 0;
+            for (const file of files) {
+                const max = this.isPdf(file) ? TaskitatorEngine.MAX_PROOF_DOCUMENT_MB : TaskitatorEngine.MAX_PROOF_PHOTO_MB;
+                const check = this.validateFile(file, max);
+                if (!check.valid) return check;
+                bytes += file.size;
+            }
+            const max = TaskitatorEngine.MAX_PROOF_TOTAL_MB;
+            if (bytes > max * 1024 * 1024)
+                return { valid: false, error: `Proof files together must be at most ${max} MB.` };
+            return { valid: true };
+        },
+
+        async encodeProofFile(file, provider) {
+            // Claude accepts at most 10 MB of base64 per image. Resize only photos that
+            // would exceed that cap. PDFs and Gemini uploads can keep their original bytes.
+            const maxInlinePhotoBytes = 7_500_000;
+            if (provider === 'claude' && !this.isPdf(file) && file.type !== 'image/heic' && file.size > maxInlinePhotoBytes) {
+                try {
+                    const image = await createImageBitmap(file);
+                    const canvas = document.createElement('canvas');
+                    try {
+                        const scale = Math.min(1, 2560 / Math.max(image.width, image.height));
+                        canvas.width = Math.max(1, Math.round(image.width * scale));
+                        canvas.height = Math.max(1, Math.round(image.height * scale));
+                        const ctx = canvas.getContext('2d', { alpha: false });
+                        ctx.fillStyle = '#fff';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+                        const photo = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+                        if (!photo || photo.size > maxInlinePhotoBytes) throw new Error('Image exceeds the provider limit.');
+                        file = new File([photo], 'proof.jpg', { type: photo.type });
+                    } finally {
+                        image.close();
+                        canvas.width = canvas.height = 0;
+                    }
+                } catch {
+                    throw new Error('This photo could not be prepared for Claude. Try a smaller JPG, PNG or WebP.');
+                }
+            }
+            return (await this.fileToBase64(file)).inline_data;
         },
 
         async fileToBase64(file) {
@@ -1126,34 +1179,22 @@ Return strictly valid JSON with this exact schema:
         // test: criteria test (dry run). Same prompt and billing; the server never attests, so nothing completes or locks.
         async verifyProof({ taskId, file, files, taskTitle, criteria, userContext, exemplarPart = null, test = false }) {
             const fileList = Array.isArray(files) && files.length ? files : (file ? [file] : []);
-            if (fileList.length > 5) {
-                return { success: false, status: 400, error: 'Maximum 5 evidence files allowed per task.' };
-            }
-
             // Taskitator Pro Hosted Claude Haiku 5.5 Hook (when active Pro & not in BYOK mode)
             if (window.TaskitatorPro) {
-                let hostedSelected = false;
                 try {
                     const proStatus = await window.TaskitatorPro.getStatus();
-                    hostedSelected = proStatus && proStatus.isPro && !proStatus.use_byok;
                     if (proStatus && proStatus.isPro && !proStatus.use_byok) {
+                        const check = this.validateProofFiles(fileList);
+                        if (!check.valid) return { success: false, status: 400, error: check.error };
                         const encodedFiles = [];
-                        for (const f of fileList) {
-                            const check = this.validateFile(f, TaskitatorEngine.MAX_FILE_SIZE_MB);
-                            if (!check.valid) return { success: false, status: 400, error: check.error };
-                            const part = await this.fileToBase64(f);
-                            encodedFiles.push({
-                                mimeType: part.inline_data.mime_type,
-                                data: part.inline_data.data
-                            });
-                        }
+                        for (const f of fileList) encodedFiles.push(await this.encodeProofFile(f, 'claude'));
                         const combinedCriteria = (criteria || '') + (userContext ? (' - Note: ' + userContext) : '');
                         const proRes = await window.TaskitatorPro.reviewProof({
                             taskId: taskId || ('task_' + Date.now()),
                             title: taskTitle,
                             criteria: combinedCriteria,
                             files: encodedFiles,
-                            exemplar: exemplarPart ? {mime_type:(exemplarPart.inline_data || exemplarPart).mime_type, data:(exemplarPart.inline_data || exemplarPart).data} : null,
+                            exemplar: test && exemplarPart ? {mime_type:(exemplarPart.inline_data || exemplarPart).mime_type, data:(exemplarPart.inline_data || exemplarPart).data} : null,
                             test
                         });
                         return {
@@ -1173,11 +1214,11 @@ Return strictly valid JSON with this exact schema:
                 }
             }
             try {
-                const encoded=[];
-                for(const f of fileList){
-                    const check=this.validateFile(f);if(!check.valid)return {success:false,status:400,error:check.error};
-                    const part=(await this.fileToBase64(f)).inline_data;encoded.push({mime_type:part.mime_type,data:part.data});
-                }
+                const check = this.validateProofFiles(fileList);
+                if (!check.valid) return { success: false, status: 400, error: check.error };
+                const encoded = [];
+                const provider = this.selection().provider;
+                for (const f of fileList) encoded.push(await this.encodeProofFile(f, provider));
                 const exemplar=exemplarPart?{mime_type:(exemplarPart.inline_data||exemplarPart).mime_type,data:(exemplarPart.inline_data||exemplarPart).data}:null;
                 const result=await window.TaskitatorPro.personalReview(test?{task_id:taskId,task_title:taskTitle,criteria,exemplar,files:encoded,test:true}:{task_id:taskId,files:encoded});
                 return {success:true,approved:result.verdict==='approved',...result};
@@ -1770,18 +1811,6 @@ window.TaskitatorEngine = TaskitatorEngine;
             .replace(/'/g, '&#39;');
     }
 
-    function fileToBase64(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const b64 = reader.result.split(',')[1];
-                resolve(b64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
-    }
-
     // --- Phase 2: Batch Proof Review Modal & Trigger ---
 
     async function openBatchReviewModal(selectedIds = null) {
@@ -1856,7 +1885,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                     ${taskRowsHtml}
                 </div>
 
-                <div class="pro-batch-section-title" style="margin-top: 16px;">2. Attach Evidence Files (Up to 5 images or PDFs)</div>
+                <div class="pro-batch-section-title" style="margin-top: 16px;">2. Attach Evidence Files (up to 5 files, 8 MB per photo or 30 MB per PDF)</div>
                 <div class="pro-batch-upload-area">
                     <input type="file" id="proBatchFileInput" multiple accept="image/jpeg,image/png,image/webp,application/pdf" style="display:none;" />
                     <button type="button" class="icon-btn" id="proBatchPickFilesBtn" style="gap: 6px;">
@@ -1922,21 +1951,16 @@ window.TaskitatorEngine = TaskitatorEngine;
 
         pickBtn.onclick = () => fileInput.click();
 
-        fileInput.addEventListener('change', async () => {
-            const files = Array.from(fileInput.files);
-            if (stagedFiles.length + files.length > 5) {
-                feedback.textContent = 'Maximum 5 evidence files permitted.';
+        fileInput.addEventListener('change', () => {
+            const files = [...stagedFiles, ...Array.from(fileInput.files)];
+            fileInput.value = '';
+            if (!files.length) return;
+            const check = global.TaskitatorEngine.AuditEngine.validateProofFiles(files);
+            if (!check.valid) {
+                feedback.textContent = check.error;
                 return;
             }
-
-            for (const file of files) {
-                const b64 = await fileToBase64(file);
-                stagedFiles.push({
-                    name: file.name,
-                    mimeType: file.type,
-                    data: b64
-                });
-            }
+            stagedFiles = files;
 
             renderStagedFiles();
             updateSubmitState();
@@ -1945,7 +1969,7 @@ window.TaskitatorEngine = TaskitatorEngine;
         function renderStagedFiles() {
             fileListDiv.innerHTML = stagedFiles.map((f, i) => `
                 <div class="pro-file-chip">
-                    <span>${f.mimeType === 'application/pdf' ? '📄' : '🖼️'} ${escapeHtml(f.name)}</span>
+                    <span>${global.TaskitatorEngine.AuditEngine.isPdf(f) ? '📄' : '🖼️'} ${escapeHtml(f.name)}</span>
                     <button type="button" class="pro-chip-del" data-index="${i}">✕</button>
                 </div>
             `).join('');
@@ -1977,18 +2001,11 @@ window.TaskitatorEngine = TaskitatorEngine;
 
             const client = getClient();
             try {
-                const res = await client.batchReview({
-                    tasks: await Promise.all(selectedTasks.map(async item => {
-                        const task = allTasks.find(t => t.id === item.id);
-                        let part = task?.reference_inline_data || global.TaskitatorRecurrenceUI?.state()?.reference_files?.[task?.reference_id];
-                        const stored = await global.ExemplarStore?.getExemplar(item.id);
-                        if (stored?.inline_data) part = stored.inline_data;
-                        part = part?.inline_data || part;
-                        if (task?.reference_id && !part) throw new Error('The reference exemplar for "'+item.title+'" is unavailable. Restore it before reviewing.');
-                        return {...item,exemplar:part ? {mime_type:part.mime_type,data:part.data} : null};
-                    })),
-                    files: stagedFiles
-                });
+                const audit = global.TaskitatorEngine.AuditEngine;
+                const provider = batchStatus.use_byok ? audit.selection().provider : 'claude';
+                const files = [];
+                for (const file of stagedFiles) files.push(await audit.encodeProofFile(file, provider));
+                const res = await client.batchReview({ tasks: selectedTasks, files });
 
                 renderBatchResults(res);
             } catch (err) {
@@ -2396,10 +2413,10 @@ window.TaskitatorEngine = TaskitatorEngine;
                     <p class="pro-quote-policy-brief">
                         Charges round up to the next half credit. Unused held credits return to your balance immediately after the review finishes. A completed review is charged even when proof is rejected. Cancelling now starts no paid review.
                     </p>
-                    ${Number(summary.estimatedCredits) >= 2 ? `
+                    ${Number(summary.estimatedCredits) > 2 ? `
                     <div class="pro-quote-policy-brief" role="note">
                         <strong>Tip to reduce review cost</strong>
-                        Review several tasks together when the same proof applies. Consider fewer pages or photos, or smaller, readable images. Combining photos into a PDF may make submission easier, but may not reduce token use. Check the new estimate before starting.
+                        Use batch review when tasks share the same proof. Trim extra pages or combine related photos onto fewer readable pages. Try smaller images and check the new estimate before starting.
                     </div>` : ''}
                     <details class="pro-quote-details" id="proQuoteDetailsToggle">
                         <summary id="proQuoteDetailsSummary">View details</summary>

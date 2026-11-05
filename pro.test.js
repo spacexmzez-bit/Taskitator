@@ -112,7 +112,8 @@ async function auditHarness(options={}) {
     await storage.put('pro:entitlement:user_A',await activeLicense('user_A'));
     const fetchBefore=globalThis.fetch;
     globalThis.fetch=async(url,opts)=>{
-        const payload=JSON.parse(opts.body);calls.push({url,payload});
+        const payload=typeof opts.body === 'string' ? JSON.parse(opts.body) : await new Response(opts.body).json();
+        calls.push({url,payload});
         if(String(url).endsWith('/count_tokens')) {
             if(options.countError)throw new Error('counter offline');
             return Response.json({input_tokens:options.input ?? 1000});
@@ -221,10 +222,28 @@ test('file count, actual decoded byte limits, invalid MIME and malformed base64 
     assert.throws(()=>prepare({...single(),files:new Array(6).fill(image)},false),/1 and 5/);
     assert.throws(()=>prepare({...single(),exemplar:{mime_type:'text/html',data:'YWJj'}},false),/JPEG/);
     assert.throws(()=>prepare({...single(),files:[{...image,data:'malicious'}]},false),/base64/);
-    const huge={...image,data:'Y'.repeat(4*Math.ceil((POLICY.maxFileBytes+1)/3))};
-    assert.throws(()=>prepare({...single(),files:[huge]},false),/5 MiB/);
+    const file = (mime_type, size) => ({mime_type, data:Buffer.alloc(size).toString('base64')});
+    const photo = file('image/png', 8 * 1024 * 1024);
+    const pdf = file('application/pdf', 30 * 1024 * 1024);
+    assert.doesNotThrow(()=>prepare({...single(),files:[photo,pdf]},false));
+    assert.throws(()=>prepare({...single(),files:[file('image/png',8 * 1024 * 1024 + 1)]},false),/8 MiB/);
+    assert.throws(()=>prepare({...single(),files:[file('application/pdf',30 * 1024 * 1024 + 1)]},false),/30 MiB/);
+    assert.throws(()=>prepare({...single(),files:[pdf,photo,photo]},false),/40 MiB/);
+    assert.throws(()=>prepare({...single(),exemplar:photo},false),/5 MiB/);
     assert.throws(()=>prepare({...batch(),tasks:[{id:'same',criteria:'x'},{id:'same',criteria:'y'}]},true),/distinct IDs/);
 });
+test('a 30 MiB PDF reaches both provider calls through the hosted proof routes',async()=>withHarness(async h=>{
+    const pdf={mime_type:'application/pdf',data:Buffer.alloc(30 * 1024 * 1024, 9).toString('base64')};
+    const result=await h.review({...single(),task_title:'دليل 📄',files:[pdf]});
+    assert.match(h.calls[0]?.payload.messages[0].content[0].text ?? '', /دليل 📄/);
+    assert.equal(result.status,200);
+    assert.equal(h.calls.length,2);
+    for (const {payload} of h.calls) {
+        const source=payload.messages[0].content.at(-1).source;
+        assert.equal(source.media_type,pdf.mime_type);
+        assert.equal(source.data,pdf.data);
+    }
+}));
 test('quotes are mandatory, expire, and bind full bytes, exemplar, criteria, action, account and session',async()=>withHarness(async h=>{
     assert.equal((await h.route(single())).body.code,'QUOTE_REQUIRED');
     const body=single(),q=await h.quote(body),req={...body,quote_id:q.body.quote_id};
@@ -1549,7 +1568,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-real-cost-v1'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-proof-uploads-v1'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);
@@ -1819,12 +1838,21 @@ test("Opening another review cost preview cancels and resolves the first review 
     assert.equal(appended.length, 1);
     assert.doesNotMatch(appended[0].innerHTML, /Tip to reduce review cost/);
 
-    const costlyPromise = f.window.ProUI.confirmReviewQuote({
+    const boundaryPromise = f.window.ProUI.confirmReviewQuote({
         estimatedCredits: 2,
+        maximumCredits: 2.5,
+        tasks: [{ title: "Boundary task", credits: 2.5 }]
+    });
+    assert.equal(await firstPromise, false);
+    assert.doesNotMatch(appended[0].innerHTML, /Tip to reduce review cost/);
+
+    const costlyPromise = f.window.ProUI.confirmReviewQuote({
+        estimatedCredits: 2.5,
+        estimatedExact: '2.0001',
         maximumCredits: 2.5,
         tasks: [{ title: "Costly task", credits: 2.5 }]
     });
-    assert.equal(await firstPromise, false);
+    assert.equal(await boundaryPromise, false);
     assert.match(appended[0].innerHTML, /Tip to reduce review cost/);
 
     // Open a second preview while the costly one is still pending

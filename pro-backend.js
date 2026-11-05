@@ -4,6 +4,10 @@
 // audit-service, and pro-backend.
 // ============================================================================
 import { SecurityError, PROVIDERS } from './worker.js';
+import { proofJSONStream, proofRequestBody } from './pro-proof-payload.js';
+
+const MiB = 1024 * 1024;
+export const MAX_PROOF_REQUEST_BYTES = 56 * MiB; // Base64 and JSON overhead on top of the decoded limit.
 
 export async function liveAccount(store, accountId) {
     if (await store.get('deleted-identity:'+await sha256(accountId))) throw new SecurityError(410,'Account deletion has been accepted.');
@@ -21,8 +25,8 @@ export const POLICY = Object.freeze({
     version: 'hosted-credits-v5', model: 'claude-haiku-5-5',
     monthlySpend: 2_000_000_000,
     inputPrice: 100, outputPrice: 500, creditValue: 1_500_000,
-    maxInput: 20_000, maxFiles: 5, maxFileBytes: 5 * 1024 * 1024,
-    maxBytes: 20 * 1024 * 1024, quoteMs: 5 * 60_000
+    maxInput: 20_000, maxFiles: 5, maxExemplarBytes: 5 * MiB,
+    maxPhotoBytes: 8 * MiB, maxDocumentBytes: 30 * MiB, maxBytes: 40 * MiB, quoteMs: 5 * 60_000
 });
 // Free accounts: personal-key (BYOK) usage only. Hardcoded server-side; never client-supplied.
 export const FREE_BYOK = Object.freeze({ daily: 10, monthly: 220 });
@@ -53,8 +57,14 @@ export function periods(now = Date.now()) {
 export function fail(status, code, message) {
     return Object.assign(new Error(message), { status, code });
 }
-export async function digest(value) {
-    const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
+export async function digest(value, largeProof = false) {
+    let bytes;
+    if (largeProof && typeof crypto.DigestStream === 'function') {
+        const stream = new crypto.DigestStream('SHA-256');
+        [, bytes] = await Promise.all([proofJSONStream(value).pipeTo(stream), stream.digest]);
+    } else {
+        bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
+    }
     return Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
 }
 export function providerCost(input, output) {
@@ -76,25 +86,31 @@ export function prepare(body, batch, {allowHeic=false}={}) {
         throw fail(400, 'INVALID_TASKS', 'Select between 1 and 20 tasks.');
     const ids = new Set();
     let bytes = 0;
-    function file(f) {
+    function file(f, exemplar = false) {
         const mime = f?.mime_type || f?.mimeType;
         const data = f?.data || f?.base64;
         if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf',...(allowHeic?['image/heic']:[])].includes(mime))
             throw fail(415, 'UNSUPPORTED_MEDIA_TYPE', 'Use JPEG, PNG, WebP or PDF evidence.');
-        if (typeof data !== 'string' || !data.length || data.length % 4 ||
-            !/^[A-Za-z0-9+/]+={0,2}$/.test(data))
+        const pdf = mime === 'application/pdf';
+        const max = exemplar ? POLICY.maxExemplarBytes : pdf ? POLICY.maxDocumentBytes : POLICY.maxPhotoBytes;
+        const tooLarge = () => fail(413, 'PAYLOAD_TOO_LARGE', exemplar ? 'Each exemplar must be at most 5 MiB.'
+            : pdf ? 'Each proof PDF must be at most 30 MiB.' : 'Each proof photo must be at most 8 MiB.');
+        if (typeof data !== 'string' || !data.length || data.length % 4)
+            throw fail(400, 'INVALID_FILE', 'Evidence must contain valid base64 file data.');
+        if (data.length > Math.ceil(max / 3) * 4) throw tooLarge();
+        if (!/^[A-Za-z0-9+/]+={0,2}$/.test(data))
             throw fail(400, 'INVALID_FILE', 'Evidence must contain valid base64 file data.');
         const length = data.length / 4 * 3 - (data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0);
-        if (length > POLICY.maxFileBytes) throw fail(413, 'PAYLOAD_TOO_LARGE', 'Each proof or exemplar must be at most 5 MiB.');
+        if (length > max) throw tooLarge();
         bytes += length;
-        if (bytes > POLICY.maxBytes) throw fail(413, 'PAYLOAD_TOO_LARGE', 'Proof and exemplars together must be at most 20 MiB.');
+        if (bytes > POLICY.maxBytes) throw fail(413, 'PAYLOAD_TOO_LARGE', 'Proof and exemplars together must be at most 40 MiB.');
         return { type: mime === 'application/pdf' ? 'document' : 'image',
             source: { type: 'base64', media_type: mime, data } };
     }
     const files = body.files || (body.file ? [body.file] : []);
     if (!Array.isArray(files) || !files.length || files.length > POLICY.maxFiles)
         throw fail(400, 'INVALID_FILES', 'Attach between 1 and 5 evidence files.');
-    const evidence = files.map(file);
+    const evidence = files.map(f => file(f));
     const tasks = source.map(t => {
         if (typeof t.id !== 'string' || !t.id || t.id.length > 160 || ids.has(t.id) ||
             typeof t.criteria !== 'string' || !t.criteria.trim() || t.criteria.length > 20000 ||
@@ -102,7 +118,7 @@ export function prepare(body, batch, {allowHeic=false}={}) {
             throw fail(400, 'INVALID_TASKS', 'Tasks need distinct IDs and valid proof criteria.');
         ids.add(t.id);
         return { id: t.id, title: t.title || 'Task', criteria: t.criteria,
-            exemplar: t.exemplar ? file(t.exemplar) : null };
+            exemplar: t.exemplar ? file(t.exemplar, true) : null };
     });
     const content = [{ type: 'text', text: (batch ? 'BATCH AUDIT REQUEST:\n' : 'AUDIT REQUEST:\n') +
         JSON.stringify(tasks.map(({id,title,criteria,exemplar}) => ({id,title,criteria,has_exemplar:!!exemplar}))) +
@@ -115,7 +131,7 @@ export function prepare(body, batch, {allowHeic=false}={}) {
             'Return {"verdict":"approved"|"rejected","confidence":number between 0 and 1,"critique":string}.');
     const payload = { model: POLICY.model, max_tokens: batch ? Math.min(4096, 384 * tasks.length) : 1024,
         system, messages: [{ role: 'user', content }] };
-    return { tasks, payload };
+    return { tasks, payload, largeProof: bytes > 20 * MiB };
 }
 
 export function parseResult(data, tasks, batch) {
@@ -766,8 +782,8 @@ export class HostedAudits {
             throw fail(400,'OPERATION_REQUIRED','A unique operation ID is required. Reload and retry.');
         await this.licenses.resolve(account);
         await this.entitled(this.storage,account);
-        const {tasks,payload,bindings} = await this.protection.bind(this.storage,account,body,batch);
-        const hash = await digest({payload,bindings,policy:POLICY.version,batch});
+        const {tasks,payload,bindings,largeProof} = await this.protection.bind(this.storage,account,body,batch);
+        const hash = await digest({payload,bindings,policy:POLICY.version,batch},largeProof);
         const opKey = `pro:op:${account}:${operation}`;
         const matches = rec => {
             if (rec.version !== POLICY.version || rec.hash !== hash || rec.session !== session)
@@ -798,7 +814,7 @@ export class HostedAudits {
                 let response;
                 try {
                     response = await fetch('https://api.anthropic.com/v1/messages/count_tokens',{
-                        method:'POST',headers,body:JSON.stringify(countPayload),signal:AbortSignal.timeout(30000)});
+                        method:'POST',headers,body:proofRequestBody(countPayload,largeProof),signal:AbortSignal.timeout(30000)});
                 } catch { throw fail(503,'TOKEN_COUNT_UNAVAILABLE','Cannot check file token usage. No paid audit was started. Try a smaller file or retry later.'); }
                 if (!response.ok) throw fail(503,'TOKEN_COUNT_UNAVAILABLE','The provider could not check these files. No paid audit was started. Reduce the file size/pages or retry later.');
                 const count = (await response.json()).input_tokens;
@@ -857,7 +873,7 @@ export class HostedAudits {
         let actualCost = rec.reservedCost, charged = rec.reservedCredits, result, error;
         try {
             const response = await fetch('https://api.anthropic.com/v1/messages',{
-                method:'POST',headers,body:JSON.stringify(payload),signal:AbortSignal.timeout(60000)});
+                method:'POST',headers,body:proofRequestBody(payload,largeProof),signal:AbortSignal.timeout(60000)});
             if (!response.ok) {
                 // These statuses reject inference before billing. Uncertain failures retain the spend reserve.
                 if ([400,401,403,404,413,422,429].includes(response.status)) actualCost=0;
@@ -995,15 +1011,58 @@ function getRiyadhDateStrings(now = Date.now()) {
     return { dateStr, monthStr };
 }
 
-async function readProJSON(request,max=8192) {
-    const reader=request.body?.getReader();if(!reader)throw fail(400,'INVALID_INPUT','A JSON request is required.');
-    const chunks=[];let size=0;
-    try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;
-        if(size>max){await reader.cancel();throw fail(413,'PAYLOAD_TOO_LARGE','This request exceeds the supported size.');}chunks.push(value);}}
-    finally{reader.releaseLock();}
-    const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
-    let body;try{body=JSON.parse(new TextDecoder().decode(bytes));}catch{throw fail(400,'INVALID_INPUT','Invalid JSON request.');}
-    if(!body||typeof body!=='object'||Array.isArray(body))throw fail(400,'INVALID_INPUT','A JSON object is required.');return body;
+async function readProJSON(request,max=8192,checkSize=()=>{}) {
+    const declared = Number(request.headers.get('Content-Length'));
+    if (declared > max) throw fail(413,'PAYLOAD_TOO_LARGE','This request exceeds the supported size.');
+    checkSize(declared);
+    const reader = request.body?.getReader();
+    if (!reader) throw fail(400,'INVALID_INPUT','A JSON request is required.');
+    const decoder = new TextDecoder();
+    let size = 0, text = '', carry = '';
+    const append = (chunk, final = false) => {
+        if (max === MAX_PROOF_REQUEST_BYTES) {
+            // Keep the large base64 string one byte per character even if task text contains Unicode.
+            chunk = carry + chunk;
+            carry = '';
+            if (!final) {
+                let end = chunk.length;
+                while (end && chunk[end - 1] === '\\') end--;
+                if ((chunk.length - end) % 2) {
+                    carry = '\\';
+                    chunk = chunk.slice(0, -1);
+                }
+            }
+            if (/[^\x00-\x7f]/.test(chunk)) {
+                chunk = chunk.replace(/\\[\s\S]|[^\x00-\x7f]/g, match => {
+                    if (match.length === 1) return '\\u' + match.charCodeAt(0).toString(16).padStart(4, '0');
+                    if (match.charCodeAt(1) > 127) throw fail(400,'INVALID_INPUT','Invalid JSON request.');
+                    return match;
+                });
+            }
+        }
+        if (text.length + chunk.length > max) throw fail(413,'PAYLOAD_TOO_LARGE','This request exceeds the supported size.');
+        text += chunk;
+    };
+    try {
+        while (true) {
+            const {done,value} = await reader.read();
+            if (done) break;
+            size += value.byteLength;
+            if (size > max) throw fail(413,'PAYLOAD_TOO_LARGE','This request exceeds the supported size.');
+            checkSize(size);
+            append(decoder.decode(value,{stream:true}));
+        }
+        append(decoder.decode(), true);
+    } catch (error) {
+        try { await reader.cancel(); } catch {}
+        throw error;
+    } finally {
+        reader.releaseLock();
+    }
+    let body;
+    try { body = JSON.parse(text); } catch { throw fail(400,'INVALID_INPUT','Invalid JSON request.'); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw fail(400,'INVALID_INPUT','A JSON object is required.');
+    return body;
 }
 
 // Offline Pro entitlement: an ES256 compact JWS the browser verifies with a public key baked into
@@ -1036,6 +1095,7 @@ export class ProGateway {
         this.licenses = new KeyoLicenses(this);
         this.credits = new CreditLedger(this);
         this.audits = new HostedAudits(this);
+        this.largeProofInFlight = false;
     }
 
     async handleRequest(request, path, method, identity, account) {
@@ -1052,7 +1112,7 @@ export class ProGateway {
         const accountId = identity.userId;
 
         if(path==='/pro/emergency' && ['GET','POST'].includes(method)) return json(await this.protection.emergency(identity,method==='POST'));
-        if(path==='/pro/ai/personal-review' && method==='POST') return this.personalReview(identity,await readProJSON(request,30*1024*1024));
+
 
         // Route: GET /pro/status or GET /pro/me
         if (method === 'GET' && (path === '/pro/status' || path === '/pro/me')) {
@@ -1071,12 +1131,8 @@ export class ProGateway {
             return await this.toggleByok(accountId, body);
         }
 
-        if (method === 'POST' && ['/pro/ai/quote','/pro/ai/review','/pro/ai/batch-review'].includes(path)) {
-            const body=await readProJSON(request,30*1024*1024);
-            const result = await this.audits.handle(accountId, identity.sessionId, body,
-                path === '/pro/ai/batch-review' || (path === '/pro/ai/quote' && body.batch === true),
-                path === '/pro/ai/quote');
-            return json(result.body,result.status);
+        if (method === 'POST' && ['/pro/ai/quote','/pro/ai/review','/pro/ai/batch-review','/pro/ai/personal-review'].includes(path)) {
+            return this.proofRequest(request, path, identity);
         }
 
         // Route: POST /pro/ai/batch-confirm (Batch Result Confirmation & Attestation)
@@ -1227,6 +1283,25 @@ export class ProGateway {
             message:'Taskitator Pro successfully activated.'});
     }
 
+    async proofRequest(request, path, identity) {
+        let large = false;
+        try {
+            const body = await readProJSON(request, MAX_PROOF_REQUEST_BYTES, size => {
+                // The shared Durable Object can buffer only one upload above the old wire limit.
+                if (size <= 30 * MiB || large) return;
+                if (this.largeProofInFlight) throw fail(429,'UPLOAD_BUSY','Another large proof upload is being processed. Retry shortly.');
+                this.largeProofInFlight = large = true;
+            });
+            if (path === '/pro/ai/personal-review') return await this.personalReview(identity, body);
+            const result = await this.audits.handle(identity.userId, identity.sessionId, body,
+                path === '/pro/ai/batch-review' || (path === '/pro/ai/quote' && body.batch === true),
+                path === '/pro/ai/quote');
+            return json(result.body,result.status);
+        } finally {
+            if (large) this.largeProofInFlight = false;
+        }
+    }
+
     async personalReview(identity,body) {
         const account=identity.userId,session=identity.sessionId;
         if(typeof session!=='string'||!session)throw fail(401,'SESSION_REQUIRED','Sign in again before reviewing proof.');
@@ -1235,7 +1310,7 @@ export class ProGateway {
         const submittedAt=Date.now();
         const bound=await this.protection.bind(this.storage,account,body,batch,true),created=operationTime(body.operation_id);
         const provider=await this.parent.vault.selectedProvider(identity),config=PROVIDERS[provider];
-        const hash=await digest({payload:bound.payload,bindings:bound.bindings,provider,mode:'personal'}),opKey='pro:op:'+account+':'+body.operation_id;
+        const hash=await digest({payload:bound.payload,bindings:bound.bindings,provider,mode:'personal'},bound.largeProof),opKey='pro:op:'+account+':'+body.operation_id;
         const cached=await this.storage.transaction(async tx=>{
             await liveAccount(tx,account);const old=await tx.get(opKey);
             if(old){
@@ -1251,8 +1326,8 @@ export class ProGateway {
             const parts=bound.payload.messages[0].content.map(c=>c.type==='text'?{text:c.text}:{inline_data:{mime_type:c.source.media_type,data:c.source.data}});
             const payload={contents:[{role:'user',parts}],systemInstruction:{parts:[{text:bound.payload.system}]},generationConfig:{maxOutputTokens:bound.payload.max_tokens,responseMimeType:'application/json'},taskitatorFormat:batch?'batch-proof':'proof'};
             let result,model=config.models[0];
-            try { result=await this.parent.ai.generate(identity,{provider,model,payload}); }
-            catch(e){if(provider!=='gemini'||![429,503].includes(e.status)||config.models.length<2)throw e;model=config.models[1];result=await this.parent.ai.generate(identity,{provider,model,payload});}
+            try { result=await this.parent.ai.generate(identity,{provider,model,payload},{proofReview:true,largeProof:bound.largeProof}); }
+            catch(e){if(provider!=='gemini'||![429,503].includes(e.status)||config.models.length<2)throw e;model=config.models[1];result=await this.parent.ai.generate(identity,{provider,model,payload},{proofReview:true,largeProof:bound.largeProof});}
             const text=result.candidates[0].content.parts.map(p=>p.text||'').join('').replace(/^```(?:json)?\s*|\s*```$/gi,'');
             const raw=parseResult({model:POLICY.model,stop_reason:result.candidates[0].finishReason==='MAX_TOKENS'?'max_tokens':'end_turn',content:[{type:'text',text}]},bound.tasks,batch);
             const response=await this.storage.transaction(async tx=>{
