@@ -1,18 +1,20 @@
 # Taskitator — code and architecture guide
 
-Taskitator is a browser task manager with nested tasks, projects, scheduled breaks, proof-based completion, a focus timer, an AI Copilot, cloud synchronization, phone-blocking integration, and collaborative workspaces called **Universes**. The frontend is static HTML/CSS/JavaScript. Its authenticated backend runs in a Cloudflare Worker and a Durable Object; Universe records use D1, and Universe attachments use R2.
+Taskitator is a browser task manager with nested tasks, projects, scheduled and flexible breaks, offline personal editing, proof-based completion, a focus timer, an AI Copilot, cloud synchronization, phone-blocking integration, and collaborative workspaces called **Universes**. The frontend is static HTML/CSS/JavaScript. Its authenticated backend runs in a Cloudflare Worker and a Durable Object; Universe records use D1, and Universe attachments use R2.
 
-This guide describes the source at [`1b28da2`](https://github.com/spacexmzez-bit/Taskitator/tree/1b28da2d223fb4e613aff1301d883026f4d428e7), inspected on **2 November 2026**. It documents implemented behavior, not proposed features or an assertion about the currently deployed website. All 89 tracked files are catalogued below: 65 text files and 24 PNG assets. Source links and symbol names are included so the relationships can be checked against the code.
+This guide describes the source at [`99b4282`](https://github.com/spacexmzez-bit/Taskitator/tree/99b42829c17fb4a5921b1f51c85020556e70abab), inspected on **5 November 2026**. The catalogue covers all 106 tracked files: 82 text files and 24 PNG assets. The source describes the app's behavior. Live configuration, credentials and provider availability depend on the deployment.
 
 ## Contents
 
 - [System structure](#system-structure)
 - [Startup and browser contracts](#startup-and-browser-contracts)
+- [Offline mode and reconnection](#offline-mode-and-reconnection)
 - [Data ownership and storage](#data-ownership-and-storage)
 - [Browser engines](#browser-engines)
 - [Pages and inline code](#pages-and-inline-code)
 - [Worker and backend engines](#worker-and-backend-engines)
 - [Universe subsystem](#universe-subsystem)
+- [Phone status and MacroDroid](#phone-status-and-macrodroid)
 - [End-to-end flows](#end-to-end-flows)
 - [API families](#api-families)
 - [Styles, tutorials, data, and assets](#styles-tutorials-data-and-assets)
@@ -40,7 +42,7 @@ flowchart TD
 
 There are two different programming styles in this repository:
 
-1. **Browser classic scripts** share objects on `window`. Their order is managed by `core.js`. Merely finding an identifier in another file does not mean there is an ES-module import.
+1. **Browser classic scripts** share objects on `window`. The pages declare their order and `core.js` activates them. Inline controllers use the same globals and custom events. Merely finding an identifier in another file does not mean there is an ES-module import.
 2. **Worker ES modules** use explicit imports. `worker.js` imports the Pro gateway and the final Universe service. The Universe classes extend one another, adding and overriding behavior while retaining older schema fallbacks.
 
 Several root files were consolidated from older files. Comments such as `MODULE_START: auth-client.js` identify internal sections; they do **not** mean that `auth-client.js` is still a separate tracked file. Test helpers extract these sections to keep older focused fixtures working.
@@ -56,7 +58,7 @@ Its bootstrap performs the following work:
 1. If an older service worker controls the page, query it with `TASKITATOR_SECURITY_VERSION`. Wait for the expected cache release or show a recoverable update error. Reload after a controller upgrade because styles/scripts may already have arrived from the old cache.
 2. Handle deletion-status and public comparison/legal views separately. Public legal/comparison views remove private navigation and inert private scripts rather than starting the workspace.
 3. Initialize Clerk using the public configuration in `TASKITATOR_AUTH_CONFIG`, obtain the current authenticated account from `/auth/me`, and check local account ownership.
-4. Redirect to `login.html` if sign-in/account connection is required.
+4. Redirect to `login.html` if sign-in/account connection is required. A network failure can instead open a cached workspace for its previously confirmed local owner. See [Offline mode and reconnection](#offline-mode-and-reconnection).
 5. Activate the inert scripts **sequentially in document order**, preserving classic-script dependencies. Initialize the vault, dispatch `taskitator-auth-ready`, and reveal the page.
 6. Watch Clerk session changes. A changed session clears in-memory vault state, archives the old local workspace, clears active local data, and returns to login.
 
@@ -71,6 +73,9 @@ On `index.html`, the script order is Pro suite, Smart Study, study plan, shared 
 | `SyncEngine` | `core.js` | Used by all personal-workspace writers to mark changes, push/pull snapshots, and handle conflicts. |
 | `TaskitatorSafety` | `pro.js` | Safe label rendering and task-tree deletion checks shared by controllers/editors. |
 | `ExemplarStore` | `pro.js` | IndexedDB reference files used by editors and proof review. |
+| `TaskitatorOffline`, `TaskitatorMerge` | `core.js` | Cached identity and connectivity gates, plus account-scoped sync bases and three-way merge. |
+| `TaskitatorPriority` | `components.js` | Computes effective priority for personal task rendering and sorting from the current tree. |
+| `TaskitatorMacro` | `macro-bridge.js` | Builds the tokenized MacroDroid bridge and offers both macro downloads from Settings. |
 | `TaskitatorBreaks` | `pro.js`; equivalent server copy in `worker.js` | Deterministic break normalization, time calculations, validation, and merge rules. |
 | `TaskitatorVault` | `pro.js` | Provider/key metadata, provider selection, legacy-key migration, and BYOK generation requests. |
 | `TaskitatorEngine` | `pro.js` | Break, emergency, and audit engines. Copilot also attaches through the app suite. |
@@ -100,6 +105,7 @@ On `index.html`, the script order is Pro suite, Smart Study, study plan, shared 
 | `taskitator-timer-scratchpad` | Closes the focus panel and starts note capture; the scratchpad controller remembers to return to the timer. |
 | `taskitator-refresh-safe`, `taskitator-study-closed` | Allows deferred refresh/work after guarded UI closes. |
 | `universe-create-task`, `universe-discard` | Opens the Universe editor from the shell and explicitly discards dirty forms. |
+| `taskitator-merged`, `taskitator-reconnected` | Notify controllers of a merged local snapshot or a validated return online. |
 | `storage`, `online`, `focus`, `visibilitychange` | Coordinates tabs, sync recovery, view refresh, and timer reconstruction. These signals do not establish server authorization. |
 
 ## Data ownership and storage
@@ -113,7 +119,7 @@ Local browser data is a working copy. The connected account's cloud snapshot is 
 | `taskitator_tasks` | Personal task array: IDs, `parent_id`, project, title/description, status, due dates, bonus flag, priority, tags, proof/lock/shield and optional recurrence/study metadata. |
 | `taskitator_projects` | Personal project catalogue; `project_id` connects tasks to these records. |
 | `taskitator_settings` | Preferences, tag/priority catalogues, schedule settings, tutorial progress and account connection metadata. Credentials are stripped from ordinary sync/export paths. |
-| `taskitator_daily_breaks` | Read-only, server-written copy of date-keyed break records (system, planning window, pinned cycle bounds/timezone and intervals). Sync never uploads changes to it. |
+| `taskitator_daily_breaks` | Read-only, server-written copy of date-keyed break records (system, planning window, pinned cycle bounds/timezone and intervals). The Worker preserves its own break records even if a snapshot payload carries a stale copy. |
 | `taskitator_break_state` | Account-scoped cache of the last `/breaks` answer, used for display only. |
 | `taskitator_audit_ledger` | Client productivity/completion history; not the authoritative hosted billing ledger. |
 | `taskitator_saved_criteria` | Reusable proof requirements managed by the task editor. |
@@ -122,6 +128,8 @@ Local browser data is a working copy. The connected account's cloud snapshot is 
 | `taskitator_sort_mode` | Locally saved sibling-sort choice, read by the task view. |
 | Scratchpad keys | Live notes and `taskitator_archived_notes`; capture/extraction/archive paths use these separately from the ordinary task snapshot payload. |
 | `taskitator_focus_v1:<account>` | Local per-account focus timer state; timestamp-based, separate from cloud phone-access authority. |
+| IndexedDB sync bases | `TaskitatorMerge` stores the last accepted, versioned merge base by account so it can distinguish local edits from concurrent cloud edits. |
+| Cached offline identity and Pro token | `TaskitatorOffline` tracks the last confirmed account/contact and validates signed offline Pro metadata for that Clerk identity. |
 | Account cache/recovery keys | Archived workspaces and preserved conflicting legacy copies used on logout, account switching, and migration. |
 | IndexedDB `TaskitatorExemplarDB` and account-scoped variants | Binary reference exemplars. `ExemplarStore` associates them with task IDs, controls legacy ownership, and supports account cleanup. Ordinary browser JSON exports do not automatically contain all these binaries. |
 
@@ -134,7 +142,9 @@ The task tree is built with `parent_id`, not display indentation. Moving or filt
 | Durable Object account/identity records | Clerk identity-to-workspace links, ownership, revisions, snapshot metadata, phone credentials and migration state. |
 | `snapshot:<encoded user>:<index>` | Chunked personal snapshot strings; `loadSnapshot` and `saveSnapshot` reconstruct/store them. `CHUNK_CHARS` is 24,576. |
 | `pro:entitlement:<account>` | Verified Keyo token, key/binding IDs, validity, status, stored policy and BYOK selection. |
-| `pro:usage:<account>:day:<date>` / `month:<month>` | Hosted personal-audit credit usage and reservations. |
+| `credits:plan:<account>`, `credits:<account>:e<epoch>:…` | Verified plan and cycle anchor, plus separate Free BYOK and Pro hosted-audit usage/reservations. Legacy `pro:usage:` records can feed spend estimates. |
+| `ai-hosted:<account>:<day>:…` | Daily general hosted AI request counters and provider-spend holds. |
+| `breaks:day:`, `breaks:index:`, `breaks:strict:` | Authoritative logical-day records, retained day index, and revisioned break configuration. |
 | `pro:spend:<account>:<month>` | Personal hosted-audit provider-spend safety accounting. |
 | `pro:op:` and `pro:attestation:` families | Audit operation replay state, evidence/task bindings, and completion receipts. |
 | `pro:study-validation:`, `pro:study-grant:` | Criteria validation and exact generated-plan authorization used during later sync. |
@@ -148,7 +158,7 @@ The task tree is built with `parent_id`, not display indentation. Moving or filt
 
 ### `core.js` — authentication, account lifecycle and synchronization
 
-This file contains seven marked sections.
+This file contains nine marked sections. The `offline.js` and `merge.js` markers are internal sections of `core.js`.
 
 **`auth-config.js` section.** Defines the public Clerk key and Worker URL. These settings are read at runtime by clients; they are not license permissions or a place for private keys.
 
@@ -167,7 +177,7 @@ This file contains seven marked sections.
 | `scheduleAutoPush`, `queueAutoPush`, `startAutoWindow`, `armAutoSync`, `runAutoSync`, `cancelAutoWindow` | Batch changes without idle cloud polling. Storage events keep the deadline visible across tabs. |
 | `flushIfDirty`, `forceImmediateSync`, `syncNow` | Perform explicit or lifecycle-triggered synchronization; manual sync includes both directions and conflict handling. |
 | `registerRefreshGuard`, `isSafeToRefresh`, `autoRefreshEnabled`, `maybeRefreshPage` | Defer a page reload while editors or other guarded UI have work in progress. |
-| `reportConflict`, `openConflictDialog` | Preserve local edits and offer an explicit resolution/export path when server revisions differ. |
+| `resolveConflict`, `reportConflict`, `openConflictDialog` | Try a three-way merge and retry against the new cloud revision. If there is no safe merge base or races repeat, offer an explicit copy choice and export. |
 | `changePassword`, `resumePasswordChange`, `fetchMrStudyRules` | Compatibility entry points. Password management belongs to Clerk; the old rules bridge is not an active external rules service. |
 
 **`deletion-client.js` section.** A deletion dialog obtains an action-bound verification, requires the blocker-disabled checkbox and manually typed phrase, confirms proof status immediately before deletion, and saves a random receipt before sending the destructive request. `cleanLocal` removes only the relevant account's local/cache/reference data. Lost responses can be checked using the retained receipt; a timeout alone does not prove deletion was accepted.
@@ -177,6 +187,14 @@ This file contains seven marked sections.
 **`login-page.js` section.** Mounts Clerk sign-in/sign-up, displays the signed-in account, connects a new empty workspace or migrates a legacy workspace, exposes recovered copies for download, performs the initial pull, and enters the app only after successful account/sync handling.
 
 **`auth-bootstrap.js` section.** Implements the startup sequence documented above. Changes to script loading, authentication overlays or public/private page separation belong here.
+
+#### Offline mode and reconnection
+
+`TaskitatorOffline` distinguishes network failures from HTTP responses and probes Worker reachability after failures. It can restore a previously confirmed account only when that account owns the local workspace and no deliberate logout is pending. The personal task, project and note flows can continue against local data where their actions permit it. AI, protected reviews that require the server, Universe calls, server-owned breaks and bypass, phone credential changes and Sleep Lock setup require a connection. Cached break information is useful for display. It does not authorize a break.
+
+`TaskitatorAuth.reconnect` loads Clerk, revalidates the account with `/auth/me`, and checks deletion or account changes before syncing. A gap over seven days from server-confirmed contact requires a fresh Clerk sign-in before resuming sync. Local edits stay available for the same account. The optional signed offline Pro token is issued by `signOfflineEntitlement` in `pro-backend.js` and verified in `core.js` with the configured public JWK. It is tied to the Clerk user and expires at the entitlement expiry or, for an entitlement without an expiry, after 30 days. A cached token does not authorize a Worker request.
+
+`TaskitatorMerge.merge3` compares the IndexedDB base, the local snapshot and a fresh pull. It combines independent task/project edits, merges tags as sets and settings by key, and requests a choice for competing edits, including delete-versus-edit and orphaned children. Recurrence and saved criteria are handled as whole values. `SyncEngine.resolveConflict` checks the account and local revision again after a choice, stages the merged snapshot, and retries against the remote revision. Worker protection and graph validation still apply to the merged write. Without a usable base, the copy chooser preserves an export path.
 
 ### `components.js` — feedback, recurrence and shared task editing
 
@@ -196,6 +214,10 @@ This file contains seven marked sections.
 | `reconcile` | Reconcile snapshots as occurrences advance, respecting active branches, schedule bounds and history. Both browser and server need compatible rules. |
 
 **Recurrence UI.** `state` and `tasks` read an active editor draft before live storage. `persist`/`save` validate and write a coordinated snapshot. `scheduleForm` renders schedule controls; `captureReferences`, `attachCreated`, `validCreate`, `bindTask`, `applyEdit`, `open`, and `overview` connect recurrence setup/editing to task dialogs and stored reference files. Canceling a task draft must not save its recurrence edits.
+
+**Consecutive numbering.** The editor asks the Pro client for a numbering grant when needed. It shares the in-flight check, drops denials/errors, and stops using the grant at expiry or when the draft or account changes. The title editor uses the result when resolving numbering tokens.
+
+**Dynamic Priority.** `TaskitatorPriority.effectiveMap` derives the display/sort priority when an active task has an allowed `dynamic_priority_target`, at least one unfinished bonus descendant, and no unfinished required descendant. `priority_id` stays as configured. `app.js` and the relevant inline views consume the derived map. `TaskProtection.guardDynamic` in `pro-backend.js` checks entitlement and target changes during snapshot writes.
 
 **Shared component factory.** `TaskitatorComponents.create(host)` receives a host adapter for tasks, settings, projects, priorities, tags, rendering, persistence and completion. It returns shared editor/audit methods rather than owning a second independent task database. `app.js` and the consolidated workspace views use it.
 
@@ -248,21 +270,31 @@ The sort menu uses a real button, `aria-expanded`, saved radio-style choices, ou
 
 The final `pomodoro.js` section retains an older injected timer, oscillator bell, work/break transition loop, fullscreen controls and view listeners. Its guard returns when `TaskitatorPomodoro` already exists. Current pages load `uni/focus-timer.js` first, so that persistent implementation normally wins; deleting the old block or changing load order has different effects from editing the active timer.
 
+#### Today visibility and batch edits
+
+`renderUnifiedTaskTree` renders tasks due today or overdue as Today roots when they have no qualifying ancestor. Their descendants appear under those roots, so a dated child does not duplicate itself when its parent is already shown. A dated descendant of an undated branch can appear as a root with a directory label while unrelated ancestors and siblings stay outside the list. Undated chains have no Today root. Smart Study early appearances and the current view's filters also affect visibility. `todayProgress` and the scoped Copilot lookup apply the task-or-ancestor date check. Phone and scratchpad gates have their own date and protection rules.
+
+Bulk delete in `app.js` enters a selection mode, confirms, then rechecks the same task protection rule as row deletion before trashing eligible subtrees. Batch Bonus State updates `is_bonus` under the edit dialog's shield rules and persists through the normal sync path. In the shared editor, a stored title token does not force the bonus checkbox back on.
+
 ### `pro.js` — safety, key management, audits, account presentation
 
 | Internal section | Detailed role |
 | --- | --- |
 | `safety.js` | `escapeHtml` escapes user text; `setProjectLabel` builds icon/name DOM nodes; `collectSubtree` finds descendants; `deletionError` checks AI locks and pending shielded branches, with the explicit bypass input. |
 | `exemplar-store.js` | `getDB` chooses the account-owned IndexedDB; `blobToBase64` serializes bytes. `saveExemplar`, `hasExemplar`, `getExemplar`, `deleteExemplar`, `clearAll`, `deleteAccountFiles` manage bounded local references and legacy ownership. |
-| `pro/break-core.js` | `timezone`, `parts`, `time`, `wall`, `dayBounds`, `bounds`, `interval`, `validate`, `normalize`, `migrate`, `activeBreak`, `active`, `merge` form the shared date/break rules. They validate intervals, overlap and total duration, normalize legacy records, pin cycle data, and protect locked planning state during sync. |
+| `pro/break-core.js` | `timezone`, `parts`, `time`, `wall`, `dayBounds`, `bounds`, `interval`, `validate`, `normalize`, `migrate`, `activeBreak`, `active`, `merge` form the shared date/break rules. They validate intervals, overlap and total duration, normalize legacy records, pin cycle data, and provide compatibility helpers for older records. Current break writes are handled by `BreakSystems`. |
 | `vault-client.js` | Tracks viewed and active providers separately; renders saved-key metadata and recovered candidates; stages legacy browser keys only for their known owner; removes plaintext only after successful server staging. `selection` returns provider/model/version, and `generate` calls the Worker without embedding the saved provider secret in the request. Sensitive save/reveal/delete actions use password/Google confirmation dialogs and action-bound proof. |
-| `audit-engine.js` | `TaskitatorEngine.BreakEngine` adapts shared breaks to local settings/sync and planning-window UI. `EmergencyManager` reads server-managed state and requests activation through the Pro client. `AuditEngine` handles selected provider, validation caching, proof/exemplar conversion, single reviews, hosted quote consent and personal review. |
+| `audit-engine.js` | `TaskitatorEngine.BreakEngine` calls `/breaks`, caches the last account-scoped result and feeds the planning UI. `EmergencyManager` reads server-managed state and requests activation through the Pro client. `AuditEngine` handles selected provider, validation caching, proof/exemplar conversion, single reviews, hosted quote consent and personal review. |
 | `pro/pro-client.js` | `ProClient.request` attaches authenticated headers and normalizes API errors. Other methods retrieve status, activate a license, toggle Pro BYOK, prepare stable audit/confirmation IDs, fetch quotes, approve reviews and apply completion confirmations. Pending maps retain operation identity for retry safety; entitlement checks reject stale account/session results. |
 | `pro/pro-ui.js` | Renders the Pro Settings section, activation/BYOK controls, single/batch cost consent and result dialogs. File staging and result eligibility are separate from applying completion. Quote dialogs have cancellation/focus handling; confirmed completion refreshes local task state from the authoritative result. |
 | `pro/profile-ui.js` | Fetches/paints the account's display username, provides availability/edit UI and ignores old-session results. The display label is distinct from the immutable login/account identity. |
 | `pro/tier-ui.js` | Restores an account-scoped display cache, interprets status/expiry, renders tier cards, sets presentation classes, and refreshes from verified server status. A cached badge does not authorize a Worker operation. |
 
 Breaks offer two systems per logical day, **Scheduled** and **Flexible**, sharing one daily allowance (3 hours by default; adjustable from 1 to 3 hours in 15-minute steps in Settings → Day & week, and each day keeps the maximum it was locked with). Choosing one (first Scheduled save, first Flexible start, or Lock for Today) locks it until the day resets. Scheduled planning has a ten-minute window from its start and closes six hours before the day ends; the shared validator permits one to three intervals, bounded total duration and no overlap. Flexible breaks (30/45/60 minutes, custom, or until the allowance ends) cannot be ended in their first ten minutes and are charged per started minute. Both systems are owned by the Worker (`break-systems.js`, `/breaks`); the browser `BreakEngine` only caches the last server answer. Optional strict modes (Settings → Day & week) are stored on the Worker too: Flexible Strict Mode raises the minimum to 30–60 minutes (never above the daily maximum) and requires the same gap between one break's end and the next start; Scheduled Strict Mode locks Scheduled at a deadline (1–18 hours after day start) with a default or weekday plan, or zero breaks on a covered day without one; weekdays can be excluded. The deadline is evaluated on each request, so it applies even if the app was closed. Break settings (daily maximum and strict modes) can't be changed while today's required non-bonus tasks are unfinished unless an Emergency Bypass is active (a break does not unlock them), and a change never rewrites a day that is already decided (it applies from the next day). Emergency Bypass is server-managed, with four uses per cycle and a fifteen-minute active window; its exact cycle is derived from account settings on the server. Timer breaks are not automatically scheduled phone-access breaks.
+
+**Criteria test.** `components.js` previews draft criteria with the reference file that a save would use and accepts test proof. The UI requires a validation score of at least 7/10 when validation is enabled. Templates and saved criteria have predefined scores. `pro.js` sends a single-task audit marked as a test through the normal hosted quote/review or personal-key path. `TaskProtection.bindTest` checks existing task lock state and allows the emergency exception. The audit uses the normal prompt and billing but issues no completion attestation and does not save or lock the draft task.
+
+**Additional UI sections.** `strict-breaks-ui.js` binds the settings controls to `/breaks` and renders the current and pending configuration. The `contact.js` section handles buttons marked with `data-contact-email` by offering clipboard and mail-client actions.
 
 ### `pro/smart-study.js` and `pro/study-plan.js`
 
@@ -329,9 +361,11 @@ A static operator setup/reference page describing the historical Universe phases
 
 The default export validates allowed origins, handles OPTIONS, forwards requests to `TASKITATOR_SYNC.idFromName('taskitator-v1')`, and wraps responses with CORS/security headers. `TaskitatorSync` creates `ActionVerification`, `AccountDeletion`, `KeyVault`, `AIGateway`, `TaskProtection`, `ProGateway`, and the final `UniverseRules` service.
 
-#### Shared recurrence and breaks
+#### `break-systems.js` and the shared date cores
 
 The top of the file embeds server copies of recurrence and break rules. Their APIs correspond to the browser cores described earlier. Server reconciliation means a client cannot rely on editing only its local copy to change what sync accepts. The Worker also imports the Smart Study/study-plan scripts for their shared global cores.
+
+`TaskitatorSync` constructs `BreakSystems`, which reuses the Worker's `TaskitatorBreaks` date helpers. `resolve` determines the logical day, pins bounds and timezone, and can import the legacy snapshot's Scheduled intervals. `settle` accounts for elapsed breaks and applies a Scheduled Strict deadline before conflicting actions. `state` returns a settled view. `act` and `saveStrict` validate and persist changes inside Durable Object transactions. `inBreak` feeds phone status, `overlay` projects server records into snapshots for reads, and `remove` clears records on account deletion. This links the index break dialog and the Settings strict controls to the same account state.
 
 #### Identity and action verification
 
@@ -355,7 +389,7 @@ The top of the file embeds server copies of recurrence and break rules. Their AP
 
 `AIGateway.generate` validates provider/model, verifies account/key ownership and selected provider, rate-limits account requests, permits at most two in-flight requests per account in its current service instance, decrypts the saved key server-side and makes the provider call. After the response, it rechecks ownership, provider and key version before returning results. It supports Gemini and Claude; a provider switch does not silently use the other provider's secret. **This current gateway does not implement the proposed Free 10/220 credit quota.**
 
-**Pro hosted AI.** For an active Pro account not in personal-key mode, `AIGateway.generate` routes Copilot, notes cleanup and criteria validation (including study-plan and Universe criteria) to Taskitator's hosted Claude key (`HOSTED_AI.model`), so no personal key is needed; `/ai/keys` reports `hosted: true` and the browser vault treats AI as available. Usage is limited by hidden per-account daily caps (`HOSTED_AI.daily`: 30 validations, 500 Copilot/notes requests, Asia/Riyadh day) plus a silent daily provider-spend backstop and a 30,000-token input cap; these are separate from credit allowances, are not exposed to clients, and a reached cap returns `503 Service unavailable temporarily.` A request that produced no answer does not use a slot. Proof reviews keep the hosted review service and its credit ledger.
+**Pro hosted AI.** For an active Pro account not in personal-key mode, `AIGateway.generate` routes Copilot, notes cleanup and criteria validation (including study-plan and Universe criteria) to Taskitator's hosted Claude key (`HOSTED_AI.model`), so no personal key is needed; `/ai/keys` reports `hosted: true` and the browser vault treats AI as available. Usage is limited by hidden per-account daily caps (`HOSTED_AI.daily`: 30 validations, 500 Copilot/notes requests, Asia/Riyadh day) plus a silent daily provider-spend backstop and a 30,000-token input cap; these are separate from credit allowances, are not exposed to clients, and a reached cap returns `503 Service unavailable temporarily.` The gateway holds worst-case spend before sending the request, settles to reported usage, releases the hold on definite provider refusal, and retains it on uncertain loss. A request that produced no usable response body can release its request slot even when estimated spend remains charged. Proof reviews use the separate hosted review service and its credit ledger.
 
 #### Snapshot, phone and route helpers
 
@@ -383,26 +417,29 @@ This module imports shared security/provider definitions from `worker.js`; the W
 
 `liveAccount` checks identity/workspace ownership and deletion fences. `fail` supplies HTTP status/code errors; `digest` hashes canonical request data. `prepare` validates proof/exemplar files and builds bounded canonical provider payloads. `parseResult` rejects unsupported/truncated/malformed AI results. `newOperation`/`operationTime` create/validate bounded-age operation IDs. `calculateAuditCharge` implements the insufficient-proof adjustment.
 
-The current personal-hosted policy is `hosted-credits-v4`: 45 credits daily, 1,000 per Gregorian calendar month, a 2,000,000,000-nanodollar monthly provider-spend ceiling, a 20,000 input-token safety bound, up to five proof files, five MiB per file, twenty MiB combined payload, and five-minute quotes. Model names in this README describe configured source strings, not a claim that a live provider currently serves them.
+Personal hosted audits use `hosted-credits-v5`: verified Keyo `d_allow` per Riyadh day and `m_allow` per activation-anchored 30-day cycle, plus a separate 2,000,000,000-nanodollar provider-spend ceiling per calendar month. Audit payload bounds include 20,000 input tokens, five proof files, five MiB per file, twenty MiB combined, and five-minute quotes.
+
+`KeyoLicenses` verifies entitlement binding and allowances. Its configured fallback origin is for network failures. `CreditLedger` derives the current plan and period keys, reserves allowance before inference, and settles into the original reservation keys even if the plan changes while the request runs. Confirmed Free/Pro transitions open a new epoch. Routine verification, allowance edits, and network failure do not reset usage. Personal-key inference is unmetered for verified Pro. Free BYOK uses internal daily and calendar-month allowances (10/220), half-credit rounding, and provider token counting before the hold. The Free UI receives availability states without numeric balances. `worker.js` applies Free BYOK metering to its personal-key gateway, and `uni/universe-ai.js` integrates it for Free personal-key Universe reviews. Hosted Universe reviews use separate D1 limits.
 
 `providerCost(I,O)` calculates `I × 100 + O × 500` in internal nanodollar accounting units. For each task in a batch of `N`, `charges` computes:
 
 ```text
-taskCredits = ceil(cost × exemplarMultiplier × batchMultiplier × 1000
-                   / (1,500,000 × N)) / 1000
+taskCredits = cost × exemplarMultiplier × batchMultiplier / (1,500,000 × N)
 exemplarMultiplier = 2 when that task has a reference, otherwise 1
 batchMultiplier = 0.75 for a batch with at least two tasks, otherwise 1
 ```
 
-`totalCredits` sums to thousandth-credit precision. `calculateAuditCharge` discounts insufficient-proof results, including the existing small-charge exemption. These Taskitator credits are distinct from provider token counts. `periods` currently uses Riyadh date and **calendar month**, independently of the user's task day-start hour.
+`totalCredits` sums unrounded per-task charges. `calculateAuditCharge` halves an `incomplete` verdict before rounding the charged request total up to the next half-credit. These credits differ from provider token counts. `periods` supplies the Riyadh day and calendar month independently of the user's task day-start hour. The Pro allowance cycle is calculated separately.
 
 #### `KeyoLicenses`
 
 `keyoConfig` combines public defaults with Worker overrides and validates the endpoint/project/JWK. `verifyKeyoToken` validates the signed ES256 Keyo token, account/project, accepted tier and timing fields. The current verifier accepts `pro`/`max` names after its own normalization; Universe entitlement checks separately require `tier === 'pro'`. Keyo itself supplies no automatic tier hierarchy.
 
-`request` calls activation/verification, rejects redirects and invalid responses, and verifies the returned token. `record` stores verified license state and currently assigns **fixed 45/1,000 limits**, not `d_allow`/`m_allow`. `resolve` deduplicates concurrent refreshes per account. `refresh` verifies stored signatures, uses the implemented freshness/cache policy, refreshes online as needed, handles denial/revocation, and can use still-valid signed state on specified availability errors. `updateIfCurrent` writes only if the stored token/status still matches, preserving concurrent BYOK selection.
+`request` calls activation/verification, rejects redirects and invalid responses, and verifies the returned token. `record` stores the verified license and the allowances parsed from `d_allow` and `m_allow`. Invalid parameters block activation or mark the stored license invalid until Keyo returns valid parameters. `resolve` deduplicates concurrent refreshes per account. `refresh` verifies stored signatures, uses the implemented freshness/cache policy, refreshes online as needed, handles denial/revocation, and can use still-valid signed state on specified availability errors. `updateIfCurrent` writes only if the stored token/status still matches, preserving concurrent BYOK selection.
 
 #### `TaskProtection`
+
+Before the protection guards run, `worker.js` rejects oversized task graphs, duplicate or malformed IDs, cycles, excessive nesting and oversized task text in `checkTaskGraph`. Legacy dangling parents can still be read. The deletion job also clears account-owned credit and general hosted-AI counters before continuing to later cleanup stages.
 
 - `read` loads the authoritative task snapshot. `fingerprint` hashes the relevant branch and references in stable order.
 - `bind` selects active AI-protected tasks and replaces client-supplied titles/criteria/references with saved server values before preparing an audit.
@@ -413,15 +450,15 @@ batchMultiplier = 0.75 for a batch with at least two tasks, otherwise 1
 
 #### `HostedAudits`
 
-`headers` selects the hosted Anthropic credential. `entitled` rechecks live active verified entitlement and rejects hosted calls in selected personal-key mode. `balance` loads daily/monthly/spend records; `checkBalance` tests both credit limits and spend ceiling. `round` keeps stored credit precision consistent.
+`headers` selects the hosted Anthropic credential. `entitled` rechecks live active verified entitlement and rejects hosted calls in selected personal-key mode. `balance` loads daily/monthly/spend records; `checkBalance` tests both credit limits and spend ceiling. Each reservation keeps the period keys that were current when it was created.
 
 `handle` normalizes API errors; `run` binds canonical tasks and a request fingerprint, replays matching operations, counts the full provider input during a price preview and creates an expiring quote. It requires explicit maximum-price acceptance before inference. It reserves worst-case credit/spend atomically, calls inference outside that reservation transaction, and reconciles the reservation to actual validated usage/results. Audit results can create an attestation; they do not bypass explicit completion confirmation. Uncertain/interrupted operations are retained for safe recovery instead of automatically buying another inference. `previewSlot`/`releasePreview` bound preview work; `cleanup` expires or reconciles retained records.
 
 #### `ProGateway`
 
-`handleRequest`/`routeRequest` dispatch status, activation, BYOK selection, audit quote/review/confirmation, and username requests. `getStatus` returns the account's verified subscription state, presentation username, hosted policy and balances. Without entitlement, hosted limits are zero. `toggleByok` changes Pro AI mode without resetting hosted usage. `activateLicense` verifies a Keyo key and saves the binding; it does not make browser Pro flags authoritative.
+`handleRequest`/`routeRequest` dispatch status, activation, BYOK selection, audit quote/review/confirmation, and username requests. `getStatus` returns the account's verified subscription state, presentation username, hosted policy and balances. The response includes numeric balances and reset times for Pro, or the Free BYOK availability state without numeric allowances. `toggleByok` changes Pro AI mode without resetting hosted usage. `activateLicense` verifies a Keyo key and saves the binding; it does not make browser Pro flags authoritative.
 
-`personalReview` binds saved task requirements, checks session and operation replay, invokes the selected personal provider through `AIGateway`, parses the audit result and creates an attestation in a storage transaction. Personal batch review requires active Pro with BYOK mode. The current personal-review path has no new Free 10/220 accounting. `checkUsername`, `setUsername`, `getUsernameProfile`, and `resolveUsername` manage the display-name registry and availability/ownership rules; username resolution is not an authentication endpoint.
+`personalReview` binds saved task requirements, checks session and operation replay, invokes the selected personal provider through `AIGateway`, parses the audit result and creates an attestation in a storage transaction. Personal batch review requires active Pro with BYOK mode. Free single-task personal reviews use the gateway's Free BYOK ledger. `checkUsername`, `setUsername`, `getUsernameProfile`, and `resolveUsername` manage the display-name registry and availability/ownership rules; username resolution is not an authentication endpoint.
 
 `UniverseService` at the bottom is the foundation of the separate Universe class chain described next.
 
@@ -451,6 +488,8 @@ classDiagram
 
 ### Important Universe rules
 
+`UniverseRules` checks unfinished protected or audited descendants before a non-owner can close a parent. This prevents parent closure from hiding lock-eligible work. For pending group deletions, `UniverseMembership.cleanup` checks which D1 tables are installed before scrubbing task, project, catalogue and submission content.
+
 - `everyone` tasks maintain per-member assignments; `shared` tasks are satisfied by a shared approval. `completionMet` also handles all/count/specific-member requirements.
 - Audit modes are `none`, `human`, `ai`, `either`, and `both`. `both` requires the applicable AI result before ordinary human approval; `either` retains the selected review path. Owner override privileges are explicit server policy, not inferred from a UI badge.
 - Task state, parent links, ordering and closed/deleted flags are kept in separate rule tables. Required descendants and shields affect completion/deletion; bonus work has explicit treatment in those checks.
@@ -462,7 +501,7 @@ classDiagram
 - Read APIs remove assignee/reviewer data where the current role is not entitled to see it; evidence endpoints are narrower than general task listing.
 - Phase 9 ownership transfer preserves the Universe identity/work while checking the recipient and current owner authority. Overwrite import replaces content in place with remapped IDs, preserves destination membership, validates references and current revisions, and resets submissions/proofs/completion rather than importing old approvals as live authority.
 
-Universe AI uses separate D1 accounting, not the personal `pro:usage:` counters. Current hosted balances are account 45/1,000 and shared-group 100/2,000 in display credits; stored values are milli-credits. Personal Universe review uses a saved Gemini key; Shared AI uses the group hosted path. Hosted mode also requires its explicit switch, credential and global ceiling. The checked-in Wrangler file disables Universe hosted AI.
+Universe hosted AI uses separate D1 accounting from the personal credit ledger. Free personal-key Universe reviews also reserve against the shared Free BYOK allowance. Current hosted balances are account 45/1,000 and shared-group 100/2,000 in display credits; stored values are milli-credits. Personal Universe review uses a saved Gemini key; Shared AI uses the group hosted path. Hosted mode also requires its explicit switch, credential and global ceiling. The checked-in Wrangler file disables Universe hosted AI.
 
 ### Browser modules
 
@@ -499,8 +538,8 @@ The full table/trigger declaration index appears in [Source navigation index](#s
 2. Save checks draft/session consistency and applies permitted edits locally. The host persists tasks and tells `SyncEngine` they changed.
 3. Sync sends a sanitized snapshot with `base_version`, a stable `mutation_id`, and recurrence schema metadata.
 4. The Worker validates identity, account ownership and payload, then compares the base revision inside storage handling. Identical retries return the prior successful mutation; conflicting revisions return 409.
-5. The server checks study grants, Smart Study metadata and task protection, reconciles recurrence, applies authorized Smart Study adjustments and merges locked breaks before storing the new revision.
-6. Pull/response handlers update accepted local data and dispatch view events. An open dirty editor is not simply overwritten by a render callback.
+5. The server checks task graph limits and IDs, study grants, Smart Study metadata and task protection, reconciles recurrence, applies authorized Smart Study adjustments and retains the server-owned break state before storing the new revision.
+6. Pull/response handlers update the accepted snapshot and merge base, then dispatch view events. Refresh guards protect dirty editor drafts. On revision conflict, the client uses the merge flow above.
 
 ### Protected proof and completion
 
@@ -530,9 +569,9 @@ Hosted counting, credit consent and reservation apply to the hosted branch; pers
 
 The browser uses the group API, not the personal sync array. A manager creates a task and assignments under a revision guard. A submitter reserves/uploads proof metadata/bytes and submits a bound assignment revision. Human/AI review uses the saved evidence and current permissions. The database atomically records decisions and operation receipts; stale role/membership/task changes prevent applying an outdated result. R2 cleanup follows file state/retention rather than deleting bytes merely because a dialog closed.
 
-### Phone status
+### Phone status and MacroDroid
 
-Settings obtains a restricted phone token. The phone integration polls the Worker `/status` with that token. The Worker reads/reconciles saved personal tasks, applies break rules, obtains eligible Universe locks, checks Sleep Lock and then an authoritative Emergency Bypass. It returns only the integration status response, not unrestricted snapshot/key access. The browser focus timer is separate.
+Settings obtains a scoped phone token through `/auth/phone`. `macro-bridge.js` fetches the Cloud Bridge template and replaces the single empty token field in its raw text. This preserves MacroDroid's 64-bit IDs. The downloaded bridge sends the bearer token to the Worker's status compatibility route with `format=text`. The Worker evaluates personal tasks and server break state, then adds eligible Universe locks when the user is outside a break. Sleep Lock is reported on its own line. An active Emergency Bypass clears both locks. The bridge checks the complete `device_unlocked = true` and `sleep = true` lines and controls the separately imported App Blocker macro. The Worker never grants snapshot access with a phone token, and the browser focus timer has no part in this decision.
 
 ## API families
 
@@ -554,6 +593,7 @@ The exact allowed methods/fields are validated in their handlers; this table loc
 | `/pro/ai/batch-confirm` | Explicit protected completion confirmation, also used by personal single-review handling. |
 | `/pro/username`, `/pro/username/check`, `/pro/username/profile`, `/pro/username/resolve` | Display profile and name registry. |
 | `/emergency`, `/pro/emergency` | Server-managed bypass status/activation. |
+| `/breaks` | Reads the server-owned day and strict settings. POST accepts system lock, planning, schedule, flexible-break and strict-settings actions. |
 | `/sleep-lock` | Schedule status/save and one-night delay. |
 | `/study-plan` | Reusable-criteria validation and exact generated-plan grant. |
 | `/universe/capabilities`, `/universe/groups`, `/universe/invitations/accept` | Capability discovery, group creation/list, invitation acceptance. |
@@ -578,11 +618,11 @@ The exact allowed methods/fields are validated in their handlers; this table loc
 
 ### Local commands
 
-Use Node **22.13.0 or newer**, as declared in `package.json`. The package is private and ES-module based. It declares no npm dependencies or lockfile; the test suites use built-in Node facilities and local fakes, including SQLite support where used.
+Use Node **22.13.0 or newer**, as declared in `package.json`. The package is private and ES-module based. Wrangler is pinned as a dev dependency in `package-lock.json`. The test suites use built-in Node facilities and local fakes, including SQLite support where used.
 
 ```bash
+npm ci --ignore-scripts
 npm test
-node --experimental-global-webcrypto --test uni/*.test.js
 npm run build
 ```
 
@@ -592,7 +632,7 @@ Serve the repository root using an HTTP static server for browser work; login, f
 
 ### Service worker
 
-`sw.js` uses cache release `taskitator-smart-study-v1`. Installation precaches assets independently so one missing file does not abort installation; activation removes older caches and claims clients. It answers the bootstrap's security-version message. Authorized requests, API families and cross-origin requests are not cached as normal app assets.
+`sw.js` uses cache release `taskitator-hosted-ai-v1`. Installation precaches assets independently so one missing file does not abort installation; activation removes older caches and claims clients. It answers the bootstrap's security-version message. Authorized requests, API families and cross-origin requests are not cached as normal app assets.
 
 HTML navigation is network-first with cached fallback. JavaScript/CSS and the external Copilot prompt refresh from the network with offline fallback. Other same-origin static resources use normalized pathname cache keys and cached/background refresh behavior. Query-string cache busting is therefore not a substitute for understanding service-worker normalization/versioning.
 
@@ -610,18 +650,19 @@ HTML navigation is network-first with cached fallback. JavaScript/CSS and the ex
 | Clerk configuration | `CLERK_ISSUER`, `CLERK_JWT_KEY`, `CLERK_SECRET_KEY` as required by session/API verification paths. Browser publishable configuration is in `core.js`. |
 | Google verification configuration | OAuth client ID/secret/redirect settings used for sensitive-action reauthentication. |
 | `API_VAULT_KEYS`, `API_VAULT_ACTIVE_KEY_ID` | Server encryption key ring and active version; retain old versions until records are migrated. |
-| `KEYO_API_ORIGIN`, `KEYO_PROJECT_ID`, `KEYO_PUBLIC_JWK` | Public subscription-verification configuration; no owner/admin secret is needed by normal subscription integration. |
+| `KEYO_API_ORIGIN`, `KEYO_FALLBACK_ORIGIN`, `KEYO_PROJECT_ID`, `KEYO_PUBLIC_JWK` | Public subscription-verification configuration; no owner/admin secret is needed by normal subscription integration. |
 | `ANTHROPIC_API_KEY` / supported `CLAUDE_API_KEY` fallback | Hosted personal audit credential. Personal BYOK credentials live encrypted in the vault instead. |
 | `UNIVERSE_FOUNDATION_ENABLED` | Enables the relational subsystem after required setup. |
 | `UNIVERSE_GEMINI_MODEL`, verification flag and token-rate variables | Dedicated Universe audit model and accounting configuration. |
 | `UNIVERSE_HOSTED_ENABLED`, hosted Gemini key and monthly ceiling | Additional safeguards required for hosted Universe inference; checked-in hosted switch is false. |
+| Offline Pro signing | `OFFLINE_PRO_PRIVATE_JWK` is a Worker secret. Its matching public key is in the browser auth configuration. `tools/offline-pro-keygen.mjs` generates a matching pair for setup. |
 | Legacy migration/deletion controls | Restrict importing legacy accounts and enable supported deletion behavior. Inspect the handlers before changing these values. |
 
 Do not publish provider keys, encryption keys, Clerk secrets or OAuth secrets in frontend files. The binding IDs and public verification configuration already in the repository do not establish that a deployment is healthy or a schema migration has run.
 
 `.github/workflows/deploy-worker-security.yml` runs on every push to `main` and on manual `workflow_dispatch`. It uses actions pinned to commit SHAs, Node 22, `npm ci --ignore-scripts` (exact Wrangler from `package-lock.json`), runs `npm test` (root and `uni/` suites), and deploys with GitHub secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. `npm run deploy:worker` is the equivalent explicit CLI entry point; it performs a real deployment.
 
-### Historical/support files
+### Supporting files
 
 - `docs/credit-limits.md` documents the credit-limit implementation and its open review items.
 - `CNAME` records the static frontend custom hostname.
@@ -633,10 +674,22 @@ Tests are source-level/fixture-based evidence, not a live browser or Cloudflare 
 
 | Test file | Main behavior exercised |
 | --- | --- |
+| `break-systems.test.js` | Server day locking, planning, flexible allowance, strict rules, time zones and status integration. |
+| `bulk-delete.test.js` | Shared deletion guards, bulk confirmation and subtree trashing. |
+| `consecutive-grant.test.js` | Editor-scoped Pro numbering grant reuse, expiry and invalidation. |
+| `credit-limits.test.js` | Verified Keyo allowances, credit periods and transitions, metering, reservations and settlement. |
+| `criteria-test.test.js` | Single-task criteria test prompt, task lock and Emergency Bypass checks. |
+| `dynamic-priority.test.js` | Derived task priority plus UI and server entitlement/target guards. |
+| `hosted-ai.test.js` | General hosted AI routing, daily limits, spend holds, and refusal and timeout behavior. |
+| `macro-bridge.test.js` | Template integrity, 64-bit identifiers and combined task/sleep blocking behavior. |
+| `merge.test.js` | Three-way merge, conflict choices, orphan handling and sync fallback. |
+| `offline.test.js` | Offline account ownership, signed Pro, seven-day reauthentication, connectivity gates and cache coverage. |
+| `protected-date-regression.test.js` | Invalid inherited dates cannot unlock protected phone-blocking work. |
+| `today-visibility.test.js` | Today root selection, subtree rendering and undated branches. |
 | `client.test.js` | Auth/storage cleanup, account isolation/sync/conflict behavior, vault/provider UI/migration, Copilot tool loops/context, criteria/proof integration, study preview/confirmation and browser-side guards. |
 | `copilot-today.test.js` | Scoped progress payload fields, logical-day filtering and overdue inclusion. It does not prove a system-wide privacy boundary. |
 | `phone-access-date.test.js` | Parent/grandparent due-date inheritance, explicit dates, malformed ancestry and break/bypass exceptions in phone status. |
-| `pro.test.js` | Hosted cost math/reservations/discounts/quotes, entitlement changes, idempotency/concurrency, task binding/attestation/completion, UI confirmation/focus, recurrence, Keyo behavior, consolidated pages and service-worker asset references. It imports some nested Universe tests as part of the root run. |
+| `pro.test.js` | Hosted cost math/reservations/discounts/quotes, entitlement changes, idempotency/concurrency, task binding/attestation/completion, UI confirmation/focus, recurrence, Keyo behavior, consolidated pages and service-worker asset references. Universe suites also run directly via the package test command. |
 | `scratchpad-plan-a.test.js` | Required today/overdue work gate and inherited dates. It does not by itself exercise every archive/read route. |
 | `security.test.js` | Authentication, scoped credentials, encrypted vault/reverification/provider isolation, AI translation/output checks, deletion/recovery, sync tampering, protected completion and Universe backend fixture scenarios. |
 | `smart-study.test.js` | Early appearances, slot movement, weekend/date choices, audited timing, replay/reopen behavior and metadata tampering. |
@@ -646,9 +699,7 @@ Tests are source-level/fixture-based evidence, not a live browser or Cloudflare 
 | `uni/universe-rules.test.js` | SQLite-backed latest rules: membership/Pro policies, review modes, shields/trees/privacy, stale writes, colors, transfer/import and schema repeatability. |
 | `uni/universe-shell.test.js` | Navigation destinations/role controls, dirty-form handling, connection states and action-sheet results. |
 
-`npm test` expands only root `*.test.js` directly. Imports in those tests pull in some nested suites, but the explicit `uni/*.test.js` command is still useful for full nested discovery. Do not add the totals from those two commands as if all tests were unique.
-
-For this documentation update, `npm test` passed **387/387** and the explicit nested command passed **63/63** on the inspected source. Some cases overlap between the commands. No live browser, Clerk, Keyo, provider or Cloudflare deployment verification was performed. These results do not prove production configuration or real AI availability.
+The `npm test` script discovers both root and `uni/` suites. `.github/workflows/test.yml` runs that command on pull requests and non-main pushes. The deployment workflow runs it on main before Wrangler. GitHub recorded a successful [Worker workflow](https://github.com/spacexmzez-bit/Taskitator/actions/runs/42054114834) and [Pages workflow](https://github.com/spacexmzez-bit/Taskitator/actions/runs/42054112373) for the inspected commit. Those runs are separate from this documentation review.
 
 ## Maintenance boundaries
 
@@ -665,25 +716,36 @@ For this documentation update, `npm test` passed **387/387** and the explicit ne
 | Inline HTML script | Page controller plus `build.mjs` CSP hashes. |
 | Asset/loading release | Page declarations, `sw.js`, bootstrap's expected cache version and referenced files. |
 
-At the inspected revision, **Keyo-configured `d_allow`/`m_allow`, Free BYOK 10/220 limits, Pro activation-anchored 30-day periods, transition resets and the proposed Free three-state quota card are not implemented**. Pro Dynamic Priority is also not an integrated feature here. Documentation must not be mistaken for implementation of those earlier proposals.
+For break policy, inspect `break-systems.js`, the embedded date helpers, `pro.js`, the index break dialog and Settings together. For offline changes, inspect bootstrap, account cleanup, merge-base storage, the service worker cache contract and the authorization checks on replay.
 
 
 ## Alphabetical file catalogue
 
-Paths are relative to the repository root. This is the complete inspected file list; the new README itself is additional documentation. PNG assets are catalogued by reference/use rather than treated as executable code.
+Paths are relative to the repository root. This is the complete inspected file list. PNG assets are catalogued by reference/use rather than treated as executable code.
 
 | File | Role |
 | --- | --- |
-| [`.github/workflows/deploy-worker-security.yml`](.github/workflows/deploy-worker-security.yml) | Manual security-test and Worker deployment workflow; see Build, configuration, and operations. |
+| [`.github/workflows/deploy-worker-security.yml`](.github/workflows/deploy-worker-security.yml) | Tests and deploys the Worker on pushes to `main` or manual dispatch. |
+| [`.github/workflows/test.yml`](.github/workflows/test.yml) | Runs root and Universe regression suites on pull requests and non-main pushes. |
+| [`.gitignore`](.gitignore) | Excludes installed `node_modules/` from tracking. |
 | [`app.js`](app.js) | Copilot engine, personal views/tree/sorting/completion, scratchpad and guarded legacy timer. |
+| [`break-systems.js`](break-systems.js) | Durable Object break state machine, strict settings, daily limits, phone access and cleanup. |
+| [`break-systems.test.js`](break-systems.test.js) | Server day locking, planning, flexible allowance, strict rules, time zones and status integration. |
 | [`build.mjs`](build.mjs) | Rebuilds root HTML CSP hashes; no JavaScript bundling. |
+| [`bulk-delete.test.js`](bulk-delete.test.js) | Shared deletion guards, bulk confirmation and subtree trashing. |
 | [`client.test.js`](client.test.js) | Browser/auth/sync/provider/Copilot/editor/study regression fixtures. |
 | [`CNAME`](CNAME) | Static-host custom domain declaration. |
 | [`components.html`](components.html) | Consolidated projects/calendar/stats/trash/guide/legal/Universe page with inline controllers. |
 | [`components.js`](components.js) | Shared feedback, recurrence core/UI and draft-based task editor/audit components. |
+| [`consecutive-grant.test.js`](consecutive-grant.test.js) | Editor-scoped Pro numbering grant reuse, expiry and invalidation. |
 | [`copilot-today.test.js`](copilot-today.test.js) | Scoped progress fields and logical-day selection tests. |
 | [`core.js`](core.js) | Public auth configuration, Clerk client, personal sync, deletion/login/bootstrap. |
+| [`credit-limits.test.js`](credit-limits.test.js) | Verified Keyo allowances, credit periods and transitions, metering, reservations and settlement. |
 | [`CRITERIA_TEMPLATES.json`](CRITERIA_TEMPLATES.json) | Eleven structured starter proof-criteria templates consumed by the editor. |
+| [`criteria-test.test.js`](criteria-test.test.js) | Single-task criteria test prompt, task lock and Emergency Bypass checks. |
+| [`docs/credit-limits.md`](docs/credit-limits.md) | Implementation notes, period behavior and historical merge review for the credit update. |
+| [`dynamic-priority.test.js`](dynamic-priority.test.js) | Derived task priority plus UI and server entitlement/target guards. |
+| [`hosted-ai.test.js`](hosted-ai.test.js) | General hosted AI routing, daily limits, spend holds, and refusal and timeout behavior. |
 | [`icon/icon-192.png`](icon/icon-192.png) | PWA branding image referenced by manifest.json and service-worker precache. |
 | [`icon/icon-512.png`](icon/icon-512.png) | PWA branding image referenced by manifest.json and service-worker precache. |
 | [`image/phase1/Ph1_S1.png`](image/phase1/Ph1_S1.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
@@ -711,14 +773,23 @@ Paths are relative to the repository root. This is the complete inspected file l
 | [`index.html`](index.html) | Personal task shell, controls, dialogs and authenticated script declarations. |
 | [`LICENSE`](LICENSE) | MIT license text. |
 | [`login.html`](login.html) | Clerk sign-in/up and workspace connection/migration markup. |
+| [`macro-bridge.js`](macro-bridge.js) | Settings download helper that inserts a scoped token into raw MacroDroid template text. |
+| [`macro-bridge.test.js`](macro-bridge.test.js) | Template integrity, 64-bit identifiers and combined task/sleep blocking behavior. |
+| [`macros/App_Blocker.macro`](macros/App_Blocker.macro) | MacroDroid app blocking actions controlled by the bridge. |
+| [`macros/Taskitator_Cloud_Bridge.macro`](macros/Taskitator_Cloud_Bridge.macro) | Token template that polls text status and controls the App Blocker. |
 | [`manifest.json`](manifest.json) | PWA installation metadata and icon references. |
+| [`merge.test.js`](merge.test.js) | Three-way merge, conflict choices, orphan handling and sync fallback. |
+| [`offline.test.js`](offline.test.js) | Offline account ownership, signed Pro, seven-day reauthentication, connectivity gates and cache coverage. |
+| [`package-lock.json`](package-lock.json) | Exact Wrangler installation and transitive dependency graph for local and CI use. |
 | [`package.json`](package.json) | ES-module/Node version declaration and test/build/deploy commands. |
 | [`phone-access-date.test.js`](phone-access-date.test.js) | Phone-status inherited-date and exception tests. |
 | [`pro-backend.js`](pro-backend.js) | Hosted policy, Keyo licenses, task protection/audits, Pro API and Universe foundation. |
 | [`pro.js`](pro.js) | Browser safety, references, breaks, key vault client, audit/Pro/profile/tier interfaces. |
-| [`pro.test.js`](pro.test.js) | Personal hosted/protection/UI/license regression tests and imported nested coverage. |
+| [`pro.test.js`](pro.test.js) | Personal hosted/protection/UI/license regression tests and consolidated frontend checks. |
 | [`pro/smart-study.js`](pro/smart-study.js) | Shared early-opportunity validation, decoration, completion adjustment and sync guard. |
 | [`pro/study-plan.js`](pro/study-plan.js) | Shared finite study-plan generator and Pro browser preview/authorization. |
+| [`protected-date-regression.test.js`](protected-date-regression.test.js) | Invalid inherited dates cannot unlock protected phone-blocking work. |
+| [`README.md`](README.md) | Architecture, behavior, operations, tests and source navigation for Taskitator. |
 | [`scratchpad-plan-a.test.js`](scratchpad-plan-a.test.js) | Required today/overdue and inherited-date scratchpad gate tests. |
 | [`security.test.js`](security.test.js) | Worker security, vault/AI/deletion/sync/protection and backend integration fixtures. |
 | [`settings.html`](settings.html) | Settings/backup/phone/Pro/account markup and inline preferences controller. |
@@ -727,6 +798,8 @@ Paths are relative to the repository root. This is the complete inspected file l
 | [`style.css`](style.css) | Shared theme/layout/components/motion and timer styling. |
 | [`sw.js`](sw.js) | Versioned PWA cache and network/offline resource strategies. |
 | [`SYSTEM_PROMPT.md`](SYSTEM_PROMPT.md) | Validated external Focus Copilot system prompt; consumed by app.js. |
+| [`today-visibility.test.js`](today-visibility.test.js) | Today root selection, subtree rendering and undated branches. |
+| [`tools/offline-pro-keygen.mjs`](tools/offline-pro-keygen.mjs) | Generates ES256 signing and verification JWKs for offline Pro setup. |
 | [`tutorial-integration.js`](tutorial-integration.js) | Page/role-specific tour content, synced progress and help/replay integration. |
 | [`tutorial-spotlight.css`](tutorial-spotlight.css) | Spotlight overlays/cards/visuals/responsive/motion styles. |
 | [`tutorial-spotlight.js`](tutorial-spotlight.js) | Accessible step-based tutorial renderer and target positioning. |
@@ -766,29 +839,29 @@ The explanations above group related functions by responsibility. This index lin
 
 ### `app.js`
 
-[`isTaskitatorPrompt`](app.js#L49), [`aiSelection`](app.js#L60), [`selectionIdentity`](app.js#L61), [`resetConversation`](app.js#L62), [`getPageContext`](app.js#L67), [`getCopilotName`](app.js#L94), [`getSystemPrompt`](app.js#L106), [`getApiKey`](app.js#L281), [`executeModelCall`](app.js#L289), [`todayProgress`](app.js#L317), [`dueFor`](app.js#L319), [`executeToolCall`](app.js#L345).
+[`isTaskitatorPrompt`](app.js#L49), [`aiSelection`](app.js#L60), [`selectionIdentity`](app.js#L61), [`resetConversation`](app.js#L62), [`getPageContext`](app.js#L67), [`getCopilotName`](app.js#L94), [`getSystemPrompt`](app.js#L106), [`getApiKey`](app.js#L281), [`executeModelCall`](app.js#L289), [`todayProgress`](app.js#L317), [`qualifies`](app.js#L320), [`inToday`](app.js#L324).
 
-[`commitTasks`](app.js#L475), [`getTrimmedContents`](app.js#L499), [`sendMessage`](app.js#L514), [`scratchpadBlocked`](app.js#L607), [`extractNotesBatch`](app.js#L624), [`refreshSystemNames`](app.js#L720), [`initUI`](app.js#L765), [`formatReply`](app.js#L784), [`inline`](app.js#L786), [`appendBubble`](app.js#L797), [`getComponents`](app.js#L910), [`openTaskCreationModal`](app.js#L944).
+[`executeToolCall`](app.js#L348), [`commitTasks`](app.js#L484), [`getTrimmedContents`](app.js#L508), [`sendMessage`](app.js#L523), [`scratchpadBlocked`](app.js#L622), [`extractNotesBatch`](app.js#L639), [`refreshSystemNames`](app.js#L735), [`initUI`](app.js#L780), [`formatReply`](app.js#L799), [`inline`](app.js#L801), [`appendBubble`](app.js#L812), [`getComponents`](app.js#L925).
 
-[`openTaskDetailModal`](app.js#L945), [`openAuditModal`](app.js#L946), [`renderModalTagCloud`](app.js#L947), [`getAppTodayStr`](app.js#L966), [`getAudioContext`](app.js#L979), [`isMuted`](app.js#L989), [`playComplete`](app.js#L997), [`playSuccessAudit`](app.js#L1014), [`playTimeoutAlert`](app.js#L1033), [`reducedMotion`](app.js#L1056), [`hapticsOn`](app.js#L1059), [`vibrate`](app.js#L1067).
+[`openTaskCreationModal`](app.js#L959), [`openTaskDetailModal`](app.js#L960), [`openAuditModal`](app.js#L961), [`renderModalTagCloud`](app.js#L962), [`getAppTodayStr`](app.js#L981), [`getAudioContext`](app.js#L994), [`isMuted`](app.js#L1004), [`playComplete`](app.js#L1012), [`playSuccessAudit`](app.js#L1029), [`playTimeoutAlert`](app.js#L1048), [`reducedMotion`](app.js#L1071), [`hapticsOn`](app.js#L1074).
 
-[`tap`](app.js#L1071), [`success`](app.js#L1072), [`deny`](app.js#L1073), [`replay`](app.js#L1075), [`shake`](app.js#L1082), [`complete`](app.js#L1087), [`DistractionDumpEngine`](app.js#L1100), [`getNotes`](app.js#L1105), [`saveNotes`](app.js#L1113), [`garbageCollect`](app.js#L1118), [`updateTriggerIcon`](app.js#L1130), [`formatRemainingTTL`](app.js#L1144).
+[`vibrate`](app.js#L1082), [`tap`](app.js#L1086), [`success`](app.js#L1087), [`deny`](app.js#L1088), [`replay`](app.js#L1090), [`shake`](app.js#L1097), [`complete`](app.js#L1102), [`DistractionDumpEngine`](app.js#L1115), [`getNotes`](app.js#L1120), [`saveNotes`](app.js#L1128), [`garbageCollect`](app.js#L1133), [`updateTriggerIcon`](app.js#L1145).
 
-[`openModal`](app.js#L1156), [`forceCommitAndClose`](app.js#L1180), [`closeModal`](app.js#L1198), [`startHardTimer`](app.js#L1206), [`updateUI`](app.js#L1212), [`openEscrowModal`](app.js#L1241), [`getGlobalProjects`](app.js#L1334), [`saveProject`](app.js#L1354), [`deleteProjectWithCascade`](app.js#L1383), [`getGlobalTags`](app.js#L1420), [`getGlobalPriorities`](app.js#L1429), [`saveGlobalTag`](app.js#L1438).
+[`formatRemainingTTL`](app.js#L1159), [`openModal`](app.js#L1171), [`forceCommitAndClose`](app.js#L1195), [`closeModal`](app.js#L1213), [`startHardTimer`](app.js#L1221), [`updateUI`](app.js#L1227), [`openEscrowModal`](app.js#L1256), [`getGlobalProjects`](app.js#L1349), [`saveProject`](app.js#L1369), [`deleteProjectWithCascade`](app.js#L1398), [`getGlobalTags`](app.js#L1435), [`getGlobalPriorities`](app.js#L1444).
 
-[`getLowestPriorityId`](app.js#L1454), [`isStrictCriteriaModeEnabled`](app.js#L1460), [`isBypassActiveSafe`](app.js#L1472), [`getEmergencyStateSafe`](app.js#L1479), [`getTodayBreaksSafe`](app.js#L1486), [`loadStorage`](app.js#L1511), [`saveStorageAndPush`](app.js#L1538), [`updateSyncDot`](app.js#L1566), [`initSyncIndicator`](app.js#L1580), [`sortTasks`](app.js#L1592), [`getRank`](app.js#L1594), [`getAllDescendants`](app.js#L1617).
+[`saveGlobalTag`](app.js#L1453), [`getLowestPriorityId`](app.js#L1469), [`isStrictCriteriaModeEnabled`](app.js#L1475), [`isBypassActiveSafe`](app.js#L1487), [`getEmergencyStateSafe`](app.js#L1494), [`getTodayBreaksSafe`](app.js#L1501), [`loadStorage`](app.js#L1526), [`saveStorageAndPush`](app.js#L1553), [`updateSyncDot`](app.js#L1581), [`initSyncIndicator`](app.js#L1598), [`sortTasks`](app.js#L1610), [`getRank`](app.js#L1614).
 
-[`hasUncompletedDescendant`](app.js#L1631), [`getShieldedAncestor`](app.js#L1643), [`isCompletionBlocked`](app.js#L1657), [`cascadeProject`](app.js#L1675), [`cascadeTaskStatus`](app.js#L1685), [`cascadeChildren`](app.js#L1699), [`finalizeTaskCompletion`](app.js#L1717), [`pushToLedger`](app.js#L1733), [`startGraceCompletionTimer`](app.js#L1781), [`undoTaskCompletion`](app.js#L1812), [`handleTaskCompletion`](app.js#L1826), [`deleteTask`](app.js#L1860).
+[`getAllDescendants`](app.js#L1637), [`hasUncompletedDescendant`](app.js#L1651), [`getShieldedAncestor`](app.js#L1663), [`isCompletionBlocked`](app.js#L1677), [`cascadeProject`](app.js#L1695), [`cascadeTaskStatus`](app.js#L1705), [`cascadeChildren`](app.js#L1719), [`finalizeTaskCompletion`](app.js#L1737), [`pushToLedger`](app.js#L1753), [`startGraceCompletionTimer`](app.js#L1801), [`undoTaskCompletion`](app.js#L1832), [`handleTaskCompletion`](app.js#L1846).
 
-[`markTrash`](app.js#L1878), [`renderFilterClouds`](app.js#L1896), [`toggleSelectionMode`](app.js#L1958), [`toggleTaskSelection`](app.js#L1972), [`eligibleSelectionTasks`](app.js#L1987), [`refreshSelectAllLabel`](app.js#L1990), [`updateBatchBarUI`](app.js#L1996), [`resize`](app.js#L2004), [`init`](app.js#L2032), [`updateStatusPill`](app.js#L2059), [`openModal`](app.js#L2131), [`closeModal`](app.js#L2137).
+[`deleteTask`](app.js#L1880), [`markTrash`](app.js#L1898), [`renderFilterClouds`](app.js#L1916), [`applyBulkDelete`](app.js#L1987), [`toggleSelectionMode`](app.js#L2022), [`toggleTaskSelection`](app.js#L2037), [`eligibleSelectionTasks`](app.js#L2054), [`refreshSelectAllLabel`](app.js#L2058), [`updateBatchBarUI`](app.js#L2064), [`resize`](app.js#L2072), [`init`](app.js#L2117), [`updateStatusPill`](app.js#L2192).
 
-[`captureDraft`](app.js#L2141), [`startCountdownTimer`](app.js#L2151), [`autoCommitAndLock`](app.js#L2181), [`getCurrentRowsData`](app.js#L2191), [`renderModal`](app.js#L2203), [`handleStartPlanning`](app.js#L2344), [`addBreakRow`](app.js#L2357), [`saveBreaks`](app.js#L2385), [`showError`](app.js#L2422), [`hideError`](app.js#L2428), [`isTaskVisuallyActive`](app.js#L2448), [`renderUnifiedTaskTree`](app.js#L2458).
+[`openModal`](app.js#L2240), [`closeModal`](app.js#L2250), [`captureDraft`](app.js#L2260), [`startCountdownTimer`](app.js#L2272), [`renderModal`](app.js#L2301), [`handleStartPlanning`](app.js#L2488), [`getCurrentRowsData`](app.js#L2500), [`addBreakRow`](app.js#L2505), [`saveBreaks`](app.js#L2523), [`showError`](app.js#L2567), [`hideError`](app.js#L2573), [`isTaskVisuallyActive`](app.js#L2594).
 
-[`markEnter`](app.js#L2464), [`belongsToCurrentView`](app.js#L2495), [`hasVisibleDescendant`](app.js#L2507), [`checkDesc`](app.js#L2529), [`buildNodeElement`](app.js#L2563), [`done`](app.js#L2669), [`renderCompletedModalList`](app.js#L2866), [`uncompleteFromModal`](app.js#L2945), [`renderUnifiedView`](app.js#L2971), [`setView`](app.js#L2978), [`handleHashRouting`](app.js#L2999), [`updateEmergencyUI`](app.js#L3007).
+[`renderUnifiedTaskTree`](app.js#L2604), [`markEnter`](app.js#L2610), [`belongsToCurrentView`](app.js#L2656), [`hasVisibleDescendant`](app.js#L2665), [`checkDesc`](app.js#L2687), [`buildNodeElement`](app.js#L2724), [`done`](app.js#L2833), [`renderCompletedModalList`](app.js#L3052), [`uncompleteFromModal`](app.js#L3131), [`renderUnifiedView`](app.js#L3157), [`setView`](app.js#L3164), [`handleHashRouting`](app.js#L3185).
 
-[`init`](app.js#L3040), [`updateSortChecks`](app.js#L3049), [`closeSortMenu`](app.js#L3053), [`openBulkRescheduleModal`](app.js#L3275), [`closeReschedule`](app.js#L3302), [`openCopilot`](app.js#L3482), [`closeCopilot`](app.js#L3488), [`initAudio`](app.js#L3708), [`playBell`](app.js#L3718), [`startTimer`](app.js#L3977), [`pauseTimer`](app.js#L3987), [`resetTimer`](app.js#L3995).
+[`updateEmergencyUI`](app.js#L3193), [`init`](app.js#L3226), [`updateSortChecks`](app.js#L3235), [`closeSortMenu`](app.js#L3239), [`openBulkRescheduleModal`](app.js#L3492), [`closeReschedule`](app.js#L3519), [`openCopilot`](app.js#L3699), [`closeCopilot`](app.js#L3705), [`initAudio`](app.js#L3928), [`playBell`](app.js#L3938), [`startTimer`](app.js#L4197), [`pauseTimer`](app.js#L4207).
 
-[`tick`](app.js#L4003), [`handlePhaseTransition`](app.js#L4014), [`injectDOM`](app.js#L4045), [`renderDigits`](app.js#L4123), [`updateClockUI`](app.js#L4130), [`showSetup`](app.js#L4153), [`showClock`](app.js#L4158), [`toggleFullscreen`](app.js#L4167), [`checkViewVisibility`](app.js#L4197), [`bindEvents`](app.js#L4207).
+[`resetTimer`](app.js#L4215), [`tick`](app.js#L4223), [`handlePhaseTransition`](app.js#L4234), [`injectDOM`](app.js#L4265), [`renderDigits`](app.js#L4343), [`updateClockUI`](app.js#L4350), [`showSetup`](app.js#L4373), [`showClock`](app.js#L4378), [`toggleFullscreen`](app.js#L4387), [`checkViewVisibility`](app.js#L4417), [`bindEvents`](app.js#L4427).
 
 
 ### `build.mjs`
@@ -798,15 +871,15 @@ The explanations above group related functions by responsibility. This index lin
 
 ### `components.html`
 
-[`isProjectsWorkspaceAllowed`](components.html#L1294), [`renderProjectStrip`](components.html#L1302), [`renderProjectWorkspace`](components.html#L1332), [`buildNode`](components.html#L1389), [`openProjectModal`](components.html#L1465), [`renderEmojiGrid`](components.html#L1512), [`renderColorRow`](components.html#L1528), [`initAriCopilot`](components.html#L1544), [`open`](components.html#L1562), [`close`](components.html#L1568), [`isCalendarWorkspaceAllowed`](components.html#L1735), [`loadData`](components.html#L1743).
+[`isProjectsWorkspaceAllowed`](components.html#L1330), [`renderProjectStrip`](components.html#L1338), [`renderProjectWorkspace`](components.html#L1368), [`buildNode`](components.html#L1425), [`openProjectModal`](components.html#L1501), [`renderEmojiGrid`](components.html#L1548), [`renderColorRow`](components.html#L1564), [`initAriCopilot`](components.html#L1580), [`open`](components.html#L1598), [`close`](components.html#L1604), [`isCalendarWorkspaceAllowed`](components.html#L1771), [`loadData`](components.html#L1779).
 
-[`saveDataAndSync`](components.html#L1749), [`getNormalizedTaskDueDate`](components.html#L1757), [`isTaskRecurring`](components.html#L1765), [`renderCalendar`](components.html#L1769), [`renderAgenda`](components.html#L1858), [`checkDesc`](components.html#L1884), [`buildAgendaNode`](components.html#L1912), [`renderUnscheduledBacklog`](components.html#L1978), [`toggleUnscheduledCard`](components.html#L2030), [`getArchivedNotes`](components.html#L2126), [`saveArchivedNotes`](components.html#L2134), [`renderArchiveList`](components.html#L2139).
+[`saveDataAndSync`](components.html#L1785), [`getNormalizedTaskDueDate`](components.html#L1793), [`isTaskRecurring`](components.html#L1801), [`renderCalendar`](components.html#L1805), [`renderAgenda`](components.html#L1894), [`checkDesc`](components.html#L1920), [`buildAgendaNode`](components.html#L1948), [`renderUnscheduledBacklog`](components.html#L2014), [`toggleUnscheduledCard`](components.html#L2066), [`getArchivedNotes`](components.html#L2162), [`saveArchivedNotes`](components.html#L2170), [`renderArchiveList`](components.html#L2175).
 
-[`isPrivateWorkspaceAllowed`](components.html#L2196), [`renderStats`](components.html#L2204), [`isTrashWorkspaceAllowed`](components.html#L2433), [`loadTasks`](components.html#L2441), [`saveTasksAndPush`](components.html#L2450), [`renderTrash`](components.html#L2462), [`restoreTask`](components.html#L2508), [`recursiveRestoreChildren`](components.html#L2521), [`permanentlyDeleteTask`](components.html#L2533), [`collectIds`](components.html#L2537), [`getP1SavedState`](components.html#L2661), [`setP1SavedState`](components.html#L2669).
+[`isPrivateWorkspaceAllowed`](components.html#L2232), [`renderStats`](components.html#L2240), [`isTrashWorkspaceAllowed`](components.html#L2469), [`loadTasks`](components.html#L2477), [`saveTasksAndPush`](components.html#L2486), [`renderTrash`](components.html#L2498), [`restoreTask`](components.html#L2544), [`recursiveRestoreChildren`](components.html#L2557), [`permanentlyDeleteTask`](components.html#L2569), [`collectIds`](components.html#L2573), [`getP1SavedState`](components.html#L2697), [`setP1SavedState`](components.html#L2705).
 
-[`toggleP1Major`](components.html#L2673), [`toggleP1Minor`](components.html#L2678), [`openP1MinorAndMajor`](components.html#L2683), [`toggleP1Sub`](components.html#L2702), [`evaluateP1Rollups`](components.html#L2719), [`resetPhase1Progress`](components.html#L2768), [`getSavedState`](components.html#L2815), [`setSavedState`](components.html#L2823), [`toggleMajor`](components.html#L2827), [`toggleMinor`](components.html#L2832), [`openMinorAndMajor`](components.html#L2837), [`toggleSub`](components.html#L2849).
+[`toggleP1Major`](components.html#L2709), [`toggleP1Minor`](components.html#L2714), [`openP1MinorAndMajor`](components.html#L2719), [`toggleP1Sub`](components.html#L2738), [`evaluateP1Rollups`](components.html#L2755), [`resetPhase1Progress`](components.html#L2804), [`getSavedState`](components.html#L2851), [`setSavedState`](components.html#L2859), [`toggleMajor`](components.html#L2863), [`toggleMinor`](components.html#L2868), [`openMinorAndMajor`](components.html#L2873), [`toggleSub`](components.html#L2885).
 
-[`evaluateRollups`](components.html#L2866), [`resetPhase2Progress`](components.html#L2915), [`subId`](components.html#L2928), [`isAuthenticatedWorkspace`](components.html#L3074), [`activateComponentView`](components.html#L3085).
+[`evaluateRollups`](components.html#L2902), [`resetPhase2Progress`](components.html#L2951), [`subId`](components.html#L2964), [`isAuthenticatedWorkspace`](components.html#L3110), [`activateComponentView`](components.html#L3121).
 
 
 ### `components.js`
@@ -815,41 +888,39 @@ The explanations above group related functions by responsibility. This index lin
 
 [`setBusy`](components.js#L204), [`copy`](components.js#L238), [`validDate`](components.js#L239), [`dateMs`](components.js#L243), [`dateString`](components.js#L244), [`today`](components.js#L245), [`schedule`](components.js#L248), [`nextDate`](components.js#L263), [`subtree`](components.js#L291), [`seriesFor`](components.js#L297), [`canStart`](components.js#L300), [`cleanNode`](components.js#L311).
 
-[`start`](components.js#L316), [`updateNode`](components.js#L345), [`validateState`](components.js#L351), [`reconcile`](components.js#L377), [`depth`](components.js#L395), [`idFor`](components.js#L426), [`empty`](components.js#L456), [`state`](components.js#L457), [`tasks`](components.js#L458), [`settings`](components.js#L459), [`today`](components.js#L460), [`persist`](components.js#L461).
+[`start`](components.js#L316), [`updateNode`](components.js#L345), [`validateState`](components.js#L351), [`reconcile`](components.js#L377), [`depth`](components.js#L395), [`idFor`](components.js#L426), [`effectiveMap`](components.js#L457), [`effectiveId`](components.js#L486), [`empty`](components.js#L498), [`state`](components.js#L499), [`tasks`](components.js#L500), [`settings`](components.js#L501).
 
-[`save`](components.js#L475), [`element`](components.js#L483), [`button`](components.js#L487), [`input`](components.js#L490), [`dialog`](components.js#L494), [`scheduleForm`](components.js#L499), [`change`](components.js#L513), [`captureReferences`](components.js#L517), [`attachCreated`](components.js#L525), [`validCreate`](components.js#L533), [`bindTask`](components.js#L540), [`applyEdit`](components.js#L559).
+[`today`](components.js#L502), [`persist`](components.js#L503), [`save`](components.js#L517), [`element`](components.js#L525), [`button`](components.js#L529), [`input`](components.js#L532), [`dialog`](components.js#L536), [`scheduleForm`](components.js#L541), [`change`](components.js#L555), [`captureReferences`](components.js#L559), [`attachCreated`](components.js#L567), [`validCreate`](components.js#L575).
 
-[`open`](components.js#L576), [`overview`](components.js#L632), [`create`](components.js#L658), [`copy`](components.js#L686), [`controls`](components.js#L687), [`dirty`](components.js#L688), [`discardDraft`](components.js#L689), [`refreshConsecutive`](components.js#L690), [`commitDraft`](components.js#L691), [`getSavedCriteria`](components.js#L736), [`saveSavedCriteriaList`](components.js#L745), [`updateSavedCriteriaBadge`](components.js#L755).
+[`bindTask`](components.js#L582), [`applyEdit`](components.js#L601), [`open`](components.js#L618), [`overview`](components.js#L674), [`create`](components.js#L700), [`copy`](components.js#L750), [`controls`](components.js#L751), [`dirty`](components.js#L752), [`discardDraft`](components.js#L753), [`refreshConsecutive`](components.js#L808), [`commitDraft`](components.js#L809), [`getSavedCriteria`](components.js#L854).
 
-[`fileToBase64Payload`](components.js#L763), [`base64PayloadToFile`](components.js#L780), [`parseTitle`](components.js#L801), [`resolveCriteria`](components.js#L817), [`validateCriteriaForSubmission`](components.js#L839), [`reverseSubstitute`](components.js#L849), [`incrementConsecutiveNum`](components.js#L861), [`updateMrStudyRuleDropdown`](components.js#L870), [`renderModalProjectCloud`](components.js#L897), [`renderModalTagCloud`](components.js#L930), [`handleQuickAddTag`](components.js#L950), [`renderModalPriorityCloud`](components.js#L962).
+[`saveSavedCriteriaList`](components.js#L863), [`updateSavedCriteriaBadge`](components.js#L873), [`fileToBase64Payload`](components.js#L881), [`base64PayloadToFile`](components.js#L898), [`parseTitle`](components.js#L919), [`resolveCriteria`](components.js#L935), [`validateCriteriaForSubmission`](components.js#L957), [`reverseSubstitute`](components.js#L967), [`incrementConsecutiveNum`](components.js#L979), [`updateMrStudyRuleDropdown`](components.js#L988), [`renderModalProjectCloud`](components.js#L1015), [`renderModalTagCloud`](components.js#L1048).
 
-[`NLPEngine`](components.js#L995), [`upgradeInput`](components.js#L996), [`insertText`](components.js#L1008), [`handleInput`](components.js#L1033), [`handleClick`](components.js#L1155), [`handleKeydown`](components.js#L1218), [`handlePaste`](components.js#L1226), [`extractCleanTitle`](components.js#L1232), [`openAuditModal`](components.js#L1256), [`refreshDetailSubtaskList`](components.js#L1292), [`openTaskDetailModal`](components.js#L1325), [`openTaskCreationModal`](components.js#L1563).
+[`handleQuickAddTag`](components.js#L1068), [`renderModalPriorityCloud`](components.js#L1080), [`NLPEngine`](components.js#L1113), [`upgradeInput`](components.js#L1114), [`insertText`](components.js#L1126), [`handleInput`](components.js#L1151), [`handleClick`](components.js#L1273), [`handleKeydown`](components.js#L1336), [`handlePaste`](components.js#L1344), [`extractCleanTitle`](components.js#L1350), [`openAuditModal`](components.js#L1374), [`refreshDetailSubtaskList`](components.js#L1410).
 
-[`init`](components.js#L1671), [`bindConsecutiveToggle`](components.js#L1911), [`runCriteriaValidation`](components.js#L2820), [`switchTemplatesModalTab`](components.js#L3069), [`renderSavedCriteriaList`](components.js#L3092), [`applySavedCriteria`](components.js#L3149), [`openTemplatesPicker`](components.js#L3203).
+[`openTaskDetailModal`](components.js#L1443), [`openTaskCreationModal`](components.js#L1684), [`init`](components.js#L1793), [`bindConsecutiveToggle`](components.js#L2029), [`runCriteriaValidation`](components.js#L2963), [`criteriaTestBlock`](components.js#L3208), [`openCriteriaTest`](components.js#L3222), [`switchTemplatesModalTab`](components.js#L3319), [`renderSavedCriteriaList`](components.js#L3342), [`applySavedCriteria`](components.js#L3399), [`openTemplatesPicker`](components.js#L3453).
 
 
 ### `core.js`
 
-[`readSnapshot`](core.js#L22), [`recoveryCopies`](core.js#L27), [`preserveCopy`](core.js#L34), [`snapshotTime`](core.js#L41), [`cleanSettings`](core.js#L45), [`cleanSnapshot`](core.js#L57), [`cleanLegacyStorage`](core.js#L65), [`loadScript`](core.js#L113), [`token`](core.js#L131), [`api`](core.js#L137), [`connect`](core.js#L152), [`signOut`](core.js#L158).
+[`reauthRequired`](core.js#L123), [`canOpenOffline`](core.js#L136), [`verifyToken`](core.js#L157), [`token`](core.js#L181), [`readSnapshot`](core.js#L276), [`recoveryCopies`](core.js#L281), [`preserveCopy`](core.js#L288), [`snapshotTime`](core.js#L295), [`cleanSettings`](core.js#L299), [`cleanSnapshot`](core.js#L311), [`cleanLegacyStorage`](core.js#L319), [`loadScript`](core.js#L367).
 
-[`manageAccount`](core.js#L180), [`init`](core.js#L181), [`onStatusChange`](core.js#L274), [`notify`](core.js#L278), [`getConfig`](core.js#L293), [`isConfigured`](core.js#L305), [`accountCacheKey`](core.js#L309), [`archiveLocalAccount`](core.js#L313), [`clearLocalAccount`](core.js#L335), [`beginLogin`](core.js#L342), [`initializeSession`](core.js#L373), [`sessionMatches`](core.js#L390).
+[`api`](core.js#L397), [`connect`](core.js#L418), [`signOut`](core.js#L424), [`manageAccount`](core.js#L448), [`reconnect`](core.js#L474), [`init`](core.js#L497), [`byId`](core.js#L595), [`merge3`](core.js#L659), [`saveBase`](core.js#L703), [`loadBase`](core.js#L706), [`show`](core.js#L728), [`finish`](core.js#L778).
 
-[`needsInitialPull`](core.js#L398), [`isDirty`](core.js#L402), [`markLocalModified`](core.js#L406), [`rememberRemoteVersion`](core.js#L414), [`getPayload`](core.js#L421), [`push`](core.js#L463), [`run`](core.js#L466), [`performPush`](core.js#L474), [`readCloud`](core.js#L533), [`request`](core.js#L548), [`scheduleAutoPush`](core.js#L563), [`queueAutoPush`](core.js#L568).
+[`onStatusChange`](core.js#L848), [`notify`](core.js#L852), [`getConfig`](core.js#L867), [`isConfigured`](core.js#L879), [`accountCacheKey`](core.js#L883), [`archiveLocalAccount`](core.js#L887), [`clearLocalAccount`](core.js#L909), [`beginLogin`](core.js#L916), [`initializeSession`](core.js#L947), [`sessionMatches`](core.js#L964), [`needsInitialPull`](core.js#L972), [`isDirty`](core.js#L976).
 
-[`startAutoWindow`](core.js#L573), [`armAutoSync`](core.js#L581), [`cancelAutoWindow`](core.js#L600), [`runAutoSync`](core.js#L606), [`run`](core.js#L607), [`flushIfDirty`](core.js#L623), [`forceImmediateSync`](core.js#L628), [`syncNow`](core.js#L633), [`run`](core.js#L640), [`registerRefreshGuard`](core.js#L683), [`isSafeToRefresh`](core.js#L687), [`autoRefreshEnabled`](core.js#L695).
+[`markLocalModified`](core.js#L980), [`rememberRemoteVersion`](core.js#L988), [`getPayload`](core.js#L995), [`push`](core.js#L1038), [`run`](core.js#L1041), [`performPush`](core.js#L1049), [`readCloud`](core.js#L1113), [`request`](core.js#L1128), [`scheduleAutoPush`](core.js#L1147), [`queueAutoPush`](core.js#L1152), [`startAutoWindow`](core.js#L1157), [`armAutoSync`](core.js#L1165).
 
-[`maybeRefreshPage`](core.js#L700), [`changePassword`](core.js#L716), [`resumePasswordChange`](core.js#L721), [`fetchMrStudyRules`](core.js#L726), [`pull`](core.js#L731), [`reportConflict`](core.js#L830), [`openConflictDialog`](core.js#L841), [`addButton`](core.js#L859), [`close`](core.js#L864), [`downloadBackup`](core.js#L865), [`choose`](core.js#L887), [`run`](core.js#L891).
+[`cancelAutoWindow`](core.js#L1184), [`runAutoSync`](core.js#L1190), [`run`](core.js#L1191), [`flushIfDirty`](core.js#L1209), [`forceImmediateSync`](core.js#L1214), [`syncNow`](core.js#L1219), [`run`](core.js#L1226), [`registerRefreshGuard`](core.js#L1270), [`isSafeToRefresh`](core.js#L1274), [`autoRefreshEnabled`](core.js#L1282), [`maybeRefreshPage`](core.js#L1287), [`changePassword`](core.js#L1303).
 
-[`logout`](core.js#L923), [`enforceAuthenticationGuard`](core.js#L942), [`resumePendingWork`](core.js#L966), [`byId`](core.js#L993), [`feedback`](core.js#L997), [`update`](core.js#L998), [`cleanLocal`](core.js#L1005), [`start`](core.js#L1039), [`password`](core.js#L1047), [`googleAuthorizationUrl`](core.js#L1066), [`google`](core.js#L1078), [`confirmDeletion`](core.js#L1087).
+[`resumePasswordChange`](core.js#L1308), [`fetchMrStudyRules`](core.js#L1313), [`pull`](core.js#L1318), [`resolveConflict`](core.js#L1424), [`reportConflict`](core.js#L1484), [`openConflictDialog`](core.js#L1495), [`feedback`](core.js#L1511), [`addButton`](core.js#L1513), [`close`](core.js#L1518), [`downloadBackup`](core.js#L1519), [`choose`](core.js#L1541), [`run`](core.js#L1545).
 
-[`open`](core.js#L1120), [`check`](core.js#L1182), [`activate`](core.js#L1210), [`runTaskitatorLoginPage`](core.js#L1237), [`show`](core.js#L1241), [`showConnected`](core.js#L1245), [`enter`](core.js#L1279), [`render`](core.js#L1297), [`versionMatches`](core.js#L1379), [`finish`](core.js#L1394), [`check`](core.js#L1400), [`activatePublicView`](core.js#L1424).
+[`logout`](core.js#L1577), [`resumePendingWork`](core.js#L1620), [`update`](core.js#L1652), [`cleanLocal`](core.js#L1659), [`start`](core.js#L1697), [`password`](core.js#L1705), [`googleAuthorizationUrl`](core.js#L1724), [`google`](core.js#L1736), [`confirmDeletion`](core.js#L1745), [`open`](core.js#L1778), [`check`](core.js#L1840), [`activate`](core.js#L1868).
 
-[`update`](core.js#L1524).
+[`runTaskitatorLoginPage`](core.js#L1895), [`showConnected`](core.js#L1903), [`enter`](core.js#L1937), [`render`](core.js#L1960), [`versionMatches`](core.js#L2042), [`check`](core.js#L2064), [`activatePublicView`](core.js#L2088), [`update`](core.js#L2201).
 
 
 ### `index.html`
-
-No named function declarations indexed. Behavior is in markup, configuration, or anonymous event/initialization handlers described in the file guide.
 
 
 ### `login.html`
@@ -859,46 +930,48 @@ No named function declarations indexed. Behavior is in markup, configuration, or
 
 ### `pro-backend.js`
 
-[`liveAccount`](pro-backend.js#L8), [`periods`](pro-backend.js#L25), [`fail`](pro-backend.js#L29), [`digest`](pro-backend.js#L32), [`providerCost`](pro-backend.js#L36), [`charges`](pro-backend.js#L41), [`totalCredits`](pro-backend.js#L47), [`prepare`](pro-backend.js#L49), [`file`](pro-backend.js#L56), [`parseResult`](pro-backend.js#L98), [`newOperation`](pro-backend.js#L117), [`operationTime`](pro-backend.js#L118).
+[`liveAccount`](pro-backend.js#L8), [`periods`](pro-backend.js#L49), [`fail`](pro-backend.js#L53), [`digest`](pro-backend.js#L56), [`providerCost`](pro-backend.js#L60), [`charges`](pro-backend.js#L66), [`totalCredits`](pro-backend.js#L71), [`prepare`](pro-backend.js#L73), [`file`](pro-backend.js#L80), [`parseResult`](pro-backend.js#L122), [`newOperation`](pro-backend.js#L141), [`operationTime`](pro-backend.js#L142).
 
-[`calculateAuditCharge`](pro-backend.js#L125), [`issue`](pro-backend.js#L143), [`decode`](pro-backend.js#L144), [`parse`](pro-backend.js#L148), [`keyoConfig`](pro-backend.js#L150), [`verifyKeyoToken`](pro-backend.js#L164), [`KeyoLicenses`](pro-backend.js#L189), [`request`](pro-backend.js#L191), [`report`](pro-backend.js#L193), [`record`](pro-backend.js#L227), [`resolve`](pro-backend.js#L234), [`refresh`](pro-backend.js#L240).
+[`calculateAuditCharge`](pro-backend.js#L154), [`issue`](pro-backend.js#L175), [`decode`](pro-backend.js#L176), [`parse`](pro-backend.js#L180), [`keyoConfig`](pro-backend.js#L187), [`verifyKeyoToken`](pro-backend.js#L201), [`hostedAllowance`](pro-backend.js#L229), [`nextPlanState`](pro-backend.js#L253), [`ledgerFor`](pro-backend.js#L276), [`KeyoLicenses`](pro-backend.js#L301), [`request`](pro-backend.js#L303), [`report`](pro-backend.js#L304).
 
-[`inactive`](pro-backend.js#L243), [`updateIfCurrent`](pro-backend.js#L268), [`protectedTask`](pro-backend.js#L281), [`branch`](pro-backend.js#L282), [`stable`](pro-backend.js#L283), [`filePart`](pro-backend.js#L285), [`TaskProtection`](pro-backend.js#L286), [`read`](pro-backend.js#L288), [`fingerprint`](pro-backend.js#L289), [`bind`](pro-backend.js#L294), [`attest`](pro-backend.js#L315), [`complete`](pro-backend.js#L323).
+[`read`](pro-backend.js#L324), [`record`](pro-backend.js#L348), [`resolve`](pro-backend.js#L358), [`refresh`](pro-backend.js#L364), [`inactive`](pro-backend.js#L367), [`updateIfCurrent`](pro-backend.js#L400), [`CreditLedger`](pro-backend.js#L417), [`protectedTask`](pro-backend.js#L488), [`branch`](pro-backend.js#L493), [`stable`](pro-backend.js#L494), [`filePart`](pro-backend.js#L496), [`TaskProtection`](pro-backend.js#L497).
 
-[`guardSync`](pro-backend.js#L371), [`bypass`](pro-backend.js#L401), [`emergency`](pro-backend.js#L402), [`HostedAudits`](pro-backend.js#L422), [`headers`](pro-backend.js#L424), [`entitled`](pro-backend.js#L429), [`balance`](pro-backend.js#L438), [`handle`](pro-backend.js#L446), [`run`](pro-backend.js#L450), [`matches`](pro-backend.js#L460), [`previewSlot`](pro-backend.js#L592), [`releasePreview`](pro-backend.js#L607).
+[`fingerprint`](pro-backend.js#L500), [`bind`](pro-backend.js#L505), [`bindTest`](pro-backend.js#L530), [`attest`](pro-backend.js#L540), [`complete`](pro-backend.js#L548), [`guardSync`](pro-backend.js#L596), [`bypass`](pro-backend.js#L598), [`guardDynamic`](pro-backend.js#L676), [`emergency`](pro-backend.js#L707), [`HostedAudits`](pro-backend.js#L727), [`headers`](pro-backend.js#L729), [`entitled`](pro-backend.js#L734).
 
-[`cleanup`](pro-backend.js#L615), [`round`](pro-backend.js#L632), [`checkBalance`](pro-backend.js#L633), [`json`](pro-backend.js#L655), [`sha256`](pro-backend.js#L662), [`getRiyadhDateStrings`](pro-backend.js#L669), [`readProJSON`](pro-backend.js#L676), [`ProGateway`](pro-backend.js#L687), [`handleRequest`](pro-backend.js#L697), [`routeRequest`](pro-backend.js#L703), [`getStatus`](pro-backend.js#L768), [`toggleByok`](pro-backend.js#L828).
+[`balance`](pro-backend.js#L745), [`handle`](pro-backend.js#L759), [`run`](pro-backend.js#L763), [`operation`](pro-backend.js#L765), [`matches`](pro-backend.js#L773), [`previewSlot`](pro-backend.js#L914), [`releasePreview`](pro-backend.js#L929), [`cleanup`](pro-backend.js#L937), [`round`](pro-backend.js#L954), [`checkBalance`](pro-backend.js#L955), [`json`](pro-backend.js#L978), [`sha256`](pro-backend.js#L985).
 
-[`activateLicense`](pro-backend.js#L853), [`personalReview`](pro-backend.js#L876), [`checkUsername`](pro-backend.js#L924), [`setUsername`](pro-backend.js#L944), [`getUsernameProfile`](pro-backend.js#L976), [`resolveUsername`](pro-backend.js#L985), [`universeError`](pro-backend.js#L996), [`UniverseService`](pro-backend.js#L997), [`database`](pro-backend.js#L999), [`statement`](pro-backend.js#L1003), [`availability`](pro-backend.js#L1004), [`ready`](pro-backend.js#L1015).
+[`getRiyadhDateStrings`](pro-backend.js#L992), [`readProJSON`](pro-backend.js#L999), [`signOfflineEntitlement`](pro-backend.js#L1015), [`ProGateway`](pro-backend.js#L1031), [`handleRequest`](pro-backend.js#L1042), [`routeRequest`](pro-backend.js#L1048), [`getStatus`](pro-backend.js#L1113), [`entitlement`](pro-backend.js#L1114), [`toggleByok`](pro-backend.js#L1177), [`activateLicense`](pro-backend.js#L1202), [`personalReview`](pro-backend.js#L1231), [`text`](pro-backend.js#L1257).
 
-[`active`](pro-backend.js#L1020), [`entitlement`](pro-backend.js#L1026), [`project`](pro-backend.js#L1030), [`authorize`](pro-backend.js#L1036), [`blockAccount`](pro-backend.js#L1046), [`input`](pro-backend.js#L1062), [`operation`](pro-backend.js#L1066), [`text`](pro-backend.js#L1071), [`mutate`](pro-backend.js#L1076), [`event`](pro-backend.js#L1106), [`handle`](pro-backend.js#L1109).
+[`checkUsername`](pro-backend.js#L1280), [`setUsername`](pro-backend.js#L1300), [`getUsernameProfile`](pro-backend.js#L1332), [`resolveUsername`](pro-backend.js#L1341), [`universeError`](pro-backend.js#L1352), [`UniverseService`](pro-backend.js#L1353), [`database`](pro-backend.js#L1355), [`statement`](pro-backend.js#L1359), [`availability`](pro-backend.js#L1360), [`ready`](pro-backend.js#L1371), [`active`](pro-backend.js#L1376), [`project`](pro-backend.js#L1386).
+
+[`authorize`](pro-backend.js#L1392), [`blockAccount`](pro-backend.js#L1402), [`input`](pro-backend.js#L1418), [`mutate`](pro-backend.js#L1432), [`event`](pro-backend.js#L1462), [`handle`](pro-backend.js#L1465).
 
 
 ### `pro.js`
 
-[`escapeHtml`](pro.js#L10), [`setProjectLabel`](pro.js#L16), [`collectSubtree`](pro.js#L24), [`deletionError`](pro.js#L36), [`currentUser`](pro.js#L71), [`getDB`](pro.js#L85), [`blobToBase64`](pro.js#L121), [`deleteAccountFiles`](pro.js#L140), [`saveExemplar`](pro.js#L159), [`hasExemplar`](pro.js#L195), [`getExemplar`](pro.js#L214), [`deleteExemplar`](pro.js#L261).
+[`escapeHtml`](pro.js#L14), [`setProjectLabel`](pro.js#L20), [`collectSubtree`](pro.js#L28), [`deletionError`](pro.js#L40), [`currentUser`](pro.js#L75), [`getDB`](pro.js#L89), [`blobToBase64`](pro.js#L125), [`deleteAccountFiles`](pro.js#L144), [`saveExemplar`](pro.js#L163), [`hasExemplar`](pro.js#L199), [`getExemplar`](pro.js#L218), [`deleteExemplar`](pro.js#L265).
 
-[`clearAll`](pro.js#L283), [`validDate`](pro.js#L305), [`addDate`](pro.js#L306), [`timezone`](pro.js#L307), [`parts`](pro.js#L308), [`time`](pro.js#L312), [`wall`](pro.js#L313), [`dayBounds`](pro.js#L318), [`boundary`](pro.js#L320), [`bounds`](pro.js#L324), [`interval`](pro.js#L328), [`validate`](pro.js#L339).
+[`clearAll`](pro.js#L287), [`validDate`](pro.js#L309), [`addDate`](pro.js#L310), [`timezone`](pro.js#L311), [`parts`](pro.js#L312), [`time`](pro.js#L316), [`wall`](pro.js#L317), [`dayBounds`](pro.js#L322), [`boundary`](pro.js#L324), [`bounds`](pro.js#L328), [`interval`](pro.js#L332), [`validate`](pro.js#L344).
 
-[`clock`](pro.js#L348), [`normalize`](pro.js#L357), [`migrate`](pro.js#L367), [`activeBreak`](pro.js#L378), [`active`](pro.js#L391), [`merge`](pro.js#L392), [`auth`](pro.js#L417), [`byId`](pro.js#L418), [`api`](pro.js#L425), [`status`](pro.js#L426), [`acceptMetadata`](pro.js#L440), [`clearReveal`](pro.js#L454).
+[`clock`](pro.js#L353), [`normalize`](pro.js#L362), [`migrate`](pro.js#L372), [`activeBreak`](pro.js#L383), [`active`](pro.js#L396), [`merge`](pro.js#L397), [`auth`](pro.js#L422), [`byId`](pro.js#L423), [`api`](pro.js#L430), [`status`](pro.js#L431), [`acceptMetadata`](pro.js#L445), [`clearReveal`](pro.js#L461).
 
-[`legacyEntries`](pro.js#L459), [`parseSettings`](pro.js#L461), [`render`](pro.js#L481), [`selection`](pro.js#L516), [`refresh`](pro.js#L517), [`initialize`](pro.js#L523), [`generate`](pro.js#L549), [`updateDialog`](pro.js#L558), [`dialogMessage`](pro.js#L566), [`open`](pro.js#L576), [`action`](pro.js#L589), [`start`](pro.js#L590).
+[`legacyEntries`](pro.js#L466), [`parseSettings`](pro.js#L468), [`render`](pro.js#L488), [`selection`](pro.js#L526), [`refresh`](pro.js#L527), [`initialize`](pro.js#L533), [`generate`](pro.js#L559), [`updateDialog`](pro.js#L568), [`dialogMessage`](pro.js#L576), [`open`](pro.js#L586), [`action`](pro.js#L599), [`start`](pro.js#L600).
 
-[`password`](pro.js#L594), [`googleAuthorizationUrl`](pro.js#L607), [`google`](pro.js#L619), [`confirm`](pro.js#L630), [`byId`](pro.js#L685), [`core`](pro.js#L747), [`settings`](pro.js#L748), [`getDayStartHour`](pro.js#L749), [`getLogicalDayBounds`](pro.js#L750), [`getAllBreakData`](pro.js#L756), [`getBreakRecord`](pro.js#L763), [`saveBreakRecord`](pro.js#L764).
+[`password`](pro.js#L604), [`googleAuthorizationUrl`](pro.js#L617), [`google`](pro.js#L629), [`confirm`](pro.js#L640), [`byId`](pro.js#L695), [`core`](pro.js#L759), [`settings`](pro.js#L760), [`getDayStartHour`](pro.js#L763), [`getLogicalDayBounds`](pro.js#L803), [`getAllBreakData`](pro.js#L809), [`getBreakRecord`](pro.js#L813), [`getPlanningStatus`](pro.js#L815).
 
-[`getPlanningStatus`](pro.js#L777), [`startPlanningWindow`](pro.js#L793), [`lockTodayBreaks`](pro.js#L795), [`isSelectionWindowOpen`](pro.js#L796), [`getTodayBreaks`](pro.js#L797), [`getBreakTimestamps`](pro.js#L798), [`saveTodayBreaks`](pro.js#L799), [`getActiveBreak`](pro.js#L805), [`isCurrentlyOnBreak`](pro.js#L806), [`getState`](pro.js#L813), [`getCycleIdentifier`](pro.js#L845), [`isBypassActive`](pro.js#L854).
+[`isSelectionWindowOpen`](pro.js#L824), [`getTodayBreaks`](pro.js#L825), [`getBreakTimestamps`](pro.js#L826), [`getActiveBreak`](pro.js#L835), [`isCurrentlyOnBreak`](pro.js#L841), [`getState`](pro.js#L848), [`getCycleIdentifier`](pro.js#L880), [`isBypassActive`](pro.js#L889), [`getRemainingWindowSeconds`](pro.js#L895), [`activateBypass`](pro.js#L902), [`selection`](pro.js#L912), [`validateFile`](pro.js#L913).
 
-[`getRemainingWindowSeconds`](pro.js#L860), [`activateBypass`](pro.js#L867), [`selection`](pro.js#L877), [`validateFile`](pro.js#L878), [`fileToBase64`](pro.js#L909), [`callGeminiWithParts`](pro.js#L930), [`callGemini`](pro.js#L953), [`callGeminiTextOnly`](pro.js#L957), [`validateCriteria`](pro.js#L961), [`verifyProof`](pro.js#L1086), [`ProClient`](pro.js#L1154), [`defaultTokenProvider`](pro.js#L1162).
+[`fileToBase64`](pro.js#L944), [`callGeminiWithParts`](pro.js#L965), [`callGemini`](pro.js#L988), [`callGeminiTextOnly`](pro.js#L992), [`validateCriteria`](pro.js#L996), [`verifyProof`](pro.js#L1125), [`ProClient`](pro.js#L1358), [`defaultTokenProvider`](pro.js#L1366), [`request`](pro.js#L1387), [`getStatus`](pro.js#L1432), [`checkConsecutiveEntitlement`](pro.js#L1452), [`activate`](pro.js#L1486).
 
-[`request`](pro.js#L1183), [`getStatus`](pro.js#L1222), [`checkConsecutiveEntitlement`](pro.js#L1234), [`activate`](pro.js#L1268), [`setUseByok`](pro.js#L1281), [`reviewProof`](pro.js#L1291), [`batchReview`](pro.js#L1325), [`prepareAudit`](pro.js#L1341), [`personalReview`](pro.js#L1358), [`emergencyRequest`](pro.js#L1371), [`emergencyStatus`](pro.js#L1384), [`activateBypass`](pro.js#L1387).
+[`setUseByok`](pro.js#L1499), [`reviewProof`](pro.js#L1509), [`batchReview`](pro.js#L1544), [`prepareAudit`](pro.js#L1560), [`personalReview`](pro.js#L1577), [`emergencyRequest`](pro.js#L1590), [`emergencyStatus`](pro.js#L1603), [`activateBypass`](pro.js#L1613), [`quotedReview`](pro.js#L1618), [`round1`](pro.js#L1639), [`credits`](pro.js#L1641), [`batchConfirm`](pro.js#L1679).
 
-[`quotedReview`](pro.js#L1392), [`round1`](pro.js#L1411), [`round3`](pro.js#L1412), [`credits`](pro.js#L1413), [`batchConfirm`](pro.js#L1451), [`checkUsername`](pro.js#L1470), [`setUsername`](pro.js#L1480), [`getUsernameProfile`](pro.js#L1491), [`resolveUsername`](pro.js#L1498), [`getClient`](pro.js#L1532), [`escapeHtml`](pro.js#L1536), [`fileToBase64`](pro.js#L1545).
+[`checkUsername`](pro.js#L1698), [`setUsername`](pro.js#L1708), [`getUsernameProfile`](pro.js#L1719), [`resolveUsername`](pro.js#L1726), [`getClient`](pro.js#L1760), [`escapeHtml`](pro.js#L1764), [`fileToBase64`](pro.js#L1773), [`openBatchReviewModal`](pro.js#L1787), [`close`](pro.js#L1891), [`renderStagedFiles`](pro.js#L1944), [`updateSubmitState`](pro.js#L1962), [`renderBatchResults`](pro.js#L2000).
 
-[`openBatchReviewModal`](pro.js#L1559), [`close`](pro.js#L1663), [`renderStagedFiles`](pro.js#L1716), [`updateSubmitState`](pro.js#L1734), [`renderBatchResults`](pro.js#L1772), [`renderProSection`](pro.js#L1836), [`bindProEvents`](pro.js#L1911), [`showMsg`](pro.js#L1960), [`refreshProStatus`](pro.js#L1974), [`autoInit`](pro.js#L2038), [`confirmReviewQuote`](pro.js#L2055), [`round1`](pro.js#L2068).
+[`renderProSection`](pro.js#L2064), [`bindProEvents`](pro.js#L2150), [`showMsg`](pro.js#L2201), [`refreshProStatus`](pro.js#L2252), [`autoInit`](pro.js#L2327), [`confirmReviewQuote`](pro.js#L2344), [`round1`](pro.js#L2357), [`getFocusableElements`](pro.js#L2446), [`handleKeydown`](pro.js#L2457), [`handleFocusIn`](pro.js#L2490), [`finish`](pro.js#L2498), [`cancelCurrent`](pro.js#L2519).
 
-[`round3`](pro.js#L2069), [`getFocusableElements`](pro.js#L2157), [`handleKeydown`](pro.js#L2168), [`handleFocusIn`](pro.js#L2201), [`finish`](pro.js#L2209), [`cancelCurrent`](pro.js#L2230), [`button`](pro.js#L2266), [`owner`](pro.js#L2267), [`nameFor`](pro.js#L2268), [`paint`](pro.js#L2269), [`refresh`](pro.js#L2275), [`open`](pro.js#L2288).
+[`button`](pro.js#L2555), [`owner`](pro.js#L2556), [`nameFor`](pro.js#L2557), [`paint`](pro.js#L2558), [`refresh`](pro.js#L2564), [`open`](pro.js#L2577), [`close`](pro.js#L2610), [`initialize`](pro.js#L2641), [`userId`](pro.js#L2672), [`readCache`](pro.js#L2673), [`fromStatus`](pro.js#L2679), [`el`](pro.js#L2690).
 
-[`close`](pro.js#L2321), [`initialize`](pro.js#L2352), [`userId`](pro.js#L2383), [`readCache`](pro.js#L2384), [`fromStatus`](pro.js#L2390), [`el`](pro.js#L2401), [`renderCard`](pro.js#L2407), [`apply`](pro.js#L2432), [`handle`](pro.js#L2439), [`restore`](pro.js#L2448), [`refresh`](pro.js#L2454).
+[`renderCard`](pro.js#L2696), [`apply`](pro.js#L2721), [`handle`](pro.js#L2728), [`restore`](pro.js#L2737), [`refresh`](pro.js#L2743).
 
 
 ### `pro/smart-study.js`
@@ -915,28 +988,26 @@ No named function declarations indexed. Behavior is in markup, configuration, or
 
 ### `settings.html`
 
-[`fx`](settings.html#L654), [`notify`](settings.html#L655), [`ask`](settings.html#L660), [`setBusy`](settings.html#L664), [`replayClass`](settings.html#L670), [`done`](settings.html#L676), [`afterAnimation`](settings.html#L684), [`run`](settings.html#L686), [`flashButton`](settings.html#L695), [`setSaveBarVisible`](settings.html#L708), [`markUnsaved`](settings.html#L717), [`markSaved`](settings.html#L724).
+[`fx`](settings.html#L687), [`notify`](settings.html#L688), [`ask`](settings.html#L693), [`setBusy`](settings.html#L697), [`replayClass`](settings.html#L703), [`done`](settings.html#L709), [`afterAnimation`](settings.html#L717), [`run`](settings.html#L719), [`flashButton`](settings.html#L728), [`setSaveBarVisible`](settings.html#L741), [`markUnsaved`](settings.html#L750), [`markSaved`](settings.html#L757).
 
-[`getAppTodayStr`](settings.html#L730), [`placeTabIndicator`](settings.html#L774), [`activateTab`](settings.html#L784), [`initialTab`](settings.html#L832), [`formatDumpDuration`](settings.html#L853), [`renderTags`](settings.html#L863), [`handleAddTag`](settings.html#L893), [`renderPriorities`](settings.html#L923), [`move`](settings.html#L934), [`loadSettings`](settings.html#L1040), [`saveSettings`](settings.html#L1105), [`updateEmergencyDisplay`](settings.html#L1152).
+[`getAppTodayStr`](settings.html#L763), [`placeTabIndicator`](settings.html#L807), [`activateTab`](settings.html#L817), [`formatDumpDuration`](settings.html#L886), [`renderTags`](settings.html#L896), [`handleAddTag`](settings.html#L926), [`renderPriorities`](settings.html#L956), [`move`](settings.html#L967), [`loadSettings`](settings.html#L1073), [`saveSettings`](settings.html#L1138), [`updateEmergencyDisplay`](settings.html#L1185), [`updateBreakPlanningStatus`](settings.html#L1196).
 
-[`updateBreakPlanningStatus`](settings.html#L1163), [`formatHour`](settings.html#L1168), [`updateWorkweekNotice`](settings.html#L1204), [`copyText`](settings.html#L1242), [`phoneChangeAllowed`](settings.html#L1285), [`effectiveDue`](settings.html#L1291), [`setPhoneStatus`](settings.html#L1313), [`refreshPhoneStatus`](settings.html#L1322), [`showImportFeedback`](settings.html#L1378), [`syncImportButtons`](settings.html#L1387), [`processImport`](settings.html#L1439).
+[`formatHour`](settings.html#L1201), [`updateWorkweekNotice`](settings.html#L1238), [`copyText`](settings.html#L1276), [`phoneChangeAllowed`](settings.html#L1319), [`effectiveDue`](settings.html#L1325), [`setPhoneStatus`](settings.html#L1347), [`refreshPhoneStatus`](settings.html#L1356), [`showImportFeedback`](settings.html#L1441), [`syncImportButtons`](settings.html#L1450), [`processImport`](settings.html#L1502).
 
 
 ### `sleep.html`
 
-[`showDelay`](sleep.html#L21), [`values`](sleep.html#L22), [`dirty`](sleep.html#L23), [`controls`](sleep.html#L24), [`run`](sleep.html#L25), [`load`](sleep.html#L26).
+[`showDelay`](sleep.html#L21), [`values`](sleep.html#L22), [`dirty`](sleep.html#L23), [`run`](sleep.html#L25), [`load`](sleep.html#L26).
 
 
 ### `sw.js`
 
-No named function declarations indexed. Behavior is in markup, configuration, or anonymous event/initialization handlers described in the file guide.
-
 
 ### `tutorial-integration.js`
 
-[`sleep`](tutorial-integration.js#L4), [`owner`](tutorial-integration.js#L5), [`onIndex`](tutorial-integration.js#L6), [`onSettings`](tutorial-integration.js#L7), [`state`](tutorial-integration.js#L10), [`progress`](tutorial-integration.js#L11), [`mark`](tutorial-integration.js#L12), [`tab`](tutorial-integration.js#L21), [`currentTab`](tutorial-integration.js#L26), [`tierName`](tutorial-integration.js#L27), [`uniTabBtn`](tutorial-integration.js#L102), [`uniTab`](tutorial-integration.js#L103).
+[`sleep`](tutorial-integration.js#L4), [`owner`](tutorial-integration.js#L5), [`onIndex`](tutorial-integration.js#L6), [`onSettings`](tutorial-integration.js#L7), [`state`](tutorial-integration.js#L10), [`progress`](tutorial-integration.js#L11), [`mark`](tutorial-integration.js#L12), [`tab`](tutorial-integration.js#L21), [`currentTab`](tutorial-integration.js#L26), [`tierName`](tutorial-integration.js#L27), [`uniTabBtn`](tutorial-integration.js#L110), [`uniTab`](tutorial-integration.js#L111).
 
-[`uniCurrentTab`](tutorial-integration.js#L108), [`universeSteps`](tutorial-integration.js#L116), [`run`](tutorial-integration.js#L150), [`start`](tutorial-integration.js#L164), [`attempt`](tutorial-integration.js#L169), [`launch`](tutorial-integration.js#L171), [`renderHub`](tutorial-integration.js#L180), [`openUniverse`](tutorial-integration.js#L207), [`proActivated`](tutorial-integration.js#L224), [`init`](tutorial-integration.js#L227).
+[`uniCurrentTab`](tutorial-integration.js#L116), [`universeSteps`](tutorial-integration.js#L124), [`run`](tutorial-integration.js#L158), [`start`](tutorial-integration.js#L172), [`attempt`](tutorial-integration.js#L177), [`launch`](tutorial-integration.js#L179), [`renderHub`](tutorial-integration.js#L188), [`openUniverse`](tutorial-integration.js#L215), [`proActivated`](tutorial-integration.js#L232), [`init`](tutorial-integration.js#L235).
 
 
 ### `tutorial-spotlight.js`
@@ -962,7 +1033,7 @@ No named function declarations indexed. Behavior is in markup, configuration, or
 
 [`error`](uni/universe-ai.js#L3), [`creditUnits`](uni/universe-ai.js#L12), [`integer`](uni/universe-ai.js#L13), [`UniverseAI`](uni/universe-ai.js#L14), [`phase4`](uni/universe-ai.js#L15), [`configuration`](uni/universe-ai.js#L16), [`availability`](uni/universe-ai.js#L27), [`taskData`](uni/universe-ai.js#L31), [`credentials`](uni/universe-ai.js#L37), [`context`](uni/universe-ai.js#L43), [`payload`](uni/universe-ai.js#L53), [`provider`](uni/universe-ai.js#L69).
 
-[`totals`](uni/universe-ai.js#L74), [`publicReview`](uni/universe-ai.js#L76), [`handle`](uni/universe-ai.js#L77), [`quote`](uni/universe-ai.js#L107), [`approve`](uni/universe-ai.js#L126), [`settle`](uni/universe-ai.js#L169), [`cleanup`](uni/universe-ai.js#L188), [`read`](uni/universe-ai.js#L195).
+[`totals`](uni/universe-ai.js#L74), [`publicReview`](uni/universe-ai.js#L76), [`handle`](uni/universe-ai.js#L77), [`quote`](uni/universe-ai.js#L107), [`approve`](uni/universe-ai.js#L126), [`settle`](uni/universe-ai.js#L185), [`cleanup`](uni/universe-ai.js#L204), [`read`](uni/universe-ai.js#L211).
 
 
 ### `uni/universe-archive.js`
@@ -997,7 +1068,7 @@ No named function declarations indexed. Behavior is in markup, configuration, or
 
 [`submissionOpen`](uni/universe-rules.js#L51), [`assertMembers`](uni/universe-rules.js#L52), [`settings`](uni/universe-rules.js#L53), [`normalized`](uni/universe-rules.js#L54), [`jsonInsertStatements`](uni/universe-rules.js#L80), [`flush`](uni/universe-rules.js#L84), [`overwriteManifest`](uni/universe-rules.js#L88), [`overwriteImportRoute`](uni/universe-rules.js#L109), [`handle`](uni/universe-rules.js#L165), [`requireOwnerPro`](uni/universe-rules.js#L190), [`validateCriteria`](uni/universe-rules.js#L191), [`work`](uni/universe-rules.js#L201).
 
-[`taskWrite`](uni/universe-rules.js#L226), [`assignmentWrite`](uni/universe-rules.js#L257), [`read`](uni/universe-rules.js#L286), [`settle`](uni/universe-rules.js#L301), [`lockStatus`](uni/universe-rules.js#L305), [`catalog`](uni/universe-rules.js#L313), [`exportMetadata`](uni/universe-rules.js#L314), [`cleanup`](uni/universe-rules.js#L315).
+[`taskWrite`](uni/universe-rules.js#L226), [`assignmentWrite`](uni/universe-rules.js#L259), [`read`](uni/universe-rules.js#L288), [`settle`](uni/universe-rules.js#L303), [`lockStatus`](uni/universe-rules.js#L307), [`catalog`](uni/universe-rules.js#L315), [`exportMetadata`](uni/universe-rules.js#L316), [`cleanup`](uni/universe-rules.js#L317).
 
 
 ### `uni/universe-shell.js`
@@ -1039,29 +1110,43 @@ No named function declarations indexed. Behavior is in markup, configuration, or
 
 ### `worker.js`
 
-[`copy`](worker.js#L16), [`validDate`](worker.js#L17), [`dateMs`](worker.js#L21), [`dateString`](worker.js#L22), [`today`](worker.js#L23), [`schedule`](worker.js#L26), [`nextDate`](worker.js#L41), [`subtree`](worker.js#L69), [`seriesFor`](worker.js#L75), [`canStart`](worker.js#L78), [`cleanNode`](worker.js#L89), [`start`](worker.js#L94).
+[`copy`](worker.js#L17), [`validDate`](worker.js#L18), [`dateMs`](worker.js#L22), [`dateString`](worker.js#L23), [`today`](worker.js#L24), [`schedule`](worker.js#L27), [`nextDate`](worker.js#L42), [`subtree`](worker.js#L70), [`seriesFor`](worker.js#L76), [`canStart`](worker.js#L79), [`cleanNode`](worker.js#L90), [`start`](worker.js#L95).
 
-[`updateNode`](worker.js#L123), [`validateState`](worker.js#L129), [`reconcile`](worker.js#L155), [`depth`](worker.js#L173), [`idFor`](worker.js#L204), [`validDate`](worker.js#L231), [`addDate`](worker.js#L232), [`timezone`](worker.js#L233), [`parts`](worker.js#L234), [`time`](worker.js#L238), [`wall`](worker.js#L239), [`dayBounds`](worker.js#L244).
+[`updateNode`](worker.js#L124), [`validateState`](worker.js#L130), [`reconcile`](worker.js#L156), [`depth`](worker.js#L174), [`idFor`](worker.js#L205), [`validDate`](worker.js#L232), [`addDate`](worker.js#L233), [`timezone`](worker.js#L234), [`parts`](worker.js#L235), [`time`](worker.js#L239), [`wall`](worker.js#L240), [`dayBounds`](worker.js#L245).
 
-[`boundary`](worker.js#L246), [`bounds`](worker.js#L250), [`interval`](worker.js#L254), [`validate`](worker.js#L265), [`clock`](worker.js#L274), [`normalize`](worker.js#L283), [`migrate`](worker.js#L293), [`activeBreak`](worker.js#L304), [`active`](worker.js#L317), [`merge`](worker.js#L318), [`SecurityError`](worker.js#L343), [`allowedOrigins`](worker.js#L346).
+[`boundary`](worker.js#L247), [`bounds`](worker.js#L251), [`interval`](worker.js#L255), [`validate`](worker.js#L267), [`clock`](worker.js#L276), [`normalize`](worker.js#L285), [`migrate`](worker.js#L295), [`activeBreak`](worker.js#L306), [`active`](worker.js#L319), [`merge`](worker.js#L320), [`SecurityError`](worker.js#L345), [`allowedOrigins`](worker.js#L348).
 
-[`decodeAuthB64`](worker.js#L348), [`sha256`](worker.js#L352), [`randomPhoneToken`](worker.js#L354), [`clerkAPI`](worker.js#L358), [`verifySession`](worker.js#L372), [`verifiedEmail`](worker.js#L412), [`providerId`](worker.js#L426), [`randomSecret`](worker.js#L433), [`base64url`](worker.js#L434), [`decodeVerifyB64`](worker.js#L435), [`verifyGoogleToken`](worker.js#L436), [`ActionVerification`](worker.js#L463).
+[`decodeAuthB64`](worker.js#L350), [`sha256`](worker.js#L354), [`randomPhoneToken`](worker.js#L356), [`clerkAPI`](worker.js#L360), [`verifySession`](worker.js#L374), [`verifiedEmail`](worker.js#L414), [`providerId`](worker.js#L428), [`randomSecret`](worker.js#L435), [`base64url`](worker.js#L436), [`decodeVerifyB64`](worker.js#L437), [`verifyGoogleToken`](worker.js#L438), [`ActionVerification`](worker.js#L465).
 
-[`get`](worker.js#L465), [`start`](worker.js#L474), [`password`](worker.js#L518), [`callback`](worker.js#L550), [`accountKey`](worker.js#L595), [`AccountDeletion`](worker.js#L596), [`marker`](worker.js#L598), [`status`](worker.js#L599), [`accept`](worker.js#L608), [`page`](worker.js#L659), [`legacy`](worker.js#L666), [`deleteClerk`](worker.js#L692).
+[`get`](worker.js#L467), [`start`](worker.js#L476), [`password`](worker.js#L520), [`callback`](worker.js#L552), [`accountKey`](worker.js#L597), [`AccountDeletion`](worker.js#L598), [`marker`](worker.js#L600), [`status`](worker.js#L601), [`accept`](worker.js#L610), [`page`](worker.js#L661), [`legacy`](worker.js#L668), [`deleteClerk`](worker.js#L694).
 
-[`run`](worker.js#L697), [`scrubSettings`](worker.js#L758), [`encodeVaultB64`](worker.js#L761), [`decodeVaultB64`](worker.js#L762), [`validId`](worker.js#L763), [`KeyVault`](worker.js#L764), [`configuration`](worker.js#L766), [`ready`](worker.js#L774), [`cryptoKey`](worker.js#L775), [`prefix`](worker.js#L783), [`recordKey`](worker.js#L784), [`stagePrefix`](worker.js#L785).
+[`run`](worker.js#L699), [`scrubSettings`](worker.js#L763), [`encodeVaultB64`](worker.js#L766), [`decodeVaultB64`](worker.js#L767), [`validId`](worker.js#L768), [`KeyVault`](worker.js#L769), [`configuration`](worker.js#L771), [`ready`](worker.js#L779), [`cryptoKey`](worker.js#L780), [`prefix`](worker.js#L788), [`recordKey`](worker.js#L789), [`stagePrefix`](worker.js#L790).
 
-[`validateKey`](worker.js#L786), [`recoveredKey`](worker.js#L792), [`aad`](worker.js#L798), [`seal`](worker.js#L799), [`unseal`](worker.js#L806), [`assertOwner`](worker.js#L814), [`providerMetadata`](worker.js#L820), [`selectedProvider`](worker.js#L828), [`metadata`](worker.js#L833), [`select`](worker.js#L840), [`recoverClaudeArchives`](worker.js#L853), [`stage`](worker.js#L870).
+[`validateKey`](worker.js#L791), [`recoveredKey`](worker.js#L797), [`aad`](worker.js#L803), [`seal`](worker.js#L804), [`unseal`](worker.js#L811), [`assertOwner`](worker.js#L819), [`providerMetadata`](worker.js#L825), [`selectedProvider`](worker.js#L833), [`metadata`](worker.js#L838), [`select`](worker.js#L845), [`recoverClaudeArchives`](worker.js#L858), [`stage`](worker.js#L875).
 
-[`context`](worker.js#L888), [`takeProof`](worker.js#L897), [`reveal`](worker.js#L911), [`testKey`](worker.js#L923), [`save`](worker.js#L939), [`remove`](worker.js#L958), [`testSaved`](worker.js#L968), [`cleanupLegacy`](worker.js#L974), [`validatePayload`](worker.js#L1007), [`inspect`](worker.js#L1016), [`jsonSchema`](worker.js#L1045), [`translateSchema`](worker.js#L1052).
+[`context`](worker.js#L893), [`takeProof`](worker.js#L902), [`reveal`](worker.js#L916), [`testKey`](worker.js#L928), [`save`](worker.js#L944), [`remove`](worker.js#L963), [`testSaved`](worker.js#L973), [`cleanupLegacy`](worker.js#L979), [`validatePayload`](worker.js#L1012), [`inspect`](worker.js#L1021), [`jsonSchema`](worker.js#L1050), [`translateSchema`](worker.js#L1057).
 
-[`toClaudeRequest`](worker.js#L1063), [`add`](worker.js#L1065), [`fromClaudeResponse`](worker.js#L1125), [`validateOutput`](worker.js#L1142), [`responseJSON`](worker.js#L1153), [`AIGateway`](worker.js#L1162), [`generate`](worker.js#L1164), [`object`](worker.js#L1222), [`json`](worker.js#L1223), [`HTTPError`](worker.js#L1226), [`dayHour`](worker.js#L1229), [`logicalDate`](worker.js#L1233).
+[`toClaudeRequest`](worker.js#L1068), [`add`](worker.js#L1070), [`fromClaudeResponse`](worker.js#L1130), [`validateOutput`](worker.js#L1147), [`valid`](worker.js#L1153), [`responseJSON`](worker.js#L1158), [`countInputTokens`](worker.js#L1169), [`AIGateway`](worker.js#L1227), [`generateHosted`](worker.js#L1245), [`generate`](worker.js#L1297), [`object`](worker.js#L1380), [`json`](worker.js#L1381).
 
-[`validDate`](worker.js#L1236), [`timestamp`](worker.js#L1240), [`evaluateStatus`](worker.js#L1245), [`effectiveDue`](worker.js#L1254), [`sleepWindow`](worker.js#L1277), [`valid`](worker.js#L1278), [`minutes`](worker.js#L1280), [`sleepLockActive`](worker.js#L1286), [`publicRecord`](worker.js#L1291), [`tokenKey`](worker.js#L1309), [`chunkKey`](worker.js#L1310), [`cleanToken`](worker.js#L1312).
+[`HTTPError`](worker.js#L1384), [`dayHour`](worker.js#L1387), [`logicalDate`](worker.js#L1391), [`validDate`](worker.js#L1394), [`timestamp`](worker.js#L1398), [`evaluateStatus`](worker.js#L1403), [`effectiveDue`](worker.js#L1412), [`statusText`](worker.js#L1437), [`sleepWindow`](worker.js#L1440), [`minutes`](worker.js#L1443), [`sleepLockActive`](worker.js#L1449), [`publicRecord`](worker.js#L1454).
 
-[`readJson`](worker.js#L1314), [`validateUser`](worker.js#L1340), [`validateVersion`](worker.js#L1346), [`validateSnapshot`](worker.js#L1352), [`loadSnapshot`](worker.js#L1373), [`saveSnapshot`](worker.js#L1388), [`conflict`](worker.js#L1404), [`fetch`](worker.js#L1410), [`TaskitatorSync`](worker.js#L1430), [`readTaskSnapshot`](worker.js#L1444), [`writeTaskSnapshot`](worker.js#L1448), [`migrateVault`](worker.js#L1457).
+[`tokenKey`](worker.js#L1472), [`chunkKey`](worker.js#L1473), [`cleanToken`](worker.js#L1475), [`readJson`](worker.js#L1477), [`validateUser`](worker.js#L1503), [`validateVersion`](worker.js#L1509), [`checkTaskGraph`](worker.js#L1518), [`validateSnapshot`](worker.js#L1549), [`loadSnapshot`](worker.js#L1571), [`saveSnapshot`](worker.js#L1586), [`conflict`](worker.js#L1602), [`fetch`](worker.js#L1608).
 
-[`importAccount`](worker.js#L1493), [`rateLimit`](worker.js#L1543), [`rateBucket`](worker.js#L1548), [`ensureAlarm`](worker.js#L1560), [`alarm`](worker.js#L1566), [`accountFor`](worker.js#L1596), [`connectAccount`](worker.js#L1611), [`phoneAccess`](worker.js#L1670), [`fetch`](worker.js#L1692).
+[`TaskitatorSync`](worker.js#L1628), [`readTaskSnapshot`](worker.js#L1643), [`writeTaskSnapshot`](worker.js#L1647), [`migrateVault`](worker.js#L1656), [`importAccount`](worker.js#L1692), [`rateLimit`](worker.js#L1742), [`rateBucket`](worker.js#L1747), [`ensureAlarm`](worker.js#L1759), [`alarm`](worker.js#L1765), [`accountFor`](worker.js#L1795), [`connectAccount`](worker.js#L1810), [`phoneAccess`](worker.js#L1869).
+
+[`fetch`](worker.js#L1891).
+
+
+### `break-systems.js`
+
+[`migrateLegacy`](break-systems.js#L54), [`normalizeStrict`](break-systems.js#L113), [`requiredTasksToday`](break-systems.js#L141), [`settle`](break-systems.js#L168), [`mirror`](break-systems.js#L201), [`BreakSystems`](break-systems.js#L211), [`resolve`](break-systems.js#L217), [`state`](break-systems.js#L309), [`act`](break-systems.js#L318), [`saveStrict`](break-systems.js#L347), [`apply`](break-systems.js#L368), [`inBreak`](break-systems.js#L460).
+
+[`overlay`](break-systems.js#L466), [`remove`](break-systems.js#L475).
+
+
+### `macro-bridge.js`
+
+[`injectToken`](macro-bridge.js#L14), [`fetchText`](macro-bridge.js#L27), [`save`](macro-bridge.js#L33), [`downloadBridge`](macro-bridge.js#L45), [`downloadBlocker`](macro-bridge.js#L50).
 
 
 ### D1 table and trigger declarations
