@@ -26,6 +26,7 @@
             <a href="components.html?view=calendar" class="drawer-item" data-comp-link="calendar"><span class="icon">🗓️</span> Calendar</a>
             <a href="components.html?view=stats" class="drawer-item" data-comp-link="stats"><span class="icon">📊</span> Statistics</a>
             <a href="components.html?view=trash" class="drawer-item" data-comp-link="trash"><span class="icon">🗑️</span> Trash</a>
+            <a href="#" class="drawer-item" data-open-drafts><span class="icon">📝</span> Drafts<span data-draft-count></span></a>
             <a href="components.html?view=universe" class="drawer-item"><span class="icon">🌌</span> Universe</a>
             <a href="sleep.html" class="drawer-item"><span class="icon">🌙</span> Sleep Lock</a>
 <a href="help.html" class="drawer-item"><span class="icon">❓</span> Help</a>
@@ -204,6 +205,7 @@
 
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
                 <button type="button" class="icon-btn" id="closeAddTaskModalBtn">Cancel</button>
+                <button type="button" class="icon-btn" id="saveTaskDraftBtn" title="Keep this form for later. Nothing is created or locked.">Save as draft</button>
                 <button type="submit" class="icon-btn" id="submitTaskCreateBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Task</button>
             </div>
         </form>
@@ -252,6 +254,7 @@
             <button type="button" class="icon-btn" id="deleteFromDetailBtn" style="color: var(--danger); border-color: #7f1d1d;">Delete Task</button>
             <div style="display: flex; gap: 10px;">
                 <button type="button" class="icon-btn" id="closeDetailModalBtn">Cancel</button>
+                <button type="button" class="icon-btn" id="saveEditDraftBtn" title="Keep these edits for later. The task itself is unchanged until you press Save Changes.">Save as draft</button>
                 <button type="button" class="icon-btn" id="saveTaskDetailsBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Changes</button>
             </div>
         </div>
@@ -1268,6 +1271,7 @@
 <script type="text/taskitator-script" src="pro.js"></script>
     <script type="text/taskitator-script" src="pro/smart-study.js"></script>
     <script type="text/taskitator-script" src="pro/study-plan.js"></script>
+    <script type="text/taskitator-script" src="task-drafts.js"></script>
     <script type="text/taskitator-script" src="components.js"></script>
     <script type="text/taskitator-script" src="uni/focus-timer.js"></script>
     <script type="text/taskitator-script" src="app.js"></script>

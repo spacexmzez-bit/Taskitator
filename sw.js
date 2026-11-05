@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-proof-uploads-v1';
+const CACHE_NAME = 'taskitator-drafts-v1';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -23,6 +23,7 @@ const STATIC_ASSETS = [
     './',
     './index.html',
     './components.html',
+    './task-drafts.js',
     './settings.html',
     './help.html',
     './login.html',

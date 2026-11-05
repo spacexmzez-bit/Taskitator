@@ -5384,3 +5384,9 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
     font-weight: 600;
     line-height: 1.4;
 }
+
+/* Task drafts */
+.draft-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 10px; border: 1px solid #f59e0b; border-radius: 8px; background: rgba(245, 158, 11, 0.12); font-size: 0.85rem; }
+.draft-banner span { flex: 1 1 200px; }
+.draft-row { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border-color, #2b3d66); }
+.draft-meta { color: var(--text-muted, #9fb0d0); font-size: 0.78rem; }

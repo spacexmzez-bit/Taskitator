@@ -833,6 +833,7 @@ window.TaskitatorComponents = Object.freeze({
         let createModalSelectedPriority = null;
         let createModalSelectedProject = 'inbox';
         let createModalIsBonus = false;
+        let activeCreateDraftId = null;
 
         const editModalSelectedTags = new Set();
         let editModalSelectedPriority = null;
@@ -1674,6 +1675,7 @@ window.TaskitatorComponents = Object.freeze({
                 taskDetailModal._customRenderFn = triggerRenderFn;
                 taskDetailModal.classList.add('open');
                 draft.tags=JSON.stringify([...editModalSelectedTags]);draft.priority=editModalSelectedPriority;draft.project=editModalSelectedProject;draft.bonus=editModalIsBonus;editBaseline=controls();
+                refreshEditDraftBanner(taskId);
                 void refreshConsecutive();
             }
         }
@@ -1684,6 +1686,7 @@ window.TaskitatorComponents = Object.freeze({
         function openTaskCreationModal(parentId = null, titleLabel = 'Create New Task', preselectedProjectId = null) {
             if(document.body.classList.contains('universe-active')){window.dispatchEvent(new Event('universe-create-task'));return;}
             if(draft&&!discardDraft())return;
+            activeCreateDraftId = null;
             void refreshConsecutive();
             const form = document.getElementById('taskCreateForm');
             if (form) form.reset();
@@ -1788,6 +1791,207 @@ window.TaskitatorComponents = Object.freeze({
                 modal.classList.add('open');
                 setTimeout(() => { if (titleEl) titleEl.focus(); }, 100);
             }
+        }
+
+
+        // =========================================================================
+        // Task drafts: park an unfinished create/edit form. Nothing is created, locked or sent to AI.
+        // =========================================================================
+        const draftsApi = () => window.TaskitatorDrafts;
+        const fieldValue = id => { const e = document.getElementById(id); return !e ? '' : (e.tagName === 'DIV' || e.isContentEditable) ? e.textContent : e.value; };
+        const setField = (id, v) => { const e = document.getElementById(id); if (!e) return; if (e.tagName === 'DIV' || e.isContentEditable) e.textContent = v; else e.value = v; };
+        const setChecked = (id, v) => { const e = document.getElementById(id); if (e && !e.disabled) { e.checked = Boolean(v); e.dispatchEvent(new Event('change', { bubbles: true })); } };
+        const knownPriority = id => id && (host.catalogs.priorities() || []).some(p => p.id === id) ? id : host.catalogs.lowestPriority();
+        const knownProject = id => (host.catalogs.projects() || []).some(p => p.id === id) ? id : 'inbox';
+
+        function collectCreateDraft() {
+            const subtasks = [...document.querySelectorAll('#subtaskBuilderList .subtask-input-title')].map(i => i.value.trim()).filter(Boolean);
+            const pending = document.getElementById('createQuickSubtaskInput')?.value.trim();
+            if (pending) subtasks.push(pending);
+            return {
+                title: fieldValue('taskTitleInput').trim(), description: fieldValue('taskDescInput').trim(), due_date: fieldValue('taskDueDateInput'),
+                parent_id: fieldValue('creationParentId') || null, project_id: createModalSelectedProject, priority_id: createModalSelectedPriority,
+                tags: [...createModalSelectedTags], is_bonus: createModalIsBonus || Boolean(document.getElementById('bonusTaskCheckbox')?.checked),
+                strict_prerequisites: Boolean(document.getElementById('strictPrereqCheckbox')?.checked),
+                ai_locked: Boolean(document.getElementById('aiLockCheckbox')?.checked), criteria: fieldValue('taskCriteriaInput').trim(),
+                dynamic_priority_target: dpValue('create'),
+                mrstudy_rule_id: fieldValue('taskMrstudyRuleSelect'), mrstudy_xp: fieldValue('mrstudyXpInput'), mrstudy_banch: fieldValue('mrstudyBanchInput'),
+                subtasks
+            };
+        }
+        function saveCreateDraft() {
+            const api = draftsApi();
+            if (!api) { window.TaskitatorNotify('Drafts are unavailable. Reload Taskitator.'); return; }
+            try { activeCreateDraftId = api.saveCreate(collectCreateDraft(), activeCreateDraftId); }
+            catch (err) { window.TaskitatorNotify(err.message); return; }
+            document.getElementById('addTaskModal')?.classList.remove('open');
+            activeCreateDraftId = null;
+            window.TaskitatorNotify('Draft saved. Find it in the menu under Drafts.');
+            refreshDraftBadges();
+        }
+        // Opens the create form pre-filled. Attachments (reference file) and the validation score are not stored.
+        function openCreateFromDraft(id) {
+            const d = draftsApi()?.getCreate(id);
+            if (!d) { window.TaskitatorNotify('This draft no longer exists.'); return; }
+            let parentId = d.parent_id;
+            if (parentId) {
+                const parent = host.tasks.getAll().find(t => t.id === parentId);
+                if (!parent || parent.status === 'trash') { parentId = null; window.TaskitatorNotify('This draft’s parent task no longer exists. It will be created at the top level.'); }
+            }
+            openTaskCreationModal(parentId, 'Create New Task', parentId ? null : knownProject(d.project_id));
+            if (!document.getElementById('addTaskModal')?.classList.contains('open')) return;
+            activeCreateDraftId = id;
+            setField('taskTitleInput', d.title); setField('taskDescInput', d.description); setField('taskDueDateInput', d.due_date);
+            createModalSelectedTags.clear();
+            const tags = host.catalogs.tags();
+            d.tags.filter(t => tags.includes(t)).forEach(t => createModalSelectedTags.add(t));
+            createModalSelectedPriority = knownPriority(d.priority_id);
+            if (!parentId) createModalSelectedProject = knownProject(d.project_id);
+            createModalIsBonus = d.is_bonus; setChecked('bonusTaskCheckbox', d.is_bonus);
+            setChecked('strictPrereqCheckbox', d.strict_prerequisites);
+            setChecked('aiLockCheckbox', d.ai_locked); setField('taskCriteriaInput', d.criteria);
+            if (d.mrstudy_rule_id && document.querySelector('#taskMrstudyRuleSelect option[value="' + CSS.escape(d.mrstudy_rule_id) + '"]')) {
+                setField('taskMrstudyRuleSelect', d.mrstudy_rule_id);
+                document.getElementById('taskMrstudyRuleSelect')?.dispatchEvent(new Event('change', { bubbles: true }));
+                setField('mrstudyXpInput', d.mrstudy_xp); setField('mrstudyBanchInput', d.mrstudy_banch);
+            }
+            dpSetup('create', { target: d.dynamic_priority_target && knownPriority(d.dynamic_priority_target) === d.dynamic_priority_target ? d.dynamic_priority_target : null });
+            const list = document.getElementById('subtaskBuilderList');
+            if (list) {
+                list.innerHTML = '';
+                for (const text of d.subtasks) {
+                    const row = document.createElement('div');
+                    row.className = 'subtask-builder-item';
+                    row.innerHTML = '<input type="text" class="subtask-input-title" style="flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);"><button type="button" class="action-del-btn">✕</button>';
+                    row.querySelector('input').value = text;
+                    row.querySelector('.action-del-btn').addEventListener('click', () => row.remove());
+                    list.appendChild(row);
+                }
+            }
+            renderModalTagCloud('createTagCloud', createModalSelectedTags);
+            renderModalPriorityCloud('createPriorityCloud', false);
+            renderModalProjectCloud('createProjectCloud', false);
+        }
+
+        function collectEditDraft() {
+            return {
+                title: fieldValue('editTaskTitle').trim(), description: fieldValue('editTaskDesc').trim(), due_date: fieldValue('editTaskDueDate'),
+                parent_id: fieldValue('editTaskParentSelect'), project_id: editModalSelectedProject, priority_id: editModalSelectedPriority,
+                tags: [...editModalSelectedTags], is_bonus: editModalIsBonus,
+                strict_prerequisites: Boolean(document.getElementById('editStrictPrereqCheckbox')?.checked),
+                criteria: fieldValue('editTaskCriteria').trim(), dynamic_priority_target: dpValue('edit')
+            };
+        }
+        function saveEditDraft() {
+            if (!activeDetailTaskId) return;
+            try { draftsApi().saveEdit(activeDetailTaskId, collectEditDraft()); }
+            catch (err) { window.TaskitatorNotify(err.message); return; }
+            window.TaskitatorNotify('Draft saved. The task itself is unchanged until you press Save Changes.');
+            refreshEditDraftBanner(activeDetailTaskId);
+            refreshDraftBadges();
+        }
+        // Only controls the user is currently allowed to change are filled, so a draft can never bypass a lock or shield.
+        function applyEditDraft(taskId) {
+            const d = draftsApi()?.getEdit(taskId);
+            if (!d) return;
+            const writable = id => { const e = document.getElementById(id); return e && !e.disabled && e.contentEditable !== 'false'; };
+            if (writable('editTaskTitle')) setField('editTaskTitle', d.title);
+            if (writable('editTaskDesc')) setField('editTaskDesc', d.description);
+            if (writable('editTaskDueDate')) setField('editTaskDueDate', d.due_date);
+            if (writable('editTaskParentSelect') && [...document.getElementById('editTaskParentSelect').options].some(o => o.value === d.parent_id)) setField('editTaskParentSelect', d.parent_id);
+            if (writable('editTaskCriteria')) setField('editTaskCriteria', d.criteria);
+            editModalSelectedTags.clear();
+            const tags = host.catalogs.tags();
+            d.tags.filter(t => tags.includes(t)).forEach(t => editModalSelectedTags.add(t));
+            editModalSelectedPriority = knownPriority(d.priority_id);
+            editModalSelectedProject = knownProject(d.project_id);
+            if (writable('editBonusTaskCheckbox')) { editModalIsBonus = d.is_bonus; setChecked('editBonusTaskCheckbox', d.is_bonus); }
+            if (writable('editStrictPrereqCheckbox')) setChecked('editStrictPrereqCheckbox', d.strict_prerequisites);
+            renderModalTagCloud('editTagCloud', editModalSelectedTags);
+            renderModalPriorityCloud('editPriorityCloud', true);
+            renderModalProjectCloud('editProjectCloud', true);
+            window.TaskitatorNotify('Draft changes restored. Review them, then press Save Changes.');
+        }
+        function refreshEditDraftBanner(taskId) {
+            let banner = document.getElementById('editDraftBanner');
+            const modal = document.getElementById('taskDetailModal');
+            const d = taskId ? draftsApi()?.getEdit(taskId) : null;
+            if (!d || !modal) { banner?.remove(); return; }
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'editDraftBanner';
+                banner.className = 'draft-banner';
+                const box = modal.querySelector('.modal-box');
+                box?.insertBefore(banner, box.firstChild);
+            }
+            banner.textContent = '';
+            const label = document.createElement('span');
+            label.textContent = 'You have draft changes for this task (' + new Date(d.saved_at).toLocaleString() + ').';
+            const restore = document.createElement('button'); restore.type = 'button'; restore.className = 'icon-btn'; restore.textContent = 'Restore';
+            restore.addEventListener('click', () => applyEditDraft(taskId));
+            const discard = document.createElement('button'); discard.type = 'button'; discard.className = 'icon-btn'; discard.textContent = 'Discard draft';
+            discard.addEventListener('click', () => { draftsApi().removeEdit(taskId); refreshEditDraftBanner(taskId); refreshDraftBadges(); });
+            banner.append(label, restore, discard);
+        }
+
+        // Drafts list (menu entry): one overlay built on demand so every page that has task forms gets it.
+        function refreshDraftBadges() {
+            const n = draftsApi()?.count() || 0;
+            document.querySelectorAll('[data-draft-count]').forEach(el => { el.textContent = n ? ' (' + n + ')' : ''; });
+        }
+        function openDraftsList() {
+            const api = draftsApi();
+            if (!api) return;
+            api.pruneEdits(host.tasks.getAll().filter(t => t.status !== 'trash').map(t => t.id));
+            document.getElementById('draftsListModal')?.remove();
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay open'; overlay.id = 'draftsListModal';
+            const box = document.createElement('div'); box.className = 'modal-box';
+            const head = document.createElement('h3'); head.style.cssText = 'margin-top:0;color:var(--primary);'; head.textContent = '📝 Drafts';
+            box.appendChild(head);
+            const close = () => overlay.remove();
+            const row = (title, meta, openFn, deleteFn) => {
+                const r = document.createElement('div'); r.className = 'draft-row';
+                const info = document.createElement('div'); info.style.cssText = 'flex:1;min-width:0;';
+                const t = document.createElement('strong'); t.textContent = title || '(untitled)';
+                const m = document.createElement('div'); m.className = 'draft-meta'; m.textContent = meta;
+                info.append(t, m);
+                const open = document.createElement('button'); open.type = 'button'; open.className = 'icon-btn'; open.textContent = 'Open';
+                open.addEventListener('click', () => { close(); openFn(); });
+                const del = document.createElement('button'); del.type = 'button'; del.className = 'icon-btn'; del.textContent = 'Delete';
+                del.addEventListener('click', async () => {
+                    if (!(await window.TaskitatorConfirm('Delete this draft?'))) return;
+                    deleteFn(); openDraftsList(); refreshDraftBadges();
+                });
+                r.append(info, open, del); box.appendChild(r);
+            };
+            const creates = api.listCreate(), edits = api.listEdits();
+            for (const d of creates) row(d.title, 'New task · saved ' + new Date(d.saved_at).toLocaleString(), () => openCreateFromDraft(d.id), () => api.removeCreate(d.id));
+            for (const d of edits) {
+                const task = host.tasks.getAll().find(t => t.id === d.task_id);
+                row(task ? task.title : d.title, 'Edit of an existing task · saved ' + new Date(d.saved_at).toLocaleString(), () => openTaskDetailModal(d.task_id), () => api.removeEdit(d.task_id));
+            }
+            if (!creates.length && !edits.length) {
+                const empty = document.createElement('p'); empty.className = 'draft-meta'; empty.textContent = 'No drafts. Use “Save as draft” when creating or editing a task.';
+                box.appendChild(empty);
+            }
+            const actions = document.createElement('div'); actions.style.cssText = 'display:flex;justify-content:flex-end;margin-top:16px;';
+            const closeBtn = document.createElement('button'); closeBtn.type = 'button'; closeBtn.className = 'icon-btn'; closeBtn.textContent = 'Close';
+            closeBtn.addEventListener('click', close);
+            actions.appendChild(closeBtn); box.appendChild(actions); overlay.appendChild(box);
+            overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+            document.body.appendChild(overlay);
+        }
+        function initDrafts() {
+            document.getElementById('saveTaskDraftBtn')?.addEventListener('click', saveCreateDraft);
+            document.getElementById('saveEditDraftBtn')?.addEventListener('click', saveEditDraft);
+            document.addEventListener('click', e => {
+                const link = e.target.closest?.('[data-open-drafts]');
+                if (link) { e.preventDefault(); document.getElementById('drawerBackdrop')?.click(); openDraftsList(); }
+            });
+            window.addEventListener('taskitator-drafts-changed', refreshDraftBadges);
+            window.addEventListener('taskitator-auth-ready', refreshDraftBadges);
+            refreshDraftBadges();
         }
 
         function init() {
@@ -2603,6 +2807,7 @@ window.TaskitatorComponents = Object.freeze({
                     
                     const addTaskModal = document.getElementById('addTaskModal');
                     if (addTaskModal) addTaskModal.classList.remove('open');
+                    if (activeCreateDraftId) { window.TaskitatorDrafts?.removeCreate(activeCreateDraftId); activeCreateDraftId = null; refreshDraftBadges(); }
                     
                     if (typeof window.refreshCurrentProjectView === 'function') {
                         window.refreshCurrentProjectView();
@@ -2812,6 +3017,7 @@ window.TaskitatorComponents = Object.freeze({
                     if(removeEditReference){if(task.ai_locked&&!isBypassActive){window.TaskitatorNotify('Emergency Bypass is required to remove this reference.');return;}await window.ExemplarStore?.deleteExemplar(task.id);delete task.reference_inline_data;delete task.reference_id;}
 
                     if(!commitDraft())return;
+                    window.TaskitatorDrafts?.removeEdit(task.id); refreshDraftBadges();
                     if (taskDetailModal) taskDetailModal.classList.remove('open');
                     
                     const customRender = taskDetailModal?._customRenderFn;
@@ -2959,7 +3165,7 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
-            // Validate Criteria (Pre-flight) Engine with >= 8/10 Saved Criteria Gate
+            // Validate Criteria (Pre-flight) Engine with >= 9/10 Saved Criteria Gate
             async function runCriteriaValidation(criteriaText, taskTitle, exemplarFile, feedbackEl, btnEl, isEditMode) {
                 if (!criteriaText) {
                     if (feedbackEl) {
@@ -3024,11 +3230,11 @@ window.TaskitatorComponents = Object.freeze({
                         feedbackEl.className = 'criteria-feedback-box pass';
                         let html = `<strong>✓ Verified (${TaskitatorSafety.escapeHtml(res.score)}/10)</strong>: ${TaskitatorSafety.escapeHtml(res.critique)}`;
 
-                        // Strict Score >= 8 gate for saving criteria
-                        if (res.score >= 8) {
+                        // Strict Score >= 9 gate for saving criteria
+                        if (res.score >= 9) {
                             html += `
                                 <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: space-between;">
-                                    <span style="font-size: 0.75rem; color: #86efac; font-weight: 600;">Eligible to save (&ge; 8/10)</span>
+                                    <span style="font-size: 0.75rem; color: #86efac; font-weight: 600;">Eligible to save (&ge; 9/10)</span>
                                     <button type="button" class="icon-btn save-as-criteria-btn btn-primary" style="background: var(--primary); color: #fff; font-size: 0.75rem; padding: 4px 10px; font-weight: 700; border: none;">💾 Save Criteria</button>
                                 </div>
                                 <div class="save-criteria-inline-prompt" style="display: none; margin-top: 8px;">
@@ -3043,7 +3249,7 @@ window.TaskitatorComponents = Object.freeze({
                         } else {
                             html += `
                                 <div style="margin-top: 6px; font-size: 0.72rem; color: var(--text-muted);">
-                                    ℹ️ Score must be 8/10 or higher to save to your personal Saved Criteria.
+                                    ℹ️ Score must be 9/10 or higher to save to your personal Saved Criteria.
                                 </div>
                             `;
                         }
@@ -3348,7 +3554,7 @@ window.TaskitatorComponents = Object.freeze({
                     container.innerHTML = `
                         <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 24px 0;">
                             No saved criteria yet.<br>
-                            Validate criteria with a score of <strong>8/10 or higher</strong> to save your own reusable versions.
+                            Validate criteria with a score of <strong>9/10 or higher</strong> to save your own reusable versions.
                         </div>
                     `;
                     return;
@@ -3519,12 +3725,15 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
+            initDrafts();
         }
 
         return Object.freeze({
             apiVersion: 1,
             init,
             openCreate: openTaskCreationModal,
+            openCreateFromDraft,
+            openDrafts: openDraftsList,
             openDetail: openTaskDetailModal,
             openAudit: openAuditModal,
             renderTags: renderModalTagCloud,
