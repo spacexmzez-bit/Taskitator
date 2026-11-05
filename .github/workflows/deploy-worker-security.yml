@@ -9,16 +9,19 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Actions pinned to reviewed commits (v4.4.0). Update deliberately, not by tag drift.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-      - name: Run regression tests
-        run: |
-          npm test
-          node --experimental-global-webcrypto --test uni/*.test.js
+          cache: npm
+      # Exact Wrangler from package-lock.json; no install scripts.
+      - name: Install locked deploy tooling
+        run: npm ci --ignore-scripts
+      - name: Run regression tests (root + Universe)
+        run: npm test
       - name: Deploy existing Cloudflare Worker
-        run: npx wrangler@4 deploy --config wrangler.toml
+        run: npx --no-install wrangler deploy --config wrangler.toml
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

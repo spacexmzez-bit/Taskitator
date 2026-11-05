@@ -106,10 +106,12 @@ test('hidden daily caps: 30 validations and 500 Copilot requests, then "Service 
 }));
 
 test('the caps reset at Riyadh midnight and there is no monthly cap', () => run(async h => {
-    await h.activate();
+    // Freeze the clock BEFORE activating: a license issued at the real time would be
+    // future-dated under the fixed clock below, and the test would fail once real time passes it.
     const realNow = Date.now, base = Date.parse('2026-11-04T20:59:00Z'); // 23:59 Riyadh
     try {
         Date.now = () => base;
+        await h.activate();
         await h.storage.put(`ai-hosted:user_A:${periods(base).day}:validation`,30);
         h.provider.output = {score:9,passed:true,critique:'Good.',suggested_rewrite:''};
         await rejects(h.ask('criteria'),503);
@@ -151,4 +153,22 @@ test('proof formats are not served by the hosted generate route', () => run(asyn
     await rejects(h.ask('proof'),409,/hosted review service/);
     await rejects(h.ask('batch-proof'),409);
     assert.equal(h.provider.calls.length,0);
+}));
+
+test('Audit F06: worst-case cost is held before forwarding; timeouts keep the hold, refusals release it', () => run(async h => {
+    await h.activate();
+    const spendKey = `ai-hosted:user_A:${periods().day}:spend`, spend = async () => (await h.storage.get(spendKey)) || 0;
+    h.provider.mode = 'error';
+    await rejects(h.ask(),503);
+    assert.equal(await spend(),0,'a definite provider refusal is not charged');
+    h.provider.mode = 'timeout';
+    await rejects(h.ask(),504);
+    const afterTimeout = await spend();
+    assert.ok(afterTimeout > 0,'an accepted-but-lost request stays charged at its estimate');
+    assert.equal(await h.counter('copilot'),0,'but does not use a daily request slot');
+    // Near the cap, a request whose worst case would exceed it is refused instead of overshooting.
+    await h.storage.put(spendKey,HOSTED_AI.dailySpend - 1);
+    h.provider.mode = 'ok';
+    await rejects(h.ask(),503);
+    assert.equal(await spend(),HOSTED_AI.dailySpend - 1);
 }));

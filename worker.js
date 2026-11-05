@@ -716,6 +716,9 @@ export class AccountDeletion {
                         (key.startsWith('pro:binding:') && value?.account_id===job.userId) ||
                         (key.startsWith('pro:username:map:') && value?.accountId===job.userId) ||
                         (key.startsWith('pro:attestation:') && value?.account_id===job.userId));
+                    // Audit F07: newer account-owned families (credit plan/epochs, hosted AI counters).
+                    else if (job.stage==='credits') {await this.storage.delete('credits:plan:'+job.userId);next=await this.page(job,'credits:'+job.userId+':');}
+                    else if (job.stage==='ai-hosted') next=await this.page(job,'ai-hosted:'+job.userId+':');
                     else if (job.stage==='legacy') {await this.storage.delete('sleep-lock:'+job.userId);await this.service.breaks.remove(this.storage,job.userId);next=await this.page(job,'sleep-delay:'+job.userId+':')&&await this.legacy(job);}
                     else if (job.stage==='clerk') {
                         if(this.env.TASKITATOR_DB){
@@ -739,7 +742,7 @@ export class AccountDeletion {
                         continue;
                     }
                     if (next) {
-                        job.stage=({snapshots:'credentials',credentials:'proofs',proofs:'vault',vault:'vault-stages','vault-stages':'hosted',hosted:'legacy',legacy:'clerk'})[job.stage];
+                        job.stage=({snapshots:'credentials',credentials:'proofs',proofs:'vault',vault:'vault-stages','vault-stages':'hosted',hosted:'credits',credits:'ai-hosted','ai-hosted':'legacy',legacy:'clerk'})[job.stage];
                         job.cursor=null;
                     }
                     await this.storage.put(key,job);
@@ -1251,34 +1254,43 @@ export class AIGateway {
         forward.max_tokens=Math.min(Number(forward.max_tokens)||HOSTED_AI.maxOutput,HOSTED_AI.maxOutput);
         await this.service.rateBucket('ai-user:'+account,30);
         this.claim(identity);
-        let reserved=false;const day=periods().day,countKey=hostedKey(account,day,bucket),spendKey=hostedKey(account,day,'spend');
+        let reserved=false,held=0;const day=periods().day,countKey=hostedKey(account,day,bucket),spendKey=hostedKey(account,day,'spend');
+        const addSpend=delta=>storage.transaction(async tx=>{await tx.put(spendKey,Math.max(0,((await tx.get(spendKey))||0)+delta));});
         try{
             const input=await countInputTokens('claude',HOSTED_AI.model,forward,key);
             if(input>HOSTED_AI.maxInput)throw new SecurityError(413,'This request is too long. Start a new conversation or shorten the text.');
+            // Audit F06: hold the worst-case cost before forwarding, so the cap cannot be overshot and
+            // an accepted-but-lost request is still counted against the budget.
+            const estimate=input*POLICY.inputPrice+forward.max_tokens*POLICY.outputPrice;
             await storage.transaction(async tx=>{
                 const used=(await tx.get(countKey))||0,spend=(await tx.get(spendKey))||0;
-                if(used>=HOSTED_AI.daily[bucket] || spend>=HOSTED_AI.dailySpend)throw new SecurityError(503,UNAVAILABLE);
+                if(used>=HOSTED_AI.daily[bucket] || spend+estimate>HOSTED_AI.dailySpend)throw new SecurityError(503,UNAVAILABLE);
                 await tx.put(countKey,used+1);
+                await tx.put(spendKey,spend+estimate);
             });
-            reserved=true;
+            reserved=true;held=estimate;
             let response;
+            // Timeout/network loss: the provider may have run (and billed) the request. Keep the cost hold.
             try{response=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},body:JSON.stringify(forward),signal:AbortSignal.timeout(55000)});}
-            catch{throw new SecurityError(504,'Taskitator AI timed out. Retry in a moment.');}
+            catch{held=0;throw new SecurityError(504,'Taskitator AI timed out. Retry in a moment.');}
             if(!response.ok){
+                // A definite provider refusal is not billed: release the hold.
                 try{await response.body?.cancel();}catch{}
                 throw new SecurityError(response.status===400||response.status===413?400:503,response.status===400||response.status===413?'Taskitator AI rejected this request. Check the file format and content.':UNAVAILABLE);
             }
+            held=0; // From here the request was answered; an unreadable body keeps the estimate charged.
             const raw=await responseJSON(response,key);
             // A completed generation counts and is costed even if its output is later rejected.
             reserved=false;
-            const usage=providerUsage('claude',raw),cost=usage?usage.input*POLICY.inputPrice+usage.output*POLICY.outputPrice:(input*POLICY.inputPrice+forward.max_tokens*POLICY.outputPrice);
-            await storage.transaction(async tx=>{await tx.put(spendKey,((await tx.get(spendKey))||0)+cost);});
+            const usage=providerUsage('claude',raw),cost=usage?usage.input*POLICY.inputPrice+usage.output*POLICY.outputPrice:estimate;
+            await addSpend(cost-estimate);
             const data=fromClaudeResponse(raw);
             validateOutput(data,format);
             return data;
         }finally{
             // A request that never produced an answer does not use a daily slot.
             if(reserved)await storage.transaction(async tx=>{const used=(await tx.get(countKey))||0;await tx.put(countKey,Math.max(0,used-1));}).catch(()=>{});
+            if(held)await addSpend(-held).catch(()=>{});
             this.release(identity);
         }
     }
@@ -1500,10 +1512,45 @@ function validateVersion(body) {
     }
 }
 
+// F01: bounded graph contract, checked before any expensive guard work. Limits sit well above
+// normal personal use; raise them deliberately if real accounts approach them.
+export const MAX_TASKS = 10000, MAX_TASK_DEPTH = 64, MAX_TEXT_CHARS = 10000;
+export function checkTaskGraph(tasks) {
+    if (tasks.length > MAX_TASKS) throw new HTTPError(413, `At most ${MAX_TASKS} tasks can be synced.`);
+    const byId = new Map();
+    for (const t of tasks) {
+        if (typeof t.id !== 'string' || !t.id || t.id.length > 128) throw new HTTPError(400, 'Every task needs a short string ID.');
+        if (byId.has(t.id)) throw new HTTPError(400, 'Tasks need distinct IDs.');
+        for (const f of ['title', 'raw_title', 'proof_criteria', 'raw_proof_criteria', 'description', 'notes']) {
+            if (typeof t[f] === 'string' && t[f].length > MAX_TEXT_CHARS) throw new HTTPError(413, `Task ${f} is too long.`);
+        }
+        byId.set(t.id, t);
+    }
+    // Linear depth/cycle check: each task's depth is computed once and memoized.
+    const depth = new Map(), VISITING = -1;
+    for (const start of tasks) {
+        const path = [];
+        let t = start, base = 0;
+        while (t) {
+            const d = depth.get(t.id);
+            if (d === VISITING) throw new HTTPError(400, 'Task parents form a cycle.');
+            if (d !== undefined) { base = d; break; }
+            depth.set(t.id, VISITING); path.push(t.id);
+            t = t.parent_id ? byId.get(t.parent_id) : null; // Dangling parents are tolerated (legacy data).
+        }
+        for (let i = path.length - 1; i >= 0; i--) {
+            base += 1;
+            if (base > MAX_TASK_DEPTH) throw new HTTPError(413, `Tasks can be nested at most ${MAX_TASK_DEPTH} levels deep.`);
+            depth.set(path[i], base);
+        }
+    }
+}
+
 function validateSnapshot(body, user) {
     if (!Array.isArray(body.tasks) || body.tasks.some(t => !object(t))) {
         throw new HTTPError(400, 'tasks must be an array of objects.');
     }
+    checkTaskGraph(body.tasks);
     if (body.username != null && (typeof body.username !== 'string' || body.username.trim().toLowerCase() !== user)) {
         throw new HTTPError(400, 'Payload username does not match the authenticated account.');
     }

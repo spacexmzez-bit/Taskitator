@@ -543,6 +543,11 @@ window.TaskitatorAgent = (() => {
                 ? AGENT_TOOLS 
                 : [];
 
+            // Audit F14: the tool list sent to the model is an instruction, not a boundary. Enforce it locally.
+            const allowedNames = new Set(activeTools.flatMap(t => (t.functionDeclarations || t.function_declarations || []).map(d => d.name)));
+            const allowedTool = call => typeof call?.name === 'string' && allowedNames.has(call.name) &&
+                (call.args == null || (typeof call.args === 'object' && !Array.isArray(call.args)));
+
             for (let loop = 0; loop < 4; loop++) {
                 const payload = {
                     contents: getTrimmedContents(),
@@ -580,7 +585,7 @@ window.TaskitatorAgent = (() => {
                         parts: await Promise.all(toolCallParts.map(async part=>({functionResponse:{
                             name:part.functionCall.name,
                             ...(part.functionCall.id?{id:part.functionCall.id}:{}),
-                            response:await executeToolCall(part.functionCall.name,part.functionCall.args||{})
+                            response:allowedTool(part.functionCall)?await executeToolCall(part.functionCall.name,part.functionCall.args||{}):{status:'error',error:'This tool is not available on this page.'}
                         }})))
                     });
 
@@ -1930,7 +1935,7 @@ window.TaskitatorApp = (() => {
                     pill.classList.add('selected-prio');
                     pill.style.color = p.color;
                 }
-                pill.innerHTML = `<span class="priority-color-dot" style="background-color: ${TaskitatorSafety.escapeHtml(p.color)};"></span> ${TaskitatorSafety.escapeHtml(p.name)}`;
+                pill.innerHTML = `<span class="priority-color-dot" style="background-color: ${TaskitatorSafety.escapeHtml(TaskitatorSafety.cssColor(p.color))};"></span> ${TaskitatorSafety.escapeHtml(p.name)}`;
                 pill.addEventListener('click', () => {
                     if (draftFilters.priorities.has(p.id)) draftFilters.priorities.delete(p.id);
                     else draftFilters.priorities.add(p.id);
@@ -3333,7 +3338,7 @@ window.TaskitatorApp = (() => {
                             pill.classList.add('selected');
                             pill.style.color = p.color;
                         }
-                        pill.innerHTML = `<span class="priority-color-dot" style="background-color: ${TaskitatorSafety.escapeHtml(p.color)};"></span> ${TaskitatorSafety.escapeHtml(p.name)}`;
+                        pill.innerHTML = `<span class="priority-color-dot" style="background-color: ${TaskitatorSafety.escapeHtml(TaskitatorSafety.cssColor(p.color))};"></span> ${TaskitatorSafety.escapeHtml(p.name)}`;
                         pill.addEventListener('click', () => {
                             batchSelectedPriority = p.id;
                             container.querySelectorAll('.priority-select-pill').forEach(el => el.classList.remove('selected'));

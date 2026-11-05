@@ -573,7 +573,6 @@ The exact allowed methods/fields are validated in their handlers; this table loc
 - **`icon/icon-192.png`, `icon/icon-512.png`:** PWA/install branding assets referenced by the manifest and service-worker precache.
 - **`image/phase1/Ph1_S1.png` through `Ph1_S5.png`:** Five blocker-setup instructional images used by the consolidated guide.
 - **`image/phase2/Ph2_S1.png` through `Ph2_S17.png`:** Seventeen Cloud Bridge/setup instructional images used by that guide.
-- **`image/phase2/em`, `uni/em`:** Tiny placeholder files, with no application implementation role.
 
 ## Build, configuration, and operations
 
@@ -620,13 +619,11 @@ HTML navigation is network-first with cached fallback. JavaScript/CSS and the ex
 
 Do not publish provider keys, encryption keys, Clerk secrets or OAuth secrets in frontend files. The binding IDs and public verification configuration already in the repository do not establish that a deployment is healthy or a schema migration has run.
 
-`.github/workflows/deploy-worker-security.yml` runs **only on manual `workflow_dispatch`**, checks out the chosen ref, uses Node 22, runs `npm test`, and deploys with Wrangler 4 using GitHub secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A normal commit does not trigger this particular workflow. `npm run deploy:worker` is the equivalent explicit CLI entry point; it performs a real deployment.
+`.github/workflows/deploy-worker-security.yml` runs on every push to `main` and on manual `workflow_dispatch`. It uses actions pinned to commit SHAs, Node 22, `npm ci --ignore-scripts` (exact Wrangler from `package-lock.json`), runs `npm test` (root and `uni/` suites), and deploys with GitHub secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. `npm run deploy:worker` is the equivalent explicit CLI entry point; it performs a real deployment.
 
 ### Historical/support files
 
-- `CHANGES.md` describes a prior Universe UI/tutorial package. Its “unchanged” statements apply to that package, not every later commit.
-- `README-UPDATE.txt` records the earlier package base, application directions and historical test evidence; it is not a live architecture reference.
-- `CLEANUP-OLD-FILES.txt` is an executable Bash migration helper despite its extension. It checks for an old release marker and stages deletion of named obsolete files. **Its obsolete list includes `README.md`**, and its expected old release marker differs from the current cache. Do not run it as routine maintenance or use it to delete this guide.
+- `docs/credit-limits.md` documents the credit-limit implementation and its open review items.
 - `CNAME` records the static frontend custom hostname.
 - `LICENSE` contains the repository's MIT terms.
 
@@ -680,8 +677,6 @@ Paths are relative to the repository root. This is the complete inspected file l
 | [`.github/workflows/deploy-worker-security.yml`](.github/workflows/deploy-worker-security.yml) | Manual security-test and Worker deployment workflow; see Build, configuration, and operations. |
 | [`app.js`](app.js) | Copilot engine, personal views/tree/sorting/completion, scratchpad and guarded legacy timer. |
 | [`build.mjs`](build.mjs) | Rebuilds root HTML CSP hashes; no JavaScript bundling. |
-| [`CHANGES.md`](CHANGES.md) | Historical Universe interface/tutorial change notes. |
-| [`CLEANUP-OLD-FILES.txt`](CLEANUP-OLD-FILES.txt) | Historical Bash deletion/staging helper; contains README.md in its obsolete list. Do not run as routine cleanup. |
 | [`client.test.js`](client.test.js) | Browser/auth/sync/provider/Copilot/editor/study regression fixtures. |
 | [`CNAME`](CNAME) | Static-host custom domain declaration. |
 | [`components.html`](components.html) | Consolidated projects/calendar/stats/trash/guide/legal/Universe page with inline controllers. |
@@ -696,7 +691,6 @@ Paths are relative to the repository root. This is the complete inspected file l
 | [`image/phase1/Ph1_S3.png`](image/phase1/Ph1_S3.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
 | [`image/phase1/Ph1_S4.png`](image/phase1/Ph1_S4.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
 | [`image/phase1/Ph1_S5.png`](image/phase1/Ph1_S5.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
-| [`image/phase2/em`](image/phase2/em) | Placeholder, not executable application code. |
 | [`image/phase2/Ph2_S1.png`](image/phase2/Ph2_S1.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
 | [`image/phase2/Ph2_S10.png`](image/phase2/Ph2_S10.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
 | [`image/phase2/Ph2_S11.png`](image/phase2/Ph2_S11.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
@@ -725,7 +719,6 @@ Paths are relative to the repository root. This is the complete inspected file l
 | [`pro.test.js`](pro.test.js) | Personal hosted/protection/UI/license regression tests and imported nested coverage. |
 | [`pro/smart-study.js`](pro/smart-study.js) | Shared early-opportunity validation, decoration, completion adjustment and sync guard. |
 | [`pro/study-plan.js`](pro/study-plan.js) | Shared finite study-plan generator and Pro browser preview/authorization. |
-| [`README-UPDATE.txt`](README-UPDATE.txt) | Historical package application and validation notes. |
 | [`scratchpad-plan-a.test.js`](scratchpad-plan-a.test.js) | Required today/overdue and inherited-date scratchpad gate tests. |
 | [`security.test.js`](security.test.js) | Worker security, vault/AI/deletion/sync/protection and backend integration fixtures. |
 | [`settings.html`](settings.html) | Settings/backup/phone/Pro/account markup and inline preferences controller. |
@@ -737,7 +730,6 @@ Paths are relative to the repository root. This is the complete inspected file l
 | [`tutorial-integration.js`](tutorial-integration.js) | Page/role-specific tour content, synced progress and help/replay integration. |
 | [`tutorial-spotlight.css`](tutorial-spotlight.css) | Spotlight overlays/cards/visuals/responsive/motion styles. |
 | [`tutorial-spotlight.js`](tutorial-spotlight.js) | Accessible step-based tutorial renderer and target positioning. |
-| [`uni/em`](uni/em) | Placeholder, not executable application code. |
 | [`uni/focus-timer.js`](uni/focus-timer.js) | Active persistent per-account browser timer, wake/audio/PiP and scratchpad integration. |
 | [`uni/setup.html`](uni/setup.html) | Static operator setup and historical phase guide; does not execute migrations. |
 | [`uni/universe-ai.js`](uni/universe-ai.js) | UniverseAI server layer: Gemini quotes, consent, separate budgets and attestations. |

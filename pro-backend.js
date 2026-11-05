@@ -585,10 +585,53 @@ export class TaskProtection {
         const map=new Map();
         for(const t of next.tasks){if(typeof t.id!=='string'||map.has(t.id))throw fail(400,'INVALID_TASKS','Tasks need distinct IDs.');map.set(t.id,t);}
         if(bypass)return;
+        // One ID map per tree keeps ancestry checks linear (F01). Memoized shield lookup.
+        const prevMap=new Map(previous.tasks.map(t=>[t.id,t]));
+        const shieldMemo=new Map();
+        const underShield=task=>{
+            const path=[];let a=task,result=false;
+            while(a){
+                if(shieldMemo.has(a.id)){result=shieldMemo.get(a.id);break;}
+                if(path.includes(a.id))break;
+                path.push(a.id);
+                if(a.strict_prerequisites){result=true;break;}
+                a=prevMap.get(a.parent_id);
+            }
+            for(const id of path)shieldMemo.set(id,result);
+            return result;
+        };
+        // Effective due date: the task's own date, else the nearest dated ancestor (matches evaluateStatus).
+        const effectiveDue=(task,byId)=>{
+            const seen=new Set();
+            while(task&&!seen.has(task.id)){
+                seen.add(task.id);
+                const due=typeof task.due_date==='string'?task.due_date.trim().toLowerCase():'';
+                if(due)return due;
+                task=byId.get(task.parent_id);
+            }
+            return '';
+        };
+        const validDay=d=>/^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(Date.parse(d)) && new Date(d).toISOString().slice(0,10)===d;
+        // A protected commitment may stay the same or get stricter (earlier / undated), never later (F03).
+        const weakerDue=(before,after)=>{
+            if(after && after!=='today' && !validDay(after))return true;
+            if(before===after||after==='')return false;
+            if(validDay(before)&&validDay(after))return after>before;
+            if(before==='today'&&validDay(after)){
+                const hour=Number.parseInt(previous.settings?.day_start_hour,10);
+                const dayStart=Number.isInteger(hour)&&hour>=0&&hour<=4?hour:0;
+                return after>new Date(Date.now()+(3-dayStart)*3600000).toISOString().slice(0,10);
+            }
+            return true;
+        };
         for(const old of previous.tasks){
             const current=map.get(old.id);
-            let ancestor=old,seen=new Set(),shielded=false;
-            while(ancestor&&!seen.has(ancestor.id)){seen.add(ancestor.id);if(ancestor.strict_prerequisites)shielded=true;ancestor=previous.tasks.find(t=>t.id===ancestor.parent_id);}
+            const shielded=underShield(old);
+            // F02: unfinished required work under a shield cannot vanish or be trashed.
+            if(shielded&&!old.is_bonus&&old.status!=='completed'&&old.status!=='trash'&&(!current||current.status==='trash'))
+                throw fail(403,'SHIELD_REQUIRED','Unfinished required work under a shield cannot be removed without Emergency Bypass.');
+            if(protectedTask(old)&&old.status==='active'&&current&&weakerDue(effectiveDue(old,prevMap),effectiveDue(current,map)))
+                throw fail(403,'REQUIREMENTS_LOCKED','A protected task cannot be moved to a later date, directly or through its parent, without Emergency Bypass.');
             if(shielded&&current&&!old.is_bonus&&current.is_bonus)throw fail(403,'SHIELD_REQUIRED','Required work protected by a shield cannot become bonus work.');
             if(shielded&&current&&old.parent_id!==current.parent_id)throw fail(403,'SHIELD_REQUIRED','Shielded subtasks must remain with their parent.');
             if(old.smart_early_date&&current&&current.due_date!==old.due_date)throw fail(403,'SMART_DATE_LOCKED','Smart Study dates are fixed. An unfinished early opportunity expires automatically.');

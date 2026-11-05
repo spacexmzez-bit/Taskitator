@@ -1093,7 +1093,7 @@ window.TaskitatorComponents = Object.freeze({
                     pill.style.color = p.color;
                 }
 
-                pill.innerHTML = `<span class="priority-color-dot" style="background-color: ${TaskitatorSafety.escapeHtml(p.color)};"></span> ${TaskitatorSafety.escapeHtml(p.name)}`;
+                pill.innerHTML = `<span class="priority-color-dot" style="background-color: ${TaskitatorSafety.escapeHtml(TaskitatorSafety.cssColor(p.color))};"></span> ${TaskitatorSafety.escapeHtml(p.name)}`;
 
                 pill.addEventListener('click', () => {
                     if (isEditModal) {
@@ -1195,7 +1195,7 @@ window.TaskitatorComponents = Object.freeze({
                         if (pId) {
                             const pObj = prios.find(p => p.id === pId);
                             chipData = {
-                                html: `<span class="nlp-chip nlp-prio" contenteditable="false" data-type="prio" data-id="${TaskitatorSafety.escapeHtml(pId)}" data-raw="${TaskitatorSafety.escapeHtml(rawToken)}"><span class="priority-color-dot" style="background:${TaskitatorSafety.escapeHtml(pObj.color)}; width:8px; height:8px; display:inline-block; border-radius:50%; margin-right:4px;"></span>${TaskitatorSafety.escapeHtml(pObj.name)} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                                html: `<span class="nlp-chip nlp-prio" contenteditable="false" data-type="prio" data-id="${TaskitatorSafety.escapeHtml(pId)}" data-raw="${TaskitatorSafety.escapeHtml(rawToken)}"><span class="priority-color-dot" style="background:${TaskitatorSafety.escapeHtml(TaskitatorSafety.cssColor(pObj.color))}; width:8px; height:8px; display:inline-block; border-radius:50%; margin-right:4px;"></span>${TaskitatorSafety.escapeHtml(pObj.name)} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
                                 action: () => {
                                     if (contextType === 'edit') {
                                         editModalSelectedPriority = pId;
