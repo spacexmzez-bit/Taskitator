@@ -2396,7 +2396,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                     <p class="pro-quote-policy-brief">
                         Charges round up to the next half credit. Unused held credits return to your balance immediately after the review finishes. A completed review is charged even when proof is rejected. Cancelling now starts no paid review.
                     </p>
-                    ${Number(summary.estimatedCredits) >= 2 ? `
+                    ${Number(summary.estimatedCredits) > 2 ? `
                     <div class="pro-quote-policy-brief" role="note">
                         <strong>Tip to reduce review cost</strong>
                         Review several tasks together when the same proof applies. Consider fewer pages or photos, or smaller, readable images. Combining photos into a PDF may make submission easier, but may not reduce token use. Check the new estimate before starting.

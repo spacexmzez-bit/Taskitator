@@ -1819,12 +1819,20 @@ test("Opening another review cost preview cancels and resolves the first review 
     assert.equal(appended.length, 1);
     assert.doesNotMatch(appended[0].innerHTML, /Tip to reduce review cost/);
 
-    const costlyPromise = f.window.ProUI.confirmReviewQuote({
+    const boundaryPromise = f.window.ProUI.confirmReviewQuote({
         estimatedCredits: 2,
         maximumCredits: 2.5,
-        tasks: [{ title: "Costly task", credits: 2.5 }]
+        tasks: [{ title: "Boundary task", credits: 2 }]
     });
     assert.equal(await firstPromise, false);
+    assert.doesNotMatch(appended[0].innerHTML, /Tip to reduce review cost/);
+
+    const costlyPromise = f.window.ProUI.confirmReviewQuote({
+        estimatedCredits: 2.5,
+        maximumCredits: 3,
+        tasks: [{ title: "Costly task", credits: 2.5 }]
+    });
+    assert.equal(await boundaryPromise, false);
     assert.match(appended[0].innerHTML, /Tip to reduce review cost/);
 
     // Open a second preview while the costly one is still pending
