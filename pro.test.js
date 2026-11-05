@@ -1817,16 +1817,25 @@ test("Opening another review cost preview cancels and resolves the first review 
         tasks: [{ title: "First task", credits: 1.2 }]
     });
     assert.equal(appended.length, 1);
+    assert.doesNotMatch(appended[0].innerHTML, /Tip to reduce review cost/);
 
-    // Open a second preview while the first is still pending
+    const costlyPromise = f.window.ProUI.confirmReviewQuote({
+        estimatedCredits: 2,
+        maximumCredits: 2.5,
+        tasks: [{ title: "Costly task", credits: 2.5 }]
+    });
+    assert.equal(await firstPromise, false);
+    assert.match(appended[0].innerHTML, /Tip to reduce review cost/);
+
+    // Open a second preview while the costly one is still pending
     const secondPromise = f.window.ProUI.confirmReviewQuote({
         estimatedCredits: 0.8,
         maximumCredits: 2.0,
         tasks: [{ title: "Second task", credits: 2.0 }]
     });
 
-    const firstResult = await firstPromise;
-    assert.equal(firstResult, false, "First review preview promise must resolve to false when replaced");
+    const firstResult = await costlyPromise;
+    assert.equal(firstResult, false, "Previous review preview promise must resolve to false when replaced");
     assert.equal(appended.length, 1, "Only the replacement dialog should remain mounted");
 
     appended[0].querySelector("#proQuoteStartBtn").click();
