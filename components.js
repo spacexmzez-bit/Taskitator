@@ -2959,7 +2959,7 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
-            // Validate Criteria (Pre-flight) Engine with >= 9/10 Saved Criteria Gate
+            // Validate Criteria (Pre-flight) Engine with >= 8/10 Saved Criteria Gate
             async function runCriteriaValidation(criteriaText, taskTitle, exemplarFile, feedbackEl, btnEl, isEditMode) {
                 if (!criteriaText) {
                     if (feedbackEl) {
@@ -3024,11 +3024,11 @@ window.TaskitatorComponents = Object.freeze({
                         feedbackEl.className = 'criteria-feedback-box pass';
                         let html = `<strong>✓ Verified (${TaskitatorSafety.escapeHtml(res.score)}/10)</strong>: ${TaskitatorSafety.escapeHtml(res.critique)}`;
 
-                        // Strict Score >= 9 gate for saving criteria
-                        if (res.score >= 9) {
+                        // Strict Score >= 8 gate for saving criteria
+                        if (res.score >= 8) {
                             html += `
                                 <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: space-between;">
-                                    <span style="font-size: 0.75rem; color: #86efac; font-weight: 600;">Eligible to save (&ge; 9/10)</span>
+                                    <span style="font-size: 0.75rem; color: #86efac; font-weight: 600;">Eligible to save (&ge; 8/10)</span>
                                     <button type="button" class="icon-btn save-as-criteria-btn btn-primary" style="background: var(--primary); color: #fff; font-size: 0.75rem; padding: 4px 10px; font-weight: 700; border: none;">💾 Save Criteria</button>
                                 </div>
                                 <div class="save-criteria-inline-prompt" style="display: none; margin-top: 8px;">
@@ -3043,7 +3043,7 @@ window.TaskitatorComponents = Object.freeze({
                         } else {
                             html += `
                                 <div style="margin-top: 6px; font-size: 0.72rem; color: var(--text-muted);">
-                                    ℹ️ Score must be 9/10 or higher to save to your personal Saved Criteria.
+                                    ℹ️ Score must be 8/10 or higher to save to your personal Saved Criteria.
                                 </div>
                             `;
                         }
@@ -3350,7 +3350,7 @@ window.TaskitatorComponents = Object.freeze({
                     container.innerHTML = `
                         <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 24px 0;">
                             No saved criteria yet.<br>
-                            Validate criteria with a score of <strong>9/10 or higher</strong> to save your own reusable versions.
+                            Validate criteria with a score of <strong>8/10 or higher</strong> to save your own reusable versions.
                         </div>
                     `;
                     return;
