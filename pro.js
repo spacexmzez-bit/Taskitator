@@ -1639,7 +1639,6 @@ window.TaskitatorEngine = TaskitatorEngine;
                 const round1 = value => Number(Number(value || 0).toFixed(1)).toFixed(1);
                 const round4 = value => Number(Number(value || 0).toFixed(4)).toFixed(4);
                 const credits = value => Number(Number(value || 0).toFixed(4)).toString();
-                const hasBatchDiscount = Boolean(batch && payload.tasks.length >= 2);
                 const taskItems = quote.tasks.map((task,index) => ({
                     taskId: task.task_id,
                     title: names.get(task.task_id) || (batch ? `Task ${index+1}` : 'Task'),
@@ -1657,8 +1656,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                         maximumDisplay: round1(quote.maximum_credits),
                         estimatedExact: round4(quote.estimated_credits_exact ?? quote.estimated_credits),
                         maximumExact: round4(quote.maximum_credits_exact ?? quote.maximum_credits),
-                        tasks: taskItems,
-                        batchDiscount: hasBatchDiscount
+                        tasks: taskItems
                     });
                 }
                 if (approved !== true) throw Object.assign(new Error('Audit cancelled. No paid review was started.'),{code:'AUDIT_CANCELLED'});
@@ -1847,8 +1845,9 @@ window.TaskitatorEngine = TaskitatorEngine;
                     <button type="button" class="icon-btn" id="proBatchCloseBtn">✕</button>
                 </div>
                 <p style="font-size: 0.88rem; color: #94a3b8; margin: 8px 0 16px 0;">
-                    ${scope ? 'Only your selected active AI-audited tasks are shown. ' : ''}Select up to 20 tasks and attach up to 5 proof files. ${batchStatus.use_byok ? 'Your selected personal provider reviews the evidence using your saved key. Provider charges apply; no hosted credits are used.' : 'Each task is reviewed and charged separately. Reviewing two or more tasks together gives each task a 25% discount. Comparing proof with a reference example doubles that task’s charge. You can check the price before starting.'}
+                    ${scope ? 'Only your selected active AI-audited tasks are shown. ' : ''}Select up to 20 tasks and attach up to 5 proof files. ${batchStatus.use_byok ? 'Your selected personal provider reviews the evidence using your saved key. Provider charges apply; no hosted credits are used.' : 'You pay the real cost of the review, shared across the tasks. You can check the price before starting.'}
                 </p>
+                <p class="batch-cost-warning" role="note">⚠️ Reviewing several tasks together usually costs less than reviewing them one by one.</p>
 
                 <div class="pro-batch-section-title">1. Select Target Tasks (<span id="proBatchSelectedCount">0</span> selected)</div>
                 <div class="pro-batch-task-list">
@@ -2102,7 +2101,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                                 <li><strong>PDF pages:</strong> the AI reads every page, so a 10-page PDF costs more than a 1-page one.</li>
                                 <li><strong>Photo size:</strong> big, high-resolution photos cost more than normal screenshots.</li>
                                 <li><strong>Reference files:</strong> comparing your proof with a reference file costs double, since the AI checks both.</li>
-                                <li><strong>Batch reviews:</strong> reviewing 2 or more tasks with one proof gives each task <strong>25% off</strong>.</li>
+                                <li><strong>Batch reviews:</strong> you pay the real cost of one combined review, which is usually less than reviewing tasks one by one.</li>
                                 <li><strong>Price preview:</strong> before a review starts you see the estimate and the most it could cost. You only pay what was actually used. The rest comes back straight away.</li>
                                 <li><strong>Rounding:</strong> every charge rounds up to the next half credit, so a tiny review costs 0.5. The exact usage is under “View details”.</li>
                             </ul>
@@ -2359,20 +2358,14 @@ window.TaskitatorEngine = TaskitatorEngine;
             const est1 = summary.estimatedDisplay || round1(summary.estimatedCredits);
             const max1 = summary.maximumDisplay || round1(summary.maximumCredits);
             const tasks = Array.isArray(summary.tasks) ? summary.tasks : [];
-            const batchDiscount = Boolean(summary.batchDiscount);
-
             const taskRows = tasks.map((t, idx) => {
                 const title = escapeHtml(t.title || `Task ${idx + 1}`);
                 const c3 = escapeHtml(t.creditsFormatted || round4(t.credits));
-                const exBadge = t.exemplar
-                    ? ' <span class="pro-quote-multiplier">(reference comparison: ×2 charge)</span>'
-                    : '';
+                const exBadge = '';
                 return `<li class="pro-quote-task-item"><span class="pro-quote-task-name">${title}</span>: up to <strong>${c3} credits</strong>${exBadge}</li>`;
             }).join('');
 
-            const discountNote = batchDiscount
-                ? `<p class="pro-quote-discount-note">Each task includes a <strong>25% batch discount</strong> for reviewing multiple tasks together.</p>`
-                : '';
+            const discountNote = '';
 
             const backdrop = doc.createElement('div');
             backdrop.id = 'proReviewPriceDialog';

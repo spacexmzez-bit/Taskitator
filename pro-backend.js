@@ -60,13 +60,12 @@ export async function digest(value) {
 export function providerCost(input, output) {
     return input * POLICY.inputPrice + output * POLICY.outputPrice;
 }
-// Share the combined provider cost equally; each task has its own multiplier.
-// Shared batch evidence is sent once, and every task contributes a charge.
+// Real provider cost only: no multipliers and no discounts. The combined cost is shared
+// equally between tasks (shared batch evidence is sent once, so batches usually cost less).
 // Per-task values are unrounded real usage; only the request total is rounded (halfUp).
 export function charges(cost, tasks, batch) {
-    const discount = batch && tasks.length >= 2 ? .75 : 1;
     return tasks.map(t => ({ task_id: t.id, exemplar: Boolean(t.exemplar),
-        credits: cost * (t.exemplar ? 2 : 1) * discount / (POLICY.creditValue * tasks.length) }));
+        credits: cost / (POLICY.creditValue * tasks.length) }));
 }
 export const totalCredits = list => list.reduce((n, t) => n + t.credits, 0);
 
@@ -831,7 +830,7 @@ export class HostedAudits {
             return {quote_id:rec.quote,expires_at:rec.expires,input_tokens:rec.input,
                 max_output_tokens:payload.max_tokens,estimated_credits:Math.min(rec.reservedCredits,halfUp(estimated)),
                 maximum_credits:rec.reservedCredits,estimated_credits_exact:estimated,maximum_credits_exact:rec.reservedRaw,tasks:rec.taskCharges,
-                batch_discount:batch && tasks.length >= 2 ? .25 : 0,model_used:POLICY.model};
+                model_used:POLICY.model};
         }
         if (!rec || body.quote_id !== rec.quote || rec.expires <= Date.now() || rec.period.day !== periods().day)
             throw fail(409,'QUOTE_REQUIRED','Request a current price preview before starting this audit.');

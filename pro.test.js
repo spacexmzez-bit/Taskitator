@@ -155,17 +155,17 @@ async function hostedKeys(storage,account='user_A',now=Date.now()){
 }
 const near=(actual,expected,label)=>assert.ok(Math.abs(actual-expected)<1e-9,`${label||''} ${actual} != ${expected}`);
 
-test('dynamic credits use actual token cost, unrounded real usage, exemplar ×2 and per-task batch discounts',()=>{
+test('dynamic credits use actual token cost and unrounded real usage, with no exemplar multiplier or batch discount',()=>{
     const cost=providerCost(1000,200);
     assert.equal(cost,200000);
     near(totalCredits(charges(cost,[{id:'a'}],false)),2/15);
-    near(totalCredits(charges(cost,[{id:'a',exemplar:true}],false)),4/15);
-    near(totalCredits(charges(cost,[{id:'a'},{id:'b',exemplar:true}],true)),.15);
+    near(totalCredits(charges(cost,[{id:'a',exemplar:true}],false)),2/15);
+    near(totalCredits(charges(cost,[{id:'a'},{id:'b',exemplar:true}],true)),2/15);
     near(totalCredits(charges(cost,[{id:'a'}],true)),2/15);
     // Charged amounts round any part of a half credit up to that half.
     assert.equal(halfUp(totalCredits(charges(cost,[{id:'a'}],false))),.5);
     assert.equal(charges(200_000_000,Array.from({length:20},(_,i)=>({id:String(i)})),true).length,20);
-    assert.ok(totalCredits(charges(200_000_000,Array.from({length:20},(_,i)=>({id:String(i)})),true))>10);
+    near(totalCredits(charges(200_000_000,Array.from({length:20},(_,i)=>({id:String(i)})),true)),200_000_000/1_500_000);
 });
 test('Pro hosted limits come from verified d_allow/m_allow and status shows current ledger usage',async()=>withHarness(async h=>{
     await h.storage.put((await hostedKeys(h.storage)).dayKey,3.5);
@@ -184,7 +184,7 @@ test('price preview counts the complete exact provider payload and never starts 
     assert.ok(JSON.stringify(count).includes('REFERENCE EXEMPLAR'));assert.ok(JSON.stringify(count).includes('ZGVm'));
     const review=await h.route({...body,quote_id:result.body.quote_id});assert.equal(review.status,200);
     const {max_tokens,...actual}=providerCalls(h)[0].payload;assert.deepEqual(actual,count);
-    assert.equal(max_tokens,1024);assert.equal(review.body.credits_charged,.5);near(review.body.credits_exact,4/15);
+    assert.equal(max_tokens,1024);assert.equal(review.body.credits_charged,.5);near(review.body.credits_exact,2/15);
 }));
 test('fresh single audit settles the worst-case reserve to the actual fraction and caches retries',async()=>withHarness(async h=>{
     const body=single();const q=await h.quote(body);
@@ -199,7 +199,7 @@ test('fresh single audit settles the worst-case reserve to the actual fraction a
 test('batch audit charges each task, returns separate results and keeps explicit completion',async()=>withHarness(async h=>{
     const result=await h.review(batch(),{isBatch:true});assert.equal(result.status,200);
     assert.equal(result.body.credits_charged,.5);assert.equal(result.body.task_charges.length,2);
-    result.body.task_charges.forEach(t=>near(t.credits,.05));
+    result.body.task_charges.forEach(t=>near(t.credits,1/15));
     const attestation=await h.storage.get('pro:attestation:'+result.body.job_id);
     assert.deepEqual(attestation.eligible_task_ids,['task_1']);assert.equal(attestation.consumed,false);
     assert.equal(providerCalls(h).length,1);
@@ -207,7 +207,7 @@ test('batch audit charges each task, returns separate results and keeps explicit
 test('20 task batches have a bounded output and no 10-credit accounting cap',async()=>withHarness(async h=>{
     const result=await h.quote(batch(20),{isBatch:true});assert.equal(result.status,200);
     assert.equal(result.body.max_output_tokens,4096);assert.equal(result.body.tasks.length,20);
-    assert.equal(result.body.batch_discount,.25);
+    assert.equal(result.body.batch_discount,undefined);
 }));
 test('100k-token PDFs and oversized combined payloads are rejected before any paid audit',async()=>withHarness(async h=>{
     const result=await h.quote({...single(),files:[{mime_type:'application/pdf',data:'cGRmZGF0YQ=='}]});
@@ -364,7 +364,7 @@ test('personal-key mode toggles retain hosted spending and fractional credit bal
     assert.deepEqual((await (await h.gateway.getStatus('user_A')).json()).credits,before.credits);
 }));
 
-test('batch price preview uses task titles, hides IDs and applies discount wording only for multiple tasks',async()=>{
+test('batch price preview uses task titles, hides IDs and has no discount wording',async()=>{
     const source=readConsolidatedSource('pro/pro-client.js');
     for(const count of [1,2]) {
         const calls=[],prompts=[],window={Clerk:{session:{id:'session_A'}},ProUI:{confirmReviewQuote:async(summary)=>{prompts.push(summary);return true}}};
@@ -385,7 +385,7 @@ test('batch price preview uses task titles, hides IDs and applies discount wordi
         assert.equal(result.credits_charged,.25);assert.equal(calls.length,2);
         assert.ok(prompts[0].tasks.some(t=>t.title==='Lab notes' && t.creditsFormatted==='0.5000'));
         assert.ok(prompts[0].tasks.every(t=>!t.title.includes('internal_task_')));
-        assert.equal(prompts[0].batchDiscount,count===2);
+        assert.equal(prompts[0].batchDiscount,undefined);
         if(count===2)assert.ok(prompts[0].tasks.some(t=>t.title==='Task 2'));
         assert.deepEqual(calls[1].body.tasks.map(task=>task.id),tasks.map(task=>task.id));
         assert.equal(calls[1].body.quote_id,'quote_batch');
@@ -1406,14 +1406,15 @@ test("Review cost preview dialog displays half-step summary, 4-decimal real-usag
     // Summary shows 1 decimal place
     assert.match(dialogHtml, /0\.5 credits/, "Estimated charge shows the half-step charge (0.5)");
     assert.match(dialogHtml, /2\.0 credits/, "Maximum hold shows the half-step hold (2.0)");
-    // Expandable View details section shows 3 decimal places, reference multiplier, and batch discount
+    // Expandable View details section shows 3 decimal places and no reference multiplier or batch discount
     assert.match(dialogHtml, /<details class="pro-quote-details" id="proQuoteDetailsToggle">/);
     assert.match(dialogHtml, /View details/);
     assert.match(dialogHtml, /0\.3760 credits/);
     assert.match(dialogHtml, /1\.5420 credits/);
-    assert.match(dialogHtml, /Calculus Problem Set[\s\S]*1\.0280 credits[\s\S]*reference comparison: ×2 charge/);
+    assert.match(dialogHtml, /Calculus Problem Set[\s\S]*1\.0280 credits/);
+    assert.doesNotMatch(dialogHtml, /×2 charge/);
     assert.match(dialogHtml, /Physics Lab Report[\s\S]*0\.5140 credits/);
-    assert.match(dialogHtml, /25% batch discount/);
+    assert.doesNotMatch(dialogHtml, /25% batch discount/);
     assert.match(dialogHtml, /Unused held credits return/);
     assert.match(dialogHtml, /charged even when proof is rejected/);
 
@@ -1493,8 +1494,8 @@ test("Consecutive subtask creation is gated to active Pro accounts across active
 test("Free-versus-Pro comparison page covers limits, dynamic charges, ×2 exemplar, 25% batch discount, BYOK, consecutive subtasks, and omits pricing", () => {
     const compareHtml = readConsolidatedSource("pro/compare.html");
     assert.match(compareHtml, /next 0\.5/i);
-    assert.match(compareHtml, /×2/);
-    assert.match(compareHtml, /25% off/);
+    assert.match(compareHtml, /usually less than reviewing one by one/i);
+    assert.doesNotMatch(compareHtml, /×2|25% off/);
     assert.match(compareHtml, /own Gemini or Claude key/);
     assert.match(compareHtml, /Consecutive subtasks/);
     assert.match(compareHtml, /Dynamic Priority/);
@@ -1548,7 +1549,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-hosted-ai-v1'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-real-cost-v1'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);

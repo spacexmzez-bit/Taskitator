@@ -5371,3 +5371,16 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .today-path-sep{opacity:.6}
 .criteria-actions-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .criteria-test-btn{background:transparent;color:var(--accent);border-color:var(--border-color)}
+
+/* Red notice shown near batch review controls */
+.batch-cost-warning {
+    margin: 6px 0;
+    padding: 6px 10px;
+    border: 1px solid #ef4444;
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.12);
+    color: #fca5a5;
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
