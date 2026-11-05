@@ -28,6 +28,7 @@
             <a href="components.html?view=trash" class="drawer-item" data-comp-link="trash"><span class="icon">🗑️</span> Trash</a>
             <a href="components.html?view=universe" class="drawer-item"><span class="icon">🌌</span> Universe</a>
             <a href="sleep.html" class="drawer-item"><span class="icon">🌙</span> Sleep Lock</a>
+<a href="help.html" class="drawer-item"><span class="icon">❓</span> Help</a>
 <a href="settings.html" class="drawer-item"><span class="icon">⚙️</span> Settings</a>
         </nav>
     </aside>
@@ -1201,7 +1202,7 @@
                     <span class="pro-feature-pill">TASKITATOR FREE &amp; PRO</span>
                     <h1 style="margin: 10px 0 8px 0; font-size: clamp(1.5rem, 3vw, 2.1rem);">Compare Taskitator Free and Pro</h1>
                     <p style="margin: 0; color: var(--text-muted); max-width: 720px; line-height: 1.55;">
-                        Use Free to organize tasks and use AI with your own API key. Pro adds hosted AI, batch proof reviews, and more tools. Compare the features below to find what works for you.
+                        Free covers task management, breaks, phone lock and AI with your own key. Pro adds hosted AI, batch reviews, Dynamic Priority, Study plans and more.
                     </p>
                 </header>
 
@@ -1216,83 +1217,34 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td><strong>Tasks, Projects, Calendar &amp; Recurring Schedules</strong><br><small>Full hierarchy, subtask shields, bonus tasks, and recurrence rules</small></td>
-                                <td>Included</td>
-                                <td>Included</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Pomodoro Focus Timer &amp; Daily Break Planner</strong><br><small>Sealed daily break windows and timezone-aware lock status</small></td>
-                                <td>Included</td>
-                                <td>Included</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Personal API-Key Mode (BYOK)</strong><br><small>Encrypted server-side storage for your own Gemini or Claude API key</small></td>
-                                <td>Included (Gemini &amp; Claude)</td>
-                                <td>Included (can toggle between Hosted AI and Personal BYOK at any time without resetting hosted credit balances)</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Hosted AI Proof Audits</strong><br><small>Automated proof verification without managing a personal provider key</small></td>
-                                <td>Not included (uses personal API key)</td>
-                                <td>Included (<strong>45 daily</strong> and <strong>1,000 monthly</strong> hosted AI credits; resets at midnight and on the 1st in Asia/Riyadh)</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Dynamic Credit Charges &amp; Price Preview</strong><br><small>Pay only for actual document page count and photo resolution used</small></td>
-                                <td>Billed directly by your AI provider</td>
-                                <td>Upfront cost preview with temporary maximum hold; unused held credits return immediately</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Reference-Example Comparison</strong><br><small>Side-by-side verification against a saved exemplar file</small></td>
-                                <td>Supported with personal API key</td>
-                                <td>Supported in Hosted AI (<strong>×2 charge</strong> multiplier for that task)</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Multi-File &amp; Batch Proof Review</strong><br><small>Attach 1–5 files and review up to 20 AI-locked tasks together</small></td>
-                                <td>Single-task review with personal key</td>
-                                <td>Up to 20 tasks per batch with a <strong>25% per-task batch discount</strong> when reviewing 2 or more tasks together</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Insufficient-Proof Credit Protection</strong><br><small>When proof is legitimate but needs an extra page or clearer photo</small></td>
-                                <td>Standard provider token usage</td>
-                                <td><strong>50% credit discount</strong> on insufficient verdicts (free when the halved charge is under 1 credit)</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Consecutive Subtask Auto-Numbering (<code>{num==X}</code>)</strong><br><small>Rapid-entry auto-increment in Create Task and Task Details</small></td>
-                                <td>Ordinary manual subtask entry (existing numbered subtasks stay intact)</td>
-                                <td>Included — automatically increments <code>{num==1}</code>, <code>{num==2}</code>, and so on as you press Enter</td>
-                            </tr>
-                        </tbody>
+<tr><td><strong>Tasks, subtasks, Shield &amp; bonus tasks</strong></td><td>Included</td><td>Included</td></tr>
+<tr><td><strong>Projects, Calendar, Statistics &amp; Trash</strong></td><td>Included</td><td>Included</td></tr>
+<tr><td><strong>Repeating tasks</strong></td><td>Included</td><td>Included</td></tr>
+<tr><td><strong>Daily breaks, Emergency Bypass &amp; Scratchpad</strong></td><td>Included</td><td>Included</td></tr>
+<tr><td><strong>Phone lock (MacroDroid)</strong></td><td>Included</td><td>Included</td></tr>
+<tr><td><strong>Backup, restore &amp; sync</strong></td><td>Included</td><td>Included</td></tr>
+<tr><td><strong>Universe (shared workspaces)</strong></td><td>Included. Join up to 2 Universes.</td><td>Included. Join up to 7 Universes.</td></tr>
+<tr><td><strong>AI with your own Gemini or Claude key (Copilot, criteria checks, proof reviews, notes)</strong></td><td>Included, with a daily and monthly allowance</td><td>Included, not limited by Taskitator</td></tr>
+<tr><td><strong>Test your criteria</strong></td><td>Included. Uses AI like a real audit; no free tests</td><td>Included. Credit estimate shown first; no free tests</td></tr>
+<tr><td><strong>Hosted Taskitator AI (no key needed)</strong></td><td>Not included</td><td>Included. Allowance comes from your Pro license</td></tr>
+<tr><td><strong>Credit charges</strong></td><td>Not applicable</td><td>Rounded up to the next 0.5. Reference exemplar ×2. Insufficient proof: half the usage, rounded up to 0.5</td></tr>
+<tr><td><strong>Batch proof review</strong></td><td>Not included</td><td>Up to 20 tasks at once, 25% off per task when reviewing 2 or more together</td></tr>
+<tr><td><strong>Consecutive subtasks <code>{num==X}</code></strong></td><td>Not included</td><td>Included</td></tr>
+<tr><td><strong>Dynamic Priority</strong></td><td>Not included</td><td>Included</td></tr>
+<tr><td><strong>Study plans &amp; Smart Study</strong></td><td>Not included</td><td>Included</td></tr>
+</tbody>
                     </table>
                 </div>
 
                 <div class="pro-compare-cards-grid">
-                    <article class="pro-compare-card">
-                        <h3>Hosted AI Credits &amp; Dynamic Charges</h3>
-                        <p>
-                            Pro accounts include <strong>45 daily credits</strong> and <strong>1,000 monthly credits</strong> (resetting in Asia/Riyadh time). Instead of flat per-file fees, charges are calculated dynamically from the actual work required: PDF document page count, photo resolution, and review output. Before any paid review starts, a readable preview shows your estimated charge and maximum temporary hold. Once the review completes, unused held credits return immediately. Completed reviews are charged even when proof is rejected.
-                        </p>
-                    </article>
-                    <article class="pro-compare-card">
-                        <h3>Reference Examples (×2) &amp; Batch Discounts (25% Off)</h3>
-                        <p>
-                            When a task includes a saved reference example (exemplar), the AI compares your proof against that exemplar side by side, which applies a <strong>×2 multiplier</strong> to that task’s credit charge. When you review <strong>2 or more tasks together</strong> in Batch Proof Review (up to 20 tasks and 5 shared files), each task receives a <strong>25% batch discount</strong> because the shared evidence is inspected in a single pass.
-                        </p>
-                    </article>
-                    <article class="pro-compare-card">
-                        <h3>Personal API-Key Mode (BYOK) vs. Hosted Credits</h3>
-                        <p>
-                            Free and Pro users can save their own Gemini or Claude API key. Pro users can switch between their own key and hosted AI in Settings. Using your own key sends requests through your provider account and does not reset your hosted credit balance.
-                        </p>
-                    </article>
-                    <article class="pro-compare-card">
-                        <h3>Consecutive Subtask Creation</h3>
-                        <p>
-                            In both the Create Task and Task Details dialogs, enabling <strong>Consecutive <code>{num==X}</code> (PRO)</strong> automatically advances the number token each time you press Enter in the quick-subtask field. Free accounts and expired Pro accounts retain full manual subtask creation and can type any task titles manually, and all previously created subtasks keep their numbering if a Pro license expires.
-                        </p>
-                    </article>
-                </div>
+<article class="pro-compare-card"><h3>Hosted credits</h3><p>Pro uses Taskitator AI without a key. Your daily and 30-day allowance comes from your Pro license and is shown in Settings. Daily limits reset at midnight Asia/Riyadh. Every charge is rounded up to the next 0.5 credit.</p></article>
+<article class="pro-compare-card"><h3>Exemplars, batches &amp; insufficient proof</h3><p>A task with a reference exemplar costs ×2. Reviewing 2 or more tasks together takes 25% off each task. When proof is insufficient you pay half the real usage, rounded up to the next 0.5.</p></article>
+<article class="pro-compare-card"><h3>Your own key</h3><p>Free and Pro can both save a Gemini or Claude key. On Free it is the only way to use AI. On Pro you can switch between your key and hosted AI at any time without resetting hosted credits.</p></article>
+<article class="pro-compare-card"><h3>How to use each feature</h3><p>Step-by-step instructions with examples: <a href="help.html#free">Free features</a> · <a href="help.html#pro">Pro features</a>.</p></article>
+</div>
 
-                <div class="pro-compare-footer-nav" style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
+<div class="pro-compare-footer-nav" style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
+                    <a href="help.html" class="icon-btn" style="text-decoration: none;">How to use each feature</a>
                     <a href="settings.html" class="icon-btn" id="compareBackToSettingsLink" style="text-decoration: none;">← Back to Settings</a>
                     <a href="index.html" class="icon-btn" id="compareBackToTasksLink" style="text-decoration: none;">Open Today’s Tasks</a>
                 </div>

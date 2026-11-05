@@ -24,6 +24,7 @@ const STATIC_ASSETS = [
     './index.html',
     './components.html',
     './settings.html',
+    './help.html',
     './login.html',
     './style.css',
     './tutorial-spotlight.css',

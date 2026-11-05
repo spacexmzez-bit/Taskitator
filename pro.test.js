@@ -1492,12 +1492,13 @@ test("Consecutive subtask creation is gated to active Pro accounts across active
 
 test("Free-versus-Pro comparison page covers limits, dynamic charges, ×2 exemplar, 25% batch discount, BYOK, consecutive subtasks, and omits pricing", () => {
     const compareHtml = readConsolidatedSource("pro/compare.html");
-    assert.match(compareHtml, /45 daily/i);
-    assert.match(compareHtml, /1,000 monthly/i);
-    assert.match(compareHtml, /×2 charge|×2 multiplier/);
-    assert.match(compareHtml, /25% per-task batch discount|25% batch discount/);
-    assert.match(compareHtml, /Personal API-Key Mode \(BYOK\)/);
-    assert.match(compareHtml, /Consecutive Subtask Auto-Numbering|Consecutive Subtask Creation/);
+    assert.match(compareHtml, /next 0\.5/i);
+    assert.match(compareHtml, /×2/);
+    assert.match(compareHtml, /25% off/);
+    assert.match(compareHtml, /own Gemini or Claude key/);
+    assert.match(compareHtml, /Consecutive subtasks/);
+    assert.match(compareHtml, /Dynamic Priority/);
+    assert.doesNotMatch(compareHtml, /45 daily|1,000 monthly/i);
     assert.doesNotMatch(compareHtml, /\$\d|\bUSD\b|\bSAR\b|per month|\/month|pricing/i, "Comparison page must not display a price");
 
     const proUi = readConsolidatedSource("pro/pro-ui.js");

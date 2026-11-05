@@ -298,7 +298,7 @@ test('HTML inline scripts have matching CSP hashes and no inline event handlers 
             const hash="'sha256-"+createHash('sha256').update(match[2]).digest('base64')+"'";
             assert.ok(csp.includes(hash),filename+' CSP does not match inline code');
         }
-        if (['account-deletion.html','welcome.html','privacy.html','terms.html','PHASE-1-SETUP.html','PHASE-2-SETUP.html','PHASE-3-SETUP.html'].includes(filename)) {
+        if (['account-deletion.html','help.html','welcome.html','privacy.html','terms.html','PHASE-1-SETUP.html','PHASE-2-SETUP.html','PHASE-3-SETUP.html'].includes(filename)) {
             assert.equal(/<script\b[^>]*\bsrc=["']auth-bootstrap\.js["']/.test(html),false);
         } else assert.ok(html.includes('core.js'));
     }
