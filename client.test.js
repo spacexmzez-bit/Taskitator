@@ -149,6 +149,32 @@ test('Claude criteria errors do not call Gemini or reuse another provider valida
     provider='claude';assert.equal((await f.window.TaskitatorEngine.AuditEngine.validateCriteria('Photo of checklist','Task')).success,false);
     assert.deepEqual(calls.map(call=>call.model),['gemini-3.5-flash-lite','claude-haiku-5-5']);assert.equal(calls[1].payload.taskitatorFormat,'criteria');
 });
+test('criteria validation sends exemplar guidance and the original variable criteria together', async () => {
+    const f = client();
+    const calls = [];
+    f.window.TaskitatorVault = {
+        available: true,
+        selection: () => ({ provider: 'gemini', primary: 'gemini-3.5-flash-lite', fallback: null, keyVersion: 'v1' }),
+        generate: async (model, payload) => {
+            calls.push(payload);
+            return Response.json({ candidates: [{ content: { parts: [{ text: '{"score":9,"passed":true,"critique":"Clear","suggested_rewrite":""}' }] } }] });
+        }
+    };
+    vm.runInContext(readConsolidatedSource('audit-engine.js'), f.context);
+    const engine = f.window.TaskitatorEngine.AuditEngine;
+    engine.fileToBase64 = async () => ({ inline_data: { mime_type: 'application/pdf', data: 'cGRm' } });
+    const criteria = 'The exemplar shows section 61; proof must show {num} in the corresponding header or breadcrumb.';
+    const result = await engine.validateCriteria(criteria, 'Test report', { name: 'example.pdf', type: 'application/pdf', size: 3 });
+    assert.equal(result.success, true);
+    const parts = calls[0].contents[0].parts;
+    assert.ok(parts[0].text.includes(criteria));
+    assert.match(parts[0].text, /illustrative values[\s\S]*placeholder such as \{num\}/);
+    assert.match(parts[0].text, /do not require the sample value/);
+    assert.match(parts[0].text, /not referenced with explanatory context/);
+    assert.equal(parts[1].inline_data.mime_type, 'application/pdf');
+    assert.equal(parts[1].inline_data.data, 'cGRm');
+});
+
 test('newer-website/older-Worker failures explain the deployment action without clearing drafts',async()=>{
     const f=client();f.storage.setItem('taskitator_tasks','[{"title":"Retain"}]');
     f.context.fetch=async()=>Response.json({error:'Endpoint not found. Password changes are managed through your account profile.'},{status:404});

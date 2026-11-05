@@ -1055,7 +1055,9 @@ Evaluation Rules:
 
             if (inlineExemplarPart) {
                 prompt += `
-5. MANDATORY REFERENCE CROSS-CHECK: An exemplar reference document/image is attached. You MUST inspect whether the PROPOSED CRITERIA explicitly mentions, explains, and references this attachment (e.g. how the submitted proof must match or follow this exemplar). If an exemplar is attached without direct explanatory context in the text, you MUST rate the criteria below 7/10 and reject it.`;
+5. REFERENCE CROSS-CHECK: An exemplar document/image is attached. Determine whether the criteria explain how it relates to the required proof. If the attachment is not referenced with explanatory context, rate below 7/10.
+Distinguish illustrative values in the exemplar from required proof values. A criterion can require the same layout, field, or evidence type while explicitly replacing a sample value with a different value or a placeholder such as {num}. Assess that stated relationship as written; do not require the sample value, title, score, or annotations to match unless the criteria require them. An explicit instruction identifying the corresponding field and stating the required replacement is sufficient context.
+Before criticizing an absent or unclear exemplar relationship, check the entire criteria for an explanation of that relationship. Identify a specific omission or contradiction that actually remains. Do not reject a clear replacement merely because the exemplar contains a different example value.`;
             }
 
             prompt += `
