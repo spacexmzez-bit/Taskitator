@@ -78,10 +78,20 @@ export class UniverseMembership extends UniverseService {
  async cleanup(){
   const db=this.database();if(!db||!await this.phase2(db))return false;
   const jobs=(await db.prepare("SELECT group_id FROM universe_cleanup WHERE status='pending' LIMIT 20").all()).results;
+  // Audit F08: a deleted Universe keeps no task, project, label or proof content, whatever its review/dispute retention.
+  // Tables arrive in later phases, so scrub only those that exist.
+  const tables=new Set(jobs.length?(await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN('universe_tasks','universe_projects','universe_project_options','universe_catalog','universe_submissions')").all()).results.map(r=>r.name):[]);
+  const scrub=gid=>[
+   tables.has('universe_tasks')&&this.statement(db,`UPDATE universe_tasks SET data='{"title":"Deleted task","description":"","criteria":""}' WHERE group_id=?`,gid),
+   tables.has('universe_projects')&&this.statement(db,"UPDATE universe_projects SET title='Deleted project' WHERE group_id=?",gid),
+   tables.has('universe_project_options')&&tables.has('universe_projects')&&this.statement(db,`UPDATE universe_project_options SET data='{"deleted":true}' WHERE project_id IN(SELECT id FROM universe_projects WHERE group_id=?)`,gid),
+   tables.has('universe_catalog')&&this.statement(db,"UPDATE universe_catalog SET title='Deleted label' WHERE group_id=?",gid),
+   tables.has('universe_submissions')&&this.statement(db,"UPDATE universe_submissions SET data='{}',disputed=0,retain_until=0 WHERE group_id=?",gid)].filter(Boolean);
   for(const j of jobs)await db.batch([
    this.statement(db,"UPDATE universe_groups SET title='Deleted Universe',purpose='' WHERE id=?",j.group_id),
    this.statement(db,"DELETE FROM universe_members WHERE group_id=? AND role<>'owner'",j.group_id),
    this.statement(db,'DELETE FROM universe_invitations WHERE group_id=?',j.group_id),
+   ...scrub(j.group_id),
    this.statement(db,"UPDATE universe_cleanup SET status='complete' WHERE group_id=?",j.group_id)]);
   await db.prepare("DELETE FROM universe_members WHERE role<>'owner' AND account_id IN(SELECT account_id FROM universe_accounts WHERE blocked=1)").run();return jobs.length===20;
  }

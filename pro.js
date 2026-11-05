@@ -7,6 +7,10 @@
 // <<< MODULE_START: safety.js >>>
 // Shared rendering and task-tree checks. Never interpret user labels as markup.
 window.TaskitatorSafety = {
+    // Audit F15: colors reach style attributes, so accept only hex colors (#rgb, #rrggbb, #rrggbbaa).
+    cssColor(value, fallback = '#94a3b8') {
+        return typeof value === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value.trim()) ? value.trim() : fallback;
+    },
     escapeHtml(value) {
         return String(value ?? '').replace(/[&<>"']/g, char => ({
             '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'

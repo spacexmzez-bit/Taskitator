@@ -3,11 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-global-webcrypto --test *.test.js",
+    "test": "node --experimental-global-webcrypto --test *.test.js uni/*.test.js",
     "build": "node build.mjs",
-    "deploy:worker": "npx wrangler@4 deploy --config wrangler.toml"
+    "deploy:worker": "wrangler deploy --config wrangler.toml"
   },
   "engines": {
     "node": ">=22.13.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.153.0"
   }
 }

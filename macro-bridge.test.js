@@ -65,3 +65,29 @@ test('settings, guide and service worker are wired', () => {
     assert.doesNotMatch(guide, /data:application\/octet-stream;base64/);
     assert.match(sw, /\.\/macro-bridge\.js/);
 });
+
+// Audit F05: walk the shipped action list for every task/sleep combination.
+// App Blocker must end ENABLED (-1) unless the device is unlocked AND it is not sleep time.
+test('bridge macro makes one correct final blocking decision for every task/sleep combination', () => {
+    const macro = JSON.parse(fs.readFileSync(new URL('./macros/Taskitator_Cloud_Bridge.macro', import.meta.url), 'utf8')).macro;
+    const run = response => {
+        let state = null; const stack = [];
+        const active = () => stack.every(f => f.on);
+        const test = a => { const c = a.m_constraintList[0]; assert.equal(c.m_variable.isLocalVar, true, 'conditions read the local response'); return response.includes(c.m_stringValue); };
+        for (const a of macro.m_actionList) {
+            if (a.m_classType === 'IfConditionAction') { const hit = test(a); stack.push({ on: hit, done: hit }); }
+            else if (a.m_classType === 'ElseIfConditionAction') { const f = stack.at(-1); f.on = !f.done && test(a); f.done ||= f.on; }
+            else if (a.m_classType === 'ElseAction') { const f = stack.at(-1); f.on = !f.done; f.done = true; }
+            else if (a.m_classType === 'EndIfAction') stack.pop();
+            else if (a.m_classType === 'DisableMacroAction' && active()) state = a.m_state;
+        }
+        return state;
+    };
+    for (const unlocked of [true, false]) for (const sleep of [true, false]) {
+        const expected = unlocked && !sleep ? 1 : -1;
+        assert.equal(run(`device_unlocked = ${unlocked}\nsleep = ${sleep}`), expected, `unlocked=${unlocked} sleep=${sleep}`);
+    }
+    assert.equal(run(''), -1, 'an empty/failed response blocks');
+    const vars = macro.localVariables.find(v => v.m_name === 'http_response');
+    assert.equal(vars.m_stringValue, '', 'no shipped default "unlocked" response');
+});

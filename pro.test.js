@@ -513,7 +513,7 @@ test('statistics executes against dictionary breaks and counts an overnight brea
     f.context.navigator={};
     f.context.document={getElementById:node,createElement:()=>({style:{},appendChild(){},querySelector:()=>({addEventListener(){}}),replaceChildren(){}})};
     f.context.TaskitatorRecurrenceUI={state:()=>({history:[]})};
-    f.context.TaskitatorSafety={escapeHtml:String,setProjectLabel(){}};
+    f.context.TaskitatorSafety={escapeHtml:String,cssColor:String,setProjectLabel(){}};
     const html=source('stats.html'),code=html.match(/<script type="text\/taskitator-script">([\s\S]*?)<\/script>/)[1];
     vm.runInContext(code+'\nrenderStats();',f.context);
     assert.equal(node('breakSlotsCount').textContent,'1 break window configured');assert.equal(node('totalBreakTime').textContent,'60m');

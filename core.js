@@ -706,8 +706,19 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
     async function loadBase(user) {
         try { return (await withStore('readonly', s => s.get(user))) || null; } catch { return null; }
     }
+    // Returns true when the account's base snapshot is gone (or IndexedDB is unavailable, so nothing was stored).
     async function clearBase(user) {
-        try { await withStore('readwrite', s => s.delete(user)); } catch { /* ignore */ }
+        if (typeof indexedDB === 'undefined') return true;
+        try { await withStore('readwrite', s => s.delete(user)); return true; } catch { return false; }
+    }
+    // Full browser reset: drop the whole merge database.
+    function clearAllBases() {
+        return new Promise(resolve => {
+            if (typeof indexedDB === 'undefined') return resolve(true);
+            const req = indexedDB.deleteDatabase(DB_NAME);
+            req.onsuccess = () => resolve(true);
+            req.onerror = req.onblocked = () => resolve(false);
+        });
     }
 
     // ---- Conflict panel (runs on this device only) ----
@@ -781,7 +792,7 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
         });
     }
 
-    window.TaskitatorMerge = Object.freeze({ merge3, saveBase, loadBase, clearBase, askUser, canon });
+    window.TaskitatorMerge = Object.freeze({ merge3, saveBase, loadBase, clearBase, clearAllBases, askUser, canon });
 })();
 
 // <<< MODULE_END: merge.js >>>
@@ -1649,6 +1660,10 @@ window.addEventListener('storage', event => {
         let complete = true;
         try {
             if (window.ExemplarStore?.deleteAccountFiles) complete = await window.ExemplarStore.deleteAccountFiles(user);
+        } catch { complete = false; }
+        // Audit F09: the merge base snapshot (tasks, settings, audit ledger) lives in IndexedDB.
+        try {
+            if (window.TaskitatorMerge && !await window.TaskitatorMerge.clearBase(user)) complete = false;
         } catch { complete = false; }
         try {
             if (localStorage.getItem('taskitator_local_owner') === user) {

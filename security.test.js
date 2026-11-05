@@ -2065,3 +2065,51 @@ test('status text: two independent lines that full-line "contains" rules can tel
     }
     assert.equal(statusText({}), 'device_unlocked = false\nsleep = false', 'unknown values never read as unlocked or locked by accident');
 });
+
+// ---- Audit 2026-11-05 regressions (F01, F02, F03) ----
+async function auditPush(f,a,tasks){const pull=await f.call('/sync/pull',a.token);return f.call('/sync/push',a.token,'POST',{tasks,settings:{},base_version:pull.body.version,mutation_id:crypto.randomUUID()});}
+test('F02: unfinished required child cannot vanish or be trashed under a shield; completed child cleanup allowed',async()=>{
+ const f=fixture(),a=await create(f);
+ const base=[task('p',{ai_locked:false,strict_prerequisites:true}),task('c',{ai_locked:false,parent_id:'p'}),task('g',{ai_locked:false,parent_id:'c'}),task('d',{ai_locked:false,parent_id:'p',status:'completed'})];
+ assert.equal((await save(f,a,base)).status,200);
+ // Remove child and complete parent in one mutation.
+ let next=structuredClone(base).filter(t=>t.id!=='c'&&t.id!=='g');next.find(t=>t.id==='p').status='completed';
+ assert.equal((await auditPush(f,a,next)).status,403);
+ // Remove only the child (first step of a two-step bypass).
+ assert.equal((await auditPush(f,a,structuredClone(base).filter(t=>t.id!=='c'&&t.id!=='g'))).status,403);
+ // Trash a nested grandchild.
+ next=structuredClone(base);next.find(t=>t.id==='g').status='trash';
+ assert.equal((await auditPush(f,a,next)).status,403);
+ // Completed child may be removed.
+ assert.equal((await auditPush(f,a,structuredClone(base).filter(t=>t.id!=='d'))).status,200);
+});
+test('F03: AI-locked task cannot inherit a later date by reparenting or ancestor edits; earlier is allowed',async()=>{
+ const f=fixture(),a=await create(f);
+ const base=[task('home',{ai_locked:false,due_date:'2026-01-01'}),task('later',{ai_locked:false,due_date:'2099-01-01'}),task('t',{parent_id:'home'})];
+ assert.equal((await save(f,a,base)).status,200);
+ let next=structuredClone(base);next.find(t=>t.id==='t').parent_id='later';
+ assert.equal((await auditPush(f,a,next)).status,403,'reparent under future parent');
+ next=structuredClone(base);next.find(t=>t.id==='home').due_date='2099-01-01';
+ assert.equal((await auditPush(f,a,next)).status,403,'ancestor moved later');
+ next=structuredClone(base);next.find(t=>t.id==='home').due_date='2025-06-01';
+ assert.equal((await auditPush(f,a,next)).status,200,'earlier is stricter');
+});
+test('F01: oversized, too-deep and cyclic task graphs are rejected before guard work',async()=>{
+ const {checkTaskGraph,MAX_TASKS,MAX_TASK_DEPTH}=await import('./worker.js');
+ assert.throws(()=>checkTaskGraph(Array.from({length:MAX_TASKS+1},(_,i)=>({id:'t'+i}))),e=>e.status===413);
+ assert.throws(()=>checkTaskGraph(Array.from({length:MAX_TASK_DEPTH+1},(_,i)=>({id:'t'+i,parent_id:i?'t'+(i-1):null}))),e=>e.status===413);
+ assert.doesNotThrow(()=>checkTaskGraph(Array.from({length:MAX_TASK_DEPTH},(_,i)=>({id:'t'+i,parent_id:i?'t'+(i-1):null}))));
+ assert.throws(()=>checkTaskGraph([{id:'a',parent_id:'b'},{id:'b',parent_id:'a'}]),e=>e.status===400);
+ assert.throws(()=>checkTaskGraph([{id:'a'},{id:'a'}]),e=>e.status===400);
+ assert.throws(()=>checkTaskGraph([{id:'a',title:'x'.repeat(10001)}]),e=>e.status===413);
+ const t0=Date.now();checkTaskGraph(Array.from({length:MAX_TASKS},(_,i)=>({id:'t'+i,parent_id:i%60?'t'+(i-1):null})));assert.ok(Date.now()-t0<500,'linear');
+});
+test('Audit F07: deletion also removes credit plan/epoch and hosted-AI counters, only for that account',async()=>{
+    const f=fixture(),a=await create(f),b=await create(f,'user_B');
+    const keys=u=>['credits:plan:'+u,'credits:'+u+':e1:hosted:2026-11','ai-hosted:'+u+':2026-11-05:spend'];
+    for(const u of ['user_A','user_B'])for(const k of keys(u))await f.storage.put(k,{value:u});
+    const body=await verifiedDeletion(f,a.token);await f.call('/auth/account',body.token,'DELETE',body);
+    await finishDeletion(f);
+    for(const k of keys('user_A'))assert.equal(await f.storage.get(k),undefined,k);
+    for(const k of keys('user_B'))assert.ok(await f.storage.get(k),k);
+});
