@@ -4057,6 +4057,17 @@ if ('serviceWorker' in navigator) {
             background: rgba(255, 255, 255, 0.2);
         }
 
+        #pomodoroOverlay.pomo-fullscreen .pomo-phase-badge,
+        #pomodoroOverlay.pomo-fullscreen .pomo-dots,
+        #pomodoroOverlay.pomo-fullscreen #pomoResetBtn,
+        #pomodoroOverlay.pomo-fullscreen #pomoBackToConfigBtn,
+        #pomodoroOverlay.pomo-fullscreen #pomoCloseModalBtn { display: none !important; }
+        #pomodoroOverlay.pomo-fullscreen .pomo-header-bar { justify-content: flex-end; z-index: 1; }
+        #pomoEndFullscreenBtn { display: none; }
+        #pomodoroOverlay.pomo-fullscreen #pomoEndFullscreenBtn { display: inline-flex; }
+        #pomodoroOverlay.pomo-fullscreen .pomo-digits { font-size: min(28vw, 52vh); margin: 0 0 3vh; }
+        #pomodoroOverlay.pomo-fullscreen .pomo-controls { margin: 0; }
+        #pomoFullscreenToggleBtn { min-width: 44px; min-height: 44px; }
         /* Setup Panel */
         #pomoSetupPanel {
             max-width: 380px;
@@ -4240,6 +4251,7 @@ if ('serviceWorker' in navigator) {
                 state.isRunning = false;
                 window.TaskitatorNotify('Congratulations! All Pomodoro sessions complete.');
                 resetTimer();
+                if (document.fullscreenElement === dom.overlay) document.exitFullscreen().catch(() => {});
                 showSetup();
                 return;
             }
@@ -4308,6 +4320,7 @@ if ('serviceWorker' in navigator) {
                 <div class="pomo-dots" id="pomoSessionsDotContainer"></div>
                 <div class="pomo-controls">
                     <button type="button" class="pomo-ctrl-btn primary" id="pomoPlayPauseBtn">Pause</button>
+                    <button type="button" class="pomo-ctrl-btn" id="pomoEndFullscreenBtn">End timer</button>
                     <button type="button" class="pomo-ctrl-btn" id="pomoResetBtn">Reset</button>
                     <button type="button" class="pomo-ctrl-btn" id="pomoBackToConfigBtn">Config</button>
                 </div>
@@ -4371,11 +4384,13 @@ if ('serviceWorker' in navigator) {
 
     function showSetup() {
         dom.setupPanel.style.display = 'block';
+        dom.fullscreenBtn.hidden = true;
         dom.clockPanel.style.display = 'none';
     }
 
     function showClock() {
         dom.setupPanel.style.display = 'none';
+        dom.fullscreenBtn.hidden = false;
         dom.clockPanel.style.display = 'flex';
         updateClockUI();
     }
@@ -4383,32 +4398,33 @@ if ('serviceWorker' in navigator) {
     // =========================================================================
     // 5. Fullscreen & Orientation Lock API
     // =========================================================================
+    let wakeLock = null;
+    async function keepAwake() {
+        if (!document.fullscreenElement || document.visibilityState !== 'visible' || !navigator.wakeLock) return;
+        try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { console.warn('[Pomodoro] Screen wake lock unavailable:', e); }
+    }
     async function toggleFullscreen() {
         try {
-            if (!document.fullscreenElement) {
-                await dom.overlay.requestFullscreen();
-                dom.fullscreenBtn.textContent = '✕ Exit Full Screen';
-                // Request landscape orientation where supported (Android Chrome / Tablets)
-                if (screen.orientation && typeof screen.orientation.lock === 'function') {
-                    screen.orientation.lock('landscape').catch(() => {});
-                }
-            } else {
-                await document.exitFullscreen();
-                dom.fullscreenBtn.textContent = '⛶ Full Screen';
-                if (screen.orientation && typeof screen.orientation.unlock === 'function') {
-                    screen.orientation.unlock();
-                }
+            if (document.fullscreenElement === dom.overlay) { await document.exitFullscreen(); return; }
+            await dom.overlay.requestFullscreen();
+            if (window.matchMedia('(max-width: 767px)').matches && screen.orientation?.lock) {
+                try { await screen.orientation.lock('landscape'); } catch (e) { console.warn('[Pomodoro] Landscape unavailable:', e); }
             }
-        } catch (e) {
-            console.warn('[Pomodoro] Fullscreen error:', e);
-        }
+        } catch (e) { console.warn('[Pomodoro] Fullscreen unavailable:', e); window.TaskitatorNotify?.('Fullscreen is unavailable on this device.'); }
     }
-
     document.addEventListener('fullscreenchange', () => {
-        if (!document.fullscreenElement && dom.fullscreenBtn) {
-            dom.fullscreenBtn.textContent = '⛶ Full Screen';
+        if (!dom.fullscreenBtn) return;
+        const active = document.fullscreenElement === dom.overlay;
+        dom.overlay.classList.toggle('pomo-fullscreen', active);
+        dom.fullscreenBtn.textContent = active ? '✕' : '⛶ Full Screen';
+        dom.fullscreenBtn.setAttribute('aria-label', active ? 'Exit full screen' : 'Enter full screen');
+        if (active) keepAwake();
+        else {
+            screen.orientation?.unlock?.();
+            if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
         }
     });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
 
     // =========================================================================
     // 6. View Scoping (#today visibility check)
@@ -4471,6 +4487,12 @@ if ('serviceWorker' in navigator) {
         });
 
         dom.fullscreenBtn.addEventListener('click', toggleFullscreen);
+        document.getElementById('pomoEndFullscreenBtn').addEventListener('click', async () => {
+            resetTimer();
+            if (document.fullscreenElement === dom.overlay) await document.exitFullscreen().catch(() => {});
+            showSetup();
+        });
+        showSetup();
     }
 
     // Auto-initialize when the DOM finishes loading
