@@ -3291,7 +3291,6 @@ window.TaskitatorApp = (() => {
         });
 
         window.addEventListener('hashchange', handleHashRouting);
-        handleHashRouting();
 
         // Multi-Selection Mode Navbar Button
         const toggleSelectModeBtn = document.getElementById('toggleSelectModeBtn');
@@ -3873,6 +3872,13 @@ window.TaskitatorApp = (() => {
             updateSyncDot(window.SyncEngine?.isDirty?.() ? 'pending' : 'synced');
         });
 
+        // Attach every control before rendering: malformed task data must not prevent
+        // unrelated controls (including sync recovery) from being wired.
+        try { handleHashRouting(); }
+        catch (error) {
+            console.error('Could not render the task view:', error);
+            window.TaskitatorNotify?.('Could not display all tasks. You can still open sync and settings.');
+        }
         // Cloud downloads happen through Sync Now or a completed edit batch.
     }
 
