@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'  https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-X/UAgVh06LmIDpgYO1IyCM9GIfgIu5jU+prhMDnv5rs=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Taskitator - Help</title>
@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="icon/icon-192.png">
 <link rel="stylesheet" href="style.css?v=ui-v2-pro">
 <style>
-.hp{max-width:820px;margin:0 auto;padding:20px 16px 80px;color:var(--text-color,#e8eefc);line-height:1.55}
+.hp{max-width:820px;margin:0 auto;padding:76px 16px 80px;color:var(--text-color,#e8eefc);line-height:1.55}
 .hp h1{margin:0 0 6px;font-size:clamp(1.5rem,3vw,2rem)}
 .hp .hp-sub{color:var(--text-muted,#9fb0d0);margin:0 0 18px}
 .hp-units{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 20px}
@@ -32,10 +32,12 @@
 .hp-ex[open] .c{display:inline}
 .hp-exbody{margin-top:8px;padding:10px 12px;border-radius:8px;background:rgba(59,130,246,.1)}
 .hp-nav{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}
+.hp-return{position:fixed;z-index:1000;top:max(12px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right));min-height:44px;display:inline-flex;align-items:center;gap:6px;text-decoration:none;box-shadow:0 4px 16px rgba(0,0,0,.35)}
 .hp code{background:rgba(127,150,200,.2);padding:1px 5px;border-radius:4px}
 </style>
 </head>
 <body>
+<a class="icon-btn hp-return" id="helpReturn" href="index.html" aria-label="Return to previous page">← Back</a>
 <main class="hp">
 <h1>Taskitator Help</h1>
 <p class="hp-sub">How to use each feature. Tap <b>Show example</b> under any section to see one.</p>
@@ -86,5 +88,14 @@
 <a class="icon-btn" href="settings.html" style="text-decoration:none">← Settings</a>
 </div>
 </main>
+<script>
+(() => {
+    const link = document.getElementById('helpReturn');
+    try {
+        const previous = new URL(document.referrer);
+        if (previous.origin === location.origin && !previous.pathname.endsWith('/help.html')) link.href = previous.href;
+    } catch (_) { /* Direct visits return to Today. */ }
+})();
+</script>
 </body>
 </html>
