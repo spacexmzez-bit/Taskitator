@@ -2204,7 +2204,7 @@ window.TaskitatorApp = (() => {
             };
             this.pill.className = 'break-status-pill';
             delete this.pill.dataset.allowance;
-            if (view?.system === 'flexible') {
+            if (view && !view.scheduled?.locked && (view.flexible?.active || view.system === 'flexible' || !view.system)) {
                 const allowance = engine.allowance();
                 const tone = this.allowanceTone(allowance.percent);
                 this.pill.classList.add('flex-allowance', 'flex-' + tone);
@@ -2227,24 +2227,24 @@ window.TaskitatorApp = (() => {
                 return set('⏳', `Plan (${Math.floor(remSec / 60)}:${String(remSec % 60).padStart(2, '0')})`, 'Break planning window open');
             }
             const nowTime = engine?.serverNow?.() ?? Date.now();
-            const upcoming = view?.system === 'scheduled' ? breaks
+            const upcoming = view ? (view.scheduled?.breaks || [])
                 .map(b => { try { return { ...b, startTime: engine.getBreakTimestamps(b, status.bounds).startTime }; } catch { return null; } })
                 .filter(b => b && b.startTime > nowTime)
                 .sort((a, b) => a.startTime - b.startTime)[0] : null;
             if (upcoming) return set('☕', `Next: ${String(upcoming.start).slice(0, 5)}`, `Next scheduled break at ${String(upcoming.start).slice(0, 5)}`);
             if (!view) return set('⏸️', 'Breaks', 'Daily breaks');
-            if (!view.system) { this.pill.classList.add('window-open'); return set('⏸️', 'Choose Breaks', 'No break system chosen for today'); }
+            if (!view.scheduled?.locked) return set('☕', `${this.minutesText(engine.allowance().remaining)} left`, 'Daily break allowance remaining');
             return set('🔒', 'Breaks Locked', 'Scheduled Breaks locked for today');
         },
 
         async openModal() {
             this.hideError();
             const view = this.engine()?.current?.();
-            this.tab = view?.system || this.tab;
+            this.tab = this.tab || 'scheduled';
             this.renderModal();
             if (this.modal) this.modal.classList.add('open');
             const fresh = await this.refresh(true);
-            if (fresh && !view) { this.tab = fresh.system || this.tab; this.renderModal(); }
+            if (fresh && !view) { this.tab = this.tab || 'scheduled'; this.renderModal(); }
         },
 
         closeModal() {
@@ -2311,23 +2311,23 @@ window.TaskitatorApp = (() => {
                 else {
                     const active = engine.getActiveBreak();
                     const items = [
-                        ['System', view.system ? `${names[view.system]} · locked for today` : 'Not chosen yet'],
+                        ['Scheduled lock', view.scheduled?.locked ? 'Locked for today' : 'Unlocked'],
                         ['Break', active ? `Active until ${this.clockText(active.endTime, view.timezone)}` : 'None active'],
                         ['Resets', `${this.clockText(view.cycle_end, view.timezone)} (${view.timezone})`]
                     ];
-                    if (view.system !== 'scheduled') { const al = engine.allowance(); items.push(['Allowance', `${this.minutesText(al.remaining)} of ${this.minutesText(al.total)} left`]); }
+                    { const al = engine.allowance(); items.push(['Allowance', `${this.minutesText(al.remaining)} of ${this.minutesText(al.total)} left`]); }
                     const st = view.strict_today;
                     if (st?.covered && st.pending) items.push(['Strict deadline', `${this.clockText(st.deadline, view.timezone)} · ${st.breaks.length ? st.breaks.length + ' break' + (st.breaks.length === 1 ? '' : 's') : 'no breaks'}`]);
                     this.summary.innerHTML = items.map(([k, v]) => `<div class="break-summary-item"><span>${this.esc(k)}</span><strong>${this.esc(v)}</strong></div>`).join('');
                 }
             }
             this.modal.querySelectorAll('[data-break-tab]').forEach(tab => {
-                const name = tab.dataset.breakTab, selected = name === this.tab, blocked = !!view?.system && view.system !== name;
+                const name = tab.dataset.breakTab, selected = name === this.tab, blocked = name === 'flexible' && !!view?.scheduled?.locked;
                 tab.setAttribute('aria-selected', String(selected));
                 tab.tabIndex = selected ? 0 : -1;
                 tab.classList.toggle('is-active', selected);
                 tab.classList.toggle('is-unavailable', blocked);
-                tab.toggleAttribute('data-locked', view?.system === name);
+                tab.toggleAttribute('data-locked', name === 'scheduled' && !!view?.scheduled?.locked);
                 tab.title = blocked ? `${names[name]} becomes available after the next day reset.` : '';
             });
             this.modal.querySelectorAll('[role="tabpanel"][data-break-panel]').forEach(panel => { panel.hidden = panel.dataset.breakPanel !== this.tab; });
@@ -2336,13 +2336,12 @@ window.TaskitatorApp = (() => {
             this.modal.querySelectorAll('[data-allowance-total]').forEach(el => { el.textContent = total; });
             this.modal.querySelectorAll('[data-break-state]').forEach(chip => {
                 const name = chip.dataset.breakState;
-                const [state, text] = !view ? ['', ''] : view.system === name ? ['locked', '🔒 Locked for today']
-                    : view.system ? ['blocked', 'Unavailable until reset'] : ['', 'Not locked yet'];
+                const [state, text] = !view ? ['', ''] : view.scheduled?.locked ? (name === 'scheduled' ? ['locked', '🔒 Locked for today'] : ['blocked', 'Unavailable until reset']) : ['', 'Available'];
                 chip.dataset.state = state; chip.textContent = text;
             });
             this.modal.querySelectorAll('[data-break-lock]').forEach(btn => {
                 const name = btn.dataset.breakLock;
-                btn.hidden = !view || !!view.system;
+                btn.hidden = !view || name !== 'scheduled' || !!view.scheduled?.locked;
                 btn.textContent = `🔒 Lock ${names[name]} for Today`;
             });
             this.renderScheduled(view, now);
@@ -2370,9 +2369,12 @@ window.TaskitatorApp = (() => {
                 else this.rowsContainer.innerHTML = `<div class="empty-state empty-state-sm">${this.esc(empty)}</div>`;
             };
             if (!view) { headerBox.innerHTML = ''; listSaved([], 'Loading…'); hideEdit(); return; }
-            if (view.system === 'flexible') { headerBox.innerHTML = this.blocked(view, 'scheduled'); this.rowsContainer.innerHTML = ''; hideEdit(); if (desc) desc.style.display = 'none'; return; }
             if (desc) desc.style.display = '';
             const s = view.scheduled, planning = s.planning, open = !!planning && now < planning.deadline;
+            const st = view.strict_today;
+            const strictNote = st?.covered && st.pending ? `<p class="break-panel-note strict-note">Scheduled Strict Mode applies at ${this.esc(this.clockText(st.deadline, view.timezone))}.</p>` : '';
+            const al = this.engine().allowance();
+            if (desc) desc.textContent = `Allowance remaining: ${this.minutesText(al.remaining)} of ${this.minutesText(al.total)}. Saved scheduled breaks reserve allowance.`;
             if (open) {
                 const remaining = planning.deadline - now, sec = Math.ceil(remaining / 1000);
                 const pct = Math.max(0, Math.min(100, remaining / this.engine().PLANNING_WINDOW_MS * 100));
@@ -2384,8 +2386,8 @@ window.TaskitatorApp = (() => {
                         </div>
                         <div class="break-panel-track"><div id="breakPlanningProgress" class="break-panel-progress" style="width: ${pct}%;"></div></div>
                         <small class="break-panel-note">${s.saved
-                            ? `Scheduled is locked for today. You can edit and save again until ${this.esc(this.clockText(planning.deadline, view.timezone))}; after that your last saved schedule is final.`
-                            : 'Nothing is locked yet. Saving locks Scheduled for today. Closing this panel without saving cancels the window.'}</small>
+                            ? `You can edit and save again until ${this.esc(this.clockText(planning.deadline, view.timezone))}; after that your last saved schedule is final.`
+                            : 'Saving reserves allowance. Closing without saving cancels the window.'}</small>
                         ${s.saved ? '' : strictNote}
                     </div>`;
                 const rows = this.draft ?? (s.saved ? s.breaks : []);
@@ -2399,8 +2401,6 @@ window.TaskitatorApp = (() => {
                 return;
             }
             this.draft = null;
-            const st = view.strict_today;
-            const strictNote = st?.covered && st.pending ? `<p class="break-panel-note strict-note">🔒 Scheduled Strict Mode: if no system is chosen by <strong>${this.esc(this.clockText(st.deadline, view.timezone))}</strong>, Scheduled locks with ${st.breaks.length ? `today’s plan (${st.breaks.map(b => this.esc(b.start + '–' + b.end)).join(', ')})` : '<strong>no breaks</strong>'}.</p>` : '';
             if (s.can_start_planning) {
                 headerBox.innerHTML = `
                     <div class="break-panel break-panel-start">
@@ -2425,7 +2425,6 @@ window.TaskitatorApp = (() => {
         renderFlexible(view, now) {
             if (!this.flexBody) return;
             if (!view) { this.flexBody.innerHTML = '<div class="empty-state empty-state-sm">Loading…</div>'; return; }
-            if (view.system === 'scheduled') { this.flexBody.innerHTML = this.blocked(view, 'flexible'); return; }
             const engine = this.engine(), f = view.flexible, a = f.active, allowance = engine.allowance(), zone = view.timezone;
             const tone = this.allowanceTone(allowance.percent);
             const meter = `<div class="flex-allowance-meter flex-${tone}" role="meter" aria-label="Break allowance left" aria-valuemin="0" aria-valuemax="${allowance.total}" aria-valuenow="${allowance.remaining}">
@@ -2458,7 +2457,7 @@ window.TaskitatorApp = (() => {
                 </div>
                 <button type="button" class="icon-btn btn-block ${reason ? 'is-unavailable' : 'btn-primary btn-solid-primary'}" data-flex="until" aria-disabled="${!!reason}" data-reason="${this.esc(reason)}">Until allowance ends (${this.esc(this.minutesText(f.max_custom))})</button>
                 ${f.strict ? `<p class="break-panel-note strict-note">🔒 Flexible Strict Mode: every break lasts at least <strong>${f.minimum} minutes</strong>, and at least <strong>${f.minimum} minutes</strong> must pass before the next one.</p>` : ''}
-                ${view.strict_today?.covered && view.strict_today.pending && !view.system ? `<p class="break-panel-note strict-note">Starting a break before ${this.esc(this.clockText(view.strict_today.deadline, view.timezone))} keeps today Flexible; otherwise Scheduled Strict Mode locks Scheduled.</p>` : ''}
+
                 <small class="break-panel-note">Starts now. It can be ended after ${f.minimum} minutes and stops by itself at its length, when the allowance runs out, or at the day reset. Each started minute counts as a full minute.</small>`;
         },
 
@@ -2490,8 +2489,8 @@ window.TaskitatorApp = (() => {
             if (!engine?.startPlanning) return;
             const ok = await window.TaskitatorConfirm({ title: 'Start the 10-minute planning window?', confirmLabel: 'Start planning',
                 message: this.confirmMessage(['The window lasts 10 minutes from now.', 'Adding or editing rows does not save them.',
-                    'Closing the panel without saving cancels the window, and you can choose either system again.',
-                    'Your first save locks Scheduled for the rest of the day.', 'After saving, you can edit only until this window ends.']) });
+                    'Closing the panel without saving cancels the window.',
+                    'Saved schedules reserve part of your shared allowance.', 'After saving, you can edit only until this window ends.']) });
             if (!ok) return;
             this.draft = [];
             await this.run(() => engine.startPlanning());
@@ -2530,13 +2529,13 @@ window.TaskitatorApp = (() => {
                 if (!check.valid) { this.showError(check.error); return; }
             }
             if (!saved) {
-                const ok = await window.TaskitatorConfirm({ title: 'Save and lock Scheduled for today?', tone: 'danger', confirmLabel: 'Save schedule',
-                    message: this.confirmMessage(['Saving locks Scheduled Breaks for the rest of the day, even if you later remove every break.',
+                const ok = await window.TaskitatorConfirm({ title: 'Save today’s schedule?', tone: 'danger', confirmLabel: 'Save schedule',
+                    message: this.confirmMessage(['Scheduled breaks reserve your shared daily allowance.',
                         `You can edit and save again until ${this.clockText(view.scheduled.planning.deadline, view.timezone)}.`,
                         'After that, your last saved schedule is final.']) });
                 if (!ok) return;
             }
-            const result = await this.run(() => engine.saveSchedule(rows), saved ? 'Schedule updated.' : 'Schedule saved. Scheduled Breaks are locked for today.');
+            const result = await this.run(() => engine.saveSchedule(rows), saved ? 'Schedule updated.' : 'Schedule saved.');
             if (result) this.draft = null;
             if (result) this.renderModal();
         },
@@ -2549,7 +2548,7 @@ window.TaskitatorApp = (() => {
                 this.showError(`Choose a whole number of minutes from ${f.minimum} to ${f.max_custom}.`); return;
             }
             const ok = await window.TaskitatorConfirm({ title: `Start a ${mode === 'until' ? 'break until your allowance ends' : this.minutesText(length) + ' break'} now?`, confirmLabel: 'Start break',
-                message: this.confirmMessage([...(view.system ? [] : ['Flexible Breaks will be locked for the rest of today.']),
+                message: this.confirmMessage([
                     `You can't end it during its first ${f.minimum} minutes.`, 'It uses your daily break allowance; each started minute counts as a full minute.',
                     'It ends automatically at its length, when the allowance runs out, or at the day reset — whichever comes first.']) });
             if (!ok) return;

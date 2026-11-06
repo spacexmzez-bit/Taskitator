@@ -97,27 +97,15 @@ const op = () => 'op_' + crypto.randomUUID().replace(/-/g, '');
 async function ready(iso = '2026-11-04T10:00:00+03:00') {
     at(iso); const f = await fixture(); await f.create(); assert.equal((await f.push()).status, 200); return f;
 }
-test('viewing state locks nothing; Lock for Today selects a system without using allowance', async () => {
+test('only Scheduled can be locked, without using allowance', async () => {
     try {
-        for (const system of ['scheduled', 'flexible']) {
-            const f = await ready();
-            const view = await f.breaks();
-            assert.equal(view.status, 200); assert.equal(view.body.system, null);
-            assert.equal(view.body.allowance.remaining, 180);
-            assert.equal(view.body.reset_at, '2026-11-04T21:00:00.000Z');
-            const locked = await f.breaks({ action: 'lock', system });
-            assert.equal(locked.status, 200); assert.equal(locked.body.system, system); assert.equal(locked.body.lock_source, 'lock');
-            assert.equal(locked.body.allowance.used, 0); assert.equal(locked.body.flexible.active, null);
-            assert.equal(locked.body.scheduled.planning, null);
-            assert.equal((await f.breaks({ action: 'lock', system })).status, 200, 'repeating the same lock is harmless');
-            const other = system === 'scheduled' ? 'flexible' : 'scheduled';
-            assert.equal((await f.breaks({ action: 'lock', system: other })).body.code, 'SYSTEM_LOCKED');
-            if (system === 'scheduled') assert.equal((await f.breaks({ action: 'flex_start', mode: 'preset', minutes: 30, operation_id: op() })).status, 409);
-            else assert.equal((await f.breaks({ action: 'plan_start' })).body.code, 'SYSTEM_LOCKED');
-            // A fresh Worker instance (restart) on the same storage keeps the lock.
-            const restarted = new TaskitatorSync({ storage: f.storage }, f.env);
-            assert.equal((await restarted.breaks.state('user_A', 'Asia/Riyadh')).system, system);
-        }
+        const f = await ready();
+        assert.equal((await f.breaks({ action: 'lock', system: 'flexible' })).body.code, 'INVALID_SYSTEM');
+        const locked = await f.breaks({ action: 'lock', system: 'scheduled' });
+        assert.equal(locked.body.scheduled.locked, true);
+        assert.equal(locked.body.allowance.used, 0);
+        assert.equal((await f.breaks({ action: 'lock', system: 'scheduled' })).status, 200);
+        assert.equal((await f.breaks({ action: 'flex_start', mode: 'preset', minutes: 30, operation_id: op() })).status, 409);
     } finally { clock = null; }
 });
 test('the lock resets at the logical-day reset', async () => {
@@ -180,7 +168,7 @@ test('first save locks Scheduled; edits follow the original deadline on every de
         assert.equal(final.body.code, 'PLANNING_ENDED');
         const view = (await f.breaks()).body;
         assert.equal(view.scheduled.final, true); assert.equal(view.scheduled.breaks.length, 0); assert.equal(view.system, 'scheduled');
-        assert.equal(view.flexible.can_start, false);
+        assert.equal(view.flexible.can_start, true);
     } finally { clock = null; }
 });
 test('the six-hour closing rule and existing schedule validation still apply', async () => {
@@ -371,7 +359,7 @@ test('changing the day start or device timezone mid-day keeps today’s lock and
         const f = await ready();
         await f.breaks({ action: 'flex_start', mode: 'preset', minutes: 60, operation_id: op() }); advance(60 * MIN);
         assert.equal((await f.push({ settings: { day_start_hour: 4 } })).status, 200);
-        const same = await f.breaks({ action: 'lock', system: 'flexible', timezone: 'Pacific/Kiritimati' });
+        const same = await f.breaks({ action: 'lock', system: 'scheduled', timezone: 'Pacific/Kiritimati' });
         assert.equal(same.body.date, '2026-11-04'); assert.equal(same.body.allowance.used, 60); assert.equal(same.body.reset_at, '2026-11-04T21:00:00.000Z');
         // The next day starts where this one ended, even with a later day start.
         at('2026-11-05T00:30:00+03:00');
@@ -380,7 +368,7 @@ test('changing the day start or device timezone mid-day keeps today’s lock and
         assert.equal(next.reset_at, '2026-11-06T01:00:00.000Z');
         // Switching timezone cannot shorten the following day below 20 hours.
         at('2026-11-06T04:30:00+03:00');
-        const after = (await f.breaks({ action: 'lock', system: 'flexible', timezone: 'Pacific/Kiritimati' })).body;
+        const after = (await f.breaks({ action: 'lock', system: 'scheduled', timezone: 'Pacific/Kiritimati' })).body;
         assert.ok(after.cycle_end - after.cycle_start >= 20 * 3600000);
         assert.equal(after.cycle_start, Date.parse('2026-11-06T04:00:00+03:00'));
     } finally { clock = null; }
@@ -430,7 +418,7 @@ test('migration keeps an open saved window editable and leaves unsaved or repair
 test('account deletion removes break records', async () => {
     try {
         const f = await ready();
-        await f.breaks({ action: 'lock', system: 'flexible' });
+        await f.breaks({ action: 'flex_start', mode: 'preset', minutes: 30, operation_id: op() });
         assert.ok([...f.storage.map.keys()].some(k => k.startsWith('breaks:')));
         await f.service.breaks.remove(f.storage, 'user_A');
         assert.ok(![...f.storage.map.keys()].some(k => k.startsWith('breaks:')));
@@ -588,14 +576,14 @@ test('weekday overrides replace the default; deselected days stay free; included
         }
     } finally { clock = null; }
 });
-test('a system chosen before the deadline is kept', async () => {
+test('Scheduled Strict Mode still applies after Flexible use, while a saved plan is kept', async () => {
     try {
         const cfg = strictConfig({ scheduled: { enabled: true, deadline_minutes: 11 * 60, default: plan30 } });
         const f = await free(); await strict(f, cfg);
-        await f.breaks({ action: 'lock', system: 'flexible' });
+        await f.breaks({ action: 'flex_start', mode: 'preset', minutes: 30, operation_id: op() });
         at('2026-11-04T12:00:00+03:00');
         const flex = (await f.breaks()).body;
-        assert.equal(flex.system, 'flexible'); assert.equal(flex.flexible.can_start, true);
+        assert.equal(flex.system, 'scheduled'); assert.equal(flex.lock_source, 'strict'); assert.equal(flex.flexible.can_start, false);
         const g = await free(); await strict(g, cfg);
         await g.breaks({ action: 'plan_start' }); await g.breaks({ action: 'schedule_save', breaks: [{ start: '16:00', end: '16:15' }] });
         at('2026-11-04T12:00:00+03:00');
@@ -653,7 +641,7 @@ test('strict changes never rewrite a locked day and apply from the next day once
         const g = await free('2026-11-04T09:00:00+03:00');
         assert.equal((await strict(g, strictConfig({ flexible: { enabled: true, minimum: 30 } }))).body.strict.pending_from, null);
         // Once Flexible is locked, a new minimum waits for tomorrow.
-        await g.breaks({ action: 'lock', system: 'flexible' });
+        await g.breaks({ action: 'flex_start', mode: 'preset', minutes: 30, operation_id: op() });
         const next = await strict(g, strictConfig({ flexible: { enabled: true, minimum: 60 } }));
         assert.equal(next.body.strict.pending_from, '2026-11-05'); assert.equal(next.body.flexible.minimum, 30);
         at('2026-11-05T09:00:00+03:00');
@@ -762,12 +750,53 @@ test('a lower maximum limits Flexible and Scheduled; strict minimum and the 10-m
 test('a day keeps the maximum it was locked with; changes after a lock apply from the next day', async () => {
     try {
         const f = await free();
-        await f.breaks({ action: 'lock', system: 'flexible' });
+        await f.breaks({ action: 'flex_start', mode: 'preset', minutes: 30, operation_id: op() });
         const saved = await strict(f, strictConfig({ allowance: 60 }));
         assert.equal(saved.body.strict.pending_from, '2026-11-05'); assert.equal(saved.body.allowance.total, 180);
         assert.equal((await f.breaks()).body.allowance.total, 180);
         at('2026-11-05T09:00:00+03:00');
         assert.equal((await f.breaks()).body.allowance.total, 60);
         assert.equal((await f.storage.get('breaks:day:user_A:2026-11-04')).allowance, 180, 'the locked day stored its maximum');
+    } finally { clock = null; }
+});
+
+test('Flexible use and an unlocked schedule share the daily allowance', async () => {
+    try {
+        const f = await ready();
+        assert.equal((await f.breaks({ action: 'flex_start', mode: 'preset', minutes: 30, operation_id: op() })).status, 200);
+        advance(30 * MIN);
+        assert.equal((await f.breaks({ action: 'plan_start' })).status, 200);
+        const saved = await f.breaks({ action: 'schedule_save', breaks: [{ start: '14:00', end: '16:00' }] });
+        assert.equal(saved.status, 200);
+        assert.deepEqual(saved.body.allowance, { total: 180, used: 30, reserved: 120, remaining: 30 });
+        assert.equal(saved.body.scheduled.locked, false);
+        assert.equal((await f.breaks({ action: 'flex_start', mode: 'preset', minutes: 30, operation_id: op() })).status, 200);
+    } finally { clock = null; }
+});
+
+test('strict minimum rejects unsaved schedules and cancellation resets the window', async () => {
+    try {
+        const f = await free();
+        await strict(f, strictConfig({ allowance: 120, flexible: { enabled: true, minimum: 60 } }));
+        await f.breaks({ action: 'plan_start' });
+        const rejected = await f.breaks({ action: 'schedule_save', breaks: [{ start: '14:00', end: '15:30' }] });
+        assert.equal(rejected.body.code, 'STRICT_MINIMUM');
+        assert.equal((await f.breaks()).body.scheduled.saved, false);
+        await f.breaks({ action: 'plan_cancel' }); advance(MIN);
+        const restarted = await f.breaks({ action: 'plan_start' });
+        assert.equal(restarted.body.scheduled.planning.deadline, now() + 10 * MIN);
+        const saved = await f.breaks({ action: 'schedule_save', breaks: [{ start: '14:00', end: '15:00' }] });
+        assert.equal(saved.status, 200); assert.equal(saved.body.allowance.remaining, 60);
+    } finally { clock = null; }
+});
+
+test('window started before cutoff stays editable after cutoff; lock blocks Flexible immediately', async () => {
+    try {
+        const f = await ready('2026-11-04T17:59:00+03:00');
+        await f.breaks({ action: 'plan_start' }); advance(2 * MIN);
+        assert.equal((await f.breaks({ action: 'schedule_save', breaks: [{ start: '19:00', end: '19:30' }] })).status, 200);
+        assert.equal((await f.breaks({ action: 'lock', system: 'scheduled' })).body.scheduled.locked, true);
+        assert.equal((await f.breaks({ action: 'flex_start', mode: 'preset', minutes: 30, operation_id: op() })).body.code, 'SYSTEM_LOCKED');
+        assert.equal((await f.breaks({ action: 'schedule_save', breaks: [{ start: '20:00', end: '20:30' }] })).status, 200);
     } finally { clock = null; }
 });

@@ -664,7 +664,7 @@
                 <ol class="break-system-steps">
                     <li>Press Start planning. You get 10 minutes to enter your breaks.</li>
                     <li>Add up to 3 breaks that don't overlap, <span data-allowance-total>3h</span> in total.</li>
-                    <li>Saving locks Scheduled for today.</li>
+                    <li>Saving reserves allowance; locking Scheduled disables Flexible for the day.</li>
                 </ol>
             </div>
             <p id="breakModalStatusDesc" class="break-tab-desc">
@@ -683,11 +683,10 @@
                 <ol class="break-system-steps">
                     <li>Pick 30 min, 45 min, 1 hour, a custom length, or until your allowance ends.</li>
                     <li>The break starts immediately and counts every started minute from your daily allowance (<span data-allowance-total>3h</span>).</li>
-                    <li>End it after the minimum, or let it stop by itself. Starting a break locks Flexible for today.</li>
+                    <li>End it after the minimum, or let it stop by itself. Scheduled breaks share the allowance.</li>
                 </ol>
             </div>
             <div id="flexBreakBody"></div>
-            <button type="button" class="icon-btn btn-block break-lock-btn" data-break-lock="flexible" hidden>🔒 Lock Flexible for Today</button>
         </section>
         <div id="breakModalError" role="alert" style="display: none; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; color: #fca5a5; font-size: 0.8rem; margin-top: 12px;"></div>
     </div>

@@ -41,11 +41,13 @@ function bounds(r) {
         dayStartHour: r.day_start_hour, timezone: r.timezone };
 }
 function blank(date, zone, hour, start, end, now) {
-    return { v: 1, date, timezone: zone, day_start_hour: hour, cycle_start: start, cycle_end: end, created_at: now,
+    return { v: 2, date, timezone: zone, day_start_hour: hour, cycle_start: start, cycle_end: end, created_at: now,
         system: null, locked_at: null, lock_source: null, planning: null,
         scheduled: { breaks: [], saved_at: null }, flexible: { used: 0, active: null, sessions: [] }, revision: 0 };
 }
 function lock(r, system, source, now) { if (!r.system) { r.system = system; r.locked_at = now; r.lock_source = source; } }
+const scheduledLocked = r => r.system === 'scheduled' && (r.v !== 2 || ['lock', 'strict', 'migration'].includes(r.lock_source));
+const scheduledMinutes = r => r.scheduled.breaks.reduce((sum, b) => { const t = core().interval(b, bounds(r)); return sum + (t.endTime - t.startTime) / MIN; }, 0);
 const planningOpen = (r, now) => !!r.planning && now < r.planning.deadline;
 
 // Existing schedules saved before this update stay Scheduled for their day. A saved
@@ -167,12 +169,15 @@ export function requiredTasksToday(snapshot, now = Date.now()) {
 // a request arrived at the deadline.
 export function settle(r, now, cfg = null) {
     if (r.planning && !r.planning.saved && now >= r.planning.deadline) r.planning = null;
-    const a = r.flexible.active;
-    if (a && now >= a.planned_end) finish(r, a.planned_end, 'automatic', limitOf(r, cfg));
     const strict = strictDay(r, cfg);
-    if (strict?.covered && !r.system && now >= strict.deadline) {
+    const strictDue = strict?.covered && !r.scheduled.saved_at && !scheduledLocked(r) && now >= strict.deadline;
+    const a = r.flexible.active;
+    if (a && strictDue && a.started_at < strict.deadline && a.planned_end > strict.deadline)
+        finish(r, strict.deadline, 'strict', limitOf(r, cfg));
+    else if (a && now >= a.planned_end) finish(r, a.planned_end, 'automatic', limitOf(r, cfg));
+    if (strictDue) {
         let breaks = [], invalid = false;
-        if (strict.breaks.length) { const c = core().validate(strict.breaks, bounds(r), allowanceOf(cfg)); breaks = c.valid ? c.breaks : []; invalid = !c.valid; }
+        if (strict.breaks.length) { const c = core().validate(strict.breaks, bounds(r), Math.max(0, limitOf(r, cfg) - r.flexible.used)); breaks = c.valid ? c.breaks : []; invalid = !c.valid; }
         r.allowance = limitOf(r, cfg);
         r.planning = null; // an unsaved planning window is discarded
         r.system = 'scheduled'; r.locked_at = strict.deadline; r.lock_source = 'strict';
@@ -192,7 +197,7 @@ function usedNow(r, now, limit = limitOf(r)) {
     return Math.min(limit, r.flexible.used + (a ? chargeMinutes(a.started_at, Math.min(now, a.planned_end)) : 0));
 }
 function scheduledActive(r, now) {
-    if (r.system !== 'scheduled' || planningOpen(r, now)) return false;
+    if (!r.scheduled.saved_at || planningOpen(r, now)) return false;
     return r.scheduled.breaks.some(b => { const t = core().interval(b, bounds(r)); return now >= t.startTime && now < t.endTime; });
 }
 const flexibleActive = (r, now) => !!r.flexible.active && now >= r.flexible.active.started_at && now < r.flexible.active.planned_end;
@@ -205,7 +210,7 @@ export function mirror(r, now) {
         .map(([s, e]) => ({ start: clock(s, zone), end: clock(e, zone), start_at: iso(s), end_at: iso(e), kind: 'flexible' }));
     return { date: r.date, timezone: zone, day_start_hour: r.day_start_hour, cycle_start: r.cycle_start, cycle_end: r.cycle_end,
         server_managed: true, system: r.system, window_started_at: r.planning?.started_at ?? null, locked: !planningOpen(r, now),
-        breaks: r.system === 'flexible' ? flexible : r.scheduled.breaks };
+        breaks: [...r.scheduled.breaks, ...flexible] };
 }
 
 export class BreakSystems {
@@ -248,19 +253,18 @@ export class BreakSystems {
     }
 
     view(r, now, cfg = null, extra = {}) {
-        const total = limitOf(r, cfg), used = usedNow(r, now, total), remaining = total - used, a = r.flexible.active, minimum = flexMinimum(cfg);
+        const total = limitOf(r, cfg), used = usedNow(r, now, total), reserved = scheduledMinutes(r), remaining = Math.max(0, total - used - reserved), a = r.flexible.active, minimum = flexMinimum(cfg);
         const gapUntil = flexGapUntil(r, cfg), gap = gapUntil > now ? gapUntil : null;
         const untilReset = r.cycle_end - now, saved = !!r.scheduled.saved_at, open = planningOpen(r, now);
         let planReason = '';
-        if (r.system === 'flexible') planReason = 'Flexible Breaks are selected for today. Scheduled becomes available after the day resets.';
-        else if (saved && open) planReason = '';
+        if (open) planReason = '';
         else if (r.lock_source === 'strict') planReason = r.scheduled.breaks.length
             ? 'Scheduled Strict Mode locked today’s plan at its deadline. It can’t be changed until the day resets.'
             : 'Scheduled Strict Mode locked today with no breaks at its deadline. You can plan again after the day resets.';
         else if (saved) planReason = 'Today’s schedule is final. You can plan again after the day resets.';
         else if (now >= r.cycle_end - BREAKS.closing) planReason = 'Scheduled planning closes 6 hours before the day ends.';
         let flexReason = '';
-        if (r.system === 'scheduled') flexReason = 'Scheduled Breaks are selected for today. Flexible becomes available after the day resets.';
+        if (scheduledLocked(r)) flexReason = 'Scheduled breaks are locked for today, so Flexible breaks are unavailable.';
         else if (a) flexReason = 'A Flexible break is already running.';
         else if (gap) flexReason = `Flexible Strict Mode needs ${minimum} minutes between breaks. You can start again in ${Math.ceil((gap - now) / MIN)} min.`;
         else if (remaining < minimum) flexReason = `Less than ${minimum} minutes of today’s break allowance remain.`;
@@ -272,17 +276,17 @@ export class BreakSystems {
             date: r.date, timezone: r.timezone, day_start_hour: r.day_start_hour, cycle_start: r.cycle_start, cycle_end: r.cycle_end,
             reset_at: new Date(r.cycle_end).toISOString(), server_now: now, revision: r.revision,
             system: r.system, locked_at: r.locked_at, lock_source: r.lock_source,
-            allowance: { total, used, remaining },
+            allowance: { total, used, reserved, remaining },
             scheduled: { breaks: r.scheduled.breaks, saved, saved_at: r.scheduled.saved_at, closing_at: r.cycle_end - BREAKS.closing,
                 planning: r.planning ? { started_at: r.planning.started_at, deadline: r.planning.deadline, saved: !!r.planning.saved, open } : null,
-                can_start_planning: !planReason && !open, can_edit: r.system !== 'flexible' && open, reason: planReason, final: saved && !open },
+                can_start_planning: !planReason && !open, can_edit: open, locked: scheduledLocked(r), reason: planReason, final: saved && !open },
             flexible: {
                 active: a ? { id: a.id, mode: a.mode, minutes: a.minutes, started_at: a.started_at, ends_at: a.planned_end, can_end_at: a.minimum_end, minimum: a.minimum || BREAKS.flexMinimum } : null,
                 minimum, strict: !!cfg?.flexible?.enabled, gap_until: gap, gap_minutes: cfg?.flexible?.enabled ? minimum : 0, presets, max_custom: Math.max(0, remaining), can_start: !flexReason, reason: flexReason,
                 sessions: r.flexible.sessions.map(({ operation_id, ...s }) => s)
             },
             strict_today: strict ? { covered: strict.covered, weekday: strict.weekday, ...(strict.covered ? { deadline: strict.deadline, mode: strict.mode,
-                breaks: strict.breaks, pending: !r.system && now < strict.deadline } : {}) } : null,
+                breaks: strict.breaks, pending: !r.scheduled.saved_at && !scheduledLocked(r) && now < strict.deadline } : {}) } : null,
             in_break: scheduledActive(r, now) || flexibleActive(r, now),
             record: mirror(r, now),
             ...extra
@@ -368,15 +372,13 @@ export class BreakSystems {
     apply(r, action, body, now, cfg = null) {
         const open = planningOpen(r, now), minimum = flexMinimum(cfg);
         if (action === 'lock') {
-            if (!['scheduled', 'flexible'].includes(body.system)) throw fail(400, 'INVALID_SYSTEM', 'Choose Scheduled or Flexible.');
-            if (r.system === body.system) return true;
-            if (r.system) throw fail(409, 'SYSTEM_LOCKED', `${r.system === 'scheduled' ? 'Scheduled' : 'Flexible'} Breaks are already locked for today.`);
-            if (body.system === 'flexible' && r.planning && !r.planning.saved) r.planning = null;
-            lock(r, body.system, 'lock', now);
+            if (body.system !== 'scheduled') throw fail(400, 'INVALID_SYSTEM', 'Only Scheduled breaks can be locked.');
+            if (scheduledLocked(r)) return true;
+            if (r.flexible.active) throw fail(409, 'BREAK_ACTIVE', 'End your active Flexible break before locking Scheduled breaks.');
+            r.v = 2; r.system = 'scheduled'; r.locked_at = now; r.lock_source = 'lock';
             return false;
         }
         if (action === 'plan_start') {
-            if (r.system === 'flexible') throw fail(409, 'SYSTEM_LOCKED', 'Flexible Breaks are selected for today.');
             if (r.scheduled.saved_at) throw fail(409, 'SCHEDULE_SAVED', open ? 'Your planning window is still open.' : 'Today’s schedule is final.');
             if (open) return true; // another device or retry joins the same window and deadline
             if (now >= r.cycle_end - BREAKS.closing) throw fail(409, 'PLANNING_CLOSED', 'Scheduled planning closes 6 hours before the day ends.');
@@ -389,31 +391,35 @@ export class BreakSystems {
             return false;
         }
         if (action === 'schedule_save') {
-            if (r.system === 'flexible') throw fail(409, 'SYSTEM_LOCKED', 'Flexible Breaks are selected for today.');
             if (!open) throw fail(409, r.scheduled.saved_at ? 'PLANNING_ENDED' : 'PLANNING_REQUIRED',
                 r.scheduled.saved_at ? 'The planning window has ended. Today’s last saved schedule is final.' : 'Start a planning window first.');
             const list = body.breaks;
             if (!Array.isArray(list) || list.length > 3) throw fail(400, 'INVALID_SCHEDULE', 'Enter between 1 and 3 complete break times.');
             let breaks = [];
             if (list.length) {
-                const checked = core().validate(list, bounds(r), limitOf(r, cfg));
+                const checked = core().validate(list, bounds(r), Math.max(0, limitOf(r, cfg) - usedNow(r, now, limitOf(r, cfg))));
                 if (!checked.valid) throw fail(400, 'INVALID_SCHEDULE', checked.error);
                 breaks = checked.breaks;
             } else if (!r.scheduled.saved_at) throw fail(400, 'INVALID_SCHEDULE', 'Add at least one break before the first save.');
+            const reserved = breaks.reduce((sum, b) => { const t = core().interval(b, bounds(r)); return sum + (t.endTime - t.startTime) / MIN; }, 0);
+            const active = r.flexible.active;
+            if (active && breaks.some(b => { const t = core().interval(b, bounds(r)); return t.startTime < active.planned_end && t.endTime > active.started_at; })) throw fail(409, 'BREAK_OVERLAP', 'A scheduled break cannot overlap the active Flexible break.');
+            if (active && reserved + r.flexible.used + active.minutes > limitOf(r, cfg)) throw fail(409, 'ALLOWANCE_LOW', 'The active Flexible break and this schedule exceed the daily allowance.');
+            if (!scheduledLocked(r) && cfg?.flexible?.enabled && limitOf(r, cfg) - usedNow(r, now, limitOf(r, cfg)) - reserved < minimum) throw fail(409, 'STRICT_MINIMUM', `Leave at least ${minimum} minutes for Flexible Strict Mode, or lock Scheduled breaks.`);
             r.scheduled = { breaks, saved_at: now };
             r.planning.saved = true;
-            lock(r, 'scheduled', 'save', now);
+            if (!r.system) { r.system = 'scheduled'; r.locked_at = now; r.lock_source = 'save'; }
             return false;
         }
         if (action === 'flex_start') {
             const op = body.operation_id;
             if (typeof op !== 'string' || !OPERATION.test(op)) throw fail(400, 'INVALID_OPERATION', 'A valid request ID is required.');
             if (r.flexible.active?.operation_id === op || r.flexible.sessions.some(s => s.operation_id === op)) return true;
-            if (r.system === 'scheduled') throw fail(409, 'SYSTEM_LOCKED', 'Scheduled Breaks are selected for today.');
+            if (scheduledLocked(r)) throw fail(409, 'SYSTEM_LOCKED', 'Scheduled breaks are locked for today.');
             if (r.flexible.active) throw fail(409, 'BREAK_ACTIVE', 'A Flexible break is already running.');
             const gap = flexGapUntil(r, cfg);
             if (gap > now) throw fail(409, 'STRICT_GAP', `Flexible Strict Mode needs ${minimum} minutes between breaks. You can start again in ${Math.ceil((gap - now) / MIN)} min.`);
-            const remaining = limitOf(r, cfg) - r.flexible.used;
+            const remaining = Math.max(0, limitOf(r, cfg) - r.flexible.used - scheduledMinutes(r));
             if (remaining < minimum) throw fail(409, 'ALLOWANCE_LOW', `Less than ${minimum} minutes of today’s break allowance remain.`);
             if (r.cycle_end - now < minimum * MIN) throw fail(409, 'RESET_SOON', `Less than ${minimum} minutes remain before the day resets.`);
             let minutes = body.minutes;
@@ -426,7 +432,9 @@ export class BreakSystems {
                     throw fail(400, 'INVALID_DURATION', `Choose a whole number of minutes from ${minimum} to ${remaining}.`);
             } else if (body.mode === 'until') minutes = remaining;
             else throw fail(400, 'INVALID_DURATION', 'Choose a break length.');
-            if (r.planning && !r.planning.saved) r.planning = null;
+            const intervals = r.scheduled.breaks.map(b => core().interval(b, bounds(r)));
+            if (intervals.some(t => now >= t.startTime && now < t.endTime)) throw fail(409, 'BREAK_OVERLAP', 'A Scheduled break is already running.');
+            if (intervals.some(t => t.startTime > now && t.startTime < now + minutes * MIN)) throw fail(409, 'BREAK_OVERLAP', 'This Flexible break would overlap a Scheduled break. Choose a shorter break.');
             r.flexible.active = { id: 'brk_' + crypto.randomUUID(), operation_id: op, mode: body.mode, minutes,
                 started_at: now, planned_end: Math.min(now + minutes * MIN, r.cycle_end), minimum_end: now + minimum * MIN, minimum };
             lock(r, 'flexible', 'flex_start', now);

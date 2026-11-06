@@ -474,7 +474,7 @@ test('expiry keeps the last saved schedule; rejected or unsaved edits never repl
     const f=browser();await f.engine.startPlanning();await f.engine.saveSchedule([{start:'14:00',end:'14:30'}]);
     await assert.rejects(f.engine.saveSchedule([{start:'14:00',end:''}]));
     f.advance(600001);await f.engine.refresh();const s=f.engine.getPlanningStatus();
-    assert.equal(s.isLocked,true);assert.equal(s.system,'scheduled');assert.equal(f.engine.getTodayBreaks().length,1);
+    assert.equal(s.isLocked,false);assert.equal(s.system,'scheduled');assert.equal(f.engine.getTodayBreaks().length,1);
     assert.equal(f.engine.getTodayBreaks()[0].end,'14:30');
     await assert.rejects(f.engine.saveSchedule([{start:'15:00',end:'15:30'}]),/planning window has ended/);
 });
@@ -610,7 +610,7 @@ test('Flexible header colors switch at exactly 35% and 10% and the label shows a
     for(const [used,expected] of [[0,'flex-green'],[116,'flex-green'],[117,'flex-yellow'],[162,'flex-yellow'],[163,'flex-red']]){
         const g=browser(),{ui:u,classes:c}=breakUI(g);
         if(used){await g.engine.startFlexible('custom',used);g.advance(used*60000);await g.engine.refresh();}
-        else await g.engine.lock('flexible');
+        else await g.engine.refresh();
         u.updateStatusPill();assert.equal([...c].find(x=>/^flex-(green|yellow|red)$/.test(x)),expected,'used '+used);
         assert.match(u.pillText.textContent,/left$/);
     }
@@ -633,7 +633,7 @@ test('breaks tutorial explains both systems and targets elements that exist',()=
     for(const topic of [/Scheduled/,/Flexible/,/3 hours/,/Lock for Today/,/first save/,/10 minutes/,/30 minutes 1 second uses 31/,/35%/,/10–35%/,/not Sleep Lock/,/Universe locks/,/never ends a break/])
         assert.match(block,topic);
     for(const id of ['breakTabScheduled','breakTabFlexible','flexBreakBody','breakDaySummary','breakRowsContainer','saveBreaksModalBtn'])assert.match(html,new RegExp('id="'+id+'"'));
-    assert.equal((html.match(/data-break-lock="/g)||[]).length,2);
+    assert.equal((html.match(/data-break-lock="/g)||[]).length,1);
 });
 
 
@@ -2141,7 +2141,7 @@ test('Each break system panel names the system, shows its lock state and basic i
         assert.equal((panel.match(/<li>/g) || []).length, 3, `${name} shows three basic steps`);
     }
     assert.match(app, /Locked for today/);
-    assert.match(app, /Not locked yet/);
+    assert.match(app, /Available/);
 });
 
 test('strict break modes card: locks enabled modes while tasks remain and saves through the Worker',async()=>{

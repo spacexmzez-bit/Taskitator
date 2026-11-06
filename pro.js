@@ -817,11 +817,11 @@ const TaskitatorEngine = {
         // Compatibility view for Settings and older callers.
         getPlanningStatus(){
             const v=this.current(),bounds=this.getLogicalDayBounds(),now=this.serverNow(),s=v?.scheduled,planning=s?.planning;
-            const open=!!planning&&now<planning.deadline,closed=now>=+bounds.cutoff6h,flexible=v?.system==='flexible';
-            const reason=flexible?'Flexible Breaks are selected for today.':s?.saved&&!open?'Today’s schedule is final until the next day cycle.':
+            const open=!!planning&&now<planning.deadline,closed=now>=+bounds.cutoff6h;
+            const reason=s?.saved&&!open?'Today’s schedule is final until the next day cycle.':
                 v?.system==='scheduled'&&!s?.saved&&closed?'Planning is closed during the final 6 hours of this cycle.':!v?'Open the break panel to load today’s breaks.':closed&&!open?'Planning is closed during the final 6 hours of this cycle.':'';
-            return {bounds,record:this.getBreakRecord(bounds.dateStr),view:v,system:v?.system||null,isRepair:false,isRunning:open&&!flexible,
-                isLocked:!!v?.system&&!open,isInBuffer:closed&&!open,canStart:!!v&&!open&&!flexible&&!s?.saved&&!closed,canEdit:open&&!flexible,
+            return {bounds,record:this.getBreakRecord(bounds.dateStr),view:v,system:v?.system||null,isRepair:false,isRunning:open,
+                isLocked:!!s?.locked&&!open,isInBuffer:closed&&!open,canStart:!!s?.can_start_planning,canEdit:open,
                 remainingWindowMs:open?Math.max(0,planning.deadline-now):0,reason};
         },
         isSelectionWindowOpen(){const s=this.getPlanningStatus();return s.canStart||s.canEdit;},
@@ -833,12 +833,11 @@ const TaskitatorEngine = {
             const a=v.flexible?.active,now=this.serverNow();
             const live=a?Math.ceil((Math.min(now,a.ends_at)-a.started_at)/60000)-Math.ceil((Math.min(v.server_now,a.ends_at)-a.started_at)/60000):0;
             const total=v.allowance.total||this.ALLOWANCE_MINUTES,used=Math.min(total,v.allowance.used+Math.max(0,live));
-            return {total,used,remaining:total-used,percent:(total-used)/total*100};
+            return {total,used,remaining:Math.max(0,total-used-(v.allowance.reserved||0)),percent:Math.max(0,total-used-(v.allowance.reserved||0))/total*100};
         },
         getActiveBreak(){
             const now=this.serverNow(),v=this.current(),a=v?.flexible?.active;
             if(a&&now>=a.started_at&&now<a.ends_at)return {break:{start_at:new Date(a.started_at).toISOString(),end_at:new Date(a.ends_at).toISOString(),kind:'flexible'},startTime:a.started_at,endTime:a.ends_at,flexible:true,id:a.id,canEndAt:a.can_end_at,timezone:v.timezone,date:v.date};
-            if(v?.system==='flexible')return null;
             return this.core().activeBreak(this.getAllBreakData(),{...this.settings(),break_timezone:this.getLogicalDayBounds().timezone},now);
         },
         isCurrentlyOnBreak(){return !!this.getActiveBreak();}
