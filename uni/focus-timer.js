@@ -13,7 +13,7 @@
   }if(s.running)s.left=Math.max(0,s.target-now);return {state:s,event,endedAt};
  }
  window.TaskitatorPomodoro={advance,fresh,valid};
- let key=null,tag,panel,display,counter,phaseLabel,setup,restart,pause,end,message,pip=null,audio=null,wake=null,wakePending=false,busy=false;
+ let key=null,tag,panel,surface,display,counter,phaseLabel,setup,restart,pause,end,message,pip=null,audio=null,wake=null,wakePending=false,busy=false;
  const user=()=>window.Clerk?.user?.id||window.TaskitatorAuth?.account?.user||null;
  const read=()=>{try{const s=JSON.parse(localStorage.getItem(key));if(s?.config){s.config.large??=20;s.config.work=Math.min(s.config.work,90);s.config.rest=Math.min(s.config.rest,15);s.config.sessions=Math.min(s.config.sessions,4);s.session=Math.min(s.session,4);}return valid(s)?s:fresh();}catch{return fresh();}};
  const ask=(title,message,confirmLabel)=>typeof window.TaskitatorConfirm==='function'?window.TaskitatorConfirm({title,message,confirmLabel,cancelLabel:'Keep going',tone:'danger'}):Promise.resolve(window.confirm(title+'\n\n'+message));
@@ -39,32 +39,32 @@
  async function action(fn){unlockAudio();await exclusive(()=>{const s=advance(read(),Date.now()).state;fn(s);save(s);render(s);});}
  function mount(){const id=user(),next=id?'taskitator_focus_v1:'+id:null;if(next===key)return;key=next;tag?.remove();panel?.remove();tag=null;if(wake){void wake.release();wake=null;}pip?.close();pip=null;if(!key)return;
   tag=el('button','⏱ Focus timer',document.body);tag.type='button';tag.id='focusTimerTag';tag.className='icon-btn';tag.setAttribute('aria-label','Open focus timer');
-  panel=el('dialog',undefined,document.body);panel.id='focusTimerPanel';panel.setAttribute('aria-labelledby','focusTimerHeading');const heading=el('h2','Focus timer',panel);heading.id='focusTimerHeading';phaseLabel=el('p','',panel);phaseLabel.className='focus-timer-phase';display=el('p','',panel);display.className='focus-timer-display';counter=el('p','',panel);counter.className='focus-timer-counter';message=el('p','',panel);message.className='focus-timer-status';message.setAttribute('role','status');
-  setup=el('details',undefined,panel);el('summary','Timer settings',setup);setup.open=true;
+  panel=el('dialog',undefined,document.body);panel.id='focusTimerPanel';panel.setAttribute('aria-labelledby','focusTimerHeading');surface=el('div',undefined,panel);surface.id='focusTimerSurface';const heading=el('h2','Focus timer',surface);heading.id='focusTimerHeading';phaseLabel=el('p','',surface);phaseLabel.className='focus-timer-phase';display=el('p','',surface);display.className='focus-timer-display';counter=el('p','',surface);counter.className='focus-timer-counter';message=el('p','',surface);message.className='focus-timer-status';message.setAttribute('role','status');
+  setup=el('details',undefined,surface);el('summary','Timer settings',setup);setup.open=true;
   const fields=el('div',undefined,setup);fields.className='focus-timer-fields';
   const inputs={};for(const [name,label,max]of [['work','Study minutes',90],['rest','Break minutes',15],['large','Large break minutes',35]]){const l=el('label',label,fields),n=el('input',undefined,l);n.type='number';n.min=1;n.max=max;n.value=read().config[name];inputs[name]=n;}
   const sessionRow=el('div',undefined,setup);sessionRow.className='focus-session-stepper';el('span','Sessions before large break',sessionRow);const minus=el('button','−',sessionRow),n=el('input',undefined,sessionRow),plus=el('button','+',sessionRow);n.type='number';n.min=1;n.max=4;n.value=read().config.sessions;n.readOnly=true;n.setAttribute('aria-label','Sessions before large break');inputs.sessions=n;for(const [b,delta,label]of [[minus,-1,'Fewer sessions'],[plus,1,'More sessions']]){b.type='button';b.className='icon-btn';b.setAttribute('aria-label',label);b.addEventListener('click',()=>{n.value=Math.max(1,Math.min(4,Number(n.value)+delta));});}
   const options=el('div',undefined,setup);options.className='focus-timer-options';
   for(const [name,label]of [['sound','Sound'],['vibration','Vibration'],['awake','Keep screen awake']]){const l=el('label',label,options),n=el('input',undefined,l);n.type='checkbox';n.checked=read().config[name];n.addEventListener('change',()=>action(s=>s.config[name]=n.checked));}
-  const actions=el('div',undefined,panel);actions.className='focus-timer-actions';
+  const actions=el('div',undefined,surface);actions.className='focus-timer-actions';
   function button(label,fn,parent=actions){const b=el('button',label,parent);b.type='button';b.className='icon-btn';b.addEventListener('click',()=>Promise.resolve(fn()).catch(e=>message.textContent=e.message));return b;}
   restart=button('Start timer',async()=>{const current=read();if(current.target&&!current.done&&!(await ask('Restart the timer?','Your progress in this round will be lost.','Restart')))return;return action(s=>{const c={...s.config};for(const [name,n]of Object.entries(inputs)){const v=Number(n.value);if(!Number.isInteger(v)||v<1||v>Number(n.max))throw Error('Check the minutes and session count. One of them is out of range.');c[name]=v;}Object.assign(s,fresh(),{config:c,running:true,left:c.work*60000,target:Date.now()+c.work*60000});setup.open=false;});},setup);restart.classList.add('focus-timer-start');
   const fullscreen=button('⛶ Full screen',async()=>{
-   if(!panel.requestFullscreen)throw Error('Full screen is unavailable in this browser.');
-   await panel.requestFullscreen();
+   if(!surface.requestFullscreen)throw Error('Full screen is unavailable in this browser.');
+   await surface.requestFullscreen();
    if(window.matchMedia('(max-width: 767px)').matches && window.screen.orientation?.lock)try{await window.screen.orientation.lock('landscape');}catch{}
   });fullscreen.classList.add('focus-fullscreen-enter');
-  const exit=button('✕',async()=>{if(document.fullscreenElement===panel)await document.exitFullscreen();});exit.classList.add('focus-fullscreen-exit');exit.setAttribute('aria-label','Exit full screen');
+  const exit=button('✕',async()=>{if(document.fullscreenElement===surface)await document.exitFullscreen();});exit.classList.add('focus-fullscreen-exit');exit.setAttribute('aria-label','Exit full screen');
   pause=button('Pause',()=>action(s=>{if(s.done)return;s.left=s.running?Math.max(0,s.target-Date.now()):s.left;s.running=!s.running;if(s.running)s.target=Date.now()+s.left;}));
   pause.classList.add('focus-fullscreen-pause');
   end=button('End timer',async()=>{if(!(await ask('End the timer now?',"It isn't finished yet. Your progress in this round will be lost.",'End timer')))return;return action(s=>{const c=s.config;Object.assign(s,fresh(),{config:c,left:c.work*60000});});});
   end.classList.add('focus-fullscreen-end');
   if(document.getElementById('distractionDumpModal'))button('💡 Scratchpad',()=>{panel.close();window.dispatchEvent(new Event('taskitator-timer-scratchpad'));});
   if(window.documentPictureInPicture)button('Floating timer',async()=>{pip=await window.documentPictureInPicture.requestWindow({width:300,height:100});pip.document.body.style.cssText='font:22px system-ui;background:#102038;color:white;padding:16px';render(read());});
-  const help=el('p','The timer keeps running when you switch pages. Tap any timer button once to allow sound. If you use the floating timer, keep this tab open.',panel);help.className='focus-timer-help';
+  const help=el('p','The timer keeps running when you switch pages. Tap any timer button once to allow sound. If you use the floating timer, keep this tab open.',surface);help.className='focus-timer-help';
   button('Close',()=>panel.close());tag.addEventListener('click',()=>{unlockAudio();panel.showModal();render(read());});if(read().config.sound)unlockAudio();void tick();
  }
- document.addEventListener('fullscreenchange',()=>{if(!panel)return;const active=document.fullscreenElement===panel;panel.classList.toggle('focus-fullscreen',active);if(!active)window.screen.orientation?.unlock?.();});
+ document.addEventListener('fullscreenchange',()=>{if(!panel)return;const active=document.fullscreenElement===surface;panel.classList.toggle('focus-fullscreen',active);if(!active)window.screen.orientation?.unlock?.();});
  window.addEventListener('taskitator-auth-ready',mount);window.Clerk?.addListener?.(mount);window.addEventListener('storage',()=>{mount();void tick();});document.addEventListener('visibilitychange',()=>{mount();void tick();});window.addEventListener('pagehide',()=>{if(wake)void wake.release();});setInterval(()=>{mount();void tick();},500);
  if(document.readyState!=='loading')mount();
 })();
