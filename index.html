@@ -356,7 +356,7 @@
                 <span class="dump-active-dot" id="dumpActiveIndicator"></span>
             </button>
             
-            <span class="sync-dot local-only" id="syncStatusDot" title="Click to view Sync Status details"></span>
+            <button type="button" class="sync-dot-button" id="syncStatusButton" aria-label="Sync status: Local only. Open sync details" aria-haspopup="dialog" aria-controls="syncInfoModal"><span class="sync-dot local-only" id="syncStatusDot" aria-hidden="true"></span></button>
             
             <button class="emergency-icon-btn" id="emergencyTriggerBtn" title="Emergency Bypass" aria-label="Emergency Bypass">
                 <span>🚨</span><span class="wide-label">Emergency bypass</span>
@@ -742,7 +742,7 @@
             <span class="sync-dot error" style="cursor: default;"></span>
             <div style="font-size: 0.85rem;">
                 <strong style="color: #f87171;">Red: Sync Failed / Offline</strong>
-                <div style="color: var(--text-muted); font-size: 0.8rem;">Network error or worker rejection. Check passkey or internet connection.</div>
+                <div style="color: var(--text-muted); font-size: 0.8rem;">Network error or worker rejection. Check your connection and try again.</div>
             </div>
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">

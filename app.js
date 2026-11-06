@@ -1593,6 +1593,8 @@ window.TaskitatorApp = (() => {
         else if (state === 'error') dot.title = 'Sync Status: Sync Failed';
         else if (state === 'offline') dot.title = 'Sync Status: Offline. Changes are saved on this device';
         else dot.title = 'Sync Status: Local only';
+        const button = document.getElementById('syncStatusButton');
+        if (button) { button.title = dot.title + ' · Open sync details'; button.setAttribute('aria-label', dot.title + '. Open sync details'); }
     }
 
     function initSyncIndicator() {
@@ -3255,6 +3257,9 @@ window.TaskitatorApp = (() => {
                 if (event.key === 'Escape' && !sortMenu.hidden) { closeSortMenu(); sortButton.focus(); }
             });
         }
+        const syncStatusButton = document.getElementById('syncStatusButton');
+        const syncInfoModal = document.getElementById('syncInfoModal');
+        if (syncStatusButton && syncInfoModal) syncStatusButton.addEventListener('click', () => syncInfoModal.classList.add('open'));
         initSyncIndicator();
         loadStorage();
         BreakUI.init();
@@ -3812,14 +3817,9 @@ window.TaskitatorApp = (() => {
         }
         window.addEventListener('taskitator-emergency-updated', updateEmergencyUI);
 
-        const syncStatusDot = document.getElementById('syncStatusDot');
-        const syncInfoModal = document.getElementById('syncInfoModal');
         const closeSyncInfoModalBtn = document.getElementById('closeSyncInfoModalBtn');
         const forceSyncFromModalBtn = document.getElementById('forceSyncFromModalBtn');
 
-        if (syncStatusDot && syncInfoModal) {
-            syncStatusDot.addEventListener('click', () => syncInfoModal.classList.add('open'));
-        }
         if (closeSyncInfoModalBtn && syncInfoModal) {
             closeSyncInfoModalBtn.addEventListener('click', () => syncInfoModal.classList.remove('open'));
         }
@@ -3829,7 +3829,7 @@ window.TaskitatorApp = (() => {
                 try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch (e) {}
 
                 if (!window.SyncEngine?.isConfigured()) {
-                    window.TaskitatorNotify('Cannot sync: No secret passkey configured in Settings.');
+                    window.TaskitatorNotify('Cannot sync right now. Check your account and connection.');
                     updateSyncDot('local-only');
                     return;
                 }
