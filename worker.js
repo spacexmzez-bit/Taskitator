@@ -395,11 +395,22 @@ export async function verifySession(request, env, token) {
         new TextEncoder().encode(parts[0] + '.' + parts[1]));
     const now = Math.floor(Date.now() / 1000), origins = allowedOrigins(env);
     const origin = request.headers.get('Origin');
+    // Browsers must keep the existing origin/authorized-party binding.
+    const webParty = origins.includes(claims.azp) && (origin === null || origin === claims.azp);
+    // Clerk's Android SDK may omit azp, or identify its native callback/package.
+    // Only allow these bearer tokens when there is NO Origin header. This is not
+    // device attestation: the signed JWT and live Clerk session remain mandatory.
+    const nativeParty = origin === null && (
+        claims.azp == null ||
+        claims.azp === 'com.mazendev.taskitator' ||
+        claims.azp === 'clerk://com.mazendev.taskitator.callback' ||
+        claims.azp === 'clerk://com.mazendev.taskitator.oauth'
+    );
     if (!valid || claims.iss !== env.CLERK_ISSUER.replace(/\/$/, '') ||
         !Number.isFinite(claims.exp) || claims.exp <= now ||
         !Number.isFinite(claims.nbf) || claims.nbf > now + 5 ||
         !Number.isFinite(claims.iat) || claims.iat > now + 5 ||
-        !origins.includes(claims.azp) || (origin && origin !== claims.azp) ||
+        !(webParty || nativeParty) ||
         typeof claims.sub !== 'string' || !/^user_[A-Za-z0-9]+$/.test(claims.sub) ||
         typeof claims.sid !== 'string' || !/^sess_[A-Za-z0-9]+$/.test(claims.sid) ||
         (claims.sts !== undefined && claims.sts !== 'active')) {
