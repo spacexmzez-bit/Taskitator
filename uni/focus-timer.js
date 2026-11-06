@@ -49,13 +49,22 @@
   const actions=el('div',undefined,panel);actions.className='focus-timer-actions';
   function button(label,fn,parent=actions){const b=el('button',label,parent);b.type='button';b.className='icon-btn';b.addEventListener('click',()=>Promise.resolve(fn()).catch(e=>message.textContent=e.message));return b;}
   restart=button('Start timer',async()=>{const current=read();if(current.target&&!current.done&&!(await ask('Restart the timer?','Your progress in this round will be lost.','Restart')))return;return action(s=>{const c={...s.config};for(const [name,n]of Object.entries(inputs)){const v=Number(n.value);if(!Number.isInteger(v)||v<1||v>Number(n.max))throw Error('Check the minutes and session count. One of them is out of range.');c[name]=v;}Object.assign(s,fresh(),{config:c,running:true,left:c.work*60000,target:Date.now()+c.work*60000});setup.open=false;});},setup);restart.classList.add('focus-timer-start');
+  const fullscreen=button('⛶ Full screen',async()=>{
+   if(!panel.requestFullscreen)throw Error('Full screen is unavailable in this browser.');
+   await panel.requestFullscreen();
+   if(window.matchMedia('(max-width: 767px)').matches && window.screen.orientation?.lock)try{await window.screen.orientation.lock('landscape');}catch{}
+  });fullscreen.classList.add('focus-fullscreen-enter');
+  const exit=button('✕',async()=>{if(document.fullscreenElement===panel)await document.exitFullscreen();});exit.classList.add('focus-fullscreen-exit');exit.setAttribute('aria-label','Exit full screen');
   pause=button('Pause',()=>action(s=>{if(s.done)return;s.left=s.running?Math.max(0,s.target-Date.now()):s.left;s.running=!s.running;if(s.running)s.target=Date.now()+s.left;}));
+  pause.classList.add('focus-fullscreen-pause');
   end=button('End timer',async()=>{if(!(await ask('End the timer now?',"It isn't finished yet. Your progress in this round will be lost.",'End timer')))return;return action(s=>{const c=s.config;Object.assign(s,fresh(),{config:c,left:c.work*60000});});});
+  end.classList.add('focus-fullscreen-end');
   if(document.getElementById('distractionDumpModal'))button('💡 Scratchpad',()=>{panel.close();window.dispatchEvent(new Event('taskitator-timer-scratchpad'));});
   if(window.documentPictureInPicture)button('Floating timer',async()=>{pip=await window.documentPictureInPicture.requestWindow({width:300,height:100});pip.document.body.style.cssText='font:22px system-ui;background:#102038;color:white;padding:16px';render(read());});
   const help=el('p','The timer keeps running when you switch pages. Tap any timer button once to allow sound. If you use the floating timer, keep this tab open.',panel);help.className='focus-timer-help';
   button('Close',()=>panel.close());tag.addEventListener('click',()=>{unlockAudio();panel.showModal();render(read());});if(read().config.sound)unlockAudio();void tick();
  }
+ document.addEventListener('fullscreenchange',()=>{if(!panel)return;const active=document.fullscreenElement===panel;panel.classList.toggle('focus-fullscreen',active);if(!active)window.screen.orientation?.unlock?.();});
  window.addEventListener('taskitator-auth-ready',mount);window.Clerk?.addListener?.(mount);window.addEventListener('storage',()=>{mount();void tick();});document.addEventListener('visibilitychange',()=>{mount();void tick();});window.addEventListener('pagehide',()=>{if(wake)void wake.release();});setInterval(()=>{mount();void tick();},500);
  if(document.readyState!=='loading')mount();
 })();

@@ -5456,3 +5456,11 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
     overflow-wrap: anywhere;
     line-height: 1.2;
 }
+
+/* Focus timer fullscreen */
+#focusTimerPanel .focus-fullscreen-exit { display:none; }
+#focusTimerPanel:fullscreen { box-sizing:border-box; width:100vw; height:100vh; max-width:none; max-height:none; margin:0; border:0; border-radius:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:env(safe-area-inset-top) 20px env(safe-area-inset-bottom); }
+#focusTimerPanel:fullscreen > :not(.focus-timer-display):not(.focus-timer-actions) { display:none !important; }
+#focusTimerPanel:fullscreen .focus-timer-display { font-size:min(28vw, 52vh); line-height:1; margin:0 0 4vh; }
+#focusTimerPanel:fullscreen .focus-timer-actions > :not(.focus-fullscreen-pause):not(.focus-fullscreen-end):not(.focus-fullscreen-exit) { display:none !important; }
+#focusTimerPanel:fullscreen .focus-fullscreen-exit { display:inline-flex; position:absolute; top:max(12px,env(safe-area-inset-top)); right:max(12px,env(safe-area-inset-right)); min-width:44px; min-height:44px; justify-content:center; align-items:center; }
