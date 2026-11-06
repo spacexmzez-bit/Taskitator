@@ -2003,11 +2003,15 @@ window.TaskitatorComponents = Object.freeze({
                 const handle = document.createElement('button');
                 handle.type = 'button';
                 handle.className = 'criteria-resize-handle';
-                handle.setAttribute('aria-label', 'Resize proof criteria vertically');
-                handle.textContent = '↕ Resize';
+                handle.setAttribute('aria-label', 'Resize proof criteria. Drag vertically or use the up and down arrow keys.');
+                handle.setAttribute('aria-controls', id);
+                handle.textContent = '↕';
+                const wrapper = document.createElement('div');
+                wrapper.className = 'criteria-resize-wrapper';
+                field.parentNode.insertBefore(wrapper, field);
+                wrapper.append(field, handle);
                 field.classList.add('criteria-resizable');
-                field.insertAdjacentElement('afterend', handle);
-                let startY = 0, startHeight = 0, dragging = false;
+                let startY = 0, startHeight = 0;
                 const resize = height => {
                     field.style.height = Math.max(72, Math.min(1600, height)) + 'px';
                 };
@@ -2015,18 +2019,12 @@ window.TaskitatorComponents = Object.freeze({
                     if (event.button !== 0) return;
                     startY = event.clientY;
                     startHeight = field.offsetHeight;
-                    dragging = false;
                     handle.setPointerCapture(event.pointerId);
                 });
                 handle.addEventListener('pointermove', event => {
                     if (!handle.hasPointerCapture(event.pointerId)) return;
                     const delta = event.clientY - startY;
-                    if (Math.abs(delta) > 3) dragging = true;
-                    if (dragging) resize(startHeight + delta);
-                });
-                handle.addEventListener('click', () => {
-                    if (!dragging) resize(field.offsetHeight + 120);
-                    dragging = false;
+                    resize(startHeight + delta);
                 });
                 handle.addEventListener('keydown', event => {
                     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
