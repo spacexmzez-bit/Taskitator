@@ -1972,7 +1972,7 @@ window.TaskitatorComponents = Object.freeze({
                 row(task ? task.title : d.title, 'Edit of an existing task · saved ' + new Date(d.saved_at).toLocaleString(), () => openTaskDetailModal(d.task_id), () => api.removeEdit(d.task_id));
             }
             if (!creates.length && !edits.length) {
-                const empty = document.createElement('p'); empty.className = 'draft-meta'; empty.textContent = 'No drafts. Use “Save as draft” when creating or editing a task.';
+                const empty = document.createElement('p'); empty.className = 'draft-meta'; empty.textContent = 'No drafts. Use “Draft” when creating or editing a task.';
                 box.appendChild(empty);
             }
             const actions = document.createElement('div'); actions.style.cssText = 'display:flex;justify-content:flex-end;margin-top:16px;';
