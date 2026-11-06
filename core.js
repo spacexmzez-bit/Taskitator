@@ -2046,7 +2046,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-criteria-triangle-v1');
+                    resolve(event.data?.version === 'taskitator-textarea-resize-v1');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
@@ -2206,4 +2206,59 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
  }
  new MutationObserver(update).observe(drawer,{attributes:true,attributeFilter:['class']});
  document.addEventListener('keydown',e=>{if(!wasOpen)return;if(e.key==='Escape'){drawer.classList.remove('open');backdrop.classList.remove('open');e.preventDefault();}if(e.key==='Tab'){const nodes=[...drawer.querySelectorAll('a[href],button:not(:disabled),[tabindex="0"]')].filter(n=>n.getClientRects().length);if(!nodes.length)return;const first=nodes[0],last=nodes.at(-1);if(e.shiftKey&&document.activeElement===first){last.focus();e.preventDefault();}else if(!e.shiftKey&&document.activeElement===last){first.focus();e.preventDefault();}}});
+})();
+
+// Add a touch-friendly vertical resize handle to resizable text areas, including
+// fields created when a modal or Universe form opens.
+(function () {
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return;
+
+    function addHandle(field) {
+        if (!field.isConnected || field.classList.contains('criteria-resizable') ||
+            getComputedStyle(field).resize === 'none') return;
+        const label = field.labels?.[0]?.textContent?.trim() || field.getAttribute('aria-label') || field.placeholder || 'text field';
+        const handle = document.createElement('button');
+        handle.type = 'button';
+        handle.className = 'criteria-resize-handle';
+        handle.setAttribute('aria-label', `Resize ${label}. Drag vertically or use the up and down arrow keys.`);
+        if (field.id) handle.setAttribute('aria-controls', field.id);
+        handle.textContent = '↕';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'criteria-resize-wrapper';
+        field.parentNode.insertBefore(wrapper, field);
+        wrapper.append(field, handle);
+        field.classList.add('criteria-resizable');
+        let startY = 0, startHeight = 0;
+        const resize = height => {
+            field.style.height = Math.max(72, Math.min(1600, height)) + 'px';
+        };
+        handle.addEventListener('pointerdown', event => {
+            if (event.button !== 0) return;
+            startY = event.clientY;
+            startHeight = field.offsetHeight;
+            handle.setPointerCapture(event.pointerId);
+        });
+        handle.addEventListener('pointermove', event => {
+            if (handle.hasPointerCapture(event.pointerId)) resize(startHeight + event.clientY - startY);
+        });
+        handle.addEventListener('keydown', event => {
+            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            resize(field.offsetHeight + (event.key === 'ArrowDown' ? 40 : -40));
+        });
+    }
+
+    function scan(node) {
+        if (node.nodeType !== 1) return;
+        if (node.matches('textarea')) addHandle(node);
+        node.querySelectorAll('textarea').forEach(addHandle);
+    }
+    function init() {
+        scan(document.body);
+        new MutationObserver(records => {
+            for (const record of records) for (const node of record.addedNodes) scan(node);
+        }).observe(document.body, {childList: true, subtree: true});
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, {once: true});
+    else init();
 })();

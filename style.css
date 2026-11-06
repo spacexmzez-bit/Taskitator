@@ -5391,11 +5391,12 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .draft-row { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border-color, #2b3d66); }
 .draft-meta { color: var(--text-muted, #9fb0d0); font-size: 0.78rem; }
 
-/* Proof criteria resize handle */
+/* Text area resize handle */
 .criteria-resize-wrapper {
     position: relative;
 }
-.form-group textarea.criteria-resizable {
+.criteria-resize-wrapper textarea.criteria-resizable,
+#universeWorkspace textarea.criteria-resizable {
     display: block;
     resize: none;
     box-sizing: border-box;
@@ -5416,3 +5417,16 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
     cursor: ns-resize;
     touch-action: none;
 }
+
+.copilot-input-bar .criteria-resize-wrapper {
+    flex: 1;
+    min-width: 0;
+}
+.copilot-input-bar .criteria-resize-handle {
+    width: 54px;
+    height: 54px;
+    display: block;
+    border-radius: 0 0 7px 0;
+}
+#universeWorkspace .uni-confirm-sheet .criteria-resize-wrapper { margin-bottom: 16px; }
+#universeWorkspace .uni-confirm-sheet textarea.criteria-resizable { margin-bottom: 0; }
