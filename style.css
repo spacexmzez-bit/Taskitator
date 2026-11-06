@@ -5390,3 +5390,22 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .draft-banner span { flex: 1 1 200px; }
 .draft-row { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border-color, #2b3d66); }
 .draft-meta { color: var(--text-muted, #9fb0d0); font-size: 0.78rem; }
+
+/* A wide touch target keeps proof criteria resizing vertical on phones. */
+.form-group textarea.criteria-resizable {
+    resize: none;
+    box-sizing: border-box;
+}
+.criteria-resize-handle {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    margin-top: 4px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-subtle);
+    color: var(--text-color);
+    cursor: ns-resize;
+    touch-action: none;
+    font: inherit;
+}

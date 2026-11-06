@@ -1997,6 +1997,43 @@ window.TaskitatorComponents = Object.freeze({
         function init() {
             if (initialized) return;
             initialized = true;
+            for (const id of ['taskCriteriaInput', 'editTaskCriteria']) {
+                const field = document.getElementById(id);
+                if (!field) continue;
+                const handle = document.createElement('button');
+                handle.type = 'button';
+                handle.className = 'criteria-resize-handle';
+                handle.setAttribute('aria-label', 'Resize proof criteria vertically');
+                handle.textContent = '↕ Resize';
+                field.classList.add('criteria-resizable');
+                field.insertAdjacentElement('afterend', handle);
+                let startY = 0, startHeight = 0, dragging = false;
+                const resize = height => {
+                    field.style.height = Math.max(72, Math.min(1600, height)) + 'px';
+                };
+                handle.addEventListener('pointerdown', event => {
+                    if (event.button !== 0) return;
+                    startY = event.clientY;
+                    startHeight = field.offsetHeight;
+                    dragging = false;
+                    handle.setPointerCapture(event.pointerId);
+                });
+                handle.addEventListener('pointermove', event => {
+                    if (!handle.hasPointerCapture(event.pointerId)) return;
+                    const delta = event.clientY - startY;
+                    if (Math.abs(delta) > 3) dragging = true;
+                    if (dragging) resize(startHeight + delta);
+                });
+                handle.addEventListener('click', () => {
+                    if (!dragging) resize(field.offsetHeight + 120);
+                    dragging = false;
+                });
+                handle.addEventListener('keydown', event => {
+                    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+                    event.preventDefault();
+                    resize(field.offsetHeight + (event.key === 'ArrowDown' ? 40 : -40));
+                });
+            }
             try {
                 const rawRules = localStorage.getItem('taskitator_mrstudy_rules');
                 if (rawRules) {

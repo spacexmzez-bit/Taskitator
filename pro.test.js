@@ -1568,7 +1568,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-drafts-v1'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-criteria-resize-v1'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);

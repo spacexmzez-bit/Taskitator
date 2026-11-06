@@ -2046,7 +2046,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-drafts-v1');
+                    resolve(event.data?.version === 'taskitator-criteria-resize-v1');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
