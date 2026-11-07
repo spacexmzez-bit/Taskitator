@@ -11,6 +11,14 @@
   const visible = el => !!el && !!el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden';
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+  // Step and list icons are semantic icon keys (icons.js); anything else renders as text.
+  function glyph(cls, value) {
+    const n = el('span', cls);
+    const icons = window.TaskitatorIcons;
+    if (icons && icons.has(value)) { n.setAttribute('aria-hidden', 'true'); n.append(icons.node(value)); }
+    else n.textContent = value == null ? '' : String(value);
+    return n;
+  }
   function el(tag, cls, text) {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -50,13 +58,13 @@
       box.append(g);
     } else if (v.type === 'list') {
       const ul = el('ul', 'tt-list');
-      v.items.forEach(i => { const li = el('li'); li.append(el('span', '', i.icon || '•')); li.append(rich(el('span'), i.text)); ul.append(li); });
+      v.items.forEach(i => { const li = el('li'); li.append(glyph('', i.icon || '•')); li.append(rich(el('span'), i.text)); ul.append(li); });
       box.append(ul);
     } else if (v.type === 'checklist') {
       const g = el('div', 'tt-checklist');
       v.items.forEach(i => {
         const a = el('a'); a.href = i.href || '#'; a.setAttribute('role', 'link');
-        a.append(el('span', '', i.icon || '•'));
+        a.append(glyph('', i.icon || '•'));
         const t = el('span'); t.append(document.createTextNode(i.label)); if (i.sub) t.append(el('small', '', i.sub)); a.append(t);
         a.append(el('span', 'tt-go', '→'));
         a.addEventListener('click', e => { e.preventDefault(); finish('completed', i.href); });
@@ -103,7 +111,7 @@
       const bar = el('div', 'tt-bar'); bar.setAttribute('aria-hidden', 'true');
       list.forEach((_, i) => bar.append(el('i', i < index ? 'tt-done' : i === index ? 'tt-now' : '')));
       const head = el('div', 'tt-head');
-      if (step.icon) head.append(el('div', 'tt-icon', step.icon));
+      if (step.icon) { const ic = glyph('tt-icon', step.icon); head.append(ic); }
       const body = el('div');
       const h = el('h2', '', step.title); h.id = 'tt-title';
       const p = rich(el('p', 'tt-text'), step.text); p.id = 'tt-text';

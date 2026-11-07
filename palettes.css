@@ -1,0 +1,165 @@
+/* Taskitator palettes: colours only. One block per palette, selected by
+   <html data-palette="..."> (set before first paint by theme-boot.js).
+   Existing token names (--card-bg, --primary, ...) are re-pointed so style.css keeps
+   working unchanged; new tokens use the --tk- prefix. Scene colours (--sc-*) are read
+   by the family scene SVGs, so a new palette needs no JavaScript.
+   Priority and status colours (red / amber / green) stay fixed in every palette. */
+
+html[data-palette="blue"] {
+    --bg-color: #0a1119;
+    --card-bg: #0e1721;
+    --card-subtle: #142131;
+    --text-color: #d4deeb;
+    --text-muted: #8aa6c8;
+    --border-color: #223753;
+    --border-hover: #34547e;
+    --primary: #5b8dd0;
+    --primary-hover: #6e9bd5;
+    --accent: #6e9bd5;
+    --accent-light: #15263b;
+    --tag-bg: #15263b;
+    --tag-text: #9cbadd;
+    --card-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+    --depth: #060b12;
+    --depth-primary: #1b4472;
+    --focus-ring: 0 0 0 3px rgba(110, 155, 213, 0.45);
+
+    --tk-acc: #4a7bbd;      /* replaces the old #3b82f6 literal family in style.css */
+    --tk-acc-2: #6e9bd5;    /* old #60a5fa */
+    --tk-acc-3: #9cbadd;    /* old #93c5fd */
+    --tk-bg1: #0a1119;
+    --tk-bg2: #0e1620;
+    --tk-frame: #304d74;
+    --tk-inner: #0e1721;
+    --tk-cream: #d4deeb;
+    --tk-soft: #9cbadd;
+    --tk-badge: #80a0cb;
+    --tk-branch: #34547e;
+    --tk-btn: #1b4472;
+    --tk-btn-text: #e6eef8;
+    --tk-accent: #6e9bd5;
+    --tk-label: #7f9fcb;
+    --tk-tab: #7f9fcb;
+    --tk-input: #091019;
+    --tk-fab: #124988;
+    --tk-panel: rgba(12, 20, 30, 0.86);
+    --tk-hover: rgba(255, 255, 255, 0.05);
+    --tk-line: rgba(255, 255, 255, 0.09);
+    --tk-firefly: #e8f0a6;
+    --tk-logo: #d4deeb;
+    --tk-logo-accent: #6e9bd5;
+
+    --sc-sky1: #0a1119;
+    --sc-sky2: #0e1620;
+    --sc-hill1: #16304a;
+    --sc-hill2: #1b3a5a;
+    --sc-hill3: #122a42;
+    --sc-tree1: #0f2236;
+    --sc-tree2: #0a1a2a;
+    --sc-water: #3f7aa0;
+    --sc-water-hi: #8fc3e0;
+    --sc-sun: #d9e6f0;
+    --sc-snow: #dfe9f1;
+    --sc-rock1: #2e4252;
+    --sc-rock2: #3a4f60;
+    --sc-sand: #8aa0b8;
+    --sc-grass: #2a5280;
+    --sc-night1: #0d1226;
+    --sc-night2: #1a2240;
+    --sc-glow: #e8b96a;
+}
+
+html[data-palette="green"] {
+    --bg-color: #0f1410;
+    --card-bg: #151b14;
+    --card-subtle: #1c241a;
+    --text-color: #ece5d3;
+    --text-muted: #aaa58f;
+    --border-color: #3a3a2a;
+    --border-hover: #6e5c44;
+    --primary: #739e5c;
+    --primary-hover: #7fa866;
+    --accent: #c9b27a;
+    --accent-light: #232b1c;
+    --tag-bg: #232b1c;
+    --tag-text: #c9d6b0;
+    --card-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+    --depth: #080b08;
+    --depth-primary: #2f4a25;
+    --focus-ring: 0 0 0 3px rgba(201, 178, 122, 0.45);
+
+    --tk-acc: #557d43;
+    --tk-acc-2: #c9b27a;
+    --tk-acc-3: #d8c99a;
+    --tk-bg1: #0f1410;
+    --tk-bg2: #141a14;
+    --tk-frame: #6a553a;
+    --tk-inner: #151b14;
+    --tk-cream: #ece5d3;
+    --tk-soft: #b9c9b0;
+    --tk-badge: #b3ad98;
+    --tk-branch: #6e5c44;
+    --tk-btn: #3f5a33;
+    --tk-btn-text: #f1ecdd;
+    --tk-accent: #c9b27a;
+    --tk-label: #a8a28c;
+    --tk-tab: #a8a38f;
+    --tk-input: #0f140e;
+    --tk-fab: #3f6a30;
+    --tk-panel: rgba(18, 24, 18, 0.86);
+    --tk-hover: rgba(255, 255, 255, 0.05);
+    --tk-line: rgba(255, 255, 255, 0.09);
+    --tk-firefly: #e8f0a6;
+    --tk-logo: #ece5d3;
+    --tk-logo-accent: #c9b27a;
+
+    --sc-sky1: #0f1410;
+    --sc-sky2: #141a14;
+    --sc-hill1: #1f3a28;
+    --sc-hill2: #244530;
+    --sc-hill3: #1b3524;
+    --sc-tree1: #173022;
+    --sc-tree2: #10241a;
+    --sc-water: #3f8aa0;
+    --sc-water-hi: #8fd0e0;
+    --sc-sun: #f0d98a;
+    --sc-snow: #dfe9f1;
+    --sc-rock1: #2e4252;
+    --sc-rock2: #3a4f60;
+    --sc-sand: #d6bd78;
+    --sc-grass: #3f7d42;
+    --sc-night1: #100d1f;
+    --sc-night2: #251a33;
+    --sc-glow: #e8b96a;
+}
+
+/* Universe is not part of this redesign. Its view keeps today's exact token values
+   (from style.css :root before the redesign). #universeWorkspace still applies its own
+   galaxy palette on top, exactly as before. theme-boot.js also parks the family layer
+   (removes html[data-family]) while Universe is open. Guarded by themes.test.js. */
+html[data-palette] body.universe-active {
+    --bg-color: #081226;
+    --card-bg: #0f1d3a;
+    --card-subtle: #14264b;
+    --text-color: #f0f7ff;
+    --text-muted: #8bb3e8;
+    --border-color: #1e3a6e;
+    --border-hover: #2d5599;
+    --primary: #3b82f6;
+    --primary-hover: #60a5fa;
+    --accent: #60a5fa;
+    --accent-light: #172554;
+    --danger: #ef4444;
+    --danger-hover: #dc2626;
+    --success: #22c55e;
+    --tag-bg: #0c4a6e;
+    --tag-text: #7dd3fc;
+    --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    --depth: #050d1f;
+    --depth-primary: #1d4ed8;
+    --depth-danger: #991b1b;
+    --focus-ring: 0 0 0 3px rgba(59, 130, 246, 0.45);
+    --tk-acc: #3b82f6;
+    --tk-acc-2: #60a5fa;
+    --tk-acc-3: #93c5fd;
+}

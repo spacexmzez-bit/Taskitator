@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-button-startup-v1';
+const CACHE_NAME = 'taskitator-nature-v1';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -40,7 +40,16 @@ const STATIC_ASSETS = [
     './SYSTEM_PROMPT.md',
     './CRITERIA_TEMPLATES.json',
     './icon/icon-192.png',
-    './icon/icon-512.png'
+    './icon/icon-512.png',
+    './theme-boot.js',
+    './registry.js',
+    './icons.js',
+    './nature.js',
+    './appearance-ui.js',
+    './palettes.css',
+    './family-nature.css',
+    './image/nature_sprites/sprite.svg',
+    './image/nature_sprites/favicon.svg'
 ];
 
 // Install: Resilient pre-caching (individual fetches prevent a single 404 from breaking installation)

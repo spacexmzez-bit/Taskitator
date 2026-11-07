@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html lang="en" class="auth-pending">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-fHxaEbF33yIrvDTl4x46QaQYYLMhIe2h+AryyQXxHfM=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-nrJEcDJxD6YqWhkAq5x/x64Mua02h18SVpFH9KSQuzA=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
 <style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,7 +10,7 @@
 
     <!-- PWA Installation Manifest & Meta Tags -->
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#081226">
+    <meta name="theme-color" content="#0a1119">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -19,24 +19,31 @@
     <!-- Settings page styles live in style.css ("Settings page — UI v2"). -->
     <link rel="stylesheet" href="style.css?v=ui-v2-pro">
     <link rel="stylesheet" href="tutorial-spotlight.css?v=tour-v2">
+<link rel="icon" type="image/svg+xml" href="image/nature_sprites/favicon.svg">
+<link rel="stylesheet" href="palettes.css">
+<link rel="stylesheet" href="family-nature.css">
+<script src="registry.js"></script>
+<script src="theme-boot.js"></script>
+<script defer src="icons.js"></script>
+<script defer src="nature.js"></script>
 </head>
 <body class="settings-page">
 
 <!-- Sidebar Drawer -->
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="sidebar-drawer" id="sidebarDrawer">
-    <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
+    <div class="tk-brand" role="img" aria-label="Taskitator"><svg class="tk-brand-logo" viewBox="0 0 682.3 235.7" aria-hidden="true" focusable="false"><use href="#ic-brand-hybrid"></use></svg></div>
     <nav class="drawer-links" id="drawerNavLinks">
-        <a href="index.html#today">📅 Today</a>
-        <a href="index.html#general">📋 General Tasks</a>
-        <a href="components.html?view=calendar">🗓 Calendar</a>
+        <a href="index.html#today"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-today"></use></svg> Today</a>
+        <a href="index.html#general"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-general"></use></svg> General Tasks</a>
+        <a href="components.html?view=calendar"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-calendar"></use></svg> Calendar</a>
         <a href="components.html?view=universe">🌌 Universe</a>
-        <a href="sleep.html">🌙 Sleep Lock</a>
-        <a href="components.html?view=projects">📁 Projects</a>
-        <a href="components.html?view=stats">📊 Stats</a>
-        <a href="components.html?view=trash">🗑️ Trash</a>
-        <a href="help.html">❓ Help</a>
-        <a href="settings.html" class="active">⚙️ Settings</a>
+        <a href="sleep.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-sleep"></use></svg> Sleep Lock</a>
+        <a href="components.html?view=projects"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-projects"></use></svg> Projects</a>
+        <a href="components.html?view=stats"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-stats"></use></svg> Stats</a>
+        <a href="components.html?view=trash"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-trash"></use></svg> Trash</a>
+        <a href="help.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-help"></use></svg> Help</a>
+        <a href="settings.html" class="active"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-settings"></use></svg> Settings</a>
     </nav>
 </aside>
 
@@ -44,13 +51,13 @@
     <!-- Top Navbar -->
     <header class="top-navbar">
         <div class="nav-left">
-            <button class="icon-btn" id="openDrawerBtn" title="Menu">☰<span class="wide-label">Menu</span></button>
+            <button class="icon-btn" id="openDrawerBtn" title="Menu"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-menu"></use></svg><span class="wide-label">Menu</span></button>
             <h2 class="settings-title">Settings</h2>
             <span class="tier-chip" id="tierChip" title="Taskitator Pro"><span class="d">◆</span> PRO</span>
             <span id="unsavedIndicator" class="unsaved-pill" role="status">Unsaved</span>
         </div>
         <div class="nav-right">
-            <button type="button" class="icon-btn" id="openCopilotNavBtn" title="Focus Copilot" aria-label="Open Focus Copilot"><span aria-hidden="true">💬</span><span class="nav-copilot-label">Copilot</span></button>
+            <button type="button" class="icon-btn" id="openCopilotNavBtn" title="Focus Copilot" aria-label="Open Focus Copilot"><span aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-copilot"></use></svg></span><span class="nav-copilot-label">Copilot</span></button>
         </div>
     </header>
 
@@ -59,27 +66,27 @@
         <!-- Section navigation: horizontal strip on phones, sidebar on desktop -->
         <nav class="settings-tabs" id="settingsTabs" role="tablist" aria-label="Settings sections">
             <button type="button" class="settings-tab" role="tab" id="tabbtn-general" data-tab="tab-general" aria-controls="tab-general" aria-selected="false">
-                <span class="settings-tab-icon" aria-hidden="true">🎛️</span>
+                <span class="settings-tab-icon" aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-settings"></use></svg></span>
                 <span class="settings-tab-text"><span class="settings-tab-label">General</span><span class="settings-tab-hint">Copilot, sounds, sync</span></span>
             </button>
             <button type="button" class="settings-tab" role="tab" id="tabbtn-tasks" data-tab="tab-tasks" aria-controls="tab-tasks" aria-selected="false">
-                <span class="settings-tab-icon" aria-hidden="true">🏷️</span>
+                <span class="settings-tab-icon" aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-tag"></use></svg></span>
                 <span class="settings-tab-text"><span class="settings-tab-label">Tasks</span><span class="settings-tab-hint">Tags, priorities, checks</span></span>
             </button>
             <button type="button" class="settings-tab" role="tab" id="tabbtn-schedule" data-tab="tab-schedule" aria-controls="tab-schedule" aria-selected="false">
-                <span class="settings-tab-icon" aria-hidden="true">🗓️</span>
+                <span class="settings-tab-icon" aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg></span>
                 <span class="settings-tab-text"><span class="settings-tab-label">Day &amp; week</span><span class="settings-tab-hint">Day start, weekend, unlocks</span></span>
             </button>
             <button type="button" class="settings-tab" role="tab" id="tabbtn-ai" data-tab="tab-ai" aria-controls="tab-ai" aria-selected="false">
-                <span class="settings-tab-icon" aria-hidden="true">🤖</span>
+                <span class="settings-tab-icon" aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-robot"></use></svg></span>
                 <span class="settings-tab-text"><span class="settings-tab-label">AI &amp; Pro</span><span class="settings-tab-hint">Provider, keys, credits</span></span>
             </button>
             <button type="button" class="settings-tab" role="tab" id="tabbtn-phone" data-tab="tab-phone" aria-controls="tab-phone" aria-selected="false">
-                <span class="settings-tab-icon" aria-hidden="true">📲</span>
+                <span class="settings-tab-icon" aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-phone"></use></svg></span>
                 <span class="settings-tab-text"><span class="settings-tab-label">Phone lock</span><span class="settings-tab-hint">MacroDroid connection</span></span>
             </button>
             <button type="button" class="settings-tab" role="tab" id="tabbtn-account" data-tab="tab-account" aria-controls="tab-account" aria-selected="false">
-                <span class="settings-tab-icon" aria-hidden="true">👤</span>
+                <span class="settings-tab-icon" aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-person"></use></svg></span>
                 <span class="settings-tab-text"><span class="settings-tab-label">Account &amp; data</span><span class="settings-tab-hint">Login, backups, deletion</span></span>
             </button>
             <span class="settings-tab-indicator" aria-hidden="true"></span>
@@ -95,6 +102,69 @@
                 <h3>General</h3>
                 <p>How Taskitator looks, sounds and syncs.</p>
             </header>
+
+            <!-- Colour theme and Appearance: saved on this device only (appearance-ui.js). -->
+            <div class="settings-card tk-theme-card" id="themeCard">
+                <h4 class="card-title">Colour theme</h4>
+                <p class="setting-hint">Saved on this device only. Your other devices keep their own choice.</p>
+                <div class="tk-theme-options" id="themeOptions" role="radiogroup" aria-label="Colour theme"></div>
+                <p class="tk-pro-note" id="themeProNote" role="status" hidden></p>
+            </div>
+
+            <div class="settings-card" id="appearanceCard">
+                <h4 class="card-title">Appearance</h4>
+                <p class="setting-hint">Nature effects on this device. Reduce motion turns them all off at once.</p>
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <label for="fx-particles" class="setting-label">Falling leaves</label>
+                        <p class="setting-hint" id="fx-particles-hint">A short leaf burst when you finish a task.</p>
+                    </div>
+                    <input type="checkbox" id="fx-particles" class="switch" role="switch" data-fx="particles" aria-describedby="fx-particles-hint">
+                </div>
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <label for="fx-clouds" class="setting-label">Clouds</label>
+                        <p class="setting-hint" id="fx-clouds-hint">Clouds part when you move between pages.</p>
+                    </div>
+                    <input type="checkbox" id="fx-clouds" class="switch" role="switch" data-fx="clouds" aria-describedby="fx-clouds-hint">
+                </div>
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <label for="fx-animals" class="setting-label">Animals</label>
+                        <p class="setting-hint" id="fx-animals-hint">Animals inside the completion buttons. Off shows a plain tick.</p>
+                    </div>
+                    <input type="checkbox" id="fx-animals" class="switch" role="switch" data-fx="animals" aria-describedby="fx-animals-hint">
+                </div>
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <label for="fx-bird" class="setting-label">Bird</label>
+                        <p class="setting-hint" id="fx-bird-hint">A bird flies past when you add a task.</p>
+                    </div>
+                    <input type="checkbox" id="fx-bird" class="switch" role="switch" data-fx="bird" aria-describedby="fx-bird-hint">
+                </div>
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <label for="fx-parallax" class="setting-label">Parallax</label>
+                        <p class="setting-hint" id="fx-parallax-hint">The background moves gently as you scroll.</p>
+                    </div>
+                    <input type="checkbox" id="fx-parallax" class="switch" role="switch" data-fx="parallax" aria-describedby="fx-parallax-hint">
+                </div>
+                <div class="setting-row">
+                    <div class="setting-text">
+                        <label for="fx-reduce" class="setting-label">Reduce motion</label>
+                        <p class="setting-hint" id="fx-reduce-hint">Turns off every animation above.</p>
+                    </div>
+                    <input type="checkbox" id="fx-reduce" class="switch" role="switch" data-fx="reduce" aria-describedby="fx-reduce-hint">
+                </div>
+                <div class="setting-row setting-row-stack">
+                    <div class="setting-text">
+                        <label for="fx-bird-speed" class="setting-label">Bird speed <span id="fxBirdSpeedReadout" class="value-chip">7</span></label>
+                        <p class="setting-hint">1 is a slow glide, 10 is a quick dart.</p>
+                    </div>
+                    <input type="range" id="fx-bird-speed" class="range" min="1" max="10" step="1" value="7">
+                    <div class="range-scale" aria-hidden="true"><span>Slow</span><span>Fast</span></div>
+                </div>
+            </div>
 
             <div class="settings-card">
                 <h4 class="card-title">Copilot</h4>
@@ -397,7 +467,7 @@
                 <h4 class="card-title">Account</h4>
                 <div class="account-session-box">
                     <div class="account-identity">
-                        <span class="account-avatar" aria-hidden="true">👤</span>
+                        <span class="account-avatar" aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-person"></use></svg></span>
                         <div>
                             <div class="setting-hint">Signed in as</div>
                             <strong id="activeUsernameDisplay">@local_user</strong>
@@ -417,7 +487,7 @@
                         <span class="setting-label">Email</span>
                         <p class="setting-hint"><a href="mailto:info@mazendev.com">info@mazendev.com</a></p>
                     </div>
-                    <button type="button" class="icon-btn btn-md" data-contact-email="info@mazendev.com" data-contact-subject="Taskitator">✉ Email</button>
+                    <button type="button" class="icon-btn btn-md" data-contact-email="info@mazendev.com" data-contact-subject="Taskitator"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-mail"></use></svg> Email</button>
                 </div>
             </div>
 
@@ -428,7 +498,7 @@
                         <span class="setting-label">Download a backup</span>
                         <p class="setting-hint">Saves your tasks, projects, settings, breaks, saved criteria and review history from this browser as one .json file.</p>
                     </div>
-                    <button type="button" class="icon-btn btn-md btn-solid-primary btn-primary" id="exportDataBtn">⬇ Download</button>
+                    <button type="button" class="icon-btn btn-md btn-solid-primary btn-primary" id="exportDataBtn">↓ Download</button>
                 </div>
 
                 <div class="setting-row setting-row-stack">
@@ -462,7 +532,7 @@
             </div>
 
             <div class="settings-card danger-zone">
-                <h4 class="card-title">⚠️ Danger zone</h4>
+                <h4 class="card-title"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> Danger zone</h4>
                 <p class="card-desc">Download a backup before using any of these.</p>
 
                 <div class="setting-row">
@@ -589,7 +659,7 @@
 <aside class="copilot-drawer" id="copilotDrawer">
     <div class="copilot-header">
         <div class="copilot-title-group">
-            <span style="font-weight: 800; font-size: 1.05rem;">🤖 Focus Copilot</span>
+            <span style="font-weight: 800; font-size: 1.05rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-robot"></use></svg> Focus Copilot</span>
             <span class="copilot-model-chip">Gemini</span>
         </div>
         <button type="button" class="icon-btn" id="closeCopilotBtn" style="border: none; font-size: 1.2rem; line-height: 1; padding: 4px 8px;">✕</button>
@@ -597,7 +667,7 @@
 
     <div class="copilot-messages" id="copilotMessages">
         <div class="copilot-standby-card">
-            <div style="font-size: 2rem; margin-bottom: 6px;">🤖</div>
+            <div style="font-size: 2rem; margin-bottom: 6px;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-robot"></use></svg></div>
             <strong class="copilot-standby-title" style="font-size: 1rem; color: var(--primary);">Focus Copilot</strong>
         </div>
     </div>
@@ -628,6 +698,7 @@
     <script type="text/taskitator-script" src="app.js"></script>
     <script type="text/taskitator-script" src="tutorial-spotlight.js?v=tour-v2"></script>
     <script type="text/taskitator-script" src="tutorial-integration.js?v=tour-v2"></script>
+    <script type="text/taskitator-script" src="appearance-ui.js"></script>
 <script type="text/taskitator-script">
 const HARDCODED_WORKER_URL = 'https://taskitator-sync.spacexmzez.workers.dev';
 const SETTINGS_KEY = 'taskitator_settings';
@@ -1213,11 +1284,11 @@ function updateBreakPlanningStatus() {
     let tone, text;
     if (status.isRunning) {
         const remSec = Math.ceil(status.remainingWindowMs / 1000);
-        tone = 'active'; text = `⏳ Planning window open · ${Math.floor(remSec / 60)}:${String(remSec % 60).padStart(2, '0')} left`;
+        tone = 'active'; text = `Planning window open · ${Math.floor(remSec / 60)}:${String(remSec % 60).padStart(2, '0')} left`;
     } else if (status.isLocked) {
-        tone = 'locked'; text = '🔒 Scheduled is locked; Flexible is unavailable today.';
+        tone = 'locked'; text = 'Scheduled is locked; Flexible is unavailable today.';
     } else if (status.isInBuffer) {
-        tone = 'warn'; text = '⏱ Scheduled planning is closed for today; Flexible remains available unless locked.';
+        tone = 'warn'; text = 'Scheduled planning is closed for today; Flexible remains available unless locked.';
     } else {
         tone = 'ready'; text = '● Scheduled and Flexible breaks share your daily allowance.';
     }
@@ -1359,7 +1430,7 @@ async function refreshPhoneStatus() {
             ? "✓ Your phone is connected. For security, the token can't be shown again. If MacroDroid stops working, create a new token and paste it into the Authorization header."
             : '✕ No phone connected. Create a token below and paste it into MacroDroid.');
     } catch (err) {
-        setPhoneStatus('unknown', "⚠ Couldn't check your phone connection. Check your internet and try again. " + err.message);
+        setPhoneStatus('unknown', "Couldn't check your phone connection. Check your internet and try again. " + err.message);
     }
 }
 document.getElementById('generatePhoneTokenBtn').addEventListener('click', async event => {

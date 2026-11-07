@@ -20,7 +20,9 @@ window.TaskitatorSafety = {
     setProjectLabel(element, project) {
         const icon = document.createElement('span');
         const name = document.createElement('span');
-        icon.textContent = project.icon || '';
+        // Only the system Inbox default uses the sprite icon; user-chosen project icons are user data.
+        if (project.id === 'inbox' && project.icon === '\u{1F4E5}' && window.TaskitatorIcons) icon.append(window.TaskitatorIcons.node('inbox'));
+        else icon.textContent = project.icon || '';
         name.textContent = project.name || '';
         element.replaceChildren(icon, document.createTextNode(' '), name);
     },
@@ -1296,9 +1298,9 @@ window.TaskitatorEngine = TaskitatorEngine;
             const allowances = []; for (let m = s.limits.allowanceMin; m <= s.limits.allowanceMax; m += s.limits.allowanceStep) allowances.push(m);
             const deadlines = []; for (let m = s.limits.deadlineMin; m <= s.limits.deadlineMax; m += s.limits.deadlineStep) deadlines.push(m);
             const status = locked
-                ? `<span class="status-chip is-locked">🔒 ${s.required_tasks} required task${s.required_tasks === 1 ? '' : 's'} left today. These settings can’t be changed until ${s.required_tasks === 1 ? 'it is' : 'they are'} done, or during an emergency bypass.</span>`
-                : s.bypass && s.required_tasks ? `<span class="status-chip is-warn">🚨 Emergency bypass is on, so you can change these settings now.</span>`
-                : s.pending_from ? `<span class="status-chip is-warn">⏭ Your latest changes apply from ${esc(s.pending_from)}. Today keeps its current rules.</span>` : '';
+                ? `<span class="status-chip is-locked"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg> ${s.required_tasks} required task${s.required_tasks === 1 ? '' : 's'} left today. These settings can’t be changed until ${s.required_tasks === 1 ? 'it is' : 'they are'} done, or during an emergency bypass.</span>`
+                : s.bypass && s.required_tasks ? `<span class="status-chip is-warn"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-siren"></use></svg> Emergency bypass is on, so you can change these settings now.</span>`
+                : s.pending_from ? `<span class="status-chip is-warn">Your latest changes apply from ${esc(s.pending_from)}. Today keeps its current rules.</span>` : '';
             const days = DAYS.map((name, i) => {
                 const day = d.scheduled.days[i];
                 return `<div class="strict-day ${day.mode === 'off' ? 'is-off' : ''}">
@@ -1326,7 +1328,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                 </div>
                 ${d.flexible.enabled ? `<div class="form-group strict-options"><label for="strictFlexMinimum">Minimum break</label>
                     <select id="strictFlexMinimum" ${flexLocked ? 'disabled' : ''}>${minOptions.map(m => `<option value="${m}" ${m === d.flexible.minimum ? 'selected' : ''}>${m} minutes</option>`).join('')}</select></div>` : ''}
-                ${tight(d) ? `<p class="setting-hint strict-warning" role="note">⚠️ ${esc(tightText(d))}</p>` : ''}
+                ${tight(d) ? `<p class="setting-hint strict-warning" role="note"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> ${esc(tightText(d))}</p>` : ''}
                 <div class="setting-row">
                     <div class="setting-text"><label for="strictSchedToggle" class="setting-label">Scheduled Strict Mode</label>
                     <p class="setting-hint" id="strictSchedHint">If you haven’t chosen a break system by the deadline, Scheduled locks for the day with that weekday’s plan. On a covered day without a plan, that means <strong>zero breaks</strong>.</p></div>
@@ -1837,7 +1839,7 @@ window.TaskitatorEngine = TaskitatorEngine;
             modal.innerHTML = `
                 <div class="pro-modal-box">
                     <div class="pro-modal-header">
-                        <h3 style="margin: 0;">⚡ Batch Proof Review</h3>
+                        <h3 style="margin: 0;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg> Batch Proof Review</h3>
                         <button type="button" class="icon-btn" id="proBatchCloseBtn">✕</button>
                     </div>
                     <p style="color: #94a3b8; font-size: 0.95rem; margin: 20px 0;">
@@ -1870,14 +1872,14 @@ window.TaskitatorEngine = TaskitatorEngine;
             <div class="pro-modal-box pro-batch-box">
                 <div class="pro-modal-header">
                     <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
-                        <span>⚡</span> Batch Proof Review
+                        <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg></span> Batch Proof Review
                     </h3>
                     <button type="button" class="icon-btn" id="proBatchCloseBtn">✕</button>
                 </div>
                 <p style="font-size: 0.88rem; color: #94a3b8; margin: 8px 0 16px 0;">
                     ${scope ? 'Only your selected active AI-audited tasks are shown. ' : ''}Select up to 20 tasks and attach up to 5 proof files. ${batchStatus.use_byok ? 'Your selected personal provider reviews the evidence using your saved key. Provider charges apply; no hosted credits are used.' : 'You pay the real cost of the review, shared across the tasks. You can check the price before starting.'}
                 </p>
-                <p class="batch-cost-warning" role="note">⚠️ Reviewing several tasks together usually costs less than reviewing them one by one.</p>
+                <p class="batch-cost-warning" role="note"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> Reviewing several tasks together usually costs less than reviewing them one by one.</p>
 
                 <div class="pro-batch-section-title">1. Select Target Tasks (<span id="proBatchSelectedCount">0</span> selected)</div>
                 <div class="pro-batch-task-list">
@@ -1888,7 +1890,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                 <div class="pro-batch-upload-area">
                     <input type="file" id="proBatchFileInput" multiple accept="image/jpeg,image/png,image/webp,application/pdf" style="display:none;" />
                     <button type="button" class="icon-btn" id="proBatchPickFilesBtn" style="gap: 6px;">
-                        📁 <span>Select Evidence Files</span>
+                        <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-folder"></use></svg> <span>Select Evidence Files</span>
                     </button>
                     <div id="proBatchFileList" class="pro-batch-file-chips"></div>
                 </div>
@@ -1968,7 +1970,7 @@ window.TaskitatorEngine = TaskitatorEngine;
         function renderStagedFiles() {
             fileListDiv.innerHTML = stagedFiles.map((f, i) => `
                 <div class="pro-file-chip">
-                    <span>${global.TaskitatorEngine.AuditEngine.isPdf(f) ? '📄' : '🖼️'} ${escapeHtml(f.name)}</span>
+                    <span>${global.TaskitatorEngine.AuditEngine.isPdf(f) ? '<svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-receipt"></use></svg>' : '<svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-camera"></use></svg>'} ${escapeHtml(f.name)}</span>
                     <button type="button" class="pro-chip-del" data-index="${i}">✕</button>
                 </div>
             `).join('');
@@ -2086,7 +2088,7 @@ window.TaskitatorEngine = TaskitatorEngine;
             <div class="pro-card" id="pro-card-root">
                 <div class="pro-header">
                     <div class="pro-title-wrap">
-                        <h3 style="margin: 0; font-size: 16px; font-weight: 600;">⭐ Taskitator Pro</h3>
+                        <h3 style="margin: 0; font-size: 16px; font-weight: 600;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Taskitator Pro</h3>
                         <span class="pro-badge free" id="pro-status-badge">Checking…</span>
                     </div>
                     <span id="pro-expiry-label" style="font-size: 12px; color: #94a3b8;"></span>

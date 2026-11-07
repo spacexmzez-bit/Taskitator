@@ -1,0 +1,600 @@
+/* ==========================================================================
+   Taskitator family: NATURE (look and feel only; colours come from palettes.css)
+   Every selector is scoped to html[data-family="nature"], which theme-boot.js sets
+   before first paint and removes while Universe is open (Universe is untouched).
+   Minimal pass: flat frames, no 3D, thin connectors, animals in completion rings.
+   ========================================================================== */
+
+/* Icon base size. Unscoped so icons inside dialogs keep text size on pages where the
+   family layer is parked (Universe). It touches only .tk-ic elements. */
+.tk-ic { display: inline-block; width: 1.15em; height: 1.15em; fill: currentColor; vertical-align: -0.2em; flex: none; pointer-events: none; }
+.tk-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---------- 1. Base, background and scene layer ---------- */
+html[data-family="nature"] {
+    --tk-font: ui-rounded, "SF Pro Rounded", "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --tk-radius: 9px;
+    --tk-radius-s: 7px;
+    --tk-fmax: 7;
+    --tk-fstep: 1.5;
+    --tk-fmin: 2;
+    --tk-scene-opacity: .45;
+    --tk-cloud-speed: .5;
+    --press: 0px;
+}
+html[data-family="nature"] body {
+    font-family: var(--tk-font);
+    background: linear-gradient(180deg, var(--tk-bg1), var(--tk-bg2)) fixed;
+    background-color: var(--tk-bg1);
+}
+html[data-family="nature"] .tk-ic {
+    display: inline-block;
+    width: 1.15em;
+    height: 1.15em;
+    fill: currentColor;
+    vertical-align: -0.2em;
+    flex: none;
+    pointer-events: none;
+}
+html[data-family="nature"] .tk-ic + :not(.tk-ic) { margin-left: 0; }
+
+/* Scene: three SVG layers (far, mid, near) with CSS-variable colours, behind everything. */
+#tk-scene { display: none; }
+html[data-family="nature"] #tk-scene {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
+    opacity: var(--tk-scene-opacity);
+    filter: saturate(.55);
+    transition: opacity .6s ease;
+}
+html[data-family="nature"] #tk-scene .tk-layer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: calc(100% + 30vh);
+    background: linear-gradient(transparent calc(100% - 30vh - 1px), var(--tk-ground, transparent) calc(100% - 30vh));
+}
+html[data-family="nature"] #tk-scene .tk-layer svg { position: absolute; left: 0; top: 0; width: 100%; height: calc(100% - 30vh); }
+html[data-family="nature"] #tk-scene.is-moving .tk-layer { will-change: transform; }
+
+/* ---------- 2. Shell: header and title row ---------- */
+html[data-family="nature"] .top-navbar {
+    background: transparent;
+    border-bottom: 0;
+    box-shadow: none;
+}
+html[data-family="nature"] .top-navbar :is(.icon-btn, .icon-only-btn, .nav-link-btn, .break-status-pill, .emergency-icon-btn, .dump-trigger-btn) {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    color: var(--tk-soft);
+    border-radius: var(--tk-radius);
+}
+html[data-family="nature"] .top-navbar :is(.icon-btn, .icon-only-btn, .nav-link-btn, .break-status-pill, .emergency-icon-btn, .dump-trigger-btn) .tk-ic {
+    width: 24px;
+    height: 24px;
+}
+@media (hover: hover) and (pointer: fine) {
+    html[data-family="nature"] .top-navbar :is(.icon-btn, .icon-only-btn, .nav-link-btn, .break-status-pill, .emergency-icon-btn, .dump-trigger-btn):hover:not(:disabled) {
+        background: var(--tk-hover);
+        color: var(--tk-cream);
+        transform: none;
+    }
+}
+html[data-family="nature"] .top-navbar :is(.icon-btn, .icon-only-btn, .nav-link-btn, .dump-trigger-btn, .emergency-icon-btn):active:not(:disabled) { transform: scale(.92); box-shadow: none; }
+html[data-family="nature"] .break-status-pill {
+    font-weight: 800;
+    color: var(--tk-soft);
+    gap: 5px;
+}
+html[data-family="nature"] .break-status-pill.flex-allowance { background: transparent; }
+html[data-family="nature"] .break-status-pill.flex-green { color: #9fdcae; }
+html[data-family="nature"] .break-status-pill.flex-yellow { color: #f1d27a; }
+html[data-family="nature"] .break-status-pill.flex-red { color: #f0a090; }
+html[data-family="nature"] .emergency-icon-btn { color: #cf9378 !important; }
+html[data-family="nature"] .emergency-icon-btn .tk-ic { color: #cf9378; }
+/* Scratchpad firefly: unlit when empty, lit when it holds notes. */
+html[data-family="nature"] .dump-trigger-btn .tk-ff-on { display: none; }
+html[data-family="nature"] .dump-trigger-btn.has-notes .tk-ff-off { display: none; }
+html[data-family="nature"] .dump-trigger-btn.has-notes .tk-ff-on {
+    display: inline-block;
+    color: var(--tk-firefly);
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--tk-firefly) 60%, transparent));
+    animation: tkFirefly 2.4s ease-in-out infinite;
+}
+html[data-family="nature"] .dump-trigger-btn .dump-active-dot { display: none; }
+@keyframes tkFirefly { 50% { opacity: .65; filter: drop-shadow(0 0 2px color-mix(in srgb, var(--tk-firefly) 35%, transparent)); } }
+html[data-family="nature"] .copilot-standby-icon .tk-ic { width: 54px; height: 54px; color: var(--tk-soft); }
+
+html[data-family="nature"] .page-title-section h1,
+html[data-family="nature"] #pageViewHeading { font-weight: 800; letter-spacing: .2px; color: var(--tk-cream); }
+html[data-family="nature"] .account-username-btn {
+    background: transparent;
+    border: 1px solid var(--tk-line);
+    border-radius: var(--tk-radius-s);
+    color: var(--tk-cream);
+    box-shadow: none;
+}
+html[data-family="nature"] .page-title-actions .icon-only-btn {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    color: var(--tk-soft);
+}
+
+/* Overdue bar */
+html[data-family="nature"] .overdue-reschedule-bar {
+    background: #251a16;
+    border: 1px solid #5e3626;
+    border-radius: var(--tk-radius);
+    box-shadow: none;
+}
+html[data-family="nature"] .overdue-reschedule-bar .icon-btn {
+    background: transparent !important;
+    border: 1px solid rgba(255, 255, 255, .18) !important;
+    border-radius: var(--tk-radius-s);
+    color: #f3b4a6 !important;
+    box-shadow: none;
+}
+html[data-family="nature"] .banner-emergency { border-radius: var(--tk-radius); box-shadow: none; }
+
+/* ---------- 3. Task tree: frames, connectors, animal completion rings ---------- */
+html[data-family="nature"] .task-node {
+    --d: 0;
+    --f: clamp(calc(var(--tk-fmin) * 1px), calc((var(--tk-fmax) - var(--d) * var(--tk-fstep)) * 1px), calc(var(--tk-fmax) * 1px));
+    --btn: clamp(28px, calc((38 - var(--d) * 3) * 1px), 38px);
+    position: relative;
+    margin-bottom: 9px;
+}
+html[data-family="nature"] .task-row {
+    position: relative;
+    background: var(--tk-inner);
+    border: var(--f) solid var(--tk-frame) !important;
+    border-radius: var(--tk-radius);
+    box-shadow: none;
+    padding: 9px 10px;
+    min-height: calc(var(--btn) + 18px + var(--f) * 2);
+}
+html[data-family="nature"] .task-node.is-bonus > .task-row { background: color-mix(in srgb, #f59e0b 5%, var(--tk-inner)); }
+@media (hover: hover) and (pointer: fine) {
+    html[data-family="nature"] .task-row:hover { transform: none; background: color-mix(in srgb, #fff 3%, var(--tk-inner)); }
+}
+html[data-family="nature"] .task-row.row-selected {
+    border-color: var(--tk-accent) !important;
+    background: color-mix(in srgb, var(--tk-accent) 10%, var(--tk-inner)) !important;
+    box-shadow: none;
+}
+html[data-family="nature"] .task-main { gap: 7px 8px; }
+html[data-family="nature"] .task-title {
+    color: var(--tk-cream);
+    font-weight: 700;
+    font-size: 1rem;
+}
+html[data-family="nature"] .task-node.is-overdue > .task-row .task-title { color: #f4a79a; }
+html[data-family="nature"] .task-node.completed > .task-row .task-title { opacity: .5; color: var(--tk-cream); }
+
+/* Branch connectors (minimal): one vertical line per child, one short twig. */
+html[data-family="nature"] .task-subtree-inner > .task-node::after,
+html[data-family="nature"] .task-subtree-inner > .task-node::before {
+    content: "";
+    position: absolute;
+    background: var(--tk-branch);
+    pointer-events: none;
+}
+html[data-family="nature"] .task-subtree-inner > .task-node::after {
+    left: calc((var(--d) - 1) * 20px + 13px);
+    top: -9px;
+    width: 2px;
+    height: calc(100% + 9px);
+}
+html[data-family="nature"] .task-subtree-inner > .task-node:last-child::after { height: calc(9px + 22px); }
+html[data-family="nature"] .task-subtree-inner > .task-node::before {
+    left: calc((var(--d) - 1) * 20px + 13px);
+    top: 21px;
+    width: 7px;
+    height: 2px;
+}
+
+/* Collapse toggle */
+html[data-family="nature"] .collapse-toggle { color: var(--tk-badge); }
+html[data-family="nature"] .collapse-toggle:hover { background: var(--tk-hover); }
+
+/* Completion button: priority-coloured ring holding an animal. AI-locked = darker ring. */
+html[data-family="nature"] .check-circle {
+    position: relative;
+    width: var(--btn);
+    height: var(--btn);
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--pc, var(--tk-soft));
+    box-shadow: inset 0 0 0 2px var(--pc, var(--tk-soft));
+    font-size: 0;
+    display: grid;
+    place-items: center;
+    transition: transform .2s var(--ease-out), color .2s ease, box-shadow .25s ease, background .25s ease;
+}
+html[data-family="nature"] .check-circle .tk-animal { width: 66%; height: 66%; }
+html[data-family="nature"] .check-circle.is-ai-locked { box-shadow: inset 0 0 0 2.5px color-mix(in srgb, var(--pc, var(--tk-soft)) 62%, #000); }
+@media (hover: hover) and (pointer: fine) {
+    html[data-family="nature"] .check-circle:hover { transform: scale(1.07); box-shadow: inset 0 0 0 2px var(--pc, var(--tk-soft)), 0 0 0 4px color-mix(in srgb, var(--pc, var(--tk-soft)) 16%, transparent); }
+}
+html[data-family="nature"] .task-node.completed > .task-row .check-circle,
+html[data-family="nature"] .check-circle.is-completing {
+    background: var(--pc, var(--success));
+    color: var(--tk-bg1);
+    border: 0;
+    animation: tkPop .5s var(--ease-spring);
+}
+html[data-family="nature"] .check-circle.is-completing::after { content: none; }
+html[data-family="nature"][data-fx-off~="animals"] .check-circle .tk-animal { display: none; }
+html[data-family="nature"][data-fx-off~="animals"] .task-node.completed > .task-row .check-circle::after,
+html[data-family="nature"][data-fx-off~="animals"] .check-circle.is-completing::after { content: "✓"; font-size: 15px; font-weight: 800; color: var(--tk-bg1); }
+@keyframes tkPop { 40% { transform: scale(1.35) rotate(-10deg); } }
+html[data-family="nature"] .check-square { border-radius: 7px; border-color: var(--tk-badge); }
+html[data-family="nature"] .check-square.selected { background: var(--tk-accent); border-color: var(--tk-accent); color: var(--tk-bg1); }
+
+/* Badges: quiet outlined chips */
+html[data-family="nature"] :is(.ai-badge, .shield-badge, .bonus-badge, .subtasks-count-badge, .due-badge, .tag-chip, .project-badge-chip) {
+    background: transparent !important;
+    box-shadow: none;
+    color: var(--tk-badge);
+    border: 1px solid rgba(255, 255, 255, .12) !important;
+    border-radius: 6px;
+    padding: 2px 7px;
+    font-size: .78rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+html[data-family="nature"] .project-badge-chip { color: var(--tk-badge) !important; border-color: rgba(255, 255, 255, .12) !important; }
+html[data-family="nature"] :is(.ai-badge, .shield-badge, .bonus-badge, .subtasks-count-badge) .tk-ic { width: 13px; height: 13px; }
+html[data-family="nature"] .bonus-badge { color: #e7c77a; }
+html[data-family="nature"] .shield-badge { color: #e9c08e; }
+
+html[data-family="nature"] .action-del-btn {
+    color: var(--tk-badge);
+    border-radius: var(--tk-radius-s);
+    background: transparent;
+}
+html[data-family="nature"] .action-del-btn:hover:not(:disabled) { color: #ff9d8a; }
+
+/* Grace (undo) row keeps its behaviour, flattened */
+html[data-family="nature"] .undo-grace-row {
+    background: var(--tk-inner);
+    border: 2px solid var(--tk-frame);
+    border-radius: var(--tk-radius);
+    box-shadow: none;
+}
+
+/* Empty state */
+html[data-family="nature"] .empty-state-icon .tk-ic { width: 40px; height: 40px; color: var(--tk-soft); opacity: .8; }
+
+/* ---------- 4. Floating buttons ---------- */
+html[data-family="nature"] .fab-add {
+    border-radius: 15px;
+    background: var(--tk-fab);
+    color: #fff;
+    box-shadow: none;
+    gap: 6px;
+}
+html[data-family="nature"] .fab-add .tk-ic { width: 26px; height: 26px; }
+html[data-family="nature"] .fab-add:hover { background: color-mix(in srgb, var(--tk-fab) 85%, #fff); }
+html[data-family="nature"] :is(#openCopilotFabBtn, .copilot-fab) {
+    border-radius: 15px;
+    background: #2c2540;
+    box-shadow: inset 0 0 0 1.5px #7d6bb8;
+    color: #e9dfc3;
+}
+
+/* ---------- 5. Panels: drawers, sheets, modals, toasts ---------- */
+html[data-family="nature"] :is(.sidebar-drawer, .copilot-drawer) {
+    background: var(--tk-inner);
+    box-shadow: none;
+    border: 5px solid var(--tk-frame);
+}
+html[data-family="nature"] .sidebar-drawer { border-left: 0; border-radius: 0 10px 10px 0; }
+html[data-family="nature"] .copilot-drawer { border-right: 0; }
+@media (min-width: 768px) { html[data-family="nature"] .copilot-drawer { border-radius: 10px 0 0 10px; } }
+html[data-family="nature"] :is(.drawer-backdrop, .copilot-backdrop, .copilot-drawer-backdrop) { background: rgba(0, 0, 0, .55); backdrop-filter: none; }
+@media (min-width: 768px) { html[data-family="nature"] :is(.copilot-backdrop, .copilot-drawer-backdrop) { background: rgba(0, 0, 0, .3); } }
+html[data-family="nature"] .tk-brand { display: flex; align-items: center; gap: 10px; color: var(--tk-cream) !important; }
+html[data-family="nature"] .tk-brand { margin: 0 0 18px; padding: 0 4px; }
+html[data-family="nature"] .tk-brand-logo { width: min(190px, 100%); height: auto; color: var(--tk-logo); }
+.tk-brand-logo { display: block; width: 170px; height: auto; color: var(--text-color); }
+html[data-family="nature"] .tk-empty-ic { width: 96px !important; height: 72px !important; color: var(--tk-logo); opacity: .9; }
+html[data-family="nature"] .empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+html[data-family="nature"] :is(.tt-icon, .tour-ic) .tk-ic { width: 1.4em; height: 1.4em; color: var(--tk-soft); }
+html[data-family="nature"] .drawer-links a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 8px;
+    color: var(--tk-cream);
+    font-weight: 800;
+}
+html[data-family="nature"] .drawer-links a .tk-ic { width: 24px; height: 24px; color: var(--tk-soft); }
+html[data-family="nature"] .drawer-links a:hover { background: var(--tk-hover); color: var(--tk-cream); }
+html[data-family="nature"] .drawer-links a.active { border-color: var(--tk-accent); background: rgba(255, 255, 255, .03); color: var(--tk-cream); }
+
+html[data-family="nature"] .modal-overlay { background: rgba(0, 0, 0, .6); backdrop-filter: none; }
+html[data-family="nature"] :is(.modal-box, .modal-content, .pro-modal-box, .confirm-sheet, .settings-dialog) {
+    background: var(--tk-inner);
+    border: 5px solid var(--tk-frame);
+    border-radius: 12px;
+    box-shadow: none;
+}
+@media (max-width: 767px) {
+    html[data-family="nature"] .modal-overlay .modal-box { border-bottom-width: 0; }
+}
+html[data-family="nature"] :is(.modal-box, .settings-card, .login-card, .sleep-card, .hp) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]), select, textarea) {
+    background: var(--tk-input);
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 8px;
+    color: var(--tk-cream);
+}
+html[data-family="nature"] :is(input, select, textarea):focus { border-color: var(--tk-accent); }
+html[data-family="nature"] :is(.btn-primary, button.btn-primary, .login-primary) {
+    background: var(--tk-btn) !important;
+    color: var(--tk-btn-text) !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    border-radius: 8px;
+}
+html[data-family="nature"] .icon-btn:not(.top-navbar .icon-btn):not(.btn-primary) {
+    box-shadow: none;
+    border-radius: 8px;
+}
+
+html[data-family="nature"] .toast {
+    background: var(--tk-inner);
+    border: 3px solid var(--tk-frame);
+    border-radius: 8px;
+    box-shadow: none;
+    color: var(--tk-cream);
+}
+html[data-family="nature"] .toast .toast-action { color: var(--tk-accent); }
+
+/* ---------- 6. Pages ---------- */
+/* Settings */
+html[data-family="nature"] body.settings-page .settings-card {
+    background: var(--tk-panel);
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: none;
+}
+html[data-family="nature"] body.settings-page .card-title { color: var(--tk-cream); }
+html[data-family="nature"] body.settings-page .settings-tab { color: var(--tk-tab); background: transparent; box-shadow: none; }
+html[data-family="nature"] body.settings-page .settings-tab[aria-selected="true"] { color: var(--tk-cream); }
+html[data-family="nature"] body.settings-page .settings-tab-icon { color: var(--tk-soft); }
+html[data-family="nature"] body.settings-page .settings-tab-icon .tk-ic { width: 20px; height: 20px; }
+html[data-family="nature"] body.settings-page .settings-tab-indicator { background: color-mix(in srgb, var(--tk-accent) 14%, transparent); box-shadow: inset 0 -2px 0 var(--tk-accent); }
+html[data-family="nature"] body.settings-page .settings-pane-head h3 { color: var(--tk-cream); }
+html[data-family="nature"] .switch:checked { background-color: var(--primary); }
+
+/* Help (inline styles in help.html stay; these flatten them) */
+html[data-family="nature"] .hp-sec { background: var(--tk-panel); border: 1px solid rgba(255, 255, 255, .1); border-radius: 10px; }
+html[data-family="nature"] .hp-sec h3 .tk-ic, html[data-family="nature"] .hp-toc .tk-ic { width: 20px; height: 20px; color: var(--tk-soft); margin-right: 6px; }
+html[data-family="nature"] .hp-toc a { background: rgba(255, 255, 255, .05); }
+html[data-family="nature"] .hp-units a { border-radius: 8px; }
+html[data-family="nature"] .hp-exbody { background: color-mix(in srgb, var(--tk-accent) 10%, transparent); }
+
+/* Sleep and login */
+html[data-family="nature"] .sleep-card { background: var(--tk-panel); border: 2px solid var(--border-color); border-radius: 10px; }
+html[data-family="nature"] .sleep-header h1 .tk-ic { width: 30px; height: 30px; color: var(--tk-soft); margin-right: 6px; }
+html[data-family="nature"] .login-card {
+    background: var(--tk-inner);
+    border: 5px solid var(--tk-frame);
+    border-radius: 12px;
+    box-shadow: none;
+}
+
+/* ---------- 7. Tablet and desktop: persistent nav rail, Copilot as a partial panel ---------- */
+@media (min-width: 1180px) {
+    html[data-family="nature"] body:has(> .sidebar-drawer) { padding-left: 250px; }
+    html[data-family="nature"] body > .sidebar-drawer {
+        transform: none;
+        width: 236px;
+        left: 0;
+        visibility: visible;
+        border: 0;
+        border-right: 1px solid var(--tk-line);
+        border-radius: 0;
+        background: color-mix(in srgb, var(--tk-inner) 88%, transparent);
+    }
+    html[data-family="nature"] body > .drawer-backdrop { display: none !important; }
+    html[data-family="nature"] #openDrawerBtn { display: none; }
+}
+
+/* ---------- 8. Effects: clouds, loader card, leaves, bird ---------- */
+#tk-clouds, #tk-fx, #tk-loader { display: none; }
+html[data-family="nature"] #tk-fx { display: block; position: fixed; inset: 0; pointer-events: none; z-index: 2600; overflow: hidden; }
+html[data-family="nature"] #tk-clouds { display: block; position: fixed; inset: 0; z-index: 2500; pointer-events: none; overflow: hidden; }
+html[data-family="nature"] #tk-clouds .tk-cloud {
+    position: absolute;
+    top: -8%;
+    bottom: -8%;
+    width: 78%;
+    transition: transform calc(.55s * var(--tk-cloud-speed)) cubic-bezier(.55, 0, .35, 1);
+    background:
+        radial-gradient(closest-side, #f4f9ff 62%, #f4f9ff00) 20% 6% / 62% 26% no-repeat,
+        radial-gradient(closest-side, #e9f2fb 62%, #e9f2fb00) 70% 22% / 66% 24% no-repeat,
+        radial-gradient(closest-side, #f7fbff 62%, #f7fbff00) 30% 42% / 70% 26% no-repeat,
+        radial-gradient(closest-side, #e4eef9 62%, #e4eef900) 75% 60% / 66% 26% no-repeat,
+        radial-gradient(closest-side, #f4f9ff 62%, #f4f9ff00) 25% 78% / 70% 26% no-repeat,
+        radial-gradient(closest-side, #eaf3fc 62%, #eaf3fc00) 72% 96% / 66% 24% no-repeat,
+        #f0f6fd;
+    opacity: .96;
+}
+html[data-family="nature"] #tk-clouds .tk-cloud.l { left: 0; transform: translateX(-112%); -webkit-mask: linear-gradient(90deg, #000 78%, transparent); mask: linear-gradient(90deg, #000 78%, transparent); }
+html[data-family="nature"] #tk-clouds .tk-cloud.r { right: 0; transform: translateX(112%); -webkit-mask: linear-gradient(270deg, #000 78%, transparent); mask: linear-gradient(270deg, #000 78%, transparent); }
+html[data-family="nature"] #tk-clouds.in .tk-cloud { transform: none; }
+html[data-family="nature"] #tk-clouds::before { content: ""; position: absolute; inset: 0; background: var(--tk-bg1); opacity: 0; transition: opacity .2s; }
+html[data-family="nature"] #tk-clouds.plain::before { opacity: 1; }
+
+html[data-family="nature"] #tk-loader {
+    display: block;
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    z-index: 2550;
+    width: min(86%, 320px);
+    transform: translate(-50%, -40%) scale(.92);
+    opacity: 0;
+    pointer-events: none;
+    transition: .3s;
+    text-align: center;
+    padding: 16px;
+    border-radius: 12px;
+    border: 5px solid var(--tk-frame);
+    background: var(--tk-inner);
+    color: var(--tk-cream);
+}
+html[data-family="nature"] #tk-loader.on { opacity: 1; transform: translate(-50%, -50%); pointer-events: auto; }
+html[data-family="nature"] #tk-loader .tk-ic { width: 64px; height: 64px; color: var(--tk-soft); display: block; margin: 0 auto 6px; }
+html[data-family="nature"] #tk-loader p { margin: 4px 0 12px; opacity: .85; font-size: 14px; }
+
+/* Secure boot status (created by core.js with inline styles): clouds, then a card at 1.8s. */
+html[data-family="nature"] #authLoadingStatus {
+    background:
+        radial-gradient(closest-side, rgba(240, 246, 253, .16), transparent) 0 30% / 60% 22% no-repeat,
+        radial-gradient(closest-side, rgba(240, 246, 253, .12), transparent) 100% 22% / 55% 18% no-repeat,
+        radial-gradient(closest-side, rgba(240, 246, 253, .14), transparent) 8% 82% / 65% 24% no-repeat,
+        radial-gradient(closest-side, rgba(240, 246, 253, .10), transparent) 96% 74% / 60% 20% no-repeat,
+        linear-gradient(180deg, var(--tk-bg1), var(--tk-bg2)) !important;
+    color: var(--tk-cream) !important;
+    font-family: var(--tk-font);
+    font-weight: 800;
+    isolation: isolate;
+    padding: 24px max(28px, calc(50% - 150px)) !important;
+}
+html[data-family="nature"] #authLoadingStatus.tk-loading-card::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: -1;
+    width: min(92%, 340px);
+    min-height: 130px;
+    height: calc(100% - 2 * max(0px, 50% - 110px));
+    max-height: 260px;
+    transform: translate(-50%, -50%);
+    border: 5px solid var(--tk-frame);
+    border-radius: 12px;
+    background: var(--tk-inner);
+    animation: tkCardIn .3s var(--ease-out) both;
+}
+html[data-family="nature"] #authLoadingStatus button {
+    font: inherit;
+    padding: 10px 16px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--tk-btn);
+    color: var(--tk-btn-text);
+}
+@keyframes tkCardIn { from { opacity: 0; transform: translate(-50%, -42%) scale(.94); } }
+
+html[data-family="nature"] .tk-leaf {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+    animation: tkLeafFall var(--t) cubic-bezier(.3, .6, .5, 1) forwards;
+}
+@keyframes tkLeafFall {
+    0% { transform: translate(0, 0) scale(.3) rotate(0); opacity: 1; }
+    22% { transform: translate(calc(var(--dx) * .4), -46px) scale(1) rotate(calc(var(--r) * .3)); opacity: 1; }
+    100% { transform: translate(var(--dx), 230px) scale(.9) rotate(var(--r)); opacity: 0; }
+}
+html[data-family="nature"] .tk-bird {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 34px;
+    height: 24px;
+    z-index: 2400;
+    pointer-events: none;
+    fill: var(--tk-soft);
+    opacity: .9;
+}
+
+/* ---------- 9. Motion preferences ---------- */
+html[data-family="nature"][data-fx-off~="parallax"] #tk-scene .tk-layer { transform: none !important; }
+html[data-family="nature"][data-fx-off~="clouds"] #tk-clouds .tk-cloud { display: none; }
+html[data-family="nature"][data-fx-off~="particles"] .tk-leaf,
+html[data-family="nature"][data-fx-off~="bird"] .tk-bird { display: none; }
+html[data-family="nature"][data-motion="reduce"] *,
+html[data-family="nature"][data-motion="reduce"] *::before,
+html[data-family="nature"][data-motion="reduce"] *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+    html[data-family="nature"] .tk-leaf, html[data-family="nature"] .tk-bird { display: none; }
+    html[data-family="nature"] #tk-scene .tk-layer { transform: none !important; }
+}
+
+/* Login brand */
+html[data-family="nature"] .tk-login-logo { width: min(260px, 80%); margin: 0 0 18px; color: var(--tk-logo); }
+
+/* ---------- 10. Settings: Colour theme and Appearance cards ---------- */
+.tk-theme-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 10px; }
+.tk-theme-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 52px;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-color);
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color .18s ease, background .18s ease, transform .12s ease;
+}
+.tk-theme-option:active { transform: scale(.98); }
+.tk-theme-option.is-on { border-color: var(--tk-accent, var(--primary)); background: color-mix(in srgb, var(--tk-accent, var(--primary)) 10%, transparent); }
+.tk-theme-option.is-locked { opacity: .55; }
+.tk-theme-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-swatch { display: inline-flex; width: 30px; height: 22px; border-radius: 7px; overflow: hidden; border: 1px solid rgba(255, 255, 255, .15); flex: none; }
+.tk-swatch i { flex: 1; }
+.tk-pro-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; padding: 1px 6px; border-radius: 5px; border: 1px solid #d9a43e; color: #d9a43e; font-weight: 800; flex: none; }
+.tk-pro-badge .tk-ic { width: 11px; height: 11px; }
+.tk-theme-lock { width: 16px; height: 16px; color: var(--text-muted); }
+.tk-pro-note { margin: 10px 0 0; font-size: .85rem; color: #d9a43e; }
+.tk-pro-note a { color: inherit; font-weight: 800; }
+#appearanceCard .setting-row.is-muted { opacity: .45; }
+html[data-family="nature"] .switch { transition: background-color .22s ease; }
+
+/* Focus timer tag and legacy Pomodoro button: same flat language as the other floating buttons */
+html[data-family="nature"] :is(#focusTimerTag, #pomodoroFabBtn) {
+    background: var(--tk-inner) !important;
+    color: var(--tk-soft) !important;
+    border: 2px solid var(--tk-frame) !important;
+    border-radius: 14px !important;
+    box-shadow: none !important;
+}
+html[data-family="nature"] :is(#focusTimerTag, #pomodoroFabBtn) .tk-ic { width: 24px; height: 24px; }
+html[data-family="nature"] .copilot-fab-btn {
+    border-radius: 15px;
+    background: #2c2540;
+    box-shadow: inset 0 0 0 1.5px #7d6bb8;
+    color: #e9dfc3;
+    border: 0;
+}
+
+/* Universe parks the family layer: the shared focus-timer tag shows its original glyph there. */
+html:not([data-family]) #focusTimerTag > .tk-ic { display: none; }
+html:not([data-family]) #focusTimerTag:has(> .tk-ic)::before { content: "\23F1"; }
+@media (max-width: 420px) { .tk-theme-options { grid-template-columns: 1fr; } }

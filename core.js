@@ -176,7 +176,9 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
     }
     // Same shape the Worker returns, so existing Pro checks work unchanged. Fails closed.
     async function proStatus() {
-        const none = status => ({ isPro: false, tier: 'free', plan: 'free', status, offline: true, expires_at: null, credits: null });
+        // Same theme block as the Worker, computed locally from the shared registry.
+        const themes = plan => window.TaskitatorThemes?.statusFor(plan);
+        const none = status => ({ isPro: false, tier: 'free', plan: 'free', status, offline: true, expires_at: null, credits: null, themes: themes('free') });
         const jwk = window.TASKITATOR_AUTH_CONFIG?.offlineProPublicKey;
         const token = localStorage.getItem(KEY.pro);
         if (!jwk || !token) return none('free');
@@ -185,7 +187,7 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
         if (!claims || !known || !known.clerk_user || claims.sub !== known.clerk_user) return none('invalid');
         if (trustedNow() >= claims.valid_until) return none('expired');
         return { isPro: true, tier: 'pro', plan: 'pro', status: 'active', offline: true,
-            expires_at: Number.isFinite(claims.exp) ? claims.exp : null, valid_until: claims.valid_until, credits: null };
+            expires_at: Number.isFinite(claims.exp) ? claims.exp : null, valid_until: claims.valid_until, credits: null, themes: themes('pro') };
     }
 
     // ----- Connectivity state, banner and interface gating -----
@@ -2046,7 +2048,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-button-startup-v1');
+                    resolve(event.data?.version === 'taskitator-nature-v1');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
