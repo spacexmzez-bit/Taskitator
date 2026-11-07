@@ -102,7 +102,7 @@
         if (ready) return ready;
         const fam = window.TaskitatorThemes?.FAMILIES?.[family()] || window.TaskitatorThemes?.FAMILIES?.nature;
         const url = fam?.sprite || 'image/nature_sprites/sprite.svg';
-        ready = fetch(url, { credentials: 'same-origin' })
+        const load = (opts) => fetch(url, opts)
             .then(r => (r.ok ? r.text() : Promise.reject(new Error('sprite ' + r.status))))
             .then(text => {
                 if (!/^\s*<svg[\s>]/.test(text) || /<script|on[a-z]+=|javascript:/i.test(text)) throw new Error('Unexpected sprite content');
@@ -123,8 +123,18 @@
                 if (document.body) insert(); else document.addEventListener('DOMContentLoaded', insert, { once: true });
                 document.documentElement.classList.add('tk-icons-ready');
                 return true;
-            })
-            .catch(() => false);
+            });
+        // A failed or stale response (e.g. a 404 held by a CDN or the HTTP cache after a deploy) must not leave
+        // icons blank for the whole session: retry with the cache bypassed. Icons are <use> references, so they
+        // appear by themselves once the sprite is in the page.
+        const tries = [0, 1500, 6000];
+        ready = (async () => {
+            for (let i = 0; i < tries.length; i++) {
+                if (tries[i]) await new Promise(r => setTimeout(r, tries[i]));
+                try { return await load(i ? { credentials: 'same-origin', cache: 'reload' } : { credentials: 'same-origin' }); } catch { /* retry */ }
+            }
+            return false;
+        })();
         return ready;
     }
     sprite();
