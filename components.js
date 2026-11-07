@@ -151,7 +151,7 @@
             if (opts.title) {
                 const h = document.createElement('h3');
                 h.className = 'confirm-sheet-title';
-                h.textContent = (tone === 'danger' ? '⚠️ ' : '') + opts.title;
+                h.textContent = opts.title;
                 box.appendChild(h);
             }
             const p = document.createElement('p');
@@ -1169,7 +1169,7 @@ window.TaskitatorComponents = Object.freeze({
 
                 if (rawToken === '$$') {
                     chipData = {
-                        html: `<span class="nlp-chip nlp-bonus" contenteditable="false" data-type="bonus" data-raw="$$">⭐ Bonus <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                        html: `<span class="nlp-chip nlp-bonus" contenteditable="false" data-type="bonus" data-raw="$$"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus <button type="button" class="nlp-chip-remove">&times;</button></span>`,
                         action: () => {
                             if (contextType === 'edit') {
                                 editModalIsBonus = true;
@@ -1389,7 +1389,7 @@ window.TaskitatorComponents = Object.freeze({
             if (window.ExemplarStore) {
                 const hasExemplar = await ExemplarStore.hasExemplar(task.id);
                 if (hasExemplar) {
-                    criteriaHtml += `<div style="margin-top: 6px; display: inline-flex; align-items: center; gap: 4px; color: var(--primary); font-size: 0.75rem; font-weight: 600;"><span>📎</span> Reference Exemplar Required for Match</div>`;
+                    criteriaHtml += `<div style="margin-top: 6px; display: inline-flex; align-items: center; gap: 4px; color: var(--primary); font-size: 0.75rem; font-weight: 600;"><span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-clip"></use></svg></span> Reference Exemplar Required for Match</div>`;
                 }
             }
             
@@ -1425,9 +1425,9 @@ window.TaskitatorComponents = Object.freeze({
                     sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
 
                     let cBadges = '';
-                    if (child.is_bonus) cBadges += '<span class="bonus-badge">⭐ Bonus</span> ';
-                    if (child.ai_locked) cBadges += '<span class="ai-badge">🔒 AI</span> ';
-                    if (child.strict_prerequisites) cBadges += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;">🛡️</span>';
+                    if (child.is_bonus) cBadges += '<span class="bonus-badge"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus</span> ';
+                    if (child.ai_locked) cBadges += '<span class="ai-badge"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg> AI</span> ';
+                    if (child.strict_prerequisites) cBadges += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-shield"></use></svg></span>';
 
                     sLi.innerHTML = `
                         <span>${child.status === 'completed' ? '✓ ' : ''}${TaskitatorSafety.escapeHtml(child.title)} ${cBadges}</span>
@@ -1657,12 +1657,12 @@ window.TaskitatorComponents = Object.freeze({
             if (detailLockStatusBadge) {
                 let statusHtml = '';
                 if (task.is_bonus) {
-                    statusHtml += '<span class="bonus-badge" style="margin-right: 4px;">⭐ Bonus</span>';
+                    statusHtml += '<span class="bonus-badge" style="margin-right: 4px;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus</span>';
                 }
                 if (isLocked) {
                     statusHtml += isBypassActive
                         ? '<span class="tag-chip" style="background:#451a03;color:#fde68a;">Bypass Active</span>'
-                        : '<span class="ai-badge">🔒 Locked</span>';
+                        : '<span class="ai-badge"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg> Locked</span>';
                 } else {
                     statusHtml += '<span class="tag-chip">Standard</span>';
                 }
@@ -1947,7 +1947,7 @@ window.TaskitatorComponents = Object.freeze({
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay open'; overlay.id = 'draftsListModal';
             const box = document.createElement('div'); box.className = 'modal-box';
-            const head = document.createElement('h3'); head.style.cssText = 'margin-top:0;color:var(--primary);'; head.textContent = '📝 Drafts';
+            const head = document.createElement('h3'); head.style.cssText = 'margin-top:0;color:var(--primary);'; head.textContent = 'Drafts';
             box.appendChild(head);
             const close = () => overlay.remove();
             const row = (title, meta, openFn, deleteFn) => {
@@ -2584,7 +2584,7 @@ window.TaskitatorComponents = Object.freeze({
                             if (feedback) {
                                 feedback.style.display = 'block';
                                 feedback.className = 'criteria-feedback-box fail';
-                                feedback.innerHTML = '<strong>⚠️ Criteria modified:</strong> Saved verification dropped. Please re-validate (score &ge; 7 required to save task).';
+                                feedback.innerHTML = '<strong><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> Criteria modified:</strong> Saved verification dropped. Please re-validate (score &ge; 7 required to save task).';
                             }
                         }
                     } else if (criteriaValidationState.validated) {
@@ -2608,7 +2608,7 @@ window.TaskitatorComponents = Object.freeze({
                             if (feedback) {
                                 feedback.style.display = 'block';
                                 feedback.className = 'criteria-feedback-box fail';
-                                feedback.innerHTML = '<strong>⚠️ Criteria modified:</strong> Saved verification dropped. Please re-validate (score &ge; 7 required to save task).';
+                                feedback.innerHTML = '<strong><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> Criteria modified:</strong> Saved verification dropped. Please re-validate (score &ge; 7 required to save task).';
                             }
                         }
                     } else if (editCriteriaValidationState.validated) {
@@ -2671,7 +2671,7 @@ window.TaskitatorComponents = Object.freeze({
 
                     if (isAi) {
                         const confirmed = await window.TaskitatorConfirm(
-                            "⚠️️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
+                            "IRREVOCABLE TASK WARNING\n\n" +
                             "Once created, AI-Checked tasks CANNOT be edited (except description/tags) and CANNOT be deleted.\n\n" +
                             "If phone lock is active, your device stays locked until verified by AI proof.\n\n" +
                             "Proceed with creation?"
@@ -2679,7 +2679,7 @@ window.TaskitatorComponents = Object.freeze({
                         if (!confirmed) return;
                     } else if (isStrictPrereq) {
                         const confirmed = await window.TaskitatorConfirm(
-                            "⚠️ IRREVERSIBLE SHIELD ⚠️\n\n" +
+                            "IRREVERSIBLE SHIELD\n\n" +
                             "The Shield is permanent.\n" +
                             "Once created, this task cannot be completed until ALL core subtasks are finished, and the Shield cannot be turned off.\n\n" +
                             "Proceed with creation?"
@@ -2755,6 +2755,7 @@ window.TaskitatorComponents = Object.freeze({
                     }
 
                     host.tasks.getAll().push(newTask);
+                    window.dispatchEvent(new CustomEvent('taskitator-task-created', { detail: { id: newTaskId } }));
 
                     if (subtaskBuilderList) {
                         const quickSubtaskInputs = subtaskBuilderList.querySelectorAll('.subtask-input-title');
@@ -2960,7 +2961,7 @@ window.TaskitatorComponents = Object.freeze({
 
                     if (!task.ai_locked && willBeAiLocked) {
                         const confirmed = await window.TaskitatorConfirm(
-                            "⚠️ IRREVOCABLE TASK WARNING ⚠️\n\n" +
+                            "IRREVOCABLE TASK WARNING\n\n" +
                             "Enabling AI Proof on this task is permanent.\n" +
                             "Once saved, this task cannot be un-checked, criteria cannot be changed, and it CANNOT be deleted without an Emergency Bypass.\n\n" +
                             "Do you want to permanently lock this task?"
@@ -2968,7 +2969,7 @@ window.TaskitatorComponents = Object.freeze({
                         if (!confirmed) return;
                     } else if (!task.strict_prerequisites && willBeStrict && !willBeAiLocked) {
                         const confirmed = await window.TaskitatorConfirm(
-                            "⚠️ IRREVERSIBLE SHIELD ⚠️\n\n" +
+                            "IRREVERSIBLE SHIELD\n\n" +
                             "Enabling the Shield is permanent.\n" +
                             "Once saved, this task cannot be completed until ALL core subtasks are finished, and the Shield cannot be turned off.\n\n" +
                             "Proceed?"
@@ -3157,7 +3158,7 @@ window.TaskitatorComponents = Object.freeze({
                                     noticeHtml = `<div style="margin-top: 8px; font-size: 0.8rem; color: #cbd5e1;">ℹ️ Insufficient proof: Free tier accounts do not receive the 50% discount on insufficient audits.</div>`;
                                 }
                             } else if (!result.error) {
-                                noticeHtml = `<div style="margin-top: 8px; font-size: 0.8rem; color: #fca5a5;">⚠️ Token notice: Usage was calculated and consumed for this audit. No refund issued.</div>`;
+                                noticeHtml = `<div style="margin-top: 8px; font-size: 0.8rem; color: #fca5a5;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> Token notice: Usage was calculated and consumed for this audit. No refund issued.</div>`;
                             }
                             auditFeedback.innerHTML = `<strong>Verdict: ${verdictUpper}</strong><br>${critiqueText}${noticeHtml}`;
                         }
@@ -3204,7 +3205,7 @@ window.TaskitatorComponents = Object.freeze({
                 }
 
                 btnEl.disabled = false, btnEl.classList.toggle('is-loading', false);
-                btnEl.textContent = '🔍 Validate Criteria';
+                btnEl.textContent = 'Validate Criteria';
 
                 const stateTarget = isEditMode ? editCriteriaValidationState : criteriaValidationState;
 
@@ -3235,7 +3236,7 @@ window.TaskitatorComponents = Object.freeze({
                             html += `
                                 <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: space-between;">
                                     <span style="font-size: 0.75rem; color: #86efac; font-weight: 600;">Eligible to save (&ge; 9/10)</span>
-                                    <button type="button" class="icon-btn save-as-criteria-btn btn-primary" style="background: var(--primary); color: #fff; font-size: 0.75rem; padding: 4px 10px; font-weight: 700; border: none;">💾 Save Criteria</button>
+                                    <button type="button" class="icon-btn save-as-criteria-btn btn-primary" style="background: var(--primary); color: #fff; font-size: 0.75rem; padding: 4px 10px; font-weight: 700; border: none;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-save"></use></svg> Save Criteria</button>
                                 </div>
                                 <div class="save-criteria-inline-prompt" style="display: none; margin-top: 8px;">
                                     <input type="text" class="save-criteria-title-input" placeholder="Enter title for saved criteria..." value="${TaskitatorSafety.escapeHtml(cleanTitle || 'Verified Criteria')}" style="width: 100%; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.8rem; box-sizing: border-box; margin-bottom: 6px;">
@@ -3341,7 +3342,7 @@ window.TaskitatorComponents = Object.freeze({
                         }
                     } else {
                         feedbackEl.className = 'criteria-feedback-box fail';
-                        let feedbackHtml = `<strong>⚠️ Low Quality Rating (${TaskitatorSafety.escapeHtml(res.score)}/10)</strong>: ${TaskitatorSafety.escapeHtml(res.critique)}`;
+                        let feedbackHtml = `<strong><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> Low Quality Rating (${TaskitatorSafety.escapeHtml(res.score)}/10)</strong>: ${TaskitatorSafety.escapeHtml(res.critique)}`;
                         if (res.suggested_rewrite) {
                             feedbackHtml += `
                                 <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2);">
@@ -3462,7 +3463,7 @@ window.TaskitatorComponents = Object.freeze({
                     exemplarPart
                 };
                 const display = document.getElementById('criteriaTestCriteriaDisplay');
-                if (display) display.textContent = gate.resolvedText + (exemplarPart ? '\n\n📎 Reference exemplar included' : '');
+                if (display) display.textContent = gate.resolvedText + (exemplarPart ? '\n\nReference exemplar included' : '');
                 const fileInput = document.getElementById('criteriaTestFileInput');
                 if (fileInput) fileInput.value = '';
                 const ctx = document.getElementById('criteriaTestContextInput');
@@ -3507,7 +3508,7 @@ window.TaskitatorComponents = Object.freeze({
                 const cost = result.credits_charged != null ? `${TaskitatorSafety.escapeHtml(result.credits_charged)} credits used.` : 'AI usage was consumed for this test.';
                 resultBox.className = verdict === 'approved' ? 'criteria-feedback-box pass' : 'audit-critique-box';
                 resultBox.innerHTML = `<strong>Test verdict: ${label}</strong><br>${TaskitatorSafety.escapeHtml(result.critique || result.reason || '')}` +
-                    `<div style="margin-top: 8px; font-size: 0.75rem; color: var(--text-muted);">🧪 Test only. Nothing was saved or locked. ${cost}</div>`;
+                    `<div style="margin-top: 8px; font-size: 0.75rem; color: var(--text-muted);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Test only. Nothing was saved or locked. ${cost}</div>`;
             });
 
             // Template & Saved Criteria Picker Modal
@@ -3567,7 +3568,7 @@ window.TaskitatorComponents = Object.freeze({
 
                     let exemplarBadge = '';
                     if (item.has_exemplar) {
-                        exemplarBadge = `<span class="tag-chip" style="background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); font-size: 0.7rem;">📎 Exemplar Attached</span>`;
+                        exemplarBadge = `<span class="tag-chip" style="background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); font-size: 0.7rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-clip"></use></svg> Exemplar Attached</span>`;
                     }
 
                     card.innerHTML = `

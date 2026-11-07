@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" class="auth-pending">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-Z4w7a3cFYzWUmbKyVwHIwHrtcN5O9avyiUm3KQPsPeI=' 'sha256-FsSI9ctBrij98K88YJxSZpXHuaM61ib775+Mx7BRPrI=' 'sha256-hHIGfDneJiyFNo3PDW8vPxmcxdXlzOtKCyijAcWMW9U=' 'sha256-CAU6KVZy6OMeVnS1dN0vmQb8tT/cvIDcATh4wmcEkvQ=' 'sha256-LkDsFLD3B41WimikzpNDDneUxcJ1/GX6fCk9Mj9Lggk=' 'sha256-jxuOiKPpquP1dKO4iWwA4qfxlUwVA3UM9Mid+zg1nhA=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-mvUFMzZ0+YCYMplkjF3vs+CrmMJ5PHQwMCGeRdWaNGU=' 'sha256-/+TKdXffssgNFTQu+fHi4wujT2Y+3lkpGErZ1lSonAQ=' 'sha256-fywwv2Y8EaGPcsShbpcCyyEfAnp/Fo7uJP4dvgUyUHQ=' 'sha256-oGpyVZNmMR8wJHvXHRBsidXhU/HE3eHheBMGnrByMgs=' 'sha256-LkDsFLD3B41WimikzpNDDneUxcJ1/GX6fCk9Mj9Lggk=' 'sha256-jxuOiKPpquP1dKO4iWwA4qfxlUwVA3UM9Mid+zg1nhA=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
@@ -10,27 +10,34 @@
     <link rel="stylesheet" href="uni/universe.css">
     <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="tutorial-spotlight.css">
+<link rel="icon" type="image/svg+xml" href="image/nature_sprites/favicon.svg">
+<link rel="stylesheet" href="palettes.css">
+<link rel="stylesheet" href="family-nature.css">
+<script src="registry.js"></script>
+<script src="theme-boot.js"></script>
+<script defer src="icons.js"></script>
+<script defer src="nature.js"></script>
 </head>
 <body>
     <!-- Navigation Drawer -->
     <div class="drawer-backdrop" id="drawerBackdrop"></div>
     <aside class="sidebar-drawer" id="sidebarDrawer">
         <div class="drawer-header">
-            <h2 class="drawer-brand">Taskitator</h2>
+            <h2 class="drawer-brand tk-brand"><svg class="tk-brand-logo" viewBox="0 0 682.3 235.7" aria-hidden="true" focusable="false"><use href="#ic-brand-hybrid"></use></svg><span class="tk-sr">Taskitator</span></h2>
         </div>
         <nav class="drawer-links" id="drawerNavLinks">
-            <a href="index.html?view=today" class="drawer-item"><span class="icon">☀️</span> Today</a>
-            <a href="index.html?view=inbox" class="drawer-item"><span class="icon">📥</span> Inbox</a>
-            <a href="index.html?view=upcoming" class="drawer-item"><span class="icon">📅</span> Upcoming</a>
-            <a href="components.html?view=projects" class="drawer-item" data-comp-link="projects"><span class="icon">📁</span> Projects</a>
-            <a href="components.html?view=calendar" class="drawer-item" data-comp-link="calendar"><span class="icon">🗓️</span> Calendar</a>
-            <a href="components.html?view=stats" class="drawer-item" data-comp-link="stats"><span class="icon">📊</span> Statistics</a>
-            <a href="components.html?view=trash" class="drawer-item" data-comp-link="trash"><span class="icon">🗑️</span> Trash</a>
-            <a href="#" class="drawer-item" data-open-drafts><span class="icon">📝</span> Drafts<span data-draft-count></span></a>
+            <a href="index.html?view=today" class="drawer-item"><span class="icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-today"></use></svg></span> Today</a>
+            <a href="index.html?view=inbox" class="drawer-item"><span class="icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-inbox"></use></svg></span> Inbox</a>
+            <a href="index.html?view=upcoming" class="drawer-item"><span class="icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-calendar"></use></svg></span> Upcoming</a>
+            <a href="components.html?view=projects" class="drawer-item" data-comp-link="projects"><span class="icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-projects"></use></svg></span> Projects</a>
+            <a href="components.html?view=calendar" class="drawer-item" data-comp-link="calendar"><span class="icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-calendar"></use></svg></span> Calendar</a>
+            <a href="components.html?view=stats" class="drawer-item" data-comp-link="stats"><span class="icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-stats"></use></svg></span> Statistics</a>
+            <a href="components.html?view=trash" class="drawer-item" data-comp-link="trash"><span class="icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-trash"></use></svg></span> Trash</a>
+            <a href="#" class="drawer-item" data-open-drafts><span class="icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-drafts"></use></svg></span> Drafts<span data-draft-count></span></a>
             <a href="components.html?view=universe" class="drawer-item"><span class="icon">🌌</span> Universe</a>
-            <a href="sleep.html" class="drawer-item"><span class="icon">🌙</span> Sleep Lock</a>
-<a href="help.html" class="drawer-item"><span class="icon">❓</span> Help</a>
-<a href="settings.html" class="drawer-item"><span class="icon">⚙️</span> Settings</a>
+            <a href="sleep.html" class="drawer-item"><span class="icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-sleep"></use></svg></span> Sleep Lock</a>
+<a href="help.html" class="drawer-item"><span class="icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-help"></use></svg></span> Help</a>
+<a href="settings.html" class="drawer-item"><span class="icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-settings"></use></svg></span> Settings</a>
         </nav>
     </aside>
 
@@ -58,12 +65,12 @@
     <div class="app-container">
         <header class="top-navbar">
             <div class="nav-left">
-                <button class="icon-btn" id="openDrawerBtn" title="Menu">☰</button>
+                <button class="icon-btn" id="openDrawerBtn" title="Menu"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-menu"></use></svg></button>
                 <h1 class="page-title" id="componentPageTitle">Workspace Views</h1>
             </div>
             <div class="nav-right">
                 <button class="icon-btn" id="todayJumpBtn" style="display:none; font-size:0.8rem; padding:4px 10px;">Today</button>
-                <button class="icon-btn" id="openCopilotNavBtn" title="Open Ari Assistant">✨ Ari</button>
+                <button class="icon-btn" id="openCopilotNavBtn" title="Open Ari Assistant"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-copilot"></use></svg> Ari</button>
             </div>
         </header>
 
@@ -80,7 +87,7 @@
 
     <div class="page-title-section" style="padding: 12px 4px 6px 4px; display: flex; align-items: center; justify-content: space-between;">
         <h1 id="activeProjectTitleHeader" style="display: flex; align-items: center; gap: 8px;">
-            <span id="activeProjectIcon">📥</span>
+            <span id="activeProjectIcon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-inbox"></use></svg></span>
             <span id="activeProjectName">Inbox</span>
         </h1>
         <span id="projectTaskCountBadge" class="due-badge" style="font-size: 0.8rem;">0 Tasks</span>
@@ -118,14 +125,14 @@
 
             <div id="projectDeleteSection" style="display: none; border-top: 1px solid var(--border-color); padding-top: 14px; margin-top: 14px;">
                 <button type="button" class="icon-btn" id="triggerProjectDeleteToggleBtn" style="color: var(--danger); border-color: #7f1d1d; width: 100%; justify-content: center;">
-                    🗑️ Delete Project
+                    <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-trash"></use></svg> Delete Project
                 </button>
 
                 <div id="cascadeDeleteOptionsPanel" style="display: none;" class="cascade-options-card">
                     <strong>What should happen to existing tasks?</strong>
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                         <input type="radio" name="cascadeChoice" value="inbox" checked>
-                        <span>Divert all tasks to <strong>📥 Inbox</strong></span>
+                        <span>Divert all tasks to <strong><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-inbox"></use></svg> Inbox</strong></span>
                     </label>
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                         <input type="radio" name="cascadeChoice" value="reassign">
@@ -412,7 +419,7 @@
     <!-- Distraction Archive Card -->
     <div class="chart-card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <h3 style="margin: 0;">📦 Distraction Archive</h3>
+            <h3 style="margin: 0;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-inbox"></use></svg> Distraction Archive</h3>
             <button type="button" class="icon-btn" id="clearAllArchiveBtn" style="color: var(--danger); border-color: rgba(239, 68, 68, 0.4); font-size: 0.75rem; padding: 3px 8px;">
                 Clear Archive
             </button>
@@ -543,7 +550,7 @@
                             <span class="screenshot-caption">Fig 3: Tap Application Launched/Closed (ignore the crossed-out options).</span>
                         </div>
                         <div class="warning-callout" style="margin-bottom:12px;">
-                            ⚠️ <strong>Anti-Lockout Protection:</strong> Never check the <strong>Phone Dialer</strong>, <strong>SMS Messages</strong>, <strong>Android Settings</strong>, or <strong>MacroDroid</strong> itself. Keep all emergency and critical tools accessible.
+                            <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> <strong>Anti-Lockout Protection:</strong> Never check the <strong>Phone Dialer</strong>, <strong>SMS Messages</strong>, <strong>Android Settings</strong>, or <strong>MacroDroid</strong> itself. Keep all emergency and critical tools accessible.
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="p1-item-sub-3">
@@ -1278,7 +1285,7 @@
 (() => {
 (() => {
     let activeProjectId = 'inbox';
-    let selectedEmoji = '📁';
+    let selectedEmoji = '';
     let selectedColor = '#3b82f6';
 
     function isProjectsWorkspaceAllowed() {
@@ -1330,7 +1337,11 @@
         const list = document.getElementById('projectTaskListContainer');
         const editFab = document.getElementById('openEditActiveProjectFab');
 
-        if (iconEl) iconEl.textContent = activeProj.icon;
+        if (iconEl) {
+            // The system Inbox default uses the sprite icon; user-chosen icons stay as chosen.
+            if (activeProj.id === 'inbox' && activeProj.icon === '\u{1F4E5}' && window.TaskitatorIcons) iconEl.replaceChildren(window.TaskitatorIcons.node('inbox'));
+            else iconEl.textContent = activeProj.icon;
+        }
         if (nameEl) {
             nameEl.textContent = activeProj.name;
             nameEl.style.color = activeProj.color;
@@ -1404,13 +1415,14 @@
                 e.stopPropagation();
                 TaskitatorApp.handleTaskCompletion(task.id, renderProjectWorkspace);
             });
+            window.TaskitatorIcons?.decorateTask?.({ li, row, checkBtn, task, depth });
             main.appendChild(checkBtn);
 
             const titleSpan = document.createElement('span');
             titleSpan.className = 'task-title';
             titleSpan.textContent = task.title;
             main.appendChild(titleSpan);
-            if(task.smart_early_date===logicalToday&&task.is_bonus){const badge=document.createElement('span');badge.className='bonus-badge';badge.textContent='⭐ Early bonus';main.appendChild(badge);}
+            if(task.smart_early_date===logicalToday&&task.is_bonus){const badge=document.createElement('span');badge.className='bonus-badge';badge.textContent='Early bonus';main.appendChild(badge);}
 
             if (task.due_date) {
                 const due = document.createElement('span');
@@ -1471,7 +1483,7 @@
             if (modalTitle) modalTitle.textContent = 'Edit Project';
             if (idInput) idInput.value = curr.id;
             if (nameInput) nameInput.value = curr.name;
-            selectedEmoji = curr.icon || '📁';
+            selectedEmoji = curr.icon || '';
             selectedColor = curr.color || '#3b82f6';
             if (deleteSection) deleteSection.style.display = 'block';
 
@@ -1489,7 +1501,7 @@
             if (modalTitle) modalTitle.textContent = 'Create New Project';
             if (idInput) idInput.value = '';
             if (nameInput) nameInput.value = '';
-            selectedEmoji = '📁';
+            selectedEmoji = '';
             selectedColor = '#3b82f6';
             if (deleteSection) deleteSection.style.display = 'none';
         }
@@ -1535,7 +1547,7 @@
         let name='Focus Copilot';try{name=JSON.parse(localStorage.getItem('taskitator_settings')||'{}').copilot_name||name;}catch{}
         name=String(name).trim().slice(0,20)||'Focus Copilot';
         const heading=document.getElementById('workspaceCopilotTitle');if(heading)heading.textContent=name;
-        const nav=document.getElementById('openCopilotNavBtn');if(nav)nav.textContent='✨ '+name;
+        const nav=document.getElementById('openCopilotNavBtn');if(nav)nav.textContent=''+name;
         const wake=document.getElementById('startCopilotBtn');if(wake)wake.textContent='Start conversation';
         const promptInput=document.getElementById('copilotInput');if(promptInput)promptInput.placeholder='Ask '+name+'…';
         const copilotDrawer = document.getElementById('copilotDrawer');
@@ -1934,6 +1946,7 @@ function buildAgendaNode(task, depth, allChildrenMap, matchMap, descMatchMap) {
         renderCalendar();
         renderAgenda();
     });
+    window.TaskitatorIcons?.decorateTask?.({ li, row, checkBtn, task, depth });
     main.appendChild(checkBtn);
 
     const titleSpan = document.createElement('span');
@@ -2209,7 +2222,7 @@ function renderStats() {
     breaks = window.TaskitatorEngine?.BreakEngine?.getTodayBreaks() || [];
 
     if (!projects.some(p => p.id === 'inbox')) {
-        projects.unshift({ id: 'inbox', name: 'Inbox', color: '#94a3b8', icon: '📥' });
+        projects.unshift({ id: 'inbox', name: 'Inbox', color: '#94a3b8', icon: '' });
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
@@ -2467,7 +2480,7 @@ function renderTrash() {
 
         const info = document.createElement('div');
         info.innerHTML = `
-            <div class="trash-title">${TaskitatorSafety.escapeHtml(task.title)} ${task.ai_locked ? '<span class="ai-badge">🔒 AI</span>' : ''}</div>
+            <div class="trash-title">${TaskitatorSafety.escapeHtml(task.title)} ${task.ai_locked ? '<span class="ai-badge"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg> AI</span>' : ''}</div>
             <div class="trash-meta">Created: ${new Date(task.created_at || Date.now()).toLocaleDateString()}</div>
         `;
 

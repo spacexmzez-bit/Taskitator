@@ -172,6 +172,7 @@ test('Pro hosted limits come from verified d_allow/m_allow and status shows curr
     await h.storage.put((await hostedKeys(h.storage)).dayKey,3.5);
     const status=await (await h.gateway.getStatus('user_A')).json();
     assert.equal(status.credits.daily_limit,45);assert.equal(status.credits.monthly_limit,1000);
+    assert.deepEqual(status.themes,{allowed:['blue','green'],default:'blue',catalog_version:1},'Pro status carries the theme entitlement block');
     assert.equal(status.credits.daily_remaining,41.5);assert.equal(status.credits.monthly_period,'30-day');
     assert.equal(status.byok_credit_limits,false);
 }));
@@ -737,7 +738,7 @@ test('fabricated keys, setup errors, provider denial, missing responses and bad 
 
 test('unsigned old bypass grants are blocked for status, toggles, quotes and paid audit requests',async()=>withKeyoHarness(async h=>{
     await h.storage.put(licenseKey,{status:'active',tier:'pro',expires_at:Date.now()+DAY});
-    assert.equal((await h.route('/pro/status')).body.isPro,false);
+    { const free=(await h.route('/pro/status')).body; assert.equal(free.isPro,false); assert.deepEqual(free.themes,{allowed:['blue'],default:'blue',catalog_version:1},'Free status allows only free themes'); }
     assert.equal((await h.route('/pro/byok',{use_byok:true})).status,403);
     for(const path of ['/pro/ai/quote','/pro/ai/review','/pro/ai/batch-review']) {
         const r=await h.route(path,{operation_id:'operation_123',task_id:'t',criteria:'Completed',
@@ -1568,7 +1569,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-button-startup-v1'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-nature-v1'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);
@@ -2136,7 +2137,7 @@ test('Each break system panel names the system, shows its lock state and basic i
     const app = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
     for (const [name, title] of [['scheduled', 'Scheduled Breaks'], ['flexible', 'Flexible Breaks']]) {
         const panel = html.match(new RegExp(`data-break-panel="${name}"[\\s\\S]*?</section>`))[0];
-        assert.match(panel, new RegExp(`<strong>[^<]*${title}</strong>`));
+        assert.match(panel, new RegExp(`<strong>(?:<svg[^>]*><use[^>]*></use></svg>)?[^<]*${title}</strong>`));
         assert.match(panel, new RegExp(`data-break-state="${name}"`));
         assert.equal((panel.match(/<li>/g) || []).length, 3, `${name} shows three basic steps`);
     }
@@ -2179,7 +2180,7 @@ test('break settings card: daily maximum, minimum capped at the maximum, tight-l
     ui.onInput({target:{id:'strictFlexMinimum',value:'60',dataset:{}}});
     ui.onInput({target:{id:'strictAllowance',value:'60',dataset:{}}});
     assert.equal(ui.draft.allowance,60);assert.equal(ui.draft.flexible.minimum,60);
-    assert.match(card.innerHTML,/strict-warning[^>]*>⚠️ With a 60-minute minimum and a 1 hour daily maximum, you get at most 1 Flexible break a day/);
+    assert.match(card.innerHTML,/strict-warning[^>]*><svg class="tk-ic"[^>]*><use href="#ic-warning"><\/use><\/svg> With a 60-minute minimum and a 1 hour daily maximum, you get at most 1 Flexible break a day/);
     ui.onInput({target:{id:'strictFlexMinimum',value:'40',dataset:{}}});
     assert.doesNotMatch(card.innerHTML,/strict-warning/,'40 is under 75% of 60');
     ui.onInput({target:{id:'strictFlexMinimum',value:'45',dataset:{}}});

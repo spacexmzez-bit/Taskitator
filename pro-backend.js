@@ -5,6 +5,11 @@
 // ============================================================================
 import { SecurityError, PROVIDERS } from './worker.js';
 import { proofJSONStream, proofRequestBody } from './pro-proof-payload.js';
+import './registry.js';
+
+// Theme entitlement block for GET /pro/status. Additive: older clients ignore it.
+// Nothing is stored: the plan is derived from the verified entitlement, the list from the registry.
+const themesFor = plan => globalThis.TaskitatorThemes.statusFor(plan);
 
 const MiB = 1024 * 1024;
 export const MAX_PROOF_REQUEST_BYTES = 56 * MiB; // Base64 and JSON overhead on top of the decoded limit.
@@ -1194,6 +1199,7 @@ export class ProGateway {
                 offline_token: await signOfflineEntitlement(this.env, accountId, entitlement.expires_at, now),
                 policy_version: entitlement.policy_version || '3.0',
                 hosted_policy: POLICY.version,
+                themes: themesFor(entitlement.tier === 'max' ? 'max' : 'pro'),
                 credits: {
                     daily_limit: ledger.limits.daily,
                     daily_used: round(used.daily),
@@ -1225,6 +1231,7 @@ export class ProGateway {
             limits,
             server_now: now,
             credits: null,
+            themes: themesFor('free'),
             ...(status === 'invalid_parameters' ? {code: 'LICENSE_PARAMETERS_INVALID', message: LICENSE_PARAMETERS_MESSAGE} : {})
         });
     }

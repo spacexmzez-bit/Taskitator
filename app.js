@@ -426,6 +426,7 @@ window.TaskitatorAgent = (() => {
 
             tasks.push(newTask);
             commitTasks(tasks);
+            window.dispatchEvent(new CustomEvent('taskitator-task-created', { detail: { id: newId } }));
 
             return {
                 status: 'success',
@@ -738,7 +739,7 @@ ${formattedInput}`;
 
         const titleSpan = document.querySelector('.copilot-title-group span:first-child');
         if (titleSpan) {
-            titleSpan.textContent = `🤖 ${name}`;
+            titleSpan.replaceChildren((window.TaskitatorIcons ? window.TaskitatorIcons.node('copilot') : document.createTextNode('')), document.createTextNode(' ' + name));
         }
 
         const standbyTitle = document.querySelector('.copilot-standby-title');
@@ -751,7 +752,7 @@ ${formattedInput}`;
         if (navLabel) {
             navLabel.textContent = name;
         } else if (navBtn) {
-            navBtn.textContent = `💬 ${name}`;
+            navBtn.replaceChildren((window.TaskitatorIcons ? window.TaskitatorIcons.node('copilot') : document.createTextNode('')), document.createTextNode(' ' + name));
         }
 
         const fabBtn = document.getElementById('openCopilotFabBtn');
@@ -1067,6 +1068,10 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     // UI v2: Haptics & Motion Feedback
     // =========================================================================
+    // Icon helpers (icons.js). Decorative only; text stays in the DOM for screen readers.
+    const tkIcon = key => window.TaskitatorIcons ? window.TaskitatorIcons.node(key) : document.createTextNode('');
+    const tkLabel = (el, key, text) => { el.replaceChildren(tkIcon(key), document.createTextNode(text)); return el; };
+
     const UIFX = {
         reducedMotion() {
             return Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
@@ -1104,6 +1109,7 @@ window.TaskitatorApp = (() => {
             if (this.reducedMotion()) return Promise.resolve();
             checkBtn?.classList.add('is-completing');
             row?.classList.add('is-completing');
+            window.TaskitatorNature?.burst(checkBtn);
             return new Promise(resolve => setTimeout(resolve, 260));
         }
     };
@@ -1273,7 +1279,7 @@ window.TaskitatorApp = (() => {
             }
 
             if (notes.length === 0) {
-                listEl.innerHTML = '<div class="empty-state empty-state-sm"><span class="empty-state-icon" aria-hidden="true">💡</span>No distraction notes yet.</div>';
+                listEl.innerHTML = '<div class="empty-state empty-state-sm"><span class="empty-state-icon" aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bulb"></use></svg></span>No distraction notes yet.</div>';
             } else {
                 notes.forEach((n, idx) => {
                     const card = document.createElement('div');
@@ -1284,7 +1290,7 @@ window.TaskitatorApp = (() => {
                         <div class="dump-note-header">
                             <input type="text" class="dump-note-title-input" placeholder="Optional Title..." value="${TaskitatorSafety.escapeHtml(n.title || '')}" data-idx="${idx}">
                             <div class="dump-note-actions">
-                                <span class="dump-note-ttl">⏳ ${formatRemainingTTL(n.created_at)}</span>
+                                <span class="dump-note-ttl"> ${formatRemainingTTL(n.created_at)}</span>
                                 <button type="button" class="icon-btn icon-btn-danger icon-btn-sm del-escrow-note" data-idx="${idx}" aria-label="Delete note">✕</button>
                             </div>
                         </div>
@@ -1626,12 +1632,13 @@ window.TaskitatorApp = (() => {
             const rB = getRank((dynamicPriority.get(b.id) ?? b.priority_id));
             if (rA !== rB) return rA - rB;
 
-            const dA = a.due_date || '9999-99-99';
-            const dB = b.due_date || '9999-99-99';
+            // Normalised for comparison only: one malformed task must not stop the whole list.
+            const dA = typeof a.due_date === 'string' && a.due_date ? a.due_date : '9999-99-99';
+            const dB = typeof b.due_date === 'string' && b.due_date ? b.due_date : '9999-99-99';
             if (dA !== dB) return dA.localeCompare(dB);
 
-            const cA = a.created_at || '';
-            const cB = b.created_at || '';
+            const cA = typeof a.created_at === 'string' ? a.created_at : String(a.created_at ?? '');
+            const cB = typeof b.created_at === 'string' ? b.created_at : String(b.created_at ?? '');
             return cA.localeCompare(cB);
         });
     }
@@ -2199,8 +2206,16 @@ window.TaskitatorApp = (() => {
             const status = engine?.getPlanningStatus ? engine.getPlanningStatus() : { isRunning: false, remainingWindowMs: 0, bounds: { start: new Date() } };
             const active = engine?.getActiveBreak ? engine.getActiveBreak() : null;
             const breaks = engine?.getTodayBreaks ? engine.getTodayBreaks() : getTodayBreaksSafe();
+            const PILL_ICONS = { break: 'leaf', allowance: 'coffee', plan: 'calendar', idle: 'breaks', locked: 'lock' };
             const set = (icon, text, label = text) => {
-                if (this.pillIcon) this.pillIcon.textContent = icon;
+                const pillIcon = this.pillIcon;
+                if (pillIcon) {
+                    const ds = pillIcon.dataset || (pillIcon.dataset = {});
+                    if (ds.state !== icon) {
+                        ds.state = icon;
+                        if (typeof pillIcon.replaceChildren === 'function') pillIcon.replaceChildren(tkIcon(PILL_ICONS[icon] || 'breaks'));
+                    }
+                }
                 if (this.pillText) this.pillText.textContent = text;
                 this.pill.setAttribute('aria-label', label + '. Open daily breaks.');
             };
@@ -2214,29 +2229,29 @@ window.TaskitatorApp = (() => {
                 if (active) {
                     const left = Math.max(1, Math.ceil((active.endTime - engine.serverNow()) / 60000));
                     this.pill.classList.add('is-on-break');
-                    return set('🟢', `On break · ${left}m`, `On a Flexible break, ${left} minutes left, ${this.minutesText(allowance.remaining)} of allowance left`);
+                    return set('break', `On break · ${left}m`, `On a Flexible break, ${left} minutes left, ${this.minutesText(allowance.remaining)} of allowance left`);
                 }
-                return set('☕', `${this.minutesText(allowance.remaining)} left`, `Flexible Breaks, ${this.minutesText(allowance.remaining)} of allowance left, no break active`);
+                return set('allowance', `${this.minutesText(allowance.remaining)} left`, `Flexible Breaks, ${this.minutesText(allowance.remaining)} of allowance left, no break active`);
             }
             if (active) {
                 const left = Math.max(1, Math.ceil((active.endTime - (engine?.serverNow?.() ?? Date.now())) / 60000));
                 this.pill.classList.add('active-break', 'is-on-break');
-                return set('🟢', `On break · ${left}m`, `On a scheduled break, ${left} minutes left`);
+                return set('break', `On break · ${left}m`, `On a scheduled break, ${left} minutes left`);
             }
             if (status.isRunning) {
                 const remSec = Math.ceil(status.remainingWindowMs / 1000);
                 this.pill.classList.add('window-open');
-                return set('⏳', `Plan (${Math.floor(remSec / 60)}:${String(remSec % 60).padStart(2, '0')})`, 'Break planning window open');
+                return set('plan', `Plan (${Math.floor(remSec / 60)}:${String(remSec % 60).padStart(2, '0')})`, 'Break planning window open');
             }
             const nowTime = engine?.serverNow?.() ?? Date.now();
             const upcoming = view ? (view.scheduled?.breaks || [])
                 .map(b => { try { return { ...b, startTime: engine.getBreakTimestamps(b, status.bounds).startTime }; } catch { return null; } })
                 .filter(b => b && b.startTime > nowTime)
                 .sort((a, b) => a.startTime - b.startTime)[0] : null;
-            if (upcoming) return set('☕', `Next: ${String(upcoming.start).slice(0, 5)}`, `Next scheduled break at ${String(upcoming.start).slice(0, 5)}`);
-            if (!view) return set('⏸️', 'Breaks', 'Daily breaks');
-            if (!view.scheduled?.locked) return set('☕', `${this.minutesText(engine.allowance().remaining)} left`, 'Daily break allowance remaining');
-            return set('🔒', 'Breaks Locked', 'Scheduled Breaks locked for today');
+            if (upcoming) return set('allowance', `Next: ${String(upcoming.start).slice(0, 5)}`, `Next scheduled break at ${String(upcoming.start).slice(0, 5)}`);
+            if (!view) return set('idle', 'Breaks', 'Daily breaks');
+            if (!view.scheduled?.locked) return set('allowance', `${this.minutesText(engine.allowance().remaining)} left`, 'Daily break allowance remaining');
+            return set('locked', 'Breaks Locked', 'Scheduled Breaks locked for today');
         },
 
         async openModal() {
@@ -2338,13 +2353,13 @@ window.TaskitatorApp = (() => {
             this.modal.querySelectorAll('[data-allowance-total]').forEach(el => { el.textContent = total; });
             this.modal.querySelectorAll('[data-break-state]').forEach(chip => {
                 const name = chip.dataset.breakState;
-                const [state, text] = !view ? ['', ''] : view.scheduled?.locked ? (name === 'scheduled' ? ['locked', '🔒 Locked for today'] : ['blocked', 'Unavailable until reset']) : ['', 'Available'];
+                const [state, text] = !view ? ['', ''] : view.scheduled?.locked ? (name === 'scheduled' ? ['locked', 'Locked for today'] : ['blocked', 'Unavailable until reset']) : ['', 'Available'];
                 chip.dataset.state = state; chip.textContent = text;
             });
             this.modal.querySelectorAll('[data-break-lock]').forEach(btn => {
                 const name = btn.dataset.breakLock;
                 btn.hidden = !view || name !== 'scheduled' || !!view.scheduled?.locked;
-                btn.textContent = `🔒 Lock ${names[name]} for Today`;
+                btn.textContent = `Lock ${names[name]} for Today`;
             });
             this.renderScheduled(view, now);
             this.renderFlexible(view, now);
@@ -2352,7 +2367,7 @@ window.TaskitatorApp = (() => {
 
         blocked(view, name) {
             const other = name === 'scheduled' ? 'Flexible' : 'Scheduled';
-            return `<div class="break-panel break-panel-locked" role="status"><div class="break-panel-row"><span class="break-panel-emoji" aria-hidden="true">🔒</span>
+            return `<div class="break-panel break-panel-locked" role="status"><div class="break-panel-row"><span class="break-panel-emoji" aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg></span>
                 <div class="break-panel-reason"><strong>${other} Breaks are selected for today.</strong> ${name === 'scheduled' ? 'Scheduled' : 'Flexible'} becomes available after the day resets at ${this.esc(this.clockText(view.cycle_end, view.timezone))}.</div></div></div>`;
         },
 
@@ -2383,7 +2398,7 @@ window.TaskitatorApp = (() => {
                 headerBox.innerHTML = `
                     <div class="break-panel break-panel-active">
                         <div class="break-panel-head">
-                            <strong class="break-panel-title"><span aria-hidden="true">⏳</span> Planning window</strong>
+                            <strong class="break-panel-title"><span aria-hidden="true"></span> Planning window</strong>
                             <span id="breakPlanningCountdown" class="break-panel-countdown" role="timer" aria-label="Time left to plan">${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}</span>
                         </div>
                         <div class="break-panel-track"><div id="breakPlanningProgress" class="break-panel-progress" style="width: ${pct}%;"></div></div>
@@ -2417,7 +2432,7 @@ window.TaskitatorApp = (() => {
             }
             headerBox.innerHTML = `
                 <div class="break-panel ${s.final || view.system ? 'break-panel-locked' : 'break-panel-warn'}" role="status">
-                    <div class="break-panel-row"><span class="break-panel-emoji" aria-hidden="true">${s.final || view.system ? '🔒' : '⚠️'}</span>
+                    <div class="break-panel-row"><span class="break-panel-emoji" aria-hidden="true">${s.final || view.system ? '<svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg>' : '<svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg>'}</span>
                     <div class="break-panel-reason">${this.esc(s.reason || 'Scheduled planning is unavailable right now.')}</div></div>
                 </div>`;
             listSaved(s.breaks, s.final ? 'No breaks were scheduled for this day.' : 'No breaks scheduled.');
@@ -2436,7 +2451,7 @@ window.TaskitatorApp = (() => {
                 const canEnd = now >= a.can_end_at;
                 this.flexBody.innerHTML = `${meter}
                     <div class="break-panel break-panel-active" role="status">
-                        <div class="break-panel-head"><strong class="break-panel-title"><span aria-hidden="true">🟢</span> On a Flexible break</strong></div>
+                        <div class="break-panel-head"><strong class="break-panel-title"><span aria-hidden="true"></span> On a Flexible break</strong></div>
                         <p class="break-panel-text">Ends automatically at <strong>${this.esc(this.clockText(a.ends_at, zone))}</strong>${a.ends_at >= view.cycle_end ? ' (day reset)' : ''}.
                         ${canEnd ? 'You can end it now.' : `You can end it from <strong>${this.esc(this.clockText(a.can_end_at, zone))}</strong>.`}</p>
                         <button type="button" class="icon-btn btn-block ${canEnd ? 'btn-primary btn-solid-primary' : 'is-unavailable'}" data-flex="end" data-id="${this.esc(a.id)}"
@@ -2450,7 +2465,7 @@ window.TaskitatorApp = (() => {
             const presetButtons = f.presets.map(p => `<button type="button" class="icon-btn flex-preset ${p.available ? '' : 'is-unavailable'}" data-flex="preset" data-minutes="${p.minutes}"
                 aria-disabled="${!p.available}" data-reason="${this.esc(p.reason)}" title="${this.esc(p.reason)}">${p.minutes === 60 ? '1 hour' : p.minutes + ' min'}</button>`).join('');
             this.flexBody.innerHTML = `${meter}
-                ${reason ? `<div class="break-panel break-panel-warn" role="status"><div class="break-panel-row"><span class="break-panel-emoji" aria-hidden="true">⚠️</span><div class="break-panel-reason">${this.esc(reason)}</div></div></div>` : ''}
+                ${reason ? `<div class="break-panel break-panel-warn" role="status"><div class="break-panel-row"><span class="break-panel-emoji" aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg></span><div class="break-panel-reason">${this.esc(reason)}</div></div></div>` : ''}
                 <div class="flex-presets" role="group" aria-label="Start a break">${presetButtons}</div>
                 <div class="flex-custom">
                     <label for="flexCustomMinutes">Custom (minutes)</label>
@@ -2458,7 +2473,7 @@ window.TaskitatorApp = (() => {
                     <button type="button" class="icon-btn ${reason ? 'is-unavailable' : ''}" data-flex="custom" aria-disabled="${!!reason}" data-reason="${this.esc(reason)}">Start</button>
                 </div>
                 <button type="button" class="icon-btn btn-block ${reason ? 'is-unavailable' : 'btn-primary btn-solid-primary'}" data-flex="until" aria-disabled="${!!reason}" data-reason="${this.esc(reason)}">Until allowance ends (${this.esc(this.minutesText(f.max_custom))})</button>
-                ${f.strict ? `<p class="break-panel-note strict-note">🔒 Flexible Strict Mode: every break lasts at least <strong>${f.minimum} minutes</strong>, and at least <strong>${f.minimum} minutes</strong> must pass before the next one.</p>` : ''}
+                ${f.strict ? `<p class="break-panel-note strict-note"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg> Flexible Strict Mode: every break lasts at least <strong>${f.minimum} minutes</strong>, and at least <strong>${f.minimum} minutes</strong> must pass before the next one.</p>` : ''}
 
                 <small class="break-panel-note">Starts now. It can be ended after ${f.minimum} minutes and stops by itself at its length, when the allowance runs out, or at the day reset. Each started minute counts as a full minute.</small>`;
         },
@@ -2583,7 +2598,7 @@ window.TaskitatorApp = (() => {
         const baseUpdate = BreakUI.updateStatusPill;
         BreakUI.updateStatusPill = function () {
             baseUpdate.call(this);
-            const key = this.pillIcon?.textContent;
+            const key = this.pillIcon?.dataset?.state;
             if (this._lastPillKey !== undefined && key !== this._lastPillKey) UIFX.replay(this.pill, 'pill-swap');
             this._lastPillKey = key;
         };
@@ -2720,9 +2735,30 @@ window.TaskitatorApp = (() => {
             const msg = (currentView === 'today') 
                 ? 'No active tasks scheduled for today.' 
                 : 'No active tasks found in workspace.';
-            list.innerHTML = `<li class="empty-state"><span class="empty-state-icon" aria-hidden="true">${currentView === 'today' ? '🎯' : '📋'}</span>${msg}</li>`;
+            list.innerHTML = `<li class="empty-state"><span class="empty-state-icon" aria-hidden="true">${window.TaskitatorIcons?.icon(currentView === 'today' ? 'brand-mascot' : 'notes', 'tk-empty-ic') || ''}</span>${msg}</li>`;
         } else {
+            // One bad task renders as a small notice instead of blanking the whole list.
             function buildNodeElement(task, depth = 0) {
+                try {
+                    return buildNodeElementInner(task, depth);
+                } catch (error) {
+                    console.error('[Taskitator] Could not display task', task?.id, error);
+                    const li = document.createElement('li');
+                    li.className = 'task-node render-error';
+                    const row = document.createElement('div');
+                    row.className = 'task-row';
+                    row.style.marginLeft = `${depth * 20}px`;
+                    const title = document.createElement('span');
+                    title.className = 'task-title';
+                    title.textContent = (typeof task?.title === 'string' && task.title ? task.title : 'Untitled task') + ' (could not be displayed)';
+                    row.appendChild(title);
+                    if (task?.id) row.addEventListener('click', () => { try { openTaskDetailModal(task.id); } catch (e) {} });
+                    li.appendChild(row);
+                    return li;
+                }
+            }
+
+            function buildNodeElementInner(task, depth = 0) {
                 const li = document.createElement('li');
                 const isDone = task.status === 'completed';
                 
@@ -2734,6 +2770,7 @@ window.TaskitatorApp = (() => {
                 const isSelected = selectedTaskIds.has(task.id);
                 const isBonus = Boolean(task.is_bonus);
                 li.className = `task-node ${isDone ? 'completed' : ''} ${isOverdue ? 'is-overdue' : ''} ${isSelected ? 'row-selected' : ''} ${isBonus ? 'is-bonus' : ''}`;
+                li.style.setProperty('--d', String(depth));
 
                 if (isSelectionModeActive && selectionDeleteMode && deleteBlockReason(task.id)) li.classList.add('batch-undeletable');
 
@@ -2789,6 +2826,7 @@ window.TaskitatorApp = (() => {
                 const pObj = globalPriorities.find(x => x.id === (dynamicPriority.get(task.id) ?? task.priority_id));
                 if (pObj) {
                     row.style.borderLeftColor = pObj.color;
+                    row.style.setProperty('--pc', pObj.color);
                     if (dynamicPriority.has(task.id)) row.title = 'Dynamic Priority: only bonus work remains';
                 }
 
@@ -2861,8 +2899,10 @@ window.TaskitatorApp = (() => {
                     });
                 } else {
                     checkBtn.type = 'button';
-                    checkBtn.className = 'check-circle';
+                    checkBtn.className = 'check-circle' + (task.ai_locked ? ' is-ai-locked' : '');
                     checkBtn.textContent = isDone ? '✓' : '';
+                    // Animal by priority rank (rank 1 = first animal).
+                    if (window.TaskitatorIcons) checkBtn.appendChild(window.TaskitatorIcons.animal(Number(pObj?.rank) || 1));
                     checkBtn.setAttribute('aria-label', isDone ? `Mark "${task.title}" as not done` : `Complete "${task.title}"`);
                     checkBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -2902,7 +2942,7 @@ window.TaskitatorApp = (() => {
                 if (task.is_bonus) {
                     const bonusBadge = document.createElement('span');
                     bonusBadge.className = 'bonus-badge';
-                    bonusBadge.textContent = task.smart_early_date ? '⭐ Early · required '+task.smart_origin_date : '⭐ Bonus';
+                    tkLabel(bonusBadge, 'bonus', task.smart_early_date ? 'Early · required '+task.smart_origin_date : 'Bonus');
                     main.appendChild(bonusBadge);
                 }
 
@@ -2925,14 +2965,14 @@ window.TaskitatorApp = (() => {
                     if (task.ai_locked) {
                     const badge = document.createElement('span');
                     badge.className = 'ai-badge';
-                    badge.innerHTML = '🔒 AI';
+                    tkLabel(badge, 'lock', 'AI');
                     main.appendChild(badge);
                 }
 
                 if (task.strict_prerequisites) {
                     const shieldBadge = document.createElement('span');
                     shieldBadge.className = 'ai-badge shield-badge';
-                    shieldBadge.textContent = '🛡️ Shielded';
+                    tkLabel(shieldBadge, 'shield', 'Shielded');
                     main.appendChild(shieldBadge);
                 }
 
@@ -2952,7 +2992,7 @@ window.TaskitatorApp = (() => {
                     main.appendChild(dueBadge);
                 }
 
-                if (task.tags && task.tags.length > 0) {
+                if (Array.isArray(task.tags) && task.tags.length > 0) {
                     task.tags.forEach(tag => {
                         const tagChip = document.createElement('span');
                         tagChip.className = 'tag-chip';
@@ -3091,9 +3131,9 @@ window.TaskitatorApp = (() => {
             info.className = 'completed-item-info';
 
             let badgesHtml = '';
-            if (task.is_bonus) badgesHtml += '<span class="bonus-badge">⭐ Bonus</span> ';
-            if (task.ai_locked) badgesHtml += '<span class="ai-badge">🔒 AI</span> ';
-            if (task.strict_prerequisites) badgesHtml += '<span class="ai-badge shield-badge">🛡 Shielded</span>';
+            if (task.is_bonus) badgesHtml += '<span class="bonus-badge"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus</span> ';
+            if (task.ai_locked) badgesHtml += '<span class="ai-badge"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg> AI</span> ';
+            if (task.strict_prerequisites) badgesHtml += '<span class="ai-badge shield-badge"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-shield"></use></svg> Shielded</span>';
 
             info.innerHTML = `
                 <div class="completed-item-title">
@@ -3108,7 +3148,7 @@ window.TaskitatorApp = (() => {
                 const lockedBtn = document.createElement('span');
                 lockedBtn.className = 'ai-locked-btn';
                 lockedBtn.title = 'AI tasks are permanently locked and cannot be uncompleted';
-                lockedBtn.innerHTML = '🔒 Locked';
+                lockedBtn.innerHTML = 'Locked';
                 actionContainer.appendChild(lockedBtn);
             } else {
                 const actionBtn = document.createElement('button');
@@ -3620,13 +3660,13 @@ window.TaskitatorApp = (() => {
                     const format = formatSelect ? formatSelect.value : 'txt';
                     
                     extractAllEscrowBtn.disabled = true, extractAllEscrowBtn.classList.toggle('is-loading', true);
-                    extractAllEscrowBtn.textContent = '🤖 Processing...';
+                    extractAllEscrowBtn.textContent = 'Processing...';
                     if (deleteAllEscrowBtn) deleteAllEscrowBtn.disabled = true;
                     
                     const res = await TaskitatorEngine.AgentEngine.extractNotesBatch(currentNotes, format);
                     
                     extractAllEscrowBtn.disabled = false, extractAllEscrowBtn.classList.toggle('is-loading', false);
-                    extractAllEscrowBtn.textContent = '📥 Extract All';
+                    extractAllEscrowBtn.textContent = 'Extract All';
                     if (deleteAllEscrowBtn) deleteAllEscrowBtn.disabled = false;
                     
                     if (res.success) {
@@ -3890,6 +3930,7 @@ window.TaskitatorApp = (() => {
         loadStorage,
         saveStorageAndPush,
         getGlobalProjects,
+        getGlobalPriorities,
         saveProject,
         deleteProjectWithCascade,
         openTaskCreationModal,
@@ -4277,7 +4318,8 @@ if ('serviceWorker' in navigator) {
         const fab = document.createElement('button');
         fab.id = 'pomodoroFabBtn';
         fab.title = 'Open Pomodoro Clock';
-        fab.innerHTML = '⏱️';
+        fab.setAttribute('aria-label', 'Open Pomodoro Clock');
+        fab.innerHTML = window.TaskitatorIcons?.icon('bee') || '';
         document.body.appendChild(fab);
 
         // Inject Modal Overlay

@@ -11,7 +11,7 @@
 
     <!-- PWA Installation Manifest & Meta Tags -->
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#0c1b38">
+    <meta name="theme-color" content="#0a1119">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -282,25 +282,32 @@
         }
     </style>
 <link rel="stylesheet" href="tutorial-spotlight.css?v=tour-v2">
+<link rel="icon" type="image/svg+xml" href="image/nature_sprites/favicon.svg">
+<link rel="stylesheet" href="palettes.css">
+<link rel="stylesheet" href="family-nature.css">
+<script src="registry.js"></script>
+<script src="theme-boot.js"></script>
+<script defer src="icons.js"></script>
+<script defer src="nature.js"></script>
 </head>
 <body>
 
 <!-- Sidebar Drawer -->
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="sidebar-drawer" id="sidebarDrawer">
-    <div style="font-weight: 800; font-size: 1.25rem; margin-bottom: 24px; color: var(--primary);">Taskitator</div>
+    <div class="tk-brand" role="img" aria-label="Taskitator"><svg class="tk-brand-logo" viewBox="0 0 682.3 235.7" aria-hidden="true" focusable="false"><use href="#ic-brand-hybrid"></use></svg></div>
     <nav class="drawer-links" id="drawerNavLinks">
-        <a href="#today" id="navLinkToday" class="active">📅 Today</a>
-        <a href="#general" id="navLinkGeneral">📋 General Tasks</a>
-        <a href="components.html?view=calendar">🗓️ Calendar</a>
-        <a href="components.html?view=projects">📁 Projects</a>
-        <a href="components.html?view=stats">📊 Stats</a>
-        <a href="components.html?view=trash">🗑️ Trash</a>
-        <a href="#" data-open-drafts>📝 Drafts<span data-draft-count></span></a>
+        <a href="#today" id="navLinkToday" class="active"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-today"></use></svg> Today</a>
+        <a href="#general" id="navLinkGeneral"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-general"></use></svg> General Tasks</a>
+        <a href="components.html?view=calendar"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-calendar"></use></svg> Calendar</a>
+        <a href="components.html?view=projects"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-projects"></use></svg> Projects</a>
+        <a href="components.html?view=stats"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-stats"></use></svg> Stats</a>
+        <a href="components.html?view=trash"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-trash"></use></svg> Trash</a>
+        <a href="#" data-open-drafts><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-drafts"></use></svg> Drafts<span data-draft-count></span></a>
         <a href="components.html?view=universe">🌌 Universe</a>
-        <a href="sleep.html">🌙 Sleep Lock</a>
-        <a href="help.html">❓ Help</a>
-        <a href="settings.html">⚙️ Settings</a>
+        <a href="sleep.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-sleep"></use></svg> Sleep Lock</a>
+        <a href="help.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-help"></use></svg> Help</a>
+        <a href="settings.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-settings"></use></svg> Settings</a>
     </nav>
 </aside>
 
@@ -309,7 +316,7 @@
 <aside class="copilot-drawer" id="copilotDrawer">
     <div class="copilot-header">
         <div class="copilot-title-group">
-            <span>🤖 Focus Copilot</span>
+            <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-copilot"></use></svg> Focus Copilot</span>
             <span class="copilot-model-chip">Gemini</span>
         </div>
         <button class="icon-btn" id="closeCopilotBtn" style="padding: 2px 8px;">✕</button>
@@ -317,7 +324,7 @@
 
     <div class="copilot-body">
         <div class="copilot-standby-view" id="copilotStandbyView">
-            <div class="copilot-standby-icon">🎯</div>
+            <div class="copilot-standby-icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-ai"></use></svg></div>
             <div class="copilot-standby-title">Focus Copilot</div>
             <button class="icon-btn btn-primary" id="startCopilotBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 10px 22px;">
                 Start Conversation
@@ -337,36 +344,36 @@
 <div class="app-container">
     <header class="top-navbar">
         <div class="nav-left">
-            <button class="icon-btn icon-only-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer">☰<span class="wide-label">Menu</span></button>
+            <button class="icon-btn icon-only-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-menu"></use></svg><span class="wide-label">Menu</span></button>
         </div>
 
         <div class="nav-center">
             <button class="icon-only-btn" id="openCompletedModalBtn" title="Completed Tasks" aria-label="View Completed Tasks">
-                <span style="font-size: 0.95rem; font-weight: bold; color: var(--success);">✓</span><span class="wide-label">Completed</span>
+                <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-completed"></use></svg><span class="wide-label">Completed</span>
             </button>
             
             <button id="breakStatusPill" class="break-status-pill" title="Daily Breaks" aria-label="Manage Daily Breaks">
-                <span id="breakPillIcon">⏸️</span>
+                <span id="breakPillIcon" aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-breaks"></use></svg></span>
                 <span id="breakPillText">Breaks</span>
             </button>
 
             <!-- Distraction Dump Trigger (Muted Grayscale Light Bulb) -->
             <button type="button" class="dump-trigger-btn" id="openDistractionDumpBtn" title="Distraction Dump Scratchpad" aria-label="Distraction Dump Scratchpad">
-                <span class="dump-bulb-icon" id="dumpBulbIcon">💡</span><span class="wide-label">Scratchpad</span>
+                <span class="dump-bulb-icon" id="dumpBulbIcon"><svg class="tk-ic tk-ff-off" aria-hidden="true" focusable="false"><use href="#ic-scratchpad"></use></svg><svg class="tk-ic tk-ff-on" aria-hidden="true" focusable="false"><use href="#ic-scratchpad-lit"></use></svg></span><span class="wide-label">Scratchpad</span>
                 <span class="dump-active-dot" id="dumpActiveIndicator"></span>
             </button>
             
             <button type="button" class="sync-dot-button" id="syncStatusButton" aria-label="Sync status: Local only. Open sync details" aria-haspopup="dialog" aria-controls="syncInfoModal"><span class="sync-dot local-only" id="syncStatusDot" aria-hidden="true"></span></button>
             
             <button class="emergency-icon-btn" id="emergencyTriggerBtn" title="Emergency Bypass" aria-label="Emergency Bypass">
-                <span>🚨</span><span class="wide-label">Emergency bypass</span>
+                <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-emergency"></use></svg><span class="wide-label">Emergency bypass</span>
             </button>
         </div>
 
         <div class="nav-right">
             <!-- Responsive Copilot Trigger: Icon-only on mobile, full label on desktop -->
             <button class="icon-btn nav-link-btn" id="openCopilotNavBtn" title="Open Ari Assistant" aria-label="Open Ari Assistant">
-                <span>💬</span>
+                <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-copilot"></use></svg></span>
                 <span class="nav-copilot-label" id="copilotNavNameLabel">Ari</span>
             </button>
         </div>
@@ -401,15 +408,15 @@
     <!-- Overdue Tasks Notice & Bulk Reschedule Trigger Bar -->
     <div id="overdueRescheduleBar" class="overdue-reschedule-bar" style="display: none;">
         <span style="font-size: 0.82rem; color: #fca5a5; font-weight: 600;">
-            ⚠️ <span id="overdueTasksCountText">0 overdue tasks</span>
+            <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> <span id="overdueTasksCountText">0 overdue tasks</span>
         </span>
         <button type="button" class="icon-btn" id="openRescheduleModalBtn" style="padding: 4px 10px; font-size: 0.78rem; background: var(--card-subtle); color: #f87171; border-color: rgba(239, 68, 68, 0.4);">
-            📅 Reschedule to date...
+            <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Reschedule to date...
         </button>
     </div>
 
     <div id="activeEmergencyBanner" class="banner-emergency" style="display: none;">
-        <span>🚨 Emergency Mode Active: Task deletion & editing unlocked!</span>
+        <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-siren"></use></svg> Emergency Mode Active: Task deletion & editing unlocked!</span>
         <span id="emergencyCountdownTimer">15:00</span>
     </div>
 
@@ -417,8 +424,8 @@
 </div>
 
 <!-- Floating Action Buttons -->
-<button class="fab-add" id="openRootAddModalBtn" title="Create Task">+<span class="wide-label">New task</span></button>
-<button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot">🤖<span class="wide-label">Copilot</span></button>
+<button class="fab-add" id="openRootAddModalBtn" title="Create Task" aria-label="Create task"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-add"></use></svg><span class="wide-label">New task</span></button>
+<button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-robot"></use></svg><span class="wide-label">Copilot</span></button>
 
 <!-- Floating Multi-Select Batch Action Bar -->
 <div class="batch-action-bar" id="batchActionBar">
@@ -427,14 +434,14 @@
         <button type="button" class="icon-btn" id="batchSelectAllBtn" style="padding: 3px 8px; font-size: 0.75rem;">All</button>
     </div>
 
-    <button type="button" class="icon-btn batch-review-selected-btn" id="batchReviewSelectedBtn" disabled>⚡ Batch review selected tasks</button>
-    <p class="batch-cost-warning" role="note">⚠️ Reviewing several tasks together usually costs less than reviewing them one by one.</p>
+    <button type="button" class="icon-btn batch-review-selected-btn" id="batchReviewSelectedBtn" disabled><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg> Batch review selected tasks</button>
+    <p class="batch-cost-warning" role="note"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> Reviewing several tasks together usually costs less than reviewing them one by one.</p>
     <div class="batch-controls-group">
-        <button type="button" class="icon-btn" id="batchOpenTagsBtn" style="padding: 5px 10px; font-size: 0.8rem;">🏷️ Tags</button>
-        <button type="button" class="icon-btn" id="batchOpenPriorityBtn" style="padding: 5px 10px; font-size: 0.8rem;">🎯 Priority</button>
-        <button type="button" class="icon-btn" id="batchOpenDueDateBtn" style="padding: 5px 10px; font-size: 0.8rem;">📅 Due</button>
-        <button type="button" class="icon-btn" id="batchOpenBonusBtn" style="padding: 5px 10px; font-size: 0.8rem;">⭐ Bonus</button>
-        <button type="button" class="icon-btn" id="batchDeleteBtn" style="padding: 5px 10px; font-size: 0.8rem;">🗑 Delete</button>
+        <button type="button" class="icon-btn" id="batchOpenTagsBtn" style="padding: 5px 10px; font-size: 0.8rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-tag"></use></svg> Tags</button>
+        <button type="button" class="icon-btn" id="batchOpenPriorityBtn" style="padding: 5px 10px; font-size: 0.8rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-goal"></use></svg> Priority</button>
+        <button type="button" class="icon-btn" id="batchOpenDueDateBtn" style="padding: 5px 10px; font-size: 0.8rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Due</button>
+        <button type="button" class="icon-btn" id="batchOpenBonusBtn" style="padding: 5px 10px; font-size: 0.8rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus</button>
+        <button type="button" class="icon-btn" id="batchDeleteBtn" style="padding: 5px 10px; font-size: 0.8rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-trash"></use></svg> Delete</button>
         <button type="button" class="icon-btn" id="batchApplyDeleteBtn" style="padding: 5px 10px; font-size: 0.8rem; color: var(--danger); border-color: rgba(239,68,68,0.4);" disabled>Apply · delete 0</button>
         <button type="button" class="icon-btn" id="batchCancelBtn" style="color: var(--danger); border-color: rgba(239,68,68,0.4); padding: 5px 10px; font-size: 0.8rem;">✕</button>
     </div>
@@ -443,7 +450,7 @@
 <!-- Modal: Batch Tags Editor -->
 <div class="modal-overlay" id="batchTagsModal">
     <div class="modal-box" style="max-width: 400px;">
-        <h3 style="margin-top: 0; color: var(--primary);">🏷️ Batch Edit Tags</h3>
+        <h3 style="margin-top: 0; color: var(--primary);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-tag"></use></svg> Batch Edit Tags</h3>
         <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
             Choose tags to apply to all selected tasks. (Replaces current tags on selected items).
         </p>
@@ -458,7 +465,7 @@
 <!-- Modal: Batch Priority Editor -->
 <div class="modal-overlay" id="batchPriorityModal">
     <div class="modal-box" style="max-width: 400px;">
-        <h3 style="margin-top: 0; color: var(--primary);">🎯 Batch Set Priority</h3>
+        <h3 style="margin-top: 0; color: var(--primary);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-goal"></use></svg> Batch Set Priority</h3>
         <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
             Select a priority rank to assign directly to each selected task.
         </p>
@@ -473,7 +480,7 @@
 <!-- Modal: Batch Due Date Editor -->
 <div class="modal-overlay" id="batchDueDateModal">
     <div class="modal-box" style="max-width: 400px;">
-        <h3 style="margin-top: 0; color: var(--primary);">📅 Batch Set Due Date</h3>
+        <h3 style="margin-top: 0; color: var(--primary);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Batch Set Due Date</h3>
         <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
             Select a due date for all selected tasks. Overdue AI-locked tasks are guarded against postponement.
         </p>
@@ -491,7 +498,7 @@
 <!-- Modal: Batch Bonus State -->
 <div class="modal-overlay" id="batchBonusModal">
     <div class="modal-box" style="max-width: 400px;">
-        <h3 style="margin-top: 0; color: var(--primary);">⭐ Batch Bonus State</h3>
+        <h3 style="margin-top: 0; color: var(--primary);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Batch Bonus State</h3>
         <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
             Make the selected tasks bonus or required. Tasks that can't change (shield-protected required work) are skipped.
         </p>
@@ -507,13 +514,13 @@
 <div class="modal-overlay" id="bulkRescheduleModal">
     <div class="modal-box" style="max-width: 440px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h3 style="margin: 0; color: var(--primary);">📅 Reschedule Overdue Tasks</h3>
+            <h3 style="margin: 0; color: var(--primary);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Reschedule Overdue Tasks</h3>
             <button type="button" class="icon-btn" id="closeBulkRescheduleModalBtn" style="padding: 2px 8px;">✕</button>
         </div>
 
         <!-- Overdue AI Lock Gate Banner -->
         <div id="rescheduleAiLockGateBanner" style="display: none; padding: 10px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 8px; color: #fca5a5; font-size: 0.8rem; line-height: 1.4; margin-bottom: 14px;">
-            <strong>🔒 Action Blocked:</strong> You have active AI-checked tasks that are past due. You must complete or roll over all overdue AI tasks before rescheduling non-AI tasks.
+            <strong><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg> Action Blocked:</strong> You have active AI-checked tasks that are past due. You must complete or roll over all overdue AI tasks before rescheduling non-AI tasks.
         </div>
 
         <div id="rescheduleFormGroupContainer">
@@ -541,7 +548,7 @@
     <div class="modal-box" style="max-width: 480px; border: 1.5px solid #64748b;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.15rem; filter: grayscale(100%);">💡</span>
+                <span style="font-size: 1.15rem; filter: grayscale(100%);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bulb"></use></svg></span>
                 <h3 style="margin: 0; color: #f1f5f9; font-size: 1.1rem;">Distraction Dump</h3>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -562,7 +569,7 @@
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;">
             <button type="button" class="icon-btn" id="openDumpEscrowBtn" style="font-size: 0.8rem; color: #94a3b8; border-color: rgba(148, 163, 184, 0.3);">
-                📦 View notes (<span id="dumpEscrowCountDisplay">0</span>)
+                <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-inbox"></use></svg> View notes (<span id="dumpEscrowCountDisplay">0</span>)
             </button>
             <button type="button" class="icon-btn" id="saveDumpNoteBtn" style="background: #475569; color: #fff; border: none; font-weight: 700; padding: 7px 16px; font-size: 0.85rem;">
                 Dump & Return ↵
@@ -576,7 +583,7 @@
     <div class="modal-box" style="max-width: 520px; border: 1.5px solid var(--border-color);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2rem;">📦</span>
+                <span style="font-size: 1.2rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-inbox"></use></svg></span>
                 <h3 style="margin: 0; color: var(--primary);">Distraction notes</h3>
                 <span class="mrstudy-info-badge" id="escrowArchiveInfoBtn" title="Archived notes are stored locally in the Stats page.">?</span>
             </div>
@@ -585,7 +592,7 @@
 
         <!-- Strict Gate Status Banner -->
         <div id="escrowGateLockBanner" style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; margin-bottom: 12px;">
-            <span style="font-size: 1.1rem; line-height: 1;">🔒</span>
+            <span style="font-size: 1.1rem; line-height: 1;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg></span>
             <div style="font-size: 0.8rem; color: #fca5a5; line-height: 1.4;">
                 <strong>Notes locked:</strong> Complete, move or trash required tasks due today or overdue to view your notes.
             </div>
@@ -605,7 +612,7 @@
                     Delete All
                 </button>
                 <button type="button" class="icon-btn btn-primary" id="extractAllEscrowBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; font-size: 0.78rem; padding: 5px 12px;">
-                    📥 Extract All
+                    <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-inbox"></use></svg> Extract All
                 </button>
             </div>
         </div>
@@ -623,7 +630,7 @@
 <div class="modal-overlay" id="filterModal">
     <div class="modal-box" style="max-width: 400px; border: 1.5px solid var(--primary);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <h3 style="margin: 0; color: var(--primary);">🔍 Filter Workspace</h3>
+            <h3 style="margin: 0; color: var(--primary);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-search"></use></svg> Filter Workspace</h3>
             <button class="icon-btn" id="closeFilterModalBtn" style="padding: 2px 8px;">✕</button>
         </div>
         <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;">
@@ -650,17 +657,17 @@
 <div class="modal-overlay" id="breakModal">
     <div class="modal-box break-modal-box" role="dialog" aria-modal="true" aria-labelledby="breakModalTitle">
         <div class="break-modal-head">
-            <h3 id="breakModalTitle" class="break-modal-title"><span aria-hidden="true">⏸️</span> Daily Breaks</h3>
+            <h3 id="breakModalTitle" class="break-modal-title"><span aria-hidden="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-breaks"></use></svg></span> Daily Breaks</h3>
             <button class="icon-btn" id="closeBreakModalBtn" aria-label="Close daily breaks" style="padding: 2px 8px;">✕</button>
         </div>
         <div id="breakDaySummary" class="break-day-summary" aria-live="polite"></div>
         <div class="break-tabs" role="tablist" aria-label="Break systems">
-            <button type="button" role="tab" id="breakTabScheduled" class="icon-btn break-tab is-active" data-break-tab="scheduled" aria-controls="breakPanelScheduled" aria-selected="true">📅 Scheduled</button>
-            <button type="button" role="tab" id="breakTabFlexible" class="icon-btn break-tab" data-break-tab="flexible" aria-controls="breakPanelFlexible" aria-selected="false" tabindex="-1">☕ Flexible</button>
+            <button type="button" role="tab" id="breakTabScheduled" class="icon-btn break-tab is-active" data-break-tab="scheduled" aria-controls="breakPanelScheduled" aria-selected="true"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Scheduled</button>
+            <button type="button" role="tab" id="breakTabFlexible" class="icon-btn break-tab" data-break-tab="flexible" aria-controls="breakPanelFlexible" aria-selected="false" tabindex="-1"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-coffee"></use></svg> Flexible</button>
         </div>
         <section id="breakPanelScheduled" class="break-tabpanel" role="tabpanel" data-break-panel="scheduled" aria-labelledby="breakTabScheduled">
             <div class="break-system-intro" aria-live="polite">
-                <div class="break-system-title"><strong>📅 Scheduled Breaks</strong><span class="break-system-state" data-break-state="scheduled"></span></div>
+                <div class="break-system-title"><strong><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Scheduled Breaks</strong><span class="break-system-state" data-break-state="scheduled"></span></div>
                 <ol class="break-system-steps">
                     <li>Press Start planning. You get 10 minutes to enter your breaks.</li>
                     <li>Add up to 3 breaks that don't overlap, <span data-allowance-total>3h</span> in total.</li>
@@ -675,11 +682,11 @@
                 <button id="addBreakRowModalBtn" type="button" class="icon-btn break-action-btn">+ Add Break</button>
                 <button id="saveBreaksModalBtn" type="button" class="icon-btn btn-primary btn-solid-primary break-action-btn">Save schedule</button>
             </div>
-            <button type="button" class="icon-btn btn-block break-lock-btn" data-break-lock="scheduled" hidden>🔒 Lock Scheduled for Today</button>
+            <button type="button" class="icon-btn btn-block break-lock-btn" data-break-lock="scheduled" hidden><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg> Lock Scheduled for Today</button>
         </section>
         <section id="breakPanelFlexible" class="break-tabpanel" role="tabpanel" data-break-panel="flexible" aria-labelledby="breakTabFlexible" hidden>
             <div class="break-system-intro" aria-live="polite">
-                <div class="break-system-title"><strong>☕ Flexible Breaks</strong><span class="break-system-state" data-break-state="flexible"></span></div>
+                <div class="break-system-title"><strong><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-coffee"></use></svg> Flexible Breaks</strong><span class="break-system-state" data-break-state="flexible"></span></div>
                 <ol class="break-system-steps">
                     <li>Pick 30 min, 45 min, 1 hour, a custom length, or until your allowance ends.</li>
                     <li>The break starts immediately and counts every started minute from your daily allowance (<span data-allowance-total>3h</span>).</li>
@@ -706,7 +713,7 @@
 <!-- Modal: Sync Status Guide -->
 <div class="modal-overlay" id="syncInfoModal">
     <div class="modal-box">
-        <h3 style="margin-top: 0; color: var(--primary);">🌐 Sync Status Guide</h3>
+        <h3 style="margin-top: 0; color: var(--primary);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-earth"></use></svg> Sync Status Guide</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
             The dot shows whether your changes are synced.
         </p>
@@ -798,7 +805,7 @@
                 <div class="mrstudy-rule-box">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                         <label style="margin: 0; font-weight: 700; color: #93c5fd; display: flex; align-items: center;">
-                            <span>🏆 Link to Mr. Study Rule</span>
+                            <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-star"></use></svg> Link to Mr. Study Rule</span>
                             <span class="mrstudy-info-badge" id="mrstudyInfoTriggerBtn" title="About Mr. Study">!</span>
                         </label>
                         <span style="font-size: 0.72rem; color: #60a5fa; font-weight: 600;">Creation-time only</span>
@@ -825,7 +832,7 @@
                                 <input type="number" id="mrstudyBanchInput" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.85rem;">
                             </div>
                         </div>
-                        <small id="mrstudyAiNotice" style="display: none; color: #fbbf24; font-size: 0.73rem;">⚠️ This rule enforces AI Proof Verification.</small>
+                        <small id="mrstudyAiNotice" style="display: none; color: #fbbf24; font-size: 0.73rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> This rule enforces AI Proof Verification.</small>
                     </div>
                 </div>
             </div>
@@ -845,7 +852,7 @@
             <div class="form-group" id="bonusTaskContainer">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                     <input type="checkbox" id="bonusTaskCheckbox">
-                    <span>⭐ Bonus Subtask (Excluded from Shield)</span>
+                    <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus Subtask (Excluded from Shield)</span>
                 </label>
                 <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
                     Bonus items won't block the parent task from completion if time or energy runs out.
@@ -880,7 +887,7 @@
                     <button type="button" class="icon-btn ai-audit-info-trigger" id="createAiAuditInfoBtn" title="AI Audit Usage Information" style="width: 22px; height: 22px; border-radius: 50%; font-size: 0.75rem; padding: 0; line-height: 1; font-weight: 700;">?</button>
                 </div>
                 <div class="guidance-note" id="createAiAuditInfoBox" style="display: none; margin-top: 6px; font-size: 0.8rem; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 6px; padding: 8px 10px; color: #cbd5e1;">
-                    ⚠️ <strong>Audit Token Notice:</strong> Submitting proof consumes your AI usage. If your proof is rejected because it fails the task criteria or is invalid, token usage is still calculated and consumed—no refunds are issued. Make sure your proof is clear and complete before submitting.
+                    <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> <strong>Audit Token Notice:</strong> Submitting proof consumes your AI usage. If your proof is rejected because it fails the task criteria or is invalid, token usage is still calculated and consumed—no refunds are issued. Make sure your proof is clear and complete before submitting.
                 </div>
             </div>
 
@@ -890,7 +897,7 @@
 
                 <div class="file-picker-wrapper" style="margin-top: 10px;">
                     <label for="createExemplarInput" class="file-picker-label">
-                        <span>📎 Attach Reference Exemplar</span>
+                        <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-clip"></use></svg> Attach Reference Exemplar</span>
                         <span class="tooltip-badge">!
                             <span class="tooltip-text">Max 1 file (5 MB). For multiple pages or photos, combine into a single PDF.</span>
                         </span>
@@ -911,9 +918,9 @@
                 </div>
 
                 <div class="criteria-actions-bar" style="margin-top: 14px;">
-                    <button type="button" class="icon-btn" id="openTemplatesBtn" style="font-size: 0.78rem; padding: 4px 10px;">💡 Recommended</button>
-                    <button type="button" class="icon-btn" id="validateCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px; background: var(--accent-light); color: var(--accent); border-color: var(--border-color);">🔍 Validate Criteria</button>
-                    <button type="button" class="icon-btn criteria-test-btn" id="testCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px;" title="Send a test proof against this criteria. Doesn't save or lock the task.">🧪 Test your criteria</button>
+                    <button type="button" class="icon-btn" id="openTemplatesBtn" style="font-size: 0.78rem; padding: 4px 10px;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bulb"></use></svg> Recommended</button>
+                    <button type="button" class="icon-btn" id="validateCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px; background: var(--accent-light); color: var(--accent); border-color: var(--border-color);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-search"></use></svg> Validate Criteria</button>
+                    <button type="button" class="icon-btn criteria-test-btn" id="testCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px;" title="Send a test proof against this criteria. Doesn't save or lock the task."><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Test your criteria</button>
                 </div>
                 <div id="criteriaFeedbackBox" class="criteria-feedback-box"></div>
             </div>
@@ -950,7 +957,7 @@
 <div class="modal-overlay" id="templatesModal">
     <div class="modal-box" style="max-width: 500px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h3 style="margin: 0; color: var(--primary);" id="templatesModalHeaderTitle">💡 Proof Criteria & Templates</h3>
+            <h3 style="margin: 0; color: var(--primary);" id="templatesModalHeaderTitle"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bulb"></use></svg> Proof Criteria & Templates</h3>
             <button type="button" class="icon-btn" id="closeTemplatesModalBtn" style="padding: 2px 8px;">✕</button>
         </div>
 
@@ -1006,7 +1013,7 @@
         <div class="form-group" id="editMoveParentContainer">
             <label for="editTaskParentSelect" style="display: flex; justify-content: space-between; align-items: center;">
                 <span>Hierarchy / Parent Task</span>
-                <span id="moveShieldWarningBadge" style="display: none; font-size: 0.72rem; color: #fde68a; background: #451a03; padding: 2px 6px; border-radius: 4px; border: 1px solid #78350f;">🛡️ Shielded Parent</span>
+                <span id="moveShieldWarningBadge" style="display: none; font-size: 0.72rem; color: #fde68a; background: #451a03; padding: 2px 6px; border-radius: 4px; border: 1px solid #78350f;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-shield"></use></svg> Shielded Parent</span>
             </label>
             <select id="editTaskParentSelect" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1.5px solid var(--border-color); background: var(--card-subtle); color: var(--text-color); font-size: 0.88rem; outline: none;">
                 <option value="">(Root Level - No Parent)</option>
@@ -1050,7 +1057,7 @@
         <div class="form-group" id="editBonusTaskContainer">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                 <input type="checkbox" id="editBonusTaskCheckbox">
-                <span>⭐ Bonus Subtask (Excluded from Shield)</span>
+                <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus Subtask (Excluded from Shield)</span>
             </label>
             <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
                 Bonus items won't block the parent task from completion if time or energy runs out.
@@ -1084,7 +1091,7 @@
                 <button type="button" class="icon-btn ai-audit-info-trigger" id="editAiAuditInfoBtn" title="AI Audit Usage Information" style="width: 22px; height: 22px; border-radius: 50%; font-size: 0.75rem; padding: 0; line-height: 1; font-weight: 700;">?</button>
             </div>
             <div class="guidance-note" id="editAiAuditInfoBox" style="display: none; margin-top: 6px; font-size: 0.8rem; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 6px; padding: 8px 10px; color: #cbd5e1;">
-                ⚠️ <strong>Audit Token Notice:</strong> Submitting proof consumes your AI usage. If your proof is rejected because it fails the task criteria or is invalid, token usage is still calculated and consumed—no refunds are issued. Make sure your proof is clear and complete before submitting.
+                <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> <strong>Audit Token Notice:</strong> Submitting proof consumes your AI usage. If your proof is rejected because it fails the task criteria or is invalid, token usage is still calculated and consumed—no refunds are issued. Make sure your proof is clear and complete before submitting.
             </div>
         </div>
 
@@ -1096,7 +1103,7 @@
             <!-- Sibling Criteria & Exemplar Inheritance Selector -->
             <div id="siblingInheritContainer" style="display: none; background: rgba(59, 130, 246, 0.1); border: 1.5px dashed var(--primary); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <span style="font-size: 0.8rem; font-weight: 700; color: #93c5fd;">⚡ Inherit Criteria from Sibling</span>
+                    <span style="font-size: 0.8rem; font-weight: 700; color: #93c5fd;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg> Inherit Criteria from Sibling</span>
                     <button type="button" class="icon-btn btn-primary" id="applySiblingInheritBtn" style="padding: 2px 8px; font-size: 0.75rem; background: var(--primary); color: #fff; border: none; font-weight: 700;">Copy Criteria</button>
                 </div>
                 <select id="siblingTaskSelect" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.82rem;">
@@ -1111,7 +1118,7 @@
             
             <div class="file-picker-wrapper" style="margin-top: 10px;">
                 <label for="editExemplarInput" class="file-picker-label">
-                    <span>📎 Attach / Replace Exemplar</span>
+                    <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-clip"></use></svg> Attach / Replace Exemplar</span>
                     <span class="tooltip-badge">!
                         <span class="tooltip-text">Max 1 file (5 MB). Image or PDF.</span>
                     </span>
@@ -1128,9 +1135,9 @@
             </div>
 
             <div class="criteria-actions-bar" style="margin-top: 14px;">
-                <button type="button" class="icon-btn" id="editOpenTemplatesBtn" style="font-size: 0.78rem; padding: 4px 10px;">💡 Recommended</button>
-                <button type="button" class="icon-btn" id="editValidateCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px; background: var(--accent-light); color: var(--accent); border-color: var(--border-color);">🔍 Validate Criteria</button>
-                    <button type="button" class="icon-btn criteria-test-btn" id="editTestCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px;" title="Send a test proof against this criteria. Doesn't save or lock the task.">🧪 Test your criteria</button>
+                <button type="button" class="icon-btn" id="editOpenTemplatesBtn" style="font-size: 0.78rem; padding: 4px 10px;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bulb"></use></svg> Recommended</button>
+                <button type="button" class="icon-btn" id="editValidateCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px; background: var(--accent-light); color: var(--accent); border-color: var(--border-color);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-search"></use></svg> Validate Criteria</button>
+                    <button type="button" class="icon-btn criteria-test-btn" id="editTestCriteriaBtn" style="font-size: 0.78rem; padding: 4px 12px;" title="Send a test proof against this criteria. Doesn't save or lock the task."><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Test your criteria</button>
             </div>
             <div id="editCriteriaFeedbackBox" class="criteria-feedback-box"></div>
         </div>
@@ -1196,11 +1203,11 @@
 <!-- Modal: Criteria Test (dry-run audit; never saves or locks) -->
 <div class="modal-overlay" id="criteriaTestModal">
     <div class="modal-box">
-        <h3 style="margin-top: 0; color: var(--primary);">🧪 Test your criteria</h3>
+        <h3 style="margin-top: 0; color: var(--primary);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Test your criteria</h3>
         <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 10px;">Send a sample proof to see how the AI auditor reads this criteria. The test uses the exact same audit as a real proof and returns the same verdicts. It doesn't save, complete or lock the task.</p>
         <div id="criteriaTestCriteriaDisplay" style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 12px; background: var(--card-subtle); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); white-space: pre-wrap;"></div>
         <div class="criteria-test-cost" style="font-size: 0.78rem; margin-bottom: 12px; padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(251,191,36,0.4); background: rgba(251,191,36,0.08); color: #fde68a;">
-            ⚠️ AI usage applies exactly like a real proof audit. There are no free tests. On Pro hosted AI you'll see a credit estimate before it runs; with your own API key, your provider bills this request and it counts toward your allowance.
+            <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> AI usage applies exactly like a real proof audit. There are no free tests. On Pro hosted AI you'll see a credit estimate before it runs; with your own API key, your provider bills this request and it counts toward your allowance.
         </div>
         <div class="form-group">
             <label for="criteriaTestFileInput">Test proof (1&ndash;5 files, 8 MB per photo or 30 MB per PDF):</label>
@@ -1222,7 +1229,7 @@
 <!-- Modal: Emergency Bypass Confirmation -->
 <div class="modal-overlay" id="emergencyConfirmModal">
     <div class="modal-box">
-        <h3 style="margin-top: 0; color: var(--danger);">🚨 Activate Emergency Bypass?</h3>
+        <h3 style="margin-top: 0; color: var(--danger);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-siren"></use></svg> Activate Emergency Bypass?</h3>
         <p style="font-size: 0.875rem; line-height: 1.5;">
             This uses <strong>1 of your 4 weekly bypasses</strong>.<br>
             For <strong>15 minutes</strong>, you can edit or delete protected tasks and change their criteria.
@@ -1241,7 +1248,7 @@
     <div class="modal-box" style="max-width: 440px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <h3 style="margin: 0; color: var(--primary); display: flex; align-items: center; gap: 8px;">
-                <span>🏆</span> About Mr. Study
+                <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-star"></use></svg></span> About Mr. Study
             </h3>
             <button class="icon-btn" id="closeMrstudyInfoModalBtn" style="padding: 2px 8px;">✕</button>
         </div>
