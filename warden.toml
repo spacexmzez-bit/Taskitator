@@ -1,0 +1,8 @@
+# Space serial analyses to reduce Gemini free-tier rate-limit errors.
+version = 1
+
+[runner]
+concurrency = 1
+
+[defaults]
+batchDelayMs = 20000
