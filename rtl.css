@@ -46,3 +46,18 @@ html[lang="ar"][data-family="nature"] body { font-family: var(--tk-font); }
 /* Arabic script has no capitals and is hurt by letter-spacing. */
 html[lang="ar"] * { letter-spacing: normal !important; }
 html[lang="ar"] :is(.tier-chip, .card-title, .tk-pro-badge) { text-transform: none; }
+
+/* Privacy Policy and Terms stay in English (binding text); Arabic shows a short notice above them. */
+html[lang="ar"] .help-lang-note { max-width: 760px; margin: 72px auto 0 !important; }
+html[lang="ar"] .legal-lang-note { display: block !important; margin: 0 0 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--card-subtle); }
+
+/* ----- Labels drawn by CSS (the DOM translator can't see these) ----- */
+html[lang="ar"] body #pomodoroFabBtn::after { content: 'مؤقت التركيز'; }
+html[lang="ar"] #universeWorkspace .uni-fab::after { content: 'مهمة جديدة'; }
+html[lang="ar"] #universeWorkspace .uni-select-all::after { content: 'تحديد الكل'; }
+html[lang="ar"] #universeWorkspace .uni-deselect-all::after { content: 'إلغاء تحديد الكل'; }
+@media (max-width: 720px) {
+    html[lang="ar"] #universeWorkspace .uni-select-all::after { content: 'الكل'; }
+    html[lang="ar"] #universeWorkspace .uni-deselect-all::after { content: 'لا شيء'; }
+}
+html[lang="ar"][data-tier="pro"][data-expiring="1"] .tier-chip::before { content: 'ينتهي خلال ' attr(data-days) ' يوم \00B7  '; }

@@ -24,6 +24,8 @@ window.TaskitatorSafety = {
         if (project.id === 'inbox' && project.icon === '\u{1F4E5}' && window.TaskitatorIcons) icon.append(window.TaskitatorIcons.node('inbox'));
         else icon.textContent = project.icon || '';
         name.textContent = project.name || '';
+        // Project names are user content and never translated; only the untouched system Inbox name is.
+        if (!(project.id === 'inbox' && project.name === 'Inbox')) name.setAttribute('translate', 'no');
         element.replaceChildren(icon, document.createTextNode(' '), name);
     },
 
@@ -1248,7 +1250,7 @@ window.TaskitatorEngine = TaskitatorEngine;
     const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const esc = v => String(v ?? '').replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
     const clone = v => JSON.parse(JSON.stringify(v));
-    const hm = m => { const h = Math.floor(m / 60), r = m % 60; return r ? `${h}h ${r}m` : `${h} hour${h === 1 ? '' : 's'}`; };
+    const hm = m => { const local = window.TaskitatorI18n?.duration?.(m); if (local) return local; const h = Math.floor(m / 60), r = m % 60; return r ? `${h}h ${r}m` : `${h} hour${h === 1 ? '' : 's'}`; };
     // A strict minimum this close to the daily maximum leaves room for very few breaks.
     const tight = d => d.flexible.enabled && d.flexible.minimum >= 0.75 * d.allowance;
     const tightText = d => { const n = Math.floor(d.allowance / d.flexible.minimum);

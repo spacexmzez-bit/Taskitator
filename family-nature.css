@@ -37,6 +37,10 @@ html[data-family="nature"] .tk-ic {
     pointer-events: none;
 }
 html[data-family="nature"] .tk-ic + :not(.tk-ic) { margin-inline-start: 0; }
+/* The Copilot alligator is wider than tall: keep its proportions at every icon size. */
+.tk-ic.tk-ic-wide, html[data-family="nature"] .tk-ic.tk-ic-wide, html[data-family="nature"] .top-navbar .tk-ic.tk-ic-wide { width: 1.9em; height: 1.15em; }
+html[data-family="nature"] .top-navbar .tk-ic.tk-ic-wide { width: 46px; height: 28px; }
+html[data-family="nature"] .copilot-fab-btn .tk-ic.tk-ic-wide { width: 40px; height: 24px; }
 
 /* Scene: three SVG layers (far, mid, near) with CSS-variable colours, behind everything. */
 #tk-scene { display: none; }

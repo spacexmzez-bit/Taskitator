@@ -1569,7 +1569,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-i18n-v1'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-i18n-v2'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);
@@ -2201,7 +2201,7 @@ test('break settings card: daily maximum, minimum capped at the maximum, tight-l
 
 test('break panel text follows the daily maximum and shows the strict gap as a clock time',()=>{
     const app=fs.readFileSync(new URL('app.js',TEST_ROOT),'utf8'),html=fs.readFileSync(new URL('index.html',TEST_ROOT),'utf8');
-    assert.equal((html.match(/data-allowance-total/g)||[]).length,3);
+    assert.equal((html.match(/data-allowance-total/g)||[]).length,5); // 3 in the break panels + 1 in each break help dialog
     assert.doesNotMatch(html.slice(html.indexOf('id="breakModal"'),html.indexOf('<!-- Modal: Completed Tasks -->')),/3 hours|3-hour/);
     assert.match(app,/of \$\{this\.minutesText\(al\.total\)\} left/);
     assert.match(app,/Your next break can start at \$\{this\.clockText\(f\.gap_until, zone\)\}/);

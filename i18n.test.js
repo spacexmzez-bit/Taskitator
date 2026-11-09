@@ -15,10 +15,11 @@ function boot(stored) {
         document: { documentElement: html, addEventListener() {} },
         location: { reload() { ctx.reloads++; } },
         reloads: 0,
+        sessionStorage: { getItem: () => null },
         CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
         Intl, Date, Number, String, Object, JSON
     };
-    ctx.window = { addEventListener: (t, f) => { listeners[t] = f; }, dispatchEvent() {} };
+    ctx.window = { addEventListener: (t, f) => { listeners[t] = f; }, dispatchEvent() {}, alert() {}, confirm() {}, prompt() {} };
     vm.createContext(ctx);
     vm.runInContext(read('i18n.js'), ctx);
     ctx.window.TaskitatorI18n.register('ar', loadAr());
@@ -112,7 +113,9 @@ test('dictionary keeps placeholders and follows the glossary', () => {
         const values = typeof value === 'string' ? [value] : Object.values(value);
         assert.ok(values.length && values.every(v => typeof v === 'string' && v.trim()), 'empty entry: ' + key);
         const holes = s => [...s.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort().join();
-        if (typeof value === 'string') assert.equal(holes(value), holes(key), 'placeholders differ: ' + key);
+        // Arabic may drop a captured English fragment (e.g. a plural "s") but never invents placeholders.
+        const keyHoles = new Set(holes(key).split(',').filter(Boolean));
+        for (const v of values) for (const h of holes(v.replace(/:t\}/g, '}')).split(',').filter(Boolean)) assert.ok(keyHoles.has(h), 'unknown placeholder {' + h + '} in: ' + key);
         for (const v of values) {
             assert.doesNotMatch(v, /\b(Universe|Copilot|Co-pilot|Pro|Max|Scratchpad|Shield|Bonus|Inbox)\b/, 'untranslated glossary term in: ' + key);
             assert.doesNotMatch(v, /اليونيفيرس|يونيفرس|كوبايلوت|البرو\b|برو\s*برو/, 'wrong glossary spelling in: ' + key);
@@ -133,7 +136,7 @@ test('every page loads i18n.js after theme-boot.js, then the Arabic dictionary',
         assert.ok(a > 0 && b > a && c > b, page + ' must load theme-boot.js, i18n.js, locales/ar.js in order');
     }
     const sw = read('sw.js');
-    for (const f of ['i18n.js', 'locales/ar.js', 'rtl.css']) assert.match(sw, new RegExp("'\\./" + f.replace('.', '\\.') + "'"), 'SW precaches ' + f);
+    for (const f of ['i18n.js', 'locales/ar.js', 'locales/clerk-ar.js', 'rtl.css']) assert.match(sw, new RegExp("'\\./" + f.replace('.', '\\.') + "'"), 'SW precaches ' + f);
 });
 
 test('the UI language never syncs and never reaches the backend', () => {
@@ -178,4 +181,44 @@ test('RTL: layout CSS uses logical properties (physical left/right only where in
         const html = read(page);
         assert.ok(html.indexOf('href="rtl.css"') > html.indexOf('href="family-nature.css"'), page + ' loads rtl.css after family-nature.css');
     }
+});
+
+test('rendered text: patterns, plurals, captured UI words and user text', () => {
+    const { i18n } = boot({ lang: 'ar' });
+    i18n.register('ar', loadAr());
+    const tt = s => i18n.translateText(s);
+    assert.equal(tt('Start by 14:00'), 'ابدأ قبل 14:00');
+    assert.equal(tt('3 tasks'), '3 مهام');
+    assert.equal(tt('1 task'), 'مهمة واحدة');
+    assert.equal(tt('11 tasks'), '11 مهمة');
+    assert.equal(tt('Lock Scheduled for Today'), 'قفل المجدولة لهذا اليوم');
+    assert.equal(tt('Ask Ari...'), 'اسأل Ari...', 'a custom Copilot name is user input and stays as typed');
+    assert.equal(tt('Ask Focus Copilot...'), 'اسأل المساعد الذكي...', 'the default name is translated');
+    assert.equal(tt('Moved "Gym" to Trash.'), 'نُقلت "Gym" إلى المحذوفات.', 'captured task titles are not translated');
+    assert.equal(tt('3 of 10'), '3 من 10');
+    assert.equal(tt('Something nobody translated'), undefined);
+    assert.equal(i18n.duration(150), '2س 30د');
+    assert.equal(boot().i18n.duration(150), undefined, 'English keeps the caller wording');
+});
+
+test('user content containers are never translated', () => {
+    const src = read('i18n.js');
+    for (const sel of ['.task-title', '.tag-chip', '.chat-bubble', '.completed-item-title', '.dump-note-body', '.trash-title', '.uni-comment', '[translate="no"]', '[contenteditable]'])
+        assert.ok(src.includes("'" + sel + "'"), 'USER selector list covers ' + sel);
+    assert.match(read('pro.js'), /if \(!\(project\.id === 'inbox' && project\.name === 'Inbox'\)\) name\.setAttribute\('translate', 'no'\)/);
+    const comp = read('components.html');
+    assert.match(comp, /id="legalPrivacySection" translate="no" lang="en"/, 'Privacy Policy stays English (binding text)');
+    assert.match(comp, /id="legalTermsSection" translate="no" lang="en"/, 'Terms stay English (binding text)');
+});
+
+test('Clerk sign-in widget gets Arabic text only when the UI is Arabic', () => {
+    const core = read('core.js');
+    assert.match(core, /if \(window\.TaskitatorI18n\?\.lang === 'ar'\)[\s\S]{0,200}loadScript\('locales\/clerk-ar\.js'\)/);
+    assert.match(core, /\.\.\.\(localization \? \{ localization \} : \{\}\)/);
+    assert.match(read('locales/clerk-ar.js'), /^\/\*[\s\S]*window\.TaskitatorClerkLocalization = \{"locale":"ar-SA"/);
+});
+
+test('Help stays English and left-to-right until it is translated', () => {
+    const help = read('help.html');
+    assert.match(help, /<main class="hp" translate="no" lang="en" dir="ltr">/);
 });

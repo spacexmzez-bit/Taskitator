@@ -5493,3 +5493,15 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .phone-device-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
 .phone-device-revoked { color: var(--danger, #e5484d); }
 .phone-device-empty { color: var(--text-muted); font-size: .85rem; padding: 6px 2px; }
+
+/* ----- Break help ("?" buttons and dialog) ----- */
+.break-system-actions { display: inline-flex; align-items: center; gap: 8px; }
+.icon-btn.break-help-btn { width: 26px; height: 26px; min-width: 26px; min-height: 26px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .85rem; font-weight: 700; line-height: 1; color: var(--primary); border-color: var(--primary); }
+.break-reserved-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.break-help-box { max-width: 460px; max-height: 85vh; overflow-y: auto; outline: none; }
+.break-help-body h4 { margin: 14px 0 6px; color: var(--primary); font-size: .9rem; }
+.break-help-body :is(ul, ol) { margin: 0; padding-inline-start: 20px; display: grid; gap: 5px; font-size: .85rem; line-height: 1.45; color: var(--text-color); }
+.break-help-body p { margin: 8px 0 0; font-size: .85rem; line-height: 1.45; }
+.break-help-body .break-help-example { padding: 8px 10px; border-radius: 8px; background: var(--card-subtle); border: 1px solid var(--border-color); }
+.break-help-body .break-help-note { color: var(--text-muted); font-size: .8rem; }
+#breakHelpModal { z-index: 3100; }

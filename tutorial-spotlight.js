@@ -26,8 +26,11 @@
     return n;
   }
   // **bold** and `code` -> DOM nodes (never innerHTML).
+  // Tour text is translated as a whole sentence (markdown included) before it is split, so the
+  // Arabic keeps its own word order around the bold parts. English passes through unchanged.
+  const tr = str => (typeof str === 'string' && window.TaskitatorI18n?.translateText(str)) || str;
   function rich(parent, str) {
-    String(str || '').split(/(\*\*[^*]+\*\*|`[^`]+`)/g).forEach(part => {
+    String(tr(str) || '').split(/(\*\*[^*]+\*\*|`[^`]+`)/g).forEach(part => {
       if (!part) return;
       if (part.startsWith('**')) parent.append(el('b', '', part.slice(2, -2)));
       else if (part.startsWith('`')) parent.append(el('code', '', part.slice(1, -1)));
@@ -119,7 +122,7 @@
       card.append(meta, bar, head);
       if (!t && step.selector && step.kind !== 'center') card.append(el('p', 'tt-note', 'This isn’t on your screen right now, so there’s nothing to point at. The description above still applies.'));
       if (step.note) card.append(rich(el('p', 'tt-note'), step.note));
-      if (step.why) card.append(rich(el('p', 'tt-why'), '**Why it matters:** ' + step.why));
+      if (step.why) card.append(rich(el('p', 'tt-why'), '**' + tr('Why it matters:') + '** ' + tr(step.why)));
       const vis = buildVisual(step.visual, finish); if (vis) card.append(vis);
       const actions = el('div', 'tt-actions');
       const skip = el('button', 'tt-skip', 'Skip tour'); skip.type = 'button';

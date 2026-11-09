@@ -319,7 +319,7 @@
 <aside class="copilot-drawer" id="copilotDrawer">
     <div class="copilot-header">
         <div class="copilot-title-group">
-            <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-copilot"></use></svg> Focus Copilot</span>
+            <span><svg class="tk-ic tk-ic-wide" aria-hidden="true" focusable="false"><use href="#ic-copilot"></use></svg> Focus Copilot</span>
             <span class="copilot-model-chip">Gemini</span>
         </div>
         <button class="icon-btn" id="closeCopilotBtn" style="padding: 2px 8px;">✕</button>
@@ -376,7 +376,7 @@
         <div class="nav-right">
             <!-- Responsive Copilot Trigger: Icon-only on mobile, full label on desktop -->
             <button class="icon-btn nav-link-btn" id="openCopilotNavBtn" title="Open Ari Assistant" aria-label="Open Ari Assistant">
-                <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-copilot"></use></svg></span>
+                <span><svg class="tk-ic tk-ic-wide" aria-hidden="true" focusable="false"><use href="#ic-copilot"></use></svg></span>
                 <span class="nav-copilot-label" id="copilotNavNameLabel">Ari</span>
             </button>
         </div>
@@ -428,7 +428,7 @@
 
 <!-- Floating Action Buttons -->
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task" aria-label="Create task"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-add"></use></svg><span class="wide-label">New task</span></button>
-<button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-robot"></use></svg><span class="wide-label">Copilot</span></button>
+<button class="copilot-fab-btn" id="openCopilotFabBtn" title="Open AI Focus Copilot"><svg class="tk-ic tk-ic-wide" aria-hidden="true" focusable="false"><use href="#ic-robot"></use></svg><span class="wide-label">Copilot</span></button>
 
 <!-- Floating Multi-Select Batch Action Bar -->
 <div class="batch-action-bar" id="batchActionBar">
@@ -670,7 +670,7 @@
         </div>
         <section id="breakPanelScheduled" class="break-tabpanel" role="tabpanel" data-break-panel="scheduled" aria-labelledby="breakTabScheduled">
             <div class="break-system-intro" aria-live="polite">
-                <div class="break-system-title"><strong><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Scheduled Breaks</strong><span class="break-system-state" data-break-state="scheduled"></span></div>
+                <div class="break-system-title"><strong><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Scheduled Breaks</strong><span class="break-system-actions"><span class="break-system-state" data-break-state="scheduled"></span><button type="button" class="icon-btn break-help-btn" data-break-help="scheduled" aria-label="How Scheduled breaks work" aria-haspopup="dialog" title="How Scheduled breaks work">?</button></span></div>
                 <ol class="break-system-steps">
                     <li>Press Start planning. You get 10 minutes to enter your breaks.</li>
                     <li>Add up to 3 breaks that don't overlap, <span data-allowance-total>3h</span> in total.</li>
@@ -691,7 +691,7 @@
         </section>
         <section id="breakPanelFlexible" class="break-tabpanel" role="tabpanel" data-break-panel="flexible" aria-labelledby="breakTabFlexible" hidden>
             <div class="break-system-intro" aria-live="polite">
-                <div class="break-system-title"><strong><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-coffee"></use></svg> Flexible Breaks</strong><span class="break-system-state" data-break-state="flexible"></span></div>
+                <div class="break-system-title"><strong><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-coffee"></use></svg> Flexible Breaks</strong><span class="break-system-actions"><span class="break-system-state" data-break-state="flexible"></span><button type="button" class="icon-btn break-help-btn" data-break-help="flexible" aria-label="How Flexible breaks work" aria-haspopup="dialog" title="How Flexible breaks work">?</button></span></div>
                 <ol class="break-system-steps">
                     <li>Pick 30 min, 45 min, 1 hour, a custom length, or until your allowance ends.</li>
                     <li>The break starts immediately and counts every started minute from your daily allowance (<span data-allowance-total>3h</span>).</li>
@@ -701,6 +701,70 @@
             <div id="flexBreakBody"></div>
         </section>
         <div id="breakModalError" role="alert" style="display: none; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 6px; color: #fca5a5; font-size: 0.8rem; margin-top: 12px;"></div>
+    </div>
+</div>
+
+<!-- Modal: How breaks work (opened by the ? buttons in the Daily Breaks dialog) -->
+<div class="modal-overlay" id="breakHelpModal">
+    <div class="modal-box break-help-box" role="dialog" aria-modal="true" aria-labelledby="breakHelpTitle" tabindex="-1">
+        <div class="break-modal-head">
+            <h3 id="breakHelpTitle" class="break-modal-title"></h3>
+            <button class="icon-btn" id="closeBreakHelpBtn" aria-label="Close" style="padding: 2px 8px;">✕</button>
+        </div>
+        <div class="break-help-body" data-help-for="scheduled" hidden>
+            <h4>The basics</h4>
+            <ul>
+                <li>You choose your break times in advance, during one 10-minute planning window.</li>
+                <li>Both systems share one daily allowance: <span data-allowance-total>3h</span> today. Set it in Settings → Day &amp; week (1h to 3h, in 15-minute steps).</li>
+                <li>You use one system per day. Your first Scheduled save, or Lock Scheduled for Today, makes the day Scheduled. Flexible is then unavailable until the day resets.</li>
+                <li>While a break is running, your tasks don't lock your phone. Sleep Lock is not lifted by breaks.</li>
+            </ul>
+            <h4>Planning</h4>
+            <ol>
+                <li>Press Start planning. The 10 minutes start at that moment. You can start it until 6 hours before the day resets.</li>
+                <li>Add up to 3 breaks with a start and end time. They can't overlap, and together they can't exceed your allowance.</li>
+                <li>Press Save schedule. Saved minutes are taken from your allowance immediately.</li>
+                <li>Until the window ends you can edit and save again. After that your last save is final. Closing without saving cancels the window.</li>
+            </ol>
+            <h4 id="breakHelpReserved">Reserved breaks</h4>
+            <p>A reserved break has no fixed time. You set its length and the window in which you may start it. You then start it yourself, when you want, inside that window.</p>
+            <ul>
+                <li>Add them in the same planning window with + Add Reserved. Maximum 2 per day.</li>
+                <li>Length: at least 10 minutes, in 5-minute steps.</li>
+                <li>Start window: at least 5 minutes wide, inside today, not already over. It can't overlap a Scheduled break or another reserved window.</li>
+                <li>The full length is taken from your allowance when you save, whether you use it or not.</li>
+                <li>When the window opens, a Start now button appears. The break then runs for its full length and can't be ended early.</li>
+                <li>If the window ends before you start it, that allowance is gone for the day.</li>
+                <li>If a Scheduled break begins before it finishes, it is cut off there. The rest is gone for the day, not refunded or moved.</li>
+                <li>You can't start one during planning, or while another break is running. Starting one makes the day Scheduled.</li>
+            </ul>
+            <p class="break-help-example"><strong>Example:</strong> reserve 60 minutes, start between 14:00 and 16:00. You press Start now at 15:30, so it runs until 16:30. If you never press it, those 60 minutes are lost at 16:00.</p>
+            <p class="break-help-note">Scheduled Strict Mode (Settings → Day &amp; week) can lock your schedule at a deadline.</p>
+        </div>
+        <div class="break-help-body" data-help-for="flexible" hidden>
+            <h4>The basics</h4>
+            <ul>
+                <li>No planning. You start a break whenever you want and it begins immediately.</li>
+                <li>Both systems share one daily allowance: <span data-allowance-total>3h</span> today. Set it in Settings → Day &amp; week (1h to 3h, in 15-minute steps).</li>
+                <li>Your first Flexible break makes the day Flexible. Scheduled is then unavailable until the day resets.</li>
+                <li>While a break is running, your tasks don't lock your phone. Sleep Lock is not lifted by breaks.</li>
+            </ul>
+            <h4>Starting a break</h4>
+            <ul>
+                <li>Choose 30 minutes, 45 minutes, 1 hour, a custom length, or Until allowance ends.</li>
+                <li>Custom: a whole number of minutes, from 10 up to what you have left.</li>
+                <li>You need at least 10 minutes of allowance left, and at least 10 minutes before the day resets.</li>
+                <li>One break at a time.</li>
+            </ul>
+            <h4>Ending and cost</h4>
+            <ul>
+                <li>You can't end a break in its first 10 minutes. After that, press End break any time, or let it finish by itself.</li>
+                <li>Every started minute counts in full. Ending early only charges the minutes used.</li>
+                <li>A break stops at the day reset.</li>
+            </ul>
+            <p class="break-help-note">Flexible Strict Mode (Settings → Day &amp; week) raises the minimum length to 30–60 minutes and requires the same gap between one break's end and the next start.</p>
+            <p class="break-help-note">Reserved breaks belong to the Scheduled system. Flexible has none.</p>
+        </div>
     </div>
 </div>
 

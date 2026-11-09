@@ -458,7 +458,12 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             await loadScript('https://' + domain + '/npm/@clerk/ui@1/dist/ui.browser.js');
             await loadScript('https://' + domain + '/npm/@clerk/clerk-js@6/dist/clerk.browser.js',
                 { 'data-clerk-publishable-key': config.publishableKey });
-            await window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor }, telemetry: false,
+            // Arabic UI: the Clerk widget gets its own Arabic text (display only; sign-in works the same).
+            let localization;
+            if (window.TaskitatorI18n?.lang === 'ar') {
+                try { if (!window.TaskitatorClerkLocalization) await loadScript('locales/clerk-ar.js'); localization = window.TaskitatorClerkLocalization; } catch { /* English widget */ }
+            }
+            await window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor }, telemetry: false, ...(localization ? { localization } : {}),
                 signInUrl: location.origin + '/login.html', signUpUrl: location.origin + '/login.html',
                 signInForceRedirectUrl: location.origin + '/login.html',
                 signUpForceRedirectUrl: location.origin + '/login.html' });
@@ -2048,7 +2053,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-i18n-v1');
+                    resolve(event.data?.version === 'taskitator-i18n-v2');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });

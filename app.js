@@ -2127,7 +2127,7 @@ window.TaskitatorApp = (() => {
             try { return window.TaskitatorI18n?.time(ms, { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }, 'en-GB') || new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ms); }
             catch { return (window.TaskitatorI18n?.time(ms, { hour: '2-digit', minute: '2-digit' }) ?? new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })); }
         },
-        minutesText(m) { m = Math.max(0, Math.round(m)); const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r}m`; },
+        minutesText(m) { const local = window.TaskitatorI18n?.duration?.(m); if (local) return local; m = Math.max(0, Math.round(m)); const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r}m`; },
         // Flexible header color by remaining allowance: >35% green, 10–35% yellow, <10% red.
         allowanceTone(percent) { return percent > 35 ? 'green' : percent >= 10 ? 'yellow' : 'red'; },
 
@@ -2155,6 +2155,7 @@ window.TaskitatorApp = (() => {
             if (this.saveBtn) this.saveBtn.addEventListener('click', () => this.saveBreaks());
             this.modal.addEventListener('click', (e) => { if (e.target === this.modal) this.closeModal(); });
             this.modal.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.modal.classList.contains('open')) this.closeModal(); });
+            this.bindHelp();
             const tabs = [...this.modal.querySelectorAll('[data-break-tab]')];
             tabs.forEach(tab => {
                 tab.addEventListener('click', () => this.selectTab(tab.dataset.breakTab));
@@ -2298,6 +2299,37 @@ window.TaskitatorApp = (() => {
             this.tab = name;
             this.hideError();
             this.renderModal();
+        },
+
+        // "?" buttons: explain a break system (Scheduled incl. Reserved, or Flexible).
+        bindHelp() {
+            const help = document.getElementById('breakHelpModal');
+            if (!help || help.dataset.bound) return;
+            help.dataset.bound = '1';
+            const title = document.getElementById('breakHelpTitle');
+            const titles = { scheduled: 'Scheduled Breaks', flexible: 'Flexible Breaks' };
+            let opener = null;
+            const close = () => { help.classList.remove('open'); opener?.focus?.(); opener = null; };
+            const open = (name, anchor, from) => {
+                if (!titles[name]) return;
+                opener = from || null;
+                title.textContent = titles[name];
+                help.querySelectorAll('[data-help-for]').forEach(b => { b.hidden = b.dataset.helpFor !== name; });
+                const total = this.minutesText(this.engine()?.current?.()?.allowance?.total || 180);
+                help.querySelectorAll('[data-allowance-total]').forEach(el => { el.textContent = total; });
+                help.classList.add('open');
+                const box = help.querySelector('.break-help-box');
+                box.scrollTop = 0;
+                box.focus({ preventScroll: true });
+                if (anchor) document.getElementById(anchor)?.scrollIntoView({ block: 'start' });
+            };
+            this.modal.addEventListener('click', (e) => {
+                const btn = e.target.closest?.('[data-break-help]');
+                if (btn) open(btn.dataset.breakHelp, btn.dataset.breakHelpAnchor, btn);
+            });
+            document.getElementById('closeBreakHelpBtn')?.addEventListener('click', close);
+            help.addEventListener('click', (e) => { if (e.target === help) close(); });
+            help.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } });
         },
 
         startCountdownTimer() {
@@ -2570,7 +2602,7 @@ window.TaskitatorApp = (() => {
             const hideAdd = () => { if (this.addReservedBtn) this.addReservedBtn.style.display = 'none'; };
             if (!view) { box.innerHTML = ''; hideAdd(); return; }
             const s = view.scheduled, open = !!s.planning && now < s.planning.deadline;
-            const head = '<div class="break-reserved-head"><strong>Reserved breaks</strong><small>Reserve minutes now and start them any time inside the window you choose. Allowance not started in the window, or cut off by a Scheduled break, is gone for the day.</small></div>';
+            const head = '<div class="break-reserved-head"><div class="break-reserved-title"><strong>Reserved breaks</strong><button type="button" class="icon-btn break-help-btn" data-break-help="scheduled" data-break-help-anchor="breakHelpReserved" aria-label="What are reserved breaks?" aria-haspopup="dialog" title="What are reserved breaks?">?</button></div><small>No fixed time: set a length and a window, then press Start now inside that window. The full length is taken from your allowance when you save. If you miss the window, it is gone for the day.</small></div>';
             if (open) {
                 const rows = this.reservedDraft ?? (view.reserved_breaks || []).map(x => ({ minutes: x.minutes, from: x.from, to: x.to }));
                 box.innerHTML = head;
