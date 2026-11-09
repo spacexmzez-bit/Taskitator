@@ -1530,6 +1530,14 @@ window.TaskitatorComponents = Object.freeze({
             
             if (editTaskDesc) editTaskDesc.value = task.description || '';
             if (editTaskDueDate) editTaskDueDate.value = task.due_date === 'today' ? host.clock.today() : (task.due_date || '');
+            const earlyNote = document.getElementById('editTaskEarlyNote');
+            if (earlyNote) {
+                // Read-only: the early date is set or removed from the batch Due date dialog.
+                const E = window.TaskitatorEarly, list = host.tasks?.getAll?.() || [];
+                const shown = E && task.early_date ? E.appearance(E.index(list.length ? list : [task]), task, host.clock.today()) : null;
+                earlyNote.hidden = !shown;
+                earlyNote.textContent = shown ? 'Also shown early on ' + shown + ' (change it from the multi-select Due date button).' : '';
+            }
             if (detailQuickSubtaskInput) { detailQuickSubtaskInput.value = ''; detailQuickSubtaskInput._quickGeneration = (detailQuickSubtaskInput._quickGeneration || 0) + 1; }
 
             editModalSelectedTags.clear();

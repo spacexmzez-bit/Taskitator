@@ -918,8 +918,8 @@ window.TaskitatorApp = (() => {
     let batchSelectedPriority = null;
 
     // Active Filter State (Tags, Priorities, Projects)
-    const activeFilters = { tags: new Set(), priorities: new Set(), projects: new Set() };
-    const draftFilters = { tags: new Set(), priorities: new Set(), projects: new Set() };
+    const activeFilters = { tags: new Set(), priorities: new Set(), projects: new Set(), date: { mode: '', from: '', to: '' } };
+    const draftFilters = { tags: new Set(), priorities: new Set(), projects: new Set(), date: { mode: '', from: '', to: '' } };
 
     // Host API v1 is the only connection to the task-editor implementation.
     let components = null;
@@ -2785,6 +2785,7 @@ window.TaskitatorApp = (() => {
         const allChildrenMap = new Map();
         const visibleChildrenMap = new Map();
 
+        const earlyIndex=globalThis.TaskitatorEarly?.index(tasks);
         const displayTasks=(globalThis.TaskitatorEarly?.view(tasks,todayStr)??tasks).map(t=>{
             if(t.status!=='active'||t.smart_early_date!==todayStr)return t;
             const parent=tasks.find(p=>p.study_plan_id===t.study_plan_id&&!p.parent_id&&p.due_date===todayStr);
@@ -2836,7 +2837,9 @@ window.TaskitatorApp = (() => {
             return allKids.some(k => hasVisibleDescendant(k.id, visited));
         }
 
-        const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0 || activeFilters.projects.size > 0;
+        const dateFilterOn = !!globalThis.TaskitatorDateFilter?.active(activeFilters.date);
+        const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0 || activeFilters.projects.size > 0 || dateFilterOn;
+        const filterIndex = dateFilterOn ? new Map(tasks.map(t => [t.id, t])) : null;
         const matchMap = new Map();
         const descMatchMap = new Map();
 
@@ -2845,7 +2848,8 @@ window.TaskitatorApp = (() => {
                 const tagMatch = activeFilters.tags.size === 0 || (t.tags && t.tags.some(tag => activeFilters.tags.has(tag)));
                 const prioMatch = activeFilters.priorities.size === 0 || activeFilters.priorities.has((dynamicPriority.get(t.id) ?? t.priority_id));
                 const projMatch = activeFilters.projects.size === 0 || activeFilters.projects.has(t.project_id || 'inbox');
-                matchMap.set(t.id, tagMatch && prioMatch && projMatch);
+                const dateMatch = !dateFilterOn || globalThis.TaskitatorDateFilter.matches(t, filterIndex, todayStr, activeFilters.date);
+                matchMap.set(t.id, tagMatch && prioMatch && projMatch && dateMatch);
             });
 
             function checkDesc(nodeId, visited = new Set()) {
@@ -3094,6 +3098,18 @@ window.TaskitatorApp = (() => {
                     tkLabel(earlyBadge, 'bonus', 'Early · due '+task.early_due);
                     main.appendChild(earlyBadge);
                     if (task.early_bonus) {
+                        const realBonus = document.createElement('span');
+                        realBonus.className = 'bonus-badge';
+                        tkLabel(realBonus, 'bonus', 'Bonus');
+                        main.appendChild(realBonus);
+                    }
+                } else if (task.early_date && earlyIndex && globalThis.TaskitatorEarly.appearance(earlyIndex, task, todayStr)) {
+                    // Upcoming early appearance on the real task's own row (before its early day).
+                    const upcoming = document.createElement('span');
+                    upcoming.className = 'bonus-badge early-badge';
+                    tkLabel(upcoming, 'bonus', 'Early on ' + task.early_date);
+                    main.appendChild(upcoming);
+                    if (task.is_bonus) {
                         const realBonus = document.createElement('span');
                         realBonus.className = 'bonus-badge';
                         tkLabel(realBonus, 'bonus', 'Bonus');
@@ -3993,11 +4009,22 @@ window.TaskitatorApp = (() => {
         const applyFiltersBtn = document.getElementById('applyFiltersBtn');
         const filterModal = document.getElementById('filterModal');
 
+        const dateModeEl = document.getElementById('filterDateMode'), dateFromEl = document.getElementById('filterDateFrom'), dateToEl = document.getElementById('filterDateTo'), dateRangeEl = document.getElementById('filterDateRange');
+        function syncDateFilterInputs() {
+            if (!dateModeEl) return;
+            dateModeEl.value = draftFilters.date.mode; dateFromEl.value = draftFilters.date.from; dateToEl.value = draftFilters.date.to;
+            dateRangeEl.hidden = draftFilters.date.mode !== 'range';
+        }
+        dateModeEl?.addEventListener('change', () => { draftFilters.date.mode = dateModeEl.value; dateRangeEl.hidden = dateModeEl.value !== 'range'; });
+        dateFromEl?.addEventListener('change', () => { draftFilters.date.from = dateFromEl.value; });
+        dateToEl?.addEventListener('change', () => { draftFilters.date.to = dateToEl.value; });
         if (openFilterModalBtn && filterModal) {
             openFilterModalBtn.addEventListener('click', () => {
                 draftFilters.tags = new Set(activeFilters.tags);
                 draftFilters.priorities = new Set(activeFilters.priorities);
                 draftFilters.projects = new Set(activeFilters.projects);
+                draftFilters.date = { ...activeFilters.date };
+                syncDateFilterInputs();
                 renderFilterClouds();
                 filterModal.classList.add('open');
             });
@@ -4012,6 +4039,8 @@ window.TaskitatorApp = (() => {
                 draftFilters.tags.clear();
                 draftFilters.priorities.clear();
                 draftFilters.projects.clear();
+                draftFilters.date = { mode: '', from: '', to: '' };
+                syncDateFilterInputs();
                 renderFilterClouds();
             });
         }
@@ -4020,8 +4049,9 @@ window.TaskitatorApp = (() => {
                 activeFilters.tags = new Set(draftFilters.tags);
                 activeFilters.priorities = new Set(draftFilters.priorities);
                 activeFilters.projects = new Set(draftFilters.projects);
+                activeFilters.date = { ...draftFilters.date };
 
-                const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0 || activeFilters.projects.size > 0;
+                const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0 || activeFilters.projects.size > 0 || !!window.TaskitatorDateFilter?.active(activeFilters.date);
                 const dot = document.getElementById('filterActiveDot');
                 if (dot) dot.style.display = hasFilters ? 'block' : 'none';
 

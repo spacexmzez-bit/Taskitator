@@ -658,6 +658,23 @@
         <div class="filter-section-title">Tags</div>
         <div id="filterTagCloud" class="tag-select-cloud"></div>
 
+        <div class="filter-section-title">Date</div>
+        <div class="date-filter-row">
+            <select id="filterDateMode" aria-label="Filter by date">
+                <option value="">Any date</option>
+                <option value="overdue">Overdue</option>
+                <option value="today">Today</option>
+                <option value="week">Next 7 days</option>
+                <option value="none">No date</option>
+                <option value="range">Custom range</option>
+            </select>
+            <span class="date-filter-range" id="filterDateRange" hidden>
+                <input type="date" id="filterDateFrom" aria-label="From">
+                <span aria-hidden="true">–</span>
+                <input type="date" id="filterDateTo" aria-label="To">
+            </span>
+        </div>
+
         <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 16px;">
             <button type="button" class="icon-btn" id="clearFiltersBtn" style="color: var(--danger); border-color: #7f1d1d;">Clear All</button>
             <button type="button" class="icon-btn btn-primary" id="applyFiltersBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600; padding: 8px 16px;">Apply Filters</button>
@@ -1118,6 +1135,7 @@
         <div class="form-group" id="editDueDateContainer">
             <label for="editTaskDueDate">Due Date</label>
             <input type="date" id="editTaskDueDate">
+            <small id="editTaskEarlyNote" class="early-edit-note" hidden></small>
         </div>
 
         <!-- Independent Subtask Shield in Details -->
@@ -1348,6 +1366,7 @@
 <script type="text/taskitator-script" src="pro.js"></script>
     <script type="text/taskitator-script" src="pro/smart-study.js"></script>
     <script type="text/taskitator-script" src="pro/early-bonus.js"></script>
+    <script type="text/taskitator-script" src="date-filter.js"></script>
     <script type="text/taskitator-script" src="pro/study-plan.js"></script>
     <script type="text/taskitator-script" src="task-drafts.js"></script>
     <script type="text/taskitator-script" src="components.js"></script>
