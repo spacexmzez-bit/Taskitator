@@ -31,6 +31,17 @@
   const days=Math.ceil(total/per);if(days>365)throw Error('This split needs '+days+' study days. The limit is 365.');
   return Array.from({length:days},(_,i)=>i<days-1?per:total-per*(days-1));
  }
+ // Weekday-specific rates. rates: {0..6: whole number} overrides the default per weekday. Walks forward from start over allowed weekdays
+ // (empty = every day), each day takes its rate, last day takes the remainder. Returns counts, end date, and whether the last day was clipped.
+ function weekdayPlan(total,def,rates={},weekdays=[],start){
+  int(total,1,1000);int(def,1,1000);if(!dateOK(start))throw Error('Choose a valid starting date.');
+  const allowed=new Set(weekdays.length?weekdays:[0,1,2,3,4,5,6]),over={};
+  for(const [k,v]of Object.entries(rates||{})){const d=Number(k);if(!Number.isInteger(d)||d<0||d>6)throw Error('Choose valid weekdays.');if(v===''||v==null)continue;over[d]=int(Number(v),1,1000);}
+  const ignored=Object.keys(over).map(Number).filter(d=>!allowed.has(d)).sort((a,b)=>a-b);
+  const counts=[],dates=[];let left=total,at=Date.parse(start+'T00:00:00Z'),clipped=false;
+  while(left>0){const dow=new Date(at).getUTCDay();if(allowed.has(dow)){if(counts.length>=365)throw Error('This split needs more than 365 study days. The limit is 365.');const rate=over[dow]??def,n=Math.min(rate,left);if(n<rate)clipped=true;counts.push(n);dates.push(new Date(at).toISOString().slice(0,10));left-=n;}at+=86400000;}
+  return {counts,dates,end:dates.at(-1),clipped,ignored,lastRate:counts.length?(over[new Date(dates.at(-1)+'T00:00:00Z').getUTCDay()]??def):def};
+ }
  // Skipped units typed as real unit numbers: "8", "8, 12", "8-10", "8, 10-12". Arabic digits and comma accepted.
  // All or nothing: any bad item rejects the whole input. Numbers already skipped are ignored.
  function parseSkips(text,first,total,skipped=[]){
@@ -61,7 +72,7 @@
   const r=o2.reduce((acc,op,i)=>op==='+'?acc+n2[i+1]:acc-n2[i+1],n2[0]);
   if(!Number.isFinite(r))throw Error('Error');return Math.round(r*1e10)/1e10;
  }
- const core={normalize,rows,build,coverage,defaultDays,perDay,parseSkips,calculate};root.TaskitatorStudyCore=core;
+ const core={normalize,rows,build,coverage,defaultDays,perDay,weekdayPlan,parseSkips,calculate};root.TaskitatorStudyCore=core;
  if(typeof window==='undefined'||!root.document)return;
  const node=(tag,text,p,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;p?.append(e);return e;};
  const longDate=iso=>window.TaskitatorI18n?.date(iso+'T12:00:00Z',{weekday:'long',year:'numeric',month:'long',day:'numeric',timeZone:'UTC'})??new Date(iso+'T12:00:00Z').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric',timeZone:'UTC'});
@@ -89,9 +100,15 @@
   const split=node('fieldset',undefined,d,'study-card');node('legend','Split units by',split);
   const modes=node('div',undefined,split,'study-segment');let splitMode='days';const modeBtns={};
   for(const [value,text]of [['days','Number of study days'],['perDay','Units per day']]){const b=node('button',text,modes,'study-seg-btn');b.type='button';b.onclick=()=>{splitMode=value;syncMode();invalidate();};modeBtns[value]=b;}
-  const days=field('Study days (1–365)',initial.days??5,'number',split),per=field('Units per day',4,'number',split);const splitLine=node('p','',split,'study-hint');
-  function syncMode(){for(const [k,b]of Object.entries(modeBtns)){b.className='study-seg-btn'+(k===splitMode?' is-active':'');b.setAttribute('aria-pressed',String(k===splitMode));}days.parentElement.hidden=splitMode!=='days';per.parentElement.hidden=splitMode!=='perDay';updateSplit();}
-  function updateSplit(){const t=Number(total.value);try{if(splitMode==='perDay'){const c=perDay(t,Number(per.value));splitLine.textContent=t+' units ÷ '+per.value+' per day = '+c.length+' days ('+c.join(', ')+')';}else{const n=Number(days.value);if(!Number.isSafeInteger(t)||!Number.isSafeInteger(n)||n<1||t<1||n>t){splitLine.textContent='';return;}splitLine.textContent=t+' units over '+n+' days ('+Array.from({length:n},(_,i)=>Math.floor(t/n)+(i<t%n?1:0)).join(', ')+')';}}catch(e){splitLine.textContent=e.message;}}
+  const days=field('Study days (1–365)',initial.days??5,'number',split),per=field('Units per day',4,'number',split);
+  const rateBox=node('div',undefined,split,'study-rates');node('span','Different amount on specific weekdays (optional)',rateBox,'study-rates-title');const rateRow=node('div',undefined,rateBox,'study-rates-row');
+  const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],rateInputs=WD.map(name=>{const l=node('label',name,rateRow,'study-rate');const e=node('input',undefined,l);e.type='number';e.min='1';e.max='1000';e.inputMode='numeric';e.addEventListener('input',()=>{invalidate();updateSplit();});return e;});
+  const splitLine=node('p','',split,'study-hint'),splitCounts=node('p','',split,'study-hint'),splitEnd=node('p','',split,'study-hint'),splitWarn=node('p','',split,'study-hint study-warn'),splitIgnore=node('p','',split,'study-hint study-warn');
+  const rateMap=()=>Object.fromEntries(rateInputs.flatMap((e,i)=>e.value.trim()===''?[]:[[i,Number(e.value)]]));
+  const checkedDays=()=>checks.flatMap((e,i)=>e.checked?[i]:[]);
+  const perDayPlan=()=>weekdayPlan(Number(total.value),Number(per.value),rateMap(),checkedDays(),start.value);
+  function syncMode(){for(const [k,b]of Object.entries(modeBtns)){b.className='study-seg-btn'+(k===splitMode?' is-active':'');b.setAttribute('aria-pressed',String(k===splitMode));}days.parentElement.hidden=splitMode!=='days';per.parentElement.hidden=splitMode!=='perDay';rateBox.hidden=splitMode!=='perDay';updateSplit();}
+  function updateSplit(){const t=Number(total.value);splitWarn.textContent='';splitIgnore.textContent='';splitEnd.textContent='';splitCounts.textContent='';try{if(splitMode==='perDay'){const r=perDayPlan();splitLine.textContent=t+' units over '+r.counts.length+' days';splitCounts.textContent='Daily: '+r.counts.join(', ');splitEnd.textContent='Ends on '+r.end;splitWarn.textContent=r.clipped?'The last day has only '+r.counts.at(-1)+' of its '+r.lastRate+' units.':'';splitIgnore.textContent=r.ignored.length?'Amounts set on unchecked weekdays are ignored: '+r.ignored.map(i=>WD[i]).join(', ')+'.':'';}else{const n=Number(days.value);if(!Number.isSafeInteger(t)||!Number.isSafeInteger(n)||n<1||t<1||n>t){splitLine.textContent='';return;}splitLine.textContent=t+' units over '+n+' days';splitCounts.textContent='Daily: '+Array.from({length:n},(_,i)=>Math.floor(t/n)+(i<t%n?1:0)).join(', ');}}catch(e){splitLine.textContent=e.message;}}
   const weekdays=node('fieldset',undefined,d,'study-card');node('legend','Study weekdays',weekdays);const dayRow=node('div',undefined,weekdays,'study-weekdays');const checks=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((name,i)=>{const l=node('label',name,dayRow,'study-day-chip');const e=node('input',undefined,l);e.type='checkbox';e.checked=(initial.weekdays??defaultDays(settings)).includes(i);return e;});node('small','Defaults exclude your Settings weekends. No days selected means every day.',weekdays,'study-hint');
   const desc=field('Description (optional)','','textarea');
   const preview=node('section',undefined,undefined,'study-preview');
@@ -163,7 +180,7 @@
    }
    confirmBtn.disabled=sum!==plan.total||used;status.textContent=sum===plan.total?'Review every date and title, then confirm.':sum+' / '+plan.total+' units. '+(sum>plan.total?'Remove '+(sum-plan.total):'Add '+(plan.total-sum))+' before confirming.';
   }
-  button('Generate dates',generateRow,()=>{const t=Number(total.value),counts=splitMode==='perDay'?perDay(t,Number(per.value)):null;plan=normalize({title:title.value,unit:unit.value,plural:plural.value,total:t,days:counts?counts.length:Number(days.value),...(counts?{counts}:{}),first:Number(first.value),start:start.value,weekdays:checks.flatMap((e,i)=>e.checked?[i]:[]),description:desc.value});plan.titles=plan.titles.map((t,i)=>customTitles[i]||t);calMonth=null;calPick=0;skips.hidden=false;render();},'icon-btn study-btn study-primary');
+  button('Generate dates',generateRow,()=>{const t=Number(total.value),counts=splitMode==='perDay'?perDayPlan().counts:null;plan=normalize({title:title.value,unit:unit.value,plural:plural.value,total:t,days:counts?counts.length:Number(days.value),...(counts?{counts}:{}),first:Number(first.value),start:start.value,weekdays:checks.flatMap((e,i)=>e.checked?[i]:[]),description:desc.value});plan.titles=plan.titles.map((t,i)=>customTitles[i]||t);calMonth=null;calPick=0;skips.hidden=false;render();},'icon-btn study-btn study-primary');
   const actions=node('div',undefined,d,'study-actions study-footer');
   syncMode();
   const planId=crypto.randomUUID(),created=new Date().toISOString();

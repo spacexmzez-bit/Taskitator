@@ -5613,3 +5613,26 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .date-filter-range { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .date-filter-range[hidden] { display: none; }
 .project-date-filter { padding: 0 4px 10px; }
+
+/* Edit panel: subtasks header. Wraps on narrow screens; the button always lines up with the checkbox row. */
+.subtask-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 8px; }
+.subtask-head-title { margin: 0; }
+.subtask-head-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; margin-inline-start: auto; }
+.subtask-consecutive { display: flex; align-items: center; gap: 6px; font-size: .75rem; color: var(--text-muted); cursor: pointer; margin: 0; }
+.subtask-consecutive input { width: 14px; height: 14px; margin: 0; cursor: pointer; flex: none; }
+.icon-btn.subtask-add-btn { width: auto; min-height: 34px; padding: 6px 12px; font-size: .8rem; line-height: 1; background: var(--primary); color: #fff; border: none; white-space: nowrap; }
+
+/* Phase 2.1: weekday amounts */
+.study-rates{margin-top:10px}
+.study-rates-title{display:block;font-size:.8rem;color:var(--text-muted);margin-bottom:6px}
+.study-rates-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.study-rate{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:.72rem}
+.study-rate input{width:100%;min-width:0;padding:6px 2px;text-align:center}
+.study-warn:empty{display:none}
+.study-warn{color:var(--danger,#c0392b)}
+.study-rates[hidden]{display:none}
+.study-field[hidden]{display:none}
+.study-rate input{display:block;box-sizing:border-box;min-height:40px;border:1.5px solid var(--border-color);border-radius:8px;background:var(--card-subtle,var(--bg-color));color:var(--text-color);font:inherit}
+.study-rate input:focus{outline:none;border-color:var(--primary)}
+.subtask-head-tools{flex:1 1 100%;justify-content:space-between}
+.subtask-head-tools .subtask-add-btn{margin-inline-start:auto}

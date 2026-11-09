@@ -1240,15 +1240,15 @@
 
         <!-- Subtasks Section with Inline Rapid-Entry Input & Consecutive Auto-Increment -->
         <div class="form-group" style="margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <label style="margin: 0;">Subtasks Under This Task</label>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <label class="pro-consecutive-label" style="display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--text-muted); cursor: pointer;">
-                        <input type="checkbox" id="detailConsecutiveToggle" style="width: 14px; height: 14px; cursor: pointer;">
+            <div class="subtask-head">
+                <label class="subtask-head-title">Subtasks Under This Task</label>
+                <div class="subtask-head-tools">
+                    <label class="pro-consecutive-label subtask-consecutive">
+                        <input type="checkbox" id="detailConsecutiveToggle">
                         <span>Consecutive {num==X}</span>
                         <span class="pro-feature-pill">PRO</span>
                     </label>
-                    <button type="button" class="icon-btn btn-primary" id="openChildAddModalBtn" style="padding: 4px 10px; font-size: 0.8rem; background: var(--primary); color: #fff; border: none;">+ Add Subtask</button>
+                    <button type="button" class="icon-btn btn-primary subtask-add-btn" id="openChildAddModalBtn">+ Add Subtask</button>
                 </div>
             </div>
 

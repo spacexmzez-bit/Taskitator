@@ -39,8 +39,7 @@
         const anim = raw.anim && typeof raw.anim === 'object' ? raw.anim : {};
         out.anim = {};
         for (const k of ANIM_KEYS) out.anim[k] = typeof anim[k] === 'boolean' ? anim[k] : base.anim[k];
-        const speed = Number(raw.bird_speed);
-        out.bird_speed = Number.isInteger(speed) && speed >= 1 && speed <= 10 ? speed : base.bird_speed;
+        out.bird_speed = base.bird_speed;   // fixed at 7: any stored value is ignored
         out.notice = typeof raw.notice === 'string' && reg.byId(raw.notice) ? raw.notice : null;
         return out;
     }
@@ -150,14 +149,6 @@
             if (!ANIM_KEYS.includes(key)) return false;
             const app = read();
             app.anim[key] = Boolean(on);
-            save(app); apply(app); emit(app);
-            return true;
-        },
-        setBirdSpeed(n) {
-            const app = read();
-            const v = Math.round(Number(n));
-            if (!(v >= 1 && v <= 10)) return false;
-            app.bird_speed = v;
             save(app); apply(app); emit(app);
             return true;
         },

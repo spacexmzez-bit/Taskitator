@@ -106,7 +106,7 @@ test('appearance storage validates, migrates and falls back to blue', () => {
     const n = A.normalize({ theme: 'purple', effective: 9, anim: { bird: 'yes', clouds: false }, bird_speed: 99, extra: 1 });
     assert.equal(n.theme, 'blue'); assert.equal(n.effective, 'blue');
     assert.equal(n.anim.clouds, false); assert.equal(typeof n.anim.bird, 'boolean');
-    assert.equal(n.bird_speed, 7); assert.equal(n.extra, undefined); assert.equal(n.v, 1);
+    assert.equal(n.bird_speed, 7); assert.equal(A.normalize({ bird_speed: 2 }).bird_speed, 7); assert.equal(A.setBirdSpeed, undefined); assert.equal(n.extra, undefined); assert.equal(n.v, 1);
 });
 
 test('low-memory devices start with motion effects off; animals stay on', () => {

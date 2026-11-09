@@ -69,30 +69,18 @@
     }
 
     const toggles = [...document.querySelectorAll('#appearanceCard input[data-fx]')];
-    const speed = document.getElementById('fx-bird-speed');
-    const readout = document.getElementById('fxBirdSpeedReadout');
     function renderAppearance() {
         const state = app.read();
         toggles.forEach(t => {
             t.checked = Boolean(state.anim[t.dataset.fx]);
             if (t.dataset.fx !== 'reduce') t.closest('.setting-row')?.classList.toggle('is-muted', state.anim.reduce);
         });
-        if (speed) { speed.value = String(state.bird_speed); speed.disabled = state.anim.reduce || !state.anim.bird; }
-        if (readout) readout.textContent = String(state.bird_speed);
     }
     toggles.forEach(t => t.addEventListener('change', () => {
         app.setAnim(t.dataset.fx, t.checked);
         fx()?.tap?.();
         renderAppearance();
     }));
-    if (speed) {
-        speed.addEventListener('input', () => { if (readout) readout.textContent = speed.value; });
-        speed.addEventListener('change', () => {
-            app.setBirdSpeed(Number(speed.value));
-            renderAppearance();
-            window.TaskitatorNature?.bird(true);   // preview the new speed
-        });
-    }
 
     // Language + time format (i18n.js, localStorage 'taskitator_lang'). Device only, never synced.
     const i18n = window.TaskitatorI18n;

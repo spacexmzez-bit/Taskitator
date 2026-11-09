@@ -18,3 +18,16 @@ test('study: calculator uses precedence and rejects bad input without eval',()=>
  assert.equal(C.calculate('2+3×4'),14);assert.equal(C.calculate('20÷6'),3.3333333333);assert.equal(C.calculate('−5+2'),-3);assert.equal(C.calculate('10−2−3'),5);assert.equal(C.calculate('0.1+0.2'),0.3);
  for(const bad of ['','5+','×5','5÷0','1++2'])assert.throws(()=>C.calculate(bad));
 });
+test('study: weekday rates (units per day mode)',()=>{
+ const all=[0,1,2,3,4,5,6];
+ let r=C.weekdayPlan(20,3,{0:5},all,'2026-11-08');assert.deepEqual(r.counts,[5,3,3,3,3,3]);assert.equal(r.end,'2026-11-13');assert.equal(r.clipped,false);
+ r=C.weekdayPlan(20,3,{0:5},[0,1,2,3,4,6],'2026-11-08');assert.deepEqual(r.dates,['2026-11-08','2026-11-09','2026-11-10','2026-11-11','2026-11-12','2026-11-14']);
+ r=C.weekdayPlan(22,3,{0:5},[0,1,2,3,4,6],'2026-11-08');assert.deepEqual(r.counts,[5,3,3,3,3,3,2]);assert.equal(r.clipped,true);assert.equal(r.lastRate,5);assert.equal(r.end,'2026-11-15');
+ r=C.weekdayPlan(10,3,{5:9},[0,1,2,3,4],'2026-11-08');assert.deepEqual(r.ignored,[5]);assert.deepEqual(r.counts,[3,3,3,1]);
+ assert.deepEqual(C.weekdayPlan(20,6,{},[],'2026-11-08').counts,C.perDay(20,6));
+ assert.deepEqual(C.weekdayPlan(20,3,{0:'',1:null},all,'2026-11-08').counts,C.weekdayPlan(20,3,{},all,'2026-11-08').counts);
+ for(const bad of [{0:0},{0:2.5},{0:1001},{9:3}])assert.throws(()=>C.weekdayPlan(20,3,bad,all,'2026-11-08'));
+ assert.throws(()=>C.weekdayPlan(1000,1,{},[0],'2026-11-08'),/365/);
+ const plan=C.normalize({title:'M',total:20,days:6,counts:C.weekdayPlan(20,3,{0:5},[0,1,2,3,4,6],'2026-11-08').counts,weekdays:[0,1,2,3,4,6],start:'2026-11-08'});
+ assert.deepEqual(C.rows(plan).map(x=>x.date).at(-1),'2026-11-14');assert.deepEqual(C.rows(plan).map(x=>x.count),[5,3,3,3,3,3]);
+});
