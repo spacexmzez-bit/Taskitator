@@ -68,7 +68,7 @@
             font-size: 0.72rem;
             font-weight: 800;
             cursor: pointer;
-            margin-left: 6px;
+            margin-inline-start: 6px;
             vertical-align: middle;
             line-height: 1;
         }
@@ -123,7 +123,7 @@
         .dump-active-dot {
             position: absolute;
             top: 2px;
-            right: 2px;
+            inset-inline-end: 2px;
             width: 5px;
             height: 5px;
             border-radius: 50%;
@@ -285,8 +285,11 @@
 <link rel="icon" type="image/svg+xml" href="image/nature_sprites/favicon.svg">
 <link rel="stylesheet" href="palettes.css">
 <link rel="stylesheet" href="family-nature.css">
+<link rel="stylesheet" href="rtl.css">
 <script src="registry.js"></script>
 <script src="theme-boot.js"></script>
+<script src="i18n.js"></script>
+<script src="locales/ar.js"></script>
 <script defer src="icons.js"></script>
 <script defer src="nature.js"></script>
 </head>
@@ -304,7 +307,7 @@
         <a href="components.html?view=stats"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-stats"></use></svg> Stats</a>
         <a href="components.html?view=trash"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-trash"></use></svg> Trash</a>
         <a href="#" data-open-drafts><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-drafts"></use></svg> Drafts<span data-draft-count></span></a>
-        <a href="components.html?view=universe">🌌 Universe</a>
+        <a href="components.html?view=universe"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-universe"></use></svg> Universe</a>
         <a href="sleep.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-sleep"></use></svg> Sleep Lock</a>
         <a href="help.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-help"></use></svg> Help</a>
         <a href="settings.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-settings"></use></svg> Settings</a>
@@ -678,8 +681,10 @@
                 Plan up to 3 non-overlapping breaks (≤ <span data-allowance-total>3h</span> total) in one 10-minute window.
             </p>
             <div id="breakRowsContainer" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px;"></div>
+            <div id="breakReservedBox" class="break-reserved"></div>
             <div class="break-edit-actions">
                 <button id="addBreakRowModalBtn" type="button" class="icon-btn break-action-btn">+ Add Break</button>
+                <button id="addReservedBreakBtn" type="button" class="icon-btn break-action-btn" style="display: none;">+ Add Reserved</button>
                 <button id="saveBreaksModalBtn" type="button" class="icon-btn btn-primary btn-solid-primary break-action-btn">Save schedule</button>
             </div>
             <button type="button" class="icon-btn btn-block break-lock-btn" data-break-lock="scheduled" hidden><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg> Lock Scheduled for Today</button>
@@ -843,7 +848,7 @@
                     <input type="checkbox" id="strictPrereqCheckbox">
                     <span>Require all subtasks first (Irreversible Shield)</span>
                 </label>
-                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-inline-start: 28px;">
                     Prevents completing this task until all subtasks beneath it are completely finished.
                 </small>
             </div>
@@ -854,7 +859,7 @@
                     <input type="checkbox" id="bonusTaskCheckbox">
                     <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus Subtask (Excluded from Shield)</span>
                 </label>
-                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-inline-start: 28px;">
                     Bonus items won't block the parent task from completion if time or energy runs out.
                 </small>
             </div>
@@ -867,14 +872,14 @@
                     <span>Dynamic Priority</span>
                     <span class="pro-feature-pill">PRO</span>
                 </label>
-                <div id="createDynamicPriorityOptions" style="display: none; padding-left: 28px; margin-top: 6px;">
+                <div id="createDynamicPriorityOptions" style="display: none; padding-inline-start: 28px; margin-top: 6px;">
                     <label for="createDynamicPriorityTarget" style="font-size: 0.78rem; color: var(--text-muted);">While only bonus work remains, use priority:</label>
                     <select id="createDynamicPriorityTarget" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.85rem;"></select>
                 </div>
-                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-inline-start: 28px;">
                     Lowers this task's priority while only bonus subtasks remain, and restores it automatically when required work becomes unfinished.
                 </small>
-                <small id="createDynamicPriorityNotice" class="pro-consecutive-notice" style="display: none; margin-left: 28px;" role="status" aria-live="polite"></small>
+                <small id="createDynamicPriorityNotice" class="pro-consecutive-notice" style="display: none; margin-inline-start: 28px;" role="status" aria-live="polite"></small>
             </div>
 
             <!-- AI Proof Verification Option -->
@@ -1048,7 +1053,7 @@
                 <input type="checkbox" id="editStrictPrereqCheckbox">
                 <span>Require all subtasks first (Irreversible Shield)</span>
             </label>
-            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-inline-start: 28px;">
                 Prevents completing this task until all subtasks beneath it are completely finished.
             </small>
         </div>
@@ -1059,7 +1064,7 @@
                 <input type="checkbox" id="editBonusTaskCheckbox">
                 <span><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus Subtask (Excluded from Shield)</span>
             </label>
-            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-inline-start: 28px;">
                 Bonus items won't block the parent task from completion if time or energy runs out.
             </small>
         </div>
@@ -1071,14 +1076,14 @@
                 <span>Dynamic Priority</span>
                 <span class="pro-feature-pill">PRO</span>
             </label>
-            <div id="editDynamicPriorityOptions" style="display: none; padding-left: 28px; margin-top: 6px;">
+            <div id="editDynamicPriorityOptions" style="display: none; padding-inline-start: 28px; margin-top: 6px;">
                 <label for="editDynamicPriorityTarget" style="font-size: 0.78rem; color: var(--text-muted);">While only bonus work remains, use priority:</label>
                 <select id="editDynamicPriorityTarget" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.85rem;"></select>
             </div>
-            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-left: 28px;">
+            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-inline-start: 28px;">
                 Lowers this task's priority while only bonus subtasks remain, and restores it automatically when required work becomes unfinished.
             </small>
-            <small id="editDynamicPriorityNotice" class="pro-consecutive-notice" style="display: none; margin-left: 28px;" role="status" aria-live="polite"></small>
+            <small id="editDynamicPriorityNotice" class="pro-consecutive-notice" style="display: none; margin-inline-start: 28px;" role="status" aria-live="polite"></small>
         </div>
 
         <!-- AI Proof Verification in Details -->

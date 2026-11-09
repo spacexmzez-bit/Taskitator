@@ -440,13 +440,54 @@ test('phone tokens can read status only, rotate, revoke, and survive browser ses
         assert.equal((await f.call(path, phone, method)).status, 403);
     }
     assert.equal((await f.call('/auth/phone', a.token)).body.token, undefined);
+    // A second token is another device: the first keeps working.
     const newPhone = (await f.call('/auth/phone', a.token, 'POST')).body.token;
-    assert.equal((await f.call('/status', phone)).status, 401);
+    assert.equal((await f.call('/status', phone)).status, 200);
     f.revoke(); assert.equal((await f.call('/status', newPhone)).status, 200);
     // New fixture's provider state is active, but storage and phone record stay the same.
     fixture();
     assert.equal((await f.call('/auth/phone', a.token, 'DELETE')).status, 200);
     assert.equal((await f.call('/status', newPhone)).status, 401);
+    assert.equal((await f.call('/status', phone)).status, 401);
+});
+test('several phone devices: labels, 3 free / 12 Pro, latest 9 revoked while Pro is off and restored on renewal', async () => {
+    const f = fixture(), a = await create(f); Object.assign(f.env, testEnv);
+    const add = async label => (await f.call('/auth/phone', a.token, 'POST', label ? { label } : undefined));
+    const tokens = [];
+    for (const label of ['Pixel', 'Old phone', '<b>Tablet</b>']) { const r = await add(label); assert.equal(r.status, 200); tokens.push(r.body.token); }
+    assert.equal((await add('Fourth')).status, 409, 'free accounts get 3 devices');
+    const listed = (await f.call('/auth/phone', a.token)).body;
+    assert.deepEqual(listed.devices.map(d => [d.label, d.status]), [['Pixel', 'active'], ['Old phone', 'active'], ['bTablet/b', 'active']]);
+    assert.equal(JSON.stringify(listed).includes(tokens[0]), false, 'a token is never listed');
+    await f.storage.put('pro:entitlement:user_A', await activeLicense('user_A'));
+    for (let i = 4; i <= 12; i++) { const r = await add('Device ' + i); assert.equal(r.status, 200); tokens.push(r.body.token); }
+    assert.equal((await add('Thirteenth')).status, 409, 'Pro accounts get 12 devices');
+    for (const t of tokens) assert.equal((await f.call('/status', t)).status, 200);
+    // Pro ends: the first 3 stay, the latest 9 are revoked, and nothing is deleted.
+    const e = await f.storage.get('pro:entitlement:user_A'); await f.storage.put('pro:entitlement:user_A', { ...e, status: 'expired' });
+    const after = (await f.call('/auth/phone', a.token)).body.devices;
+    assert.deepEqual(after.map(d => d.status), [...Array(3).fill('active'), ...Array(9).fill('revoked')]);
+    for (const [i, t] of tokens.entries()) assert.equal((await f.call('/status', t)).status, i < 3 ? 200 : 401, 'device ' + i);
+    assert.equal((await add('More')).status, 409);
+    await f.storage.put('pro:entitlement:user_A', e);
+    for (const t of tokens) assert.equal((await f.call('/status', t)).status, 200, 'renewal restores them');
+    // One device can be removed; its token stops, the others stay.
+    const gone = (await f.call('/auth/phone?device=' + after[1].id, a.token, 'DELETE')).body;
+    assert.equal(gone.devices.length, 11);
+    assert.equal((await f.call('/status', tokens[1])).status, 401); assert.equal((await f.call('/status', tokens[0])).status, 200);
+    assert.equal((await f.call('/auth/phone?device=dev_missing', a.token, 'DELETE')).status, 404);
+});
+test('an account with one pre-update phone token keeps it as the device "Phone"', async () => {
+    const f = fixture(), a = await create(f);
+    const token = 'tkp_' + 'a'.repeat(64), digest = await sha256(token);
+    const link = await f.storage.get('identity:user_A');
+    await f.storage.put('phone-owner:' + encodeURIComponent(link.user), { digest, created_at: '2026-01-01T00:00:00.000Z' });
+    await f.storage.put('phone:' + digest, { user: link.user, scope: 'status' });
+    assert.equal((await f.call('/status', token)).status, 200);
+    assert.deepEqual((await f.call('/auth/phone', a.token)).body.devices.map(d => [d.label, d.status]), [['Phone', 'active']]);
+    assert.equal((await f.call('/auth/phone', a.token, 'POST', { label: 'Second' })).status, 200);
+    assert.equal((await f.call('/status', token)).status, 200);
+    assert.equal(await f.storage.get('phone-owner:' + encodeURIComponent(link.user)), undefined, 'migrated into the device list');
 });
 test('legacy migration requires correct password, owner-approved verified email, and an open deadline', async () => {
     const f = fixture(), token = await jwt();

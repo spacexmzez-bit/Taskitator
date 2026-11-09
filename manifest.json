@@ -1,6 +1,8 @@
 {
   "name": "Taskitator",
   "short_name": "Taskitator",
+  "lang": "en",
+  "dir": "auto",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#0a1119",

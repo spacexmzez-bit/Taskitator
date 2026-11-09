@@ -29,7 +29,7 @@
             'palm': 'nt-e-palm', 'sprout': 'nt-e-sprout', 'growth': 'nt-e-sprout2', 'leaves': 'nt-e-leaves', 'trash': 'nt-e-leaves',
             'butterfly': 'nt-e-butterfly', 'bee': 'nt-e-bee', 'mushroom': 'nt-e-mushroom', 'coffee': 'nt-x-coffee',
             'earth': 'nt-i-earth', 'flame': 'nt-i-flame', 'dove': 'nt-i-dove', 'tent': 'nt-i-tent', 'save': 'nt-e-inbox',
-            'search': 'nt-e-sliders', 'stats': 'nt-e-sprout2', 'timer': 'nt-x-coffee', 'help': 'nt-e-book',
+            'search': 'nt-e-sliders', 'stats': 'nt-e-sprout2', 'timer': 'nt-x-timer', 'help': 'nt-e-book',
             // brand (body = currentColor, swash = --tk-logo-accent)
             'brand-hybrid': 'nt-brand-hybrid', 'brand-mascot': 'nt-brand-mascot', 'brand-letter': 'nt-brand-letter', 'brand-text': 'nt-brand-text'
         }
@@ -72,6 +72,12 @@
     function glyph(value, cls) {
         return has(value) ? node(value, cls) : document.createTextNode(value == null ? '' : String(value));
     }
+    // Random but stable: the same task always gets the same animal (hash of its id), so re-renders never reshuffle.
+    function animalForId(id) {
+        let h = 2166136261;
+        for (const c of String(id ?? '')) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
+        return ANIMALS[(h >>> 0) % ANIMALS.length];
+    }
     function animalFor(rank) {
         const n = Number.isInteger(rank) && rank > 0 ? rank - 1 : 0;
         return ANIMALS[n % ANIMALS.length];
@@ -91,7 +97,7 @@
             if (p && row) row.style.setProperty('--pc', p.color);
             if (checkBtn) {
                 if (task?.ai_locked) checkBtn.classList.add('is-ai-locked');
-                if (!checkBtn.querySelector('.tk-animal')) checkBtn.appendChild(animal(Number(p?.rank) || 1));
+                if (!checkBtn.querySelector('.tk-animal')) checkBtn.appendChild(animal(task?.id != null ? animalForId(task.id) : (Number(p?.rank) || 1)));
             }
         } catch { /* cosmetic only */ }
     }
@@ -139,5 +145,5 @@
     }
     sprite();
 
-    window.TaskitatorIcons = Object.freeze({ MAPS, ANIMALS, BIRD_FRAMES, icon, node, glyph, has, symbol, animal, animalFor, decorateTask, ready: () => sprite() });
+    window.TaskitatorIcons = Object.freeze({ MAPS, ANIMALS, BIRD_FRAMES, icon, node, glyph, has, symbol, animal, animalFor, animalForId, decorateTask, ready: () => sprite() });
 })();

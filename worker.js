@@ -354,6 +354,22 @@ const decodeAuthB64 = value => {
 };
 export const sha256 = async value => Array.from(new Uint8Array(await crypto.subtle.digest(
     'SHA-256', new TextEncoder().encode(value))), byte => byte.toString(16).padStart(2, '0')).join('');
+// ---- Phone devices: several status-only tokens per account ---------------------------------------
+// Free accounts may have 3 devices, Pro accounts 12. Devices are kept in creation order; only the first
+// `limit` of them work. When Pro ends, the latest 9 read as revoked (their tokens stop working) and work
+// again if Pro returns. The list holds a label and a digest only; a token is shown once, when created.
+export const PHONE_LIMITS = Object.freeze({ free: 3, pro: 12 });
+const phoneOwnerKey = user => 'phone-owner:' + encodeURIComponent(user);
+const phoneDevicesKey = user => 'phone-devices:' + encodeURIComponent(user);
+// An account from before multi-device support has one token under phone-owner; it reads as the device "Phone".
+async function readPhoneDevices(store, user) {
+    const doc = await store.get(phoneDevicesKey(user));
+    if (doc && Array.isArray(doc.devices)) return { owner: doc.owner || null, devices: doc.devices };
+    const legacy = await store.get(phoneOwnerKey(user));
+    return { owner: null, devices: legacy ? [{ id: 'dev_' + String(legacy.digest).slice(0, 16), label: 'Phone', digest: legacy.digest, created_at: legacy.created_at }] : [] };
+}
+const cleanDeviceLabel = value => String(value ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 24);
+
 export function randomPhoneToken() {
     const bytes = crypto.getRandomValues(new Uint8Array(32));
     return 'tkp_' + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
@@ -651,12 +667,12 @@ export class AccountDeletion {
                 try { approvalRemains=Object.hasOwn(JSON.parse(this.env.LEGACY_MIGRATION_OWNERS || '{}'),link.user); }
                 catch { approvalRemains=true; }
             }
-            const active=await tx.get('phone-owner:'+encodeURIComponent(link.user));
-            if (active) {
+            const phones=await readPhoneDevices(tx,link.user);
+            for (const device of phones.devices) {
                 // A recovery record contains only a digest-keyed, status-only expiry.
-                await tx.put('phone:'+active.digest,{scope:'deleted-unlock',expires:recoveryUntil});
-                await tx.delete('phone-owner:'+encodeURIComponent(link.user));
+                await tx.put('phone:'+device.digest,{scope:'deleted-unlock',expires:recoveryUntil});
             }
+            await tx.delete([phoneOwnerKey(link.user),phoneDevicesKey(link.user)]);
             current.status='consumed'; await tx.put(proofKey,current);
             await tx.put(markerKey,{status:'pending',receipt:body.receipt,phone_recovery_until:recoveryUntil});
             if (meta.legacy_disabled) await tx.put('deleted-legacy:'+await sha256(link.user),{expires:recoveryUntil});
@@ -1881,26 +1897,57 @@ export class TaskitatorSync {
         return json({ success: true, account: await this.accountFor(identity) });
     }
 
-    async phoneAccess(request, user) {
-        const key = 'phone-owner:' + encodeURIComponent(user);
-        if (request.method === 'GET') {
-            const current = await this.storage.get(key);
-            return json({ active: Boolean(current), created_at: current?.created_at || null });
+    // Devices allowed right now: 12 with active Pro, otherwise 3. An unknown (stale) licence is refreshed once.
+    async phoneLimit(owner) {
+        if (!owner || !this.pro) return PHONE_LIMITS.free;
+        let entitlement = await this.storage.get('pro:entitlement:' + owner), plan = planOf(entitlement);
+        if (plan === 'unknown') {
+            try { await this.pro.licenses?.resolve(owner); entitlement = await this.storage.get('pro:entitlement:' + owner); plan = planOf(entitlement); } catch { /* keep the free limit */ }
         }
-        await this.rateLimit(request, 'phone-admin', 10);
-        const token = request.method === 'POST' ? randomPhoneToken() : null;
-        const digest = token ? await sha256(token) : null;
+        return plan === 'pro' ? PHONE_LIMITS.pro : PHONE_LIMITS.free;
+    }
+
+    async phoneAccess(request, user, identity) {
+        const limit = await this.phoneLimit(identity?.userId);
+        const view = devices => devices.map((d, i) => ({ id: d.id, label: d.label, status: i < limit ? 'active' : 'revoked', created_at: d.created_at }));
+        if (request.method === 'GET') {
+            const devices = view((await readPhoneDevices(this.storage, user)).devices);
+            const first = devices.find(d => d.status === 'active');
+            return json({ active: Boolean(first), created_at: first?.created_at || null, devices, limit, limits: PHONE_LIMITS });
+        }
+        await this.rateLimit(request, 'phone-admin', 30);
         const created_at = new Date().toISOString();
-        await this.storage.transaction(async tx => {
-            const previous = await tx.get(key);
-            if (previous) await tx.delete('phone:' + previous.digest);
-            await tx.delete(key);
-            if (token) {
+        if (request.method === 'POST') {
+            let body = {};
+            try { body = await readJson(request, 1024); } catch { body = {}; }
+            const token = randomPhoneToken(), digest = await sha256(token);
+            return await this.storage.transaction(async tx => {
+                const doc = await readPhoneDevices(tx, user);
+                if (doc.devices.length >= limit) throw new HTTPError(409, limit >= PHONE_LIMITS.pro
+                    ? `You can connect up to ${PHONE_LIMITS.pro} devices. Remove one first.`
+                    : `You can connect up to ${PHONE_LIMITS.free} devices without Pro. Remove one first, or upgrade for up to ${PHONE_LIMITS.pro}.`);
+                const label = cleanDeviceLabel(body.label) || `Phone ${doc.devices.length + 1}`;
+                const device = { id: 'dev_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16), label, digest, created_at };
+                doc.devices.push(device);
+                await tx.put(phoneDevicesKey(user), { owner: identity.userId, devices: doc.devices });
+                await tx.delete(phoneOwnerKey(user));
                 await tx.put('phone:' + digest, { user, scope: 'status' });
-                await tx.put(key, { digest, created_at });
-            }
+                return json({ success: true, token, created_at, device: { id: device.id, label, status: 'active', created_at }, devices: view(doc.devices), limit });
+            });
+        }
+        // DELETE: one device (?device=id), or every device when no id is given.
+        const id = new URL(request.url).searchParams.get('device');
+        return await this.storage.transaction(async tx => {
+            const doc = await readPhoneDevices(tx, user);
+            const gone = id ? doc.devices.filter(d => d.id === id) : doc.devices;
+            if (id && !gone.length) throw new HTTPError(404, 'That device is no longer connected.');
+            for (const d of gone) await tx.delete('phone:' + d.digest);
+            const rest = doc.devices.filter(d => !gone.includes(d));
+            if (rest.length) await tx.put(phoneDevicesKey(user), { owner: identity.userId, devices: rest });
+            else await tx.delete(phoneDevicesKey(user));
+            await tx.delete(phoneOwnerKey(user));
+            return json({ success: true, devices: view(rest), limit });
         });
-        return json({ success: true, ...(token ? { token, created_at } : {}) });
     }
 
     async fetch(request) {
@@ -1949,7 +1996,8 @@ export class TaskitatorSync {
             let user, identity;
             if (/^tkp_[a-f0-9]{64}$/.test(token)) {
                 if (!status) throw new HTTPError(403, 'Phone tokens can only read unlock status.');
-                const access = await this.storage.get('phone:' + await sha256(token));
+                const tokenDigest = await sha256(token);
+                const access = await this.storage.get('phone:' + tokenDigest);
                 if (access?.scope === 'deleted-unlock' && access.expires > Date.now()) {
                     return url.searchParams.get('format') === 'text'
                         ? new Response(statusText({device_unlocked:true,sleep:false}), {headers:{...CORS,'Content-Type':'text/plain; charset=utf-8'}})
@@ -1958,6 +2006,11 @@ export class TaskitatorSync {
                 }
                 if (!access || access.scope !== 'status') throw new HTTPError(401, 'Phone access was revoked or is invalid.');
                 user = access.user;
+                // The device must still be listed and inside the plan's limit (the latest ones stop when Pro ends).
+                const phones = await readPhoneDevices(this.storage, access.user);
+                const slot = phones.devices.findIndex(d => d.digest === tokenDigest);
+                if (slot < 0 || (slot >= PHONE_LIMITS.free && slot >= await this.phoneLimit(phones.owner)))
+                    throw new HTTPError(401, 'Phone access was revoked or is invalid.');
             } else {
                 identity = await verifySession(request, this.env, token);
                 if (universeRoute) {
@@ -2057,7 +2110,7 @@ export class TaskitatorSync {
                 if (me) return json({ account });
                 if (!account) throw new HTTPError(403, 'Connect your Taskitator account on the login page first.');
                 user = account.user;
-                if (phoneAdmin) return await this.phoneAccess(request, user);
+                if (phoneAdmin) return await this.phoneAccess(request, user, identity);
                 if (keyRoute) {
                     if (path === '/ai/keys' && method === 'GET') return json({...await this.vault.metadata(identity,url.searchParams.get('provider')||'gemini'),hosted:await this.ai.hostedFor(identity)});
                     const body=await readJson(request,path === '/ai/generate' ? MAX_BODY_BYTES : 65536);

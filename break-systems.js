@@ -14,7 +14,11 @@ export const BREAKS = Object.freeze({
     window: 600000,          // Scheduled planning window (10 minutes)
     closing: 6 * 3600000,    // Scheduled planning closes 6 hours before the day ends
     minDay: 20 * 3600000,    // shortest logical day a settings change can produce
-    retention: 90            // days of records kept for history and statistics
+    retention: 90,           // days of records kept for history and statistics
+    reservedMax: 2,          // Reserved breaks per day (a Scheduled sub-feature)
+    reservedMin: 10,         // shortest Reserved break, in minutes
+    reservedStep: 5,
+    reservedWindowMin: 5     // shortest start window, in minutes
 });
 export const STRICT = Object.freeze({
     flexMin: 30, flexMax: 60,                  // Flexible Strict Mode minimum (minutes)
@@ -47,7 +51,19 @@ function blank(date, zone, hour, start, end, now) {
 }
 function lock(r, system, source, now) { if (!r.system) { r.system = system; r.locked_at = now; r.lock_source = source; } }
 const scheduledLocked = r => r.system === 'scheduled' && (r.v !== 2 || ['lock', 'strict', 'migration'].includes(r.lock_source));
-const scheduledMinutes = r => r.scheduled.breaks.reduce((sum, b) => { const t = core().interval(b, bounds(r)); return sum + (t.endTime - t.startTime) / MIN; }, 0);
+// Reserved breaks (a Scheduled sub-feature): the user reserves an amount of allowance and a window in
+// which the break may START. The whole amount is spent whether the break is used in full, cut short by a
+// Scheduled break, or never started, so it always counts against the allowance.
+const reservedOf = r => Array.isArray(r.scheduled?.reserved) ? r.scheduled.reserved : [];
+const reservedTotal = r => reservedOf(r).reduce((sum, x) => sum + x.minutes, 0);
+const reservedWindow = (r, x) => core().interval({ start: x.from, end: x.to }, bounds(r));
+const reservedRunning = (r, now) => reservedOf(r).some(x => x.started_at && now >= x.started_at && now < x.ends_at);
+const scheduledMinutes = r => r.scheduled.breaks.reduce((sum, b) => { const t = core().interval(b, bounds(r)); return sum + (t.endTime - t.startTime) / MIN; }, 0) + reservedTotal(r);
+function reservedState(r, x, now) {
+    if (x.started_at) return now < x.ends_at ? 'active' : 'done';
+    const w = reservedWindow(r, x);
+    return now < w.startTime ? 'pending' : now < w.endTime ? 'open' : 'missed';
+}
 const planningOpen = (r, now) => !!r.planning && now < r.planning.deadline;
 
 // Existing schedules saved before this update stay Scheduled for their day. A saved
@@ -201,6 +217,7 @@ function scheduledActive(r, now) {
     return r.scheduled.breaks.some(b => { const t = core().interval(b, bounds(r)); return now >= t.startTime && now < t.endTime; });
 }
 const flexibleActive = (r, now) => !!r.flexible.active && now >= r.flexible.active.started_at && now < r.flexible.active.planned_end;
+const anyBreak = (r, now) => scheduledActive(r, now) || flexibleActive(r, now) || reservedRunning(r, now);
 
 // The synced snapshot keeps a read-only copy so statistics and older views still work.
 export function mirror(r, now) {
@@ -208,9 +225,38 @@ export function mirror(r, now) {
     const flexible = [...r.flexible.sessions.map(s => [s.started_at, s.ended_at]),
         ...(r.flexible.active ? [[r.flexible.active.started_at, r.flexible.active.planned_end]] : [])]
         .map(([s, e]) => ({ start: clock(s, zone), end: clock(e, zone), start_at: iso(s), end_at: iso(e), kind: 'flexible' }));
+    // A reserved break appears (as a normal break) only once the user has started it, for its real length.
+    for (const x of reservedOf(r)) if (x.started_at)
+        flexible.push({ start: clock(x.started_at, zone), end: clock(x.ends_at, zone), start_at: iso(x.started_at), end_at: iso(x.ends_at), kind: 'reserved' });
     return { date: r.date, timezone: zone, day_start_hour: r.day_start_hour, cycle_start: r.cycle_start, cycle_end: r.cycle_end,
         server_managed: true, system: r.system, window_started_at: r.planning?.started_at ?? null, locked: !planningOpen(r, now),
         breaks: [...r.scheduled.breaks, ...flexible] };
+}
+
+// Validate the Reserved breaks sent with a schedule save. A window is the clock range in which the break may
+// START; it can never overlap a Scheduled break or another window, and the amounts fit the allowance.
+export function parseReserved(list, r, scheduled, limit, used, now) {
+    if (list === undefined || list === null) return [];
+    if (!Array.isArray(list) || list.length > BREAKS.reservedMax) throw fail(400, 'INVALID_RESERVED', `Add at most ${BREAKS.reservedMax} reserved breaks.`);
+    const b = bounds(r), out = [], windows = [];
+    for (const x of list) {
+        const minutes = x?.minutes;
+        if (!Number.isInteger(minutes) || minutes < BREAKS.reservedMin || minutes % BREAKS.reservedStep)
+            throw fail(400, 'INVALID_RESERVED', `A reserved break lasts at least ${BREAKS.reservedMin} minutes, in ${BREAKS.reservedStep}-minute steps.`);
+        const from = typeof x.from === 'string' ? x.from.slice(0, 5) : '', to = typeof x.to === 'string' ? x.to.slice(0, 5) : '';
+        if (!/^\d{2}:\d{2}$/.test(from) || !/^\d{2}:\d{2}$/.test(to)) throw fail(400, 'INVALID_RESERVED', 'Choose when each reserved break may start.');
+        const w = core().interval({ start: from, end: to }, b);
+        if (!Number.isFinite(w.startTime) || !Number.isFinite(w.endTime) || w.endTime - w.startTime < BREAKS.reservedWindowMin * MIN)
+            throw fail(400, 'INVALID_RESERVED', `A start window must be at least ${BREAKS.reservedWindowMin} minutes long.`);
+        if (w.startTime < r.cycle_start || w.endTime > r.cycle_end) throw fail(400, 'INVALID_RESERVED', 'A start window must fall inside today’s cycle.');
+        if (w.endTime <= now) throw fail(400, 'INVALID_RESERVED', 'A start window cannot already be over.');
+        if (scheduled.some(t => t.startTime < w.endTime && t.endTime > w.startTime))
+            throw fail(409, 'RESERVED_CONFLICT', 'A reserved start window cannot overlap a Scheduled break.');
+        if (windows.some(o => o.startTime < w.endTime && o.endTime > w.startTime)) throw fail(409, 'RESERVED_CONFLICT', 'Reserved start windows cannot overlap each other.');
+        windows.push(w);
+        out.push({ id: 'rsv_' + crypto.randomUUID(), minutes, from, to, started_at: null, ends_at: null, granted: null, clipped: false });
+    }
+    return out;
 }
 
 export class BreakSystems {
@@ -266,6 +312,7 @@ export class BreakSystems {
         let flexReason = '';
         if (scheduledLocked(r)) flexReason = 'Scheduled breaks are locked for today, so Flexible breaks are unavailable.';
         else if (a) flexReason = 'A Flexible break is already running.';
+        else if (reservedRunning(r, now)) flexReason = 'A reserved break is running.';
         else if (gap) flexReason = `Flexible Strict Mode needs ${minimum} minutes between breaks. You can start again in ${Math.ceil((gap - now) / MIN)} min.`;
         else if (remaining < minimum) flexReason = `Less than ${minimum} minutes of today’s break allowance remain.`;
         else if (untilReset < minimum * MIN) flexReason = `Less than ${minimum} minutes remain before the day resets.`;
@@ -287,7 +334,12 @@ export class BreakSystems {
             },
             strict_today: strict ? { covered: strict.covered, weekday: strict.weekday, ...(strict.covered ? { deadline: strict.deadline, mode: strict.mode,
                 breaks: strict.breaks, pending: !r.scheduled.saved_at && !scheduledLocked(r) && now < strict.deadline } : {}) } : null,
-            in_break: scheduledActive(r, now) || flexibleActive(r, now),
+            reserved_breaks: reservedOf(r).map(x => { const w = reservedWindow(r, x), state = reservedState(r, x, now);
+                return { id: x.id, minutes: x.minutes, from: x.from, to: x.to, window_start: w.startTime, window_end: w.endTime, state,
+                    started_at: x.started_at || null, ends_at: x.ends_at || null, granted_minutes: x.started_at ? x.granted : null, clipped: !!x.clipped,
+                    can_start: state === 'open' && !open && !a && !reservedRunning(r, now) && !scheduledActive(r, now) }; }),
+            reserved_limits: { max: BREAKS.reservedMax, min: BREAKS.reservedMin, step: BREAKS.reservedStep, window_min: BREAKS.reservedWindowMin },
+            in_break: anyBreak(r, now),
             record: mirror(r, now),
             ...extra
         };
@@ -321,7 +373,7 @@ export class BreakSystems {
 
     async act(account, body, now = Date.now()) {
         const action = body?.action;
-        if (!['lock', 'plan_start', 'plan_cancel', 'schedule_save', 'flex_start', 'flex_end', 'strict_save'].includes(action))
+        if (!['lock', 'plan_start', 'plan_cancel', 'schedule_save', 'reserved_start', 'flex_start', 'flex_end', 'strict_save'].includes(action))
             throw fail(400, 'INVALID_BREAK_ACTION', 'Choose a valid break action.');
         return this.storage.transaction(async tx => {
             const snapshot = await this.snapshot(tx, account), doc = await this.strictDoc(tx, account);
@@ -395,20 +447,47 @@ export class BreakSystems {
                 r.scheduled.saved_at ? 'The planning window has ended. Today’s last saved schedule is final.' : 'Start a planning window first.');
             const list = body.breaks;
             if (!Array.isArray(list) || list.length > 3) throw fail(400, 'INVALID_SCHEDULE', 'Enter between 1 and 3 complete break times.');
+            const rsvInput = body.reserved ?? [];
+            if (!Array.isArray(rsvInput) || rsvInput.length > BREAKS.reservedMax) throw fail(400, 'INVALID_RESERVED', `Add at most ${BREAKS.reservedMax} reserved breaks.`);
+            const rsvMinutes = rsvInput.reduce((sum, x) => sum + (Number.isInteger(x?.minutes) ? x.minutes : 0), 0);
             let breaks = [];
             if (list.length) {
-                const checked = core().validate(list, bounds(r), Math.max(0, limitOf(r, cfg) - usedNow(r, now, limitOf(r, cfg))));
+                const checked = core().validate(list, bounds(r), Math.max(0, limitOf(r, cfg) - usedNow(r, now, limitOf(r, cfg)) - rsvMinutes));
                 if (!checked.valid) throw fail(400, 'INVALID_SCHEDULE', checked.error);
                 breaks = checked.breaks;
-            } else if (!r.scheduled.saved_at) throw fail(400, 'INVALID_SCHEDULE', 'Add at least one break before the first save.');
-            const reserved = breaks.reduce((sum, b) => { const t = core().interval(b, bounds(r)); return sum + (t.endTime - t.startTime) / MIN; }, 0);
+            } else if (!r.scheduled.saved_at && !rsvInput.length) throw fail(400, 'INVALID_SCHEDULE', 'Add at least one break before the first save.');
+            const rsv = parseReserved(rsvInput, r, breaks.map(b => core().interval(b, bounds(r))), limitOf(r, cfg), usedNow(r, now, limitOf(r, cfg)), now);
+            if (rsvMinutes + usedNow(r, now, limitOf(r, cfg)) > limitOf(r, cfg)) throw fail(409, 'ALLOWANCE_LOW', 'Reserved breaks exceed your remaining daily allowance.');
+            const reserved = rsvMinutes + breaks.reduce((sum, b) => { const t = core().interval(b, bounds(r)); return sum + (t.endTime - t.startTime) / MIN; }, 0);
             const active = r.flexible.active;
             if (active && breaks.some(b => { const t = core().interval(b, bounds(r)); return t.startTime < active.planned_end && t.endTime > active.started_at; })) throw fail(409, 'BREAK_OVERLAP', 'A scheduled break cannot overlap the active Flexible break.');
             if (active && reserved + r.flexible.used + active.minutes > limitOf(r, cfg)) throw fail(409, 'ALLOWANCE_LOW', 'The active Flexible break and this schedule exceed the daily allowance.');
             if (!scheduledLocked(r) && cfg?.flexible?.enabled && limitOf(r, cfg) - usedNow(r, now, limitOf(r, cfg)) - reserved < minimum) throw fail(409, 'STRICT_MINIMUM', `Leave at least ${minimum} minutes for Flexible Strict Mode, or lock Scheduled breaks.`);
-            r.scheduled = { breaks, saved_at: now };
+            r.scheduled = { breaks, saved_at: now, ...(rsv.length ? { reserved: rsv } : {}) };
             r.planning.saved = true;
             if (!r.system) { r.system = 'scheduled'; r.locked_at = now; r.lock_source = 'save'; }
+            return false;
+        }
+        if (action === 'reserved_start') {
+            const op = body.operation_id;
+            if (typeof op !== 'string' || !OPERATION.test(op)) throw fail(400, 'INVALID_OPERATION', 'A valid request ID is required.');
+            const item = reservedOf(r).find(x => x.id === body.id);
+            if (!item) throw fail(409, 'NO_RESERVED', 'That reserved break no longer exists. Refresh the break panel.');
+            if (item.started_at) { if (item.operation_id === op) return true; throw fail(409, 'RESERVED_USED', 'This reserved break has already been used.'); }
+            if (open) throw fail(409, 'PLANNING_OPEN', 'Finish planning before starting a reserved break.');
+            const w = reservedWindow(r, item);
+            if (now < w.startTime) throw fail(409, 'RESERVED_EARLY', 'This reserved break’s start window has not opened yet.');
+            if (now >= w.endTime) throw fail(409, 'RESERVED_MISSED', 'The start window has passed. This reserved allowance is gone for today.');
+            if (r.flexible.active) throw fail(409, 'BREAK_ACTIVE', 'End your Flexible break before starting a reserved break.');
+            if (reservedRunning(r, now)) throw fail(409, 'BREAK_ACTIVE', 'A reserved break is already running.');
+            const intervals = r.scheduled.breaks.map(b => core().interval(b, bounds(r)));
+            if (intervals.some(t => now >= t.startTime && now < t.endTime)) throw fail(409, 'BREAK_OVERLAP', 'A Scheduled break is already running.');
+            // The break runs for its full length unless the day resets or a Scheduled break begins first;
+            // whatever a Scheduled break cuts off is revoked for the day (it is never refunded or moved).
+            const next = Math.min(Infinity, ...intervals.filter(t => t.startTime > now).map(t => t.startTime));
+            const full = now + item.minutes * MIN, end = Math.min(full, r.cycle_end, next);
+            Object.assign(item, { operation_id: op, started_at: now, ends_at: end, granted: chargeMinutes(now, end), clipped: end < full });
+            lock(r, 'scheduled', 'reserved_start', now);
             return false;
         }
         if (action === 'flex_start') {
@@ -417,6 +496,7 @@ export class BreakSystems {
             if (r.flexible.active?.operation_id === op || r.flexible.sessions.some(s => s.operation_id === op)) return true;
             if (scheduledLocked(r)) throw fail(409, 'SYSTEM_LOCKED', 'Scheduled breaks are locked for today.');
             if (r.flexible.active) throw fail(409, 'BREAK_ACTIVE', 'A Flexible break is already running.');
+            if (reservedRunning(r, now)) throw fail(409, 'BREAK_ACTIVE', 'A reserved break is running.');
             const gap = flexGapUntil(r, cfg);
             if (gap > now) throw fail(409, 'STRICT_GAP', `Flexible Strict Mode needs ${minimum} minutes between breaks. You can start again in ${Math.ceil((gap - now) / MIN)} min.`);
             const remaining = Math.max(0, limitOf(r, cfg) - r.flexible.used - scheduledMinutes(r));
@@ -467,7 +547,7 @@ export class BreakSystems {
     }
     async inBreak(store, account, now = Date.now(), snapshot = null) {
         const r = await this.current(store, account, now, snapshot);
-        return { in_break: !!r && (flexibleActive(r, now) || scheduledActive(r, now)), system: r?.system || null };
+        return { in_break: !!r && anyBreak(r, now), system: r?.system || null };
     }
 
     // Replace synced break records with the server-owned copies for every stored day.

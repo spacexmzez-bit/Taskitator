@@ -1,4 +1,4 @@
-/* Settings -> General: Colour theme + Appearance cards. Per device only: writes go to
+/* Settings -> General: Language, Colour theme + Appearance cards. Per device only: writes go to
    TaskitatorAppearance (localStorage 'taskitator_appearance'), never to synced settings,
    so these controls do not mark the settings page as unsaved. */
 (function () {
@@ -91,6 +91,22 @@
             app.setBirdSpeed(Number(speed.value));
             renderAppearance();
             window.TaskitatorNature?.bird(true);   // preview the new speed
+        });
+    }
+
+    // Language + time format (i18n.js, localStorage 'taskitator_lang'). Device only, never synced.
+    const i18n = window.TaskitatorI18n;
+    const langSelect = document.getElementById('langSelect');
+    const clockSelect = document.getElementById('clockSelect');
+    if (i18n && langSelect && clockSelect) {
+        langSelect.value = i18n.lang;
+        clockSelect.value = i18n.clock;
+        langSelect.addEventListener('change', () => {
+            if (!i18n.setLang(langSelect.value)) langSelect.value = i18n.lang;
+        });
+        clockSelect.addEventListener('change', () => {
+            if (!i18n.setClock(clockSelect.value)) clockSelect.value = i18n.clock;
+            fx()?.tap?.();
         });
     }
 

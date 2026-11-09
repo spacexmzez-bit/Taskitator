@@ -436,7 +436,7 @@ window.TaskitatorSafety = {
         if(isTest === true || isTest === false) {
             el.className = 'vault-test-popup ' + (isTest ? 'success' : 'error');
             const safeText = String(message || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            el.innerHTML = `<span style="font-size:1.15rem;line-height:1;margin-right:6px;">${isTest ? '✓' : '✕'}</span><span>${safeText}</span>`;
+            el.innerHTML = `<span style="font-size:1.15rem;line-height:1;margin-inline-end:6px;">${isTest ? '✓' : '✕'}</span><span>${safeText}</span>`;
             el.style.display = 'flex';
         } else {
             el.className = '';
@@ -795,7 +795,13 @@ const TaskitatorEngine = {
         lock(system){return this.request({action:'lock',system});},
         startPlanning(){return this.request({action:'plan_start'});},
         cancelPlanning(){return this.request({action:'plan_cancel'});},
-        saveSchedule(breaks){return this.request({action:'schedule_save',breaks});},
+        saveSchedule(breaks,reserved){return this.request({action:'schedule_save',breaks,...(Array.isArray(reserved)?{reserved}:{})});},
+        // Same retry rule as Flexible starts: a lost response reuses its request ID.
+        async startReserved(id){
+            if(this._pendingReserved?.id!==id)this._pendingReserved={id,op:'brk_'+crypto.randomUUID().replace(/-/g,'')};
+            try{const view=await this.request({action:'reserved_start',id,operation_id:this._pendingReserved.op});this._pendingReserved=null;return view;}
+            catch(error){if(error.status)this._pendingReserved=null;throw error;}
+        },
         // A retried start (lost response) reuses its request ID, so the server never starts two breaks.
         async startFlexible(mode,minutes=null){
             const key=mode+':'+minutes;
@@ -1272,7 +1278,7 @@ window.TaskitatorEngine = TaskitatorEngine;
         deadlineLabel(minutes) {
             const start = this.view ? new Date(this.view.cycle_start) : null, h = Math.floor(minutes / 60), m = minutes % 60;
             let clock = '';
-            if (start) try { clock = new Intl.DateTimeFormat('en-GB', { timeZone: this.view.timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(start.getTime() + minutes * 60000); } catch {}
+            if (start) try { clock = window.TaskitatorI18n?.time(start.getTime() + minutes * 60000, { timeZone: this.view.timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }, 'en-GB') || new Intl.DateTimeFormat('en-GB', { timeZone: this.view.timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(start.getTime() + minutes * 60000); } catch {}
             return `${h}h${m ? ' ' + m + 'm' : ''} after day start${clock ? ` (${clock})` : ''}`;
         },
         plan(list, path, disabled) {
@@ -1845,7 +1851,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                     <p style="color: #94a3b8; font-size: 0.95rem; margin: 20px 0;">
                         ${scope ? 'None of the selected tasks are active AI-audited tasks. Select an active task with' : 'No active AI-audited tasks found. Create a task with'} <em>Require AI Proof Verification</em> enabled first!
                     </p>
-                    <div style="text-align: right;">
+                    <div style="text-align: end;">
                         <button type="button" class="pro-btn" id="proBatchCancelBtn">Close</button>
                     </div>
                 </div>
@@ -2043,7 +2049,7 @@ window.TaskitatorEngine = TaskitatorEngine;
 
             if (eligible.length > 0) {
                 html += `
-                    <div style="margin-top: 16px; text-align: right;">
+                    <div style="margin-top: 16px; text-align: end;">
                         <button type="button" class="pro-btn" id="proConfirmBatchBtn">
                             Confirm Completion for ${eligible.length} Eligible Task(s)
                         </button>
@@ -2067,6 +2073,7 @@ window.TaskitatorEngine = TaskitatorEngine;
 
                         // batchConfirm downloads the server-authorized task snapshot.
                         modal.remove();
+                        window.dispatchEvent(new Event('taskitator-batch-applied'));
                         if (typeof window.TaskitatorApp?.refresh === 'function') window.TaskitatorApp.refresh();
                         else location.reload();
                     } catch (e) {
@@ -2288,7 +2295,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                     badge.textContent = 'PRO';
                 }
                 if (expiry) expiry.textContent = data.expires_at === null ? 'Lifetime license' :
-                    `Valid through ${new Date(data.expires_at).toLocaleDateString()}`;
+                    `Valid through ${(window.TaskitatorI18n?.date(data.expires_at) ?? new Date(data.expires_at).toLocaleDateString())}`;
                 if (quotaBox) quotaBox.style.display = 'block';
 
                 if (byokToggle) byokToggle.checked = Boolean(data.use_byok);
@@ -2311,7 +2318,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                     if (monthlyLim) monthlyLim.textContent = formatCredits(data.credits.monthly_limit);
                     if (monthlyFill) monthlyFill.style.width = `${pct(data.credits.monthly_remaining, data.credits.monthly_limit)}%`;
                     if (monthlyReset && Number.isFinite(data.credits.monthly_resets_at)) {
-                        monthlyReset.textContent = `Refills ${new Date(data.credits.monthly_resets_at).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}`;
+                        monthlyReset.textContent = `Refills ${(window.TaskitatorI18n?.dateTime(data.credits.monthly_resets_at, {dateStyle: 'medium', timeStyle: 'short'}) ?? new Date(data.credits.monthly_resets_at).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'}))}`;
                     }
                     if (data.credits.daily_remaining <= 0 || data.credits.monthly_remaining <= 0) {
                         showMsg(data.credits.monthly_remaining <= 0 ?
@@ -2722,7 +2729,7 @@ window.TaskitatorEngine = TaskitatorEngine;
         if (pro) {
             card.href = 'settings.html#ai';
             card.append(el('strong', '\u25C6 Taskitator Pro'));
-            card.append(el('span', state.until === null ? 'Lifetime license' : 'Valid through ' + new Date(state.until).toLocaleDateString()));
+            card.append(el('span', state.until === null ? 'Lifetime license' : 'Valid through ' + (window.TaskitatorI18n?.date(state.until) ?? new Date(state.until).toLocaleDateString())));
             const c = state.credits;
             if (c && c.daily_limit > 0) {
                 card.append(el('span', ' \u00B7 ' + c.daily_remaining + ' of ' + c.daily_limit + ' AI credits left today'));

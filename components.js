@@ -527,7 +527,7 @@
         if (parent) parent.append(e); return e;
     }
     function button(text, parent, fn) {
-        const e = element('button', text, parent); e.type = 'button'; e.className = 'icon-btn'; e.style.margin = '6px 4px 6px 0'; e.onclick = fn; return e;
+        const e = element('button', text, parent); e.type = 'button'; e.className = 'icon-btn'; e.style.marginBlock = '6px'; e.style.marginInline = '0 4px'; e.onclick = fn; return e;
     }
     function input(label, type, value, parent) {
         const wrap = element('label', label, parent); wrap.style.cssText = 'display:block;margin:12px 0;color:var(--text-color)';
@@ -677,7 +677,7 @@
         if(!data.series.length)element('p','Open a task’s details to set up recurrence, or choose Repeat when creating a task.',d);
         for(const s of data.series){const root=tasks().find(t=>t.id===s.current_root_id);element('h3',root?.title||s.nodes[0]?.task.title||'Recurring task',d);element('p',(s.enabled?'Repeating':'Stopped')+' · '+s.schedule.kind.replace(/_/g,' ')+' · Current date: '+s.current_date,d);if(root)button('Manage branch',d,()=>{d.close();open(root.id);});}
         element('h3','Occurrence history (latest 500)',d);
-        for(const h of [...data.history].reverse()){element('p',h.title+' · '+h.due_date+' · '+h.outcome+' · '+new Date(h.ended_at).toLocaleString(),d);}
+        for(const h of [...data.history].reverse()){element('p',h.title+' · '+h.due_date+' · '+h.outcome+' · '+(window.TaskitatorI18n?.dateTime(h.ended_at) ?? new Date(h.ended_at).toLocaleString()),d);}
         if(!data.history.length)element('p','No recurring-task history yet.',d);
     }
     window.addEventListener('taskitator-auth-ready',()=>{
@@ -1196,7 +1196,7 @@ window.TaskitatorComponents = Object.freeze({
                         if (pId) {
                             const pObj = prios.find(p => p.id === pId);
                             chipData = {
-                                html: `<span class="nlp-chip nlp-prio" contenteditable="false" data-type="prio" data-id="${TaskitatorSafety.escapeHtml(pId)}" data-raw="${TaskitatorSafety.escapeHtml(rawToken)}"><span class="priority-color-dot" style="background:${TaskitatorSafety.escapeHtml(TaskitatorSafety.cssColor(pObj.color))}; width:8px; height:8px; display:inline-block; border-radius:50%; margin-right:4px;"></span>${TaskitatorSafety.escapeHtml(pObj.name)} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                                html: `<span class="nlp-chip nlp-prio" contenteditable="false" data-type="prio" data-id="${TaskitatorSafety.escapeHtml(pId)}" data-raw="${TaskitatorSafety.escapeHtml(rawToken)}"><span class="priority-color-dot" style="background:${TaskitatorSafety.escapeHtml(TaskitatorSafety.cssColor(pObj.color))}; width:8px; height:8px; display:inline-block; border-radius:50%; margin-inline-end:4px;"></span>${TaskitatorSafety.escapeHtml(pObj.name)} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
                                 action: () => {
                                     if (contextType === 'edit') {
                                         editModalSelectedPriority = pId;
@@ -1657,7 +1657,7 @@ window.TaskitatorComponents = Object.freeze({
             if (detailLockStatusBadge) {
                 let statusHtml = '';
                 if (task.is_bonus) {
-                    statusHtml += '<span class="bonus-badge" style="margin-right: 4px;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus</span>';
+                    statusHtml += '<span class="bonus-badge" style="margin-inline-end: 4px;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus</span>';
                 }
                 if (isLocked) {
                     statusHtml += isBypassActive
@@ -1926,7 +1926,7 @@ window.TaskitatorComponents = Object.freeze({
             }
             banner.textContent = '';
             const label = document.createElement('span');
-            label.textContent = 'You have draft changes for this task (' + new Date(d.saved_at).toLocaleString() + ').';
+            label.textContent = 'You have draft changes for this task (' + (window.TaskitatorI18n?.dateTime(d.saved_at) ?? new Date(d.saved_at).toLocaleString()) + ').';
             const restore = document.createElement('button'); restore.type = 'button'; restore.className = 'icon-btn'; restore.textContent = 'Restore';
             restore.addEventListener('click', () => applyEditDraft(taskId));
             const discard = document.createElement('button'); discard.type = 'button'; discard.className = 'icon-btn'; discard.textContent = 'Discard draft';
@@ -1966,10 +1966,10 @@ window.TaskitatorComponents = Object.freeze({
                 r.append(info, open, del); box.appendChild(r);
             };
             const creates = api.listCreate(), edits = api.listEdits();
-            for (const d of creates) row(d.title, 'New task · saved ' + new Date(d.saved_at).toLocaleString(), () => openCreateFromDraft(d.id), () => api.removeCreate(d.id));
+            for (const d of creates) row(d.title, 'New task · saved ' + (window.TaskitatorI18n?.dateTime(d.saved_at) ?? new Date(d.saved_at).toLocaleString()), () => openCreateFromDraft(d.id), () => api.removeCreate(d.id));
             for (const d of edits) {
                 const task = host.tasks.getAll().find(t => t.id === d.task_id);
-                row(task ? task.title : d.title, 'Edit of an existing task · saved ' + new Date(d.saved_at).toLocaleString(), () => openTaskDetailModal(d.task_id), () => api.removeEdit(d.task_id));
+                row(task ? task.title : d.title, 'Edit of an existing task · saved ' + (window.TaskitatorI18n?.dateTime(d.saved_at) ?? new Date(d.saved_at).toLocaleString()), () => openTaskDetailModal(d.task_id), () => api.removeEdit(d.task_id));
             }
             if (!creates.length && !edits.length) {
                 const empty = document.createElement('p'); empty.className = 'draft-meta'; empty.textContent = 'No drafts. Use “Draft” when creating or editing a task.';

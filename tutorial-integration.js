@@ -85,7 +85,7 @@
         { selector: '.guide-banner-card', before: () => tab('tab-phone'), icon: 'book', title: 'Follow the guide', text: 'This guide walks through setting up the automation app on your phone. Do it once.' },
         { selector: '#phoneAccessStatus', before: () => tab('tab-phone'), icon: 'phone', title: 'Connection status', text: 'Shows whether your phone is currently allowed to use things. Check here if something feels off.' },
         { selector: '#macroEndpointUrl', before: () => tab('tab-phone'), icon: 'clip', title: 'The status URL', text: 'Your phone automation asks this address “is anything allowed right now?”. Copy it into step 1 of the guide.' },
-        { selector: '#generatePhoneTokenBtn', before: () => tab('tab-phone'), icon: 'key', title: 'Create a token', text: 'The token proves the request comes from your phone. If it ever leaks, revoke it and create a new one.' },
+        { selector: '#generatePhoneTokenBtn', before: () => tab('tab-phone'), icon: 'key', title: 'Add a device', text: 'Name a device to create its token. Free accounts connect 3 devices, Pro accounts 12. If a token leaks, remove that device.' },
         { kind: 'center', icon: 'sliders', title: 'The rule', text: 'Phone changes are only allowed in these cases:', visual: { type: 'list', items: [{ icon: 'completed', text: 'Today’s tasks are **done**' }, { icon: 'breaks', text: 'You’re **on a break**' }, { icon: 'emergency', text: 'An **emergency bypass** is active' }] } }
       ]
     },

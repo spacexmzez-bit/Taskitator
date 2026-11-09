@@ -1,0 +1,48 @@
+/* Right-to-left overrides (Arabic UI). Loaded after family-nature.css on every page.
+   Most mirroring comes free: layout CSS uses logical properties (inline-start/end), converted by
+   tools/css-logical.py, so dir="rtl" moves the sidebar/nav rail to the right and the
+   المساعد الذكي panel and floating buttons to the left. This file covers what logical properties
+   cannot express: transforms, shadow offsets, text arrows. Scene, cloud and bird art is not mirrored. */
+
+/* ----- Drawers: the sidebar slides in from the right, the Copilot panel from the left ----- */
+html[dir="rtl"] .sidebar-drawer { transform: translateX(105%); }
+html[dir="rtl"] .sidebar-drawer.open { transform: none; }
+html[dir="rtl"] .copilot-drawer { transform: translateX(-100%); }
+html[dir="rtl"] .copilot-drawer.open { transform: translateX(0); }
+/* Legacy look (Universe parks the nature family): flip the drawer shadows. */
+html[dir="rtl"]:not([data-family]) .sidebar-drawer { box-shadow: -6px 0 20px rgba(0, 0, 0, 0.5); }
+html[dir="rtl"]:not([data-family]) .copilot-drawer { box-shadow: 6px 0 24px rgba(0, 0, 0, 0.65); }
+
+/* ----- Switch knob travels right-to-left ----- */
+html[dir="rtl"] input.switch:checked::before { transform: translateX(-18px); }
+html[dir="rtl"] input.switch:checked:active:not(:disabled)::before { transform: translateX(-14px); }
+
+/* ----- Arrows and expanders point the reading direction ----- */
+/* ▶ becomes ◀; ▼ is symmetric so the open state looks the same. */
+html[dir="rtl"] .collapse-toggle { transform: scaleX(-1); }
+html[dir="rtl"] .collapse-toggle.is-collapsed { transform: rotate(90deg); }
+html[dir="rtl"] #universeWorkspace .collapse-toggle { transform: none; }
+html[dir="rtl"] #universeWorkspace .collapse-toggle[aria-expanded=false] svg { transform: rotate(90deg); }
+html[dir="rtl"] .minor-arrow { transform: scaleX(-1); }
+html[dir="rtl"] .minor-block.open .minor-arrow { transform: rotate(90deg); }
+html[dir="rtl"] .fine-print summary::before { transform: scaleX(-1); }
+html[dir="rtl"] .fine-print[open] summary::before { transform: rotate(90deg); }
+html[dir="rtl"] :is(#prevMonthBtn, #nextMonthBtn) { transform: scaleX(-1); }
+html[dir="rtl"] .today-path-sep { display: inline-block; transform: scaleX(-1); }
+/* Universe stepper connector runs from each step back to the previous one. */
+html[dir="rtl"] #universeWorkspace .uni-stepper li::after { right: auto; left: 50%; }
+
+/* ----- Mixed-direction text (both languages) -----
+   User content takes the direction of its own first letter, so an English task title reads
+   correctly in the Arabic UI and an Arabic title in the English UI. Content is never changed. */
+:is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), textarea,
+    .task-title, .completed-item-title, .tag-chip, .tag-select-pill) { unicode-bidi: plaintext; }
+
+/* ----- Arabic type ----- */
+html[lang="ar"] body,
+html[lang="ar"][data-family="nature"] { --tk-font: ui-rounded, "SF Pro Rounded", "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", Tahoma, sans-serif; }
+html[lang="ar"] body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Arabic", Tahoma, Helvetica, Arial, sans-serif; }
+html[lang="ar"][data-family="nature"] body { font-family: var(--tk-font); }
+/* Arabic script has no capitals and is hurt by letter-spacing. */
+html[lang="ar"] * { letter-spacing: normal !important; }
+html[lang="ar"] :is(.tier-chip, .card-title, .tk-pro-badge) { text-transform: none; }

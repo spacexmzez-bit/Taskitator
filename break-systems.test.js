@@ -800,3 +800,86 @@ test('window started before cutoff stays editable after cutoff; lock blocks Flex
         assert.equal((await f.breaks({ action: 'schedule_save', breaks: [{ start: '20:00', end: '20:30' }] })).status, 200);
     } finally { clock = null; }
 });
+
+// ---------------------------------------------------------------------------
+// Reserved breaks (a Scheduled sub-feature)
+// ---------------------------------------------------------------------------
+async function planned(reserved, breaks = [{ start: '14:00', end: '14:30' }]) {
+    const f = await ready();
+    await f.breaks({ action: 'plan_start' }); advance(MIN);
+    const saved = await f.breaks({ action: 'schedule_save', breaks, reserved });
+    return { f, saved };
+}
+test('reserved break: the whole amount is reserved from the allowance; start only inside the window', async () => {
+    try {
+        const { f, saved } = await planned([{ minutes: 60, from: '13:00', to: '13:30' }]);
+        assert.equal(saved.status, 200);
+        assert.equal(saved.body.allowance.reserved, 30 + 60, 'scheduled + reserved minutes');
+        assert.equal(saved.body.reserved_breaks[0].state, 'pending');
+        const id = saved.body.reserved_breaks[0].id;
+        advance(4 * MIN);
+        assert.equal((await f.breaks({ action: 'reserved_start', id, operation_id: op() })).body.code, 'PLANNING_OPEN');
+        advance(10 * MIN);
+        assert.equal((await f.breaks({ action: 'reserved_start', id, operation_id: op() })).body.code, 'RESERVED_EARLY');
+        at('2026-11-04T13:20:00+03:00');
+        const view = (await f.breaks()).body;
+        assert.equal(view.reserved_breaks[0].state, 'open'); assert.equal(view.reserved_breaks[0].can_start, true);
+        const o = op();
+        const started = await f.breaks({ action: 'reserved_start', id, operation_id: o });
+        assert.equal(started.status, 200); assert.equal(started.body.in_break, true);
+        assert.equal((await f.breaks({ action: 'reserved_start', id, operation_id: o })).body.reserved_breaks[0].started_at !== null, true, 'a retry is harmless');
+        assert.equal((await f.breaks({ action: 'reserved_start', id, operation_id: op() })).body.code, 'RESERVED_USED');
+        assert.equal((await f.breaks({ action: 'flex_start', mode: 'custom', minutes: 10, operation_id: op() })).status, 409, 'no Flexible break during a reserved break');
+    } finally { clock = null; }
+});
+test('reserved break cut by a Scheduled break: the remainder is revoked for the day', async () => {
+    try {
+        const { f, saved } = await planned([{ minutes: 60, from: '13:00', to: '13:30' }]);
+        const id = saved.body.reserved_breaks[0].id;
+        at('2026-11-04T13:20:00+03:00');
+        const r = (await f.breaks({ action: 'reserved_start', id, operation_id: op() })).body.reserved_breaks[0];
+        assert.equal(r.granted_minutes, 40); assert.equal(r.clipped, true);
+        assert.equal(r.ends_at, Date.parse('2026-11-04T14:00:00+03:00'));
+        at('2026-11-04T14:00:00+03:00');
+        const after = (await f.breaks()).body;
+        assert.equal(after.in_break, true, 'the Scheduled break starts right after');
+        assert.equal(after.allowance.remaining, 180 - 30 - 60, 'the revoked 20 minutes are not refunded');
+    } finally { clock = null; }
+});
+test('a reserved break that is not started inside its window is lost, and its allowance stays spent', async () => {
+    try {
+        const { f, saved } = await planned([{ minutes: 45, from: '13:00', to: '13:30' }]);
+        const id = saved.body.reserved_breaks[0].id;
+        at('2026-11-04T13:30:00+03:00');
+        const view = (await f.breaks()).body;
+        assert.equal(view.reserved_breaks[0].state, 'missed');
+        assert.equal((await f.breaks({ action: 'reserved_start', id, operation_id: op() })).body.code, 'RESERVED_MISSED');
+        assert.equal(view.allowance.remaining, 180 - 30 - 45);
+    } finally { clock = null; }
+});
+test('reserved windows cannot overlap Scheduled breaks or each other; amounts must fit; same planning window', async () => {
+    try {
+        const { f } = await planned([]);
+        const bad = async reserved => (await f.breaks({ action: 'schedule_save', breaks: [{ start: '14:00', end: '14:30' }], reserved })).body.code;
+        assert.equal(await bad([{ minutes: 30, from: '14:10', to: '14:20' }]), 'RESERVED_CONFLICT');
+        assert.equal(await bad([{ minutes: 30, from: '13:00', to: '13:30' }, { minutes: 30, from: '13:20', to: '13:50' }]), 'RESERVED_CONFLICT');
+        assert.equal(await bad([{ minutes: 7, from: '13:00', to: '13:30' }]), 'INVALID_RESERVED');
+        assert.equal(await bad([{ minutes: 30, from: '13:00', to: '13:02' }]), 'INVALID_RESERVED');
+        assert.equal((await f.breaks({ action: 'schedule_save', breaks: [{ start: '14:00', end: '14:30' }], reserved: [{ minutes: 170, from: '16:00', to: '16:30' }] })).status >= 400, true, 'over the allowance');
+        advance(10 * MIN);
+        assert.equal((await f.breaks({ action: 'schedule_save', breaks: [], reserved: [{ minutes: 30, from: '16:00', to: '16:30' }] })).body.code, 'PLANNING_ENDED', 'no extra time for reserved breaks');
+    } finally { clock = null; }
+});
+test('a reserved-only schedule is allowed; the phone sees in_break during a reserved break', async () => {
+    try {
+        const { f, saved } = await planned([{ minutes: 30, from: '13:00', to: '13:30' }], []);
+        assert.equal(saved.status, 200); assert.equal(saved.body.scheduled.breaks.length, 0);
+        const id = saved.body.reserved_breaks[0].id;
+        at('2026-11-04T13:10:00+03:00');
+        await f.breaks({ action: 'reserved_start', id, operation_id: op() });
+        const s = await f.status(await f.phone());
+        assert.equal(s.in_break, true);
+        at('2026-11-04T13:41:00+03:00');
+        assert.equal((await f.status(await f.phone())).in_break, false);
+    } finally { clock = null; }
+});

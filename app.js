@@ -702,12 +702,12 @@ ${formattedInput}`;
             let fileContent = '';
 
             if (format === 'md') {
-                fileContent = `# Taskitator Scratchpad Notes\n*Exported on ${new Date().toLocaleString()}*\n\n---\n\n`;
+                fileContent = `# Taskitator Scratchpad Notes\n*Exported on ${(window.TaskitatorI18n?.dateTime(new Date()) ?? new Date().toLocaleString())}*\n\n---\n\n`;
                 processedNotes.forEach(n => {
                     fileContent += `## ${n.title}\n\n${n.clean_text}\n\n---\n\n`;
                 });
             } else {
-                fileContent = `TASKITATOR SCRATCHPAD NOTES\nExported on: ${new Date().toLocaleString()}\n${'='.repeat(40)}\n\n`;
+                fileContent = `TASKITATOR SCRATCHPAD NOTES\nExported on: ${(window.TaskitatorI18n?.dateTime(new Date()) ?? new Date().toLocaleString())}\n${'='.repeat(40)}\n\n`;
                 processedNotes.forEach((n, idx) => {
                     fileContent += `[NOTE ${idx + 1}] ${n.title.toUpperCase()}\n${'-'.repeat(30)}\n${n.clean_text}\n\n\n`;
                 });
@@ -2028,6 +2028,14 @@ window.TaskitatorApp = (() => {
         window.TaskitatorNotify(skipped ? `Moved ${removed} task${removed === 1 ? '' : 's'} to Trash. ${skipped} could not be deleted.` : `Moved ${removed} task${removed === 1 ? '' : 's'} to Trash.`, 'info');
     }
 
+    // After a batch action finishes, drop the selection (selection mode itself stays on).
+    function clearSelectionAfterAction() {
+        selectedTaskIds.clear();
+        updateBatchBarUI();
+    }
+
+    window.addEventListener('taskitator-batch-applied', clearSelectionAfterAction);
+
     function toggleSelectionMode() {
         isSelectionModeActive = !isSelectionModeActive;
         selectionDeleteMode = false;
@@ -2116,8 +2124,8 @@ window.TaskitatorApp = (() => {
         engine() { return window.TaskitatorEngine?.BreakEngine || null; },
         esc(value) { return TaskitatorSafety.escapeHtml(String(value ?? '')); },
         clockText(ms, zone) {
-            try { return new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ms); }
-            catch { return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+            try { return window.TaskitatorI18n?.time(ms, { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }, 'en-GB') || new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ms); }
+            catch { return (window.TaskitatorI18n?.time(ms, { hour: '2-digit', minute: '2-digit' }) ?? new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })); }
         },
         minutesText(m) { m = Math.max(0, Math.round(m)); const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r}m`; },
         // Flexible header color by remaining allowance: >35% green, 10–35% yellow, <10% red.
@@ -2132,6 +2140,9 @@ window.TaskitatorApp = (() => {
             this.errorBox = document.getElementById('breakModalError');
             this.saveBtn = document.getElementById('saveBreaksModalBtn');
             this.addBtn = document.getElementById('addBreakRowModalBtn');
+            this.reservedBox = document.getElementById('breakReservedBox');
+            this.addReservedBtn = document.getElementById('addReservedBreakBtn');
+            this.reservedDraft = null;
             this.closeBtn = document.getElementById('closeBreakModalBtn');
             this.summary = document.getElementById('breakDaySummary');
             this.flexBody = document.getElementById('flexBreakBody');
@@ -2140,6 +2151,7 @@ window.TaskitatorApp = (() => {
             this.pill.addEventListener('click', () => this.openModal());
             if (this.closeBtn) this.closeBtn.addEventListener('click', () => this.closeModal());
             if (this.addBtn) this.addBtn.addEventListener('click', () => { this.addBreakRow(); this.captureDraft(); });
+            if (this.addReservedBtn) this.addReservedBtn.addEventListener('click', () => { this.addReservedRow(); this.captureReservedDraft(); });
             if (this.saveBtn) this.saveBtn.addEventListener('click', () => this.saveBreaks());
             this.modal.addEventListener('click', (e) => { if (e.target === this.modal) this.closeModal(); });
             this.modal.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.modal.classList.contains('open')) this.closeModal(); });
@@ -2206,7 +2218,7 @@ window.TaskitatorApp = (() => {
             const status = engine?.getPlanningStatus ? engine.getPlanningStatus() : { isRunning: false, remainingWindowMs: 0, bounds: { start: new Date() } };
             const active = engine?.getActiveBreak ? engine.getActiveBreak() : null;
             const breaks = engine?.getTodayBreaks ? engine.getTodayBreaks() : getTodayBreaksSafe();
-            const PILL_ICONS = { break: 'leaf', allowance: 'coffee', plan: 'calendar', idle: 'breaks', locked: 'lock' };
+            const PILL_ICONS = { break: 'breaks', allowance: 'breaks', plan: 'breaks', idle: 'breaks', locked: 'breaks' };
             const set = (icon, text, label = text) => {
                 const pillIcon = this.pillIcon;
                 if (pillIcon) {
@@ -2249,6 +2261,8 @@ window.TaskitatorApp = (() => {
                 .filter(b => b && b.startTime > nowTime)
                 .sort((a, b) => a.startTime - b.startTime)[0] : null;
             if (upcoming) return set('allowance', `Next: ${String(upcoming.start).slice(0, 5)}`, `Next scheduled break at ${String(upcoming.start).slice(0, 5)}`);
+            const rsvOpen = (view?.reserved_breaks || []).find(x => x.state === 'open');
+            if (rsvOpen) return set('allowance', `Start by ${rsvOpen.to}`, `A reserved break can be started until ${rsvOpen.to}`);
             if (!view) return set('idle', 'Breaks', 'Daily breaks');
             if (!view.scheduled?.locked) return set('allowance', `${this.minutesText(engine.allowance().remaining)} left`, 'Daily break allowance remaining');
             return set('locked', 'Breaks Locked', 'Scheduled Breaks locked for today');
@@ -2291,21 +2305,28 @@ window.TaskitatorApp = (() => {
             this.planningTimerInterval = setInterval(() => this.tick(), 1000);
         },
 
+        // Anything that changes what the panel shows (including a Reserved start window opening or closing).
+        modalKey(view, now) {
+            const planning = view.scheduled?.planning;
+            const reserved = (view.reserved_breaks || []).map(x => x.id + ':' + (x.started_at ? (now < x.ends_at ? 'a' : 'd') : now < x.window_start ? 'p' : now < x.window_end ? 'o' : 'm')).join(',');
+            return [view.system, view.revision, !!view.flexible?.active, planning?.open && now < planning.deadline,
+                view.flexible?.active && now >= view.flexible.active.can_end_at, reserved].join('|');
+        },
+
         // Update the live numbers; ask the server again when a deadline passes.
         tick() {
             if (!this.modal?.classList.contains('open')) return;
             const engine = this.engine(), view = engine?.current?.();
             if (!view) return;
             const now = engine.serverNow(), planning = view.scheduled?.planning;
-            const key = [view.system, view.revision, !!view.flexible?.active, planning?.open && now < planning.deadline,
-                view.flexible?.active && now >= view.flexible.active.can_end_at].join('|');
+            const key = this.modalKey(view, now);
             if (key !== this.lastKey) { this.renderModal(); return; }
             if (planning && now < planning.deadline) {
                 const remaining = planning.deadline - now, sec = Math.ceil(remaining / 1000);
                 const cd = document.getElementById('breakPlanningCountdown'), bar = document.getElementById('breakPlanningProgress');
                 if (cd) cd.textContent = `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
                 if (bar) bar.style.width = `${Math.max(0, Math.min(100, remaining / engine.PLANNING_WINDOW_MS * 100))}%`;
-            } else if (planning?.open) { this.draft = null; this.refresh(); }
+            } else if (planning?.open) { this.draft = null; this.reservedDraft = null; this.refresh(); }
             if (view.flexible?.gap_until && now >= view.flexible.gap_until) this.refresh();
             const active = view.flexible?.active;
             if (active) {
@@ -2319,8 +2340,7 @@ window.TaskitatorApp = (() => {
             if (!this.modal || !this.rowsContainer) return;
             const engine = this.engine(), view = engine?.current?.() || null;
             const now = engine?.serverNow?.() ?? Date.now();
-            this.lastKey = view ? [view.system, view.revision, !!view.flexible?.active, view.scheduled?.planning?.open && now < view.scheduled.planning.deadline,
-                view.flexible?.active && now >= view.flexible.active.can_end_at].join('|') : '';
+            this.lastKey = view ? this.modalKey(view, now) : '';
             const names = { scheduled: 'Scheduled', flexible: 'Flexible' };
             if (this.summary) {
                 if (!view && this.loadError) this.summary.innerHTML = `<div class="break-load-error" role="alert"><span>Could not load today’s breaks. ${this.esc(this.loadError)}</span><button type="button" class="icon-btn" data-break-retry>Try again</button></div>`;
@@ -2362,6 +2382,7 @@ window.TaskitatorApp = (() => {
                 btn.textContent = `Lock ${names[name]} for Today`;
             });
             this.renderScheduled(view, now);
+            this.renderReserved(view, now);
             this.renderFlexible(view, now);
         },
 
@@ -2417,7 +2438,7 @@ window.TaskitatorApp = (() => {
                 this.startCountdownTimer();
                 return;
             }
-            this.draft = null;
+            this.draft = null; this.reservedDraft = null;
             if (s.can_start_planning) {
                 headerBox.innerHTML = `
                     <div class="break-panel break-panel-start">
@@ -2513,6 +2534,77 @@ window.TaskitatorApp = (() => {
             await this.run(() => engine.startPlanning());
         },
 
+        // ---- Reserved breaks: reserve minutes now, start them later inside a chosen window ----
+        captureReservedDraft() {
+            if (!this.reservedBox || !this.engine()?.getPlanningStatus().canEdit) return;
+            this.reservedDraft = this.getReservedRowsData();
+        },
+        getReservedRowsData() {
+            if (!this.reservedBox) return [];
+            return [...this.reservedBox.querySelectorAll('.break-reserved-row')].map(r => ({
+                minutes: Number(r.querySelector('.r-minutes')?.value) || 0, from: r.querySelector('.r-from')?.value || '', to: r.querySelector('.r-to')?.value || '' }));
+        },
+        addReservedRow(data = {}) {
+            if (!this.reservedBox) return;
+            const lim = this.engine()?.current?.()?.reserved_limits || { max: 2, min: 10, step: 5 };
+            if (this.reservedBox.querySelectorAll('.break-reserved-row').length >= lim.max) { this.showError(`Maximum ${lim.max} reserved breaks per day.`); return; }
+            const row = document.createElement('div');
+            row.className = 'break-reserved-row';
+            row.innerHTML = `
+                <label class="break-reserved-field"><span>Length (min)</span><input type="number" class="r-minutes break-time-input" min="${lim.min}" step="${lim.step}" inputmode="numeric" value="${this.esc(data.minutes || '')}" placeholder="60"></label>
+                <label class="break-reserved-field"><span>Start between</span><input type="time" class="r-from break-time-input" aria-label="Earliest start" value="${this.esc(data.from || '')}"></label>
+                <label class="break-reserved-field"><span>and</span><input type="time" class="r-to break-time-input" aria-label="Latest start" value="${this.esc(data.to || '')}"></label>
+                <button type="button" class="del-break-row-btn" aria-label="Remove reserved break">&times;</button>`;
+            row.querySelector('.del-break-row-btn').addEventListener('click', () => { row.remove(); this.captureReservedDraft(); this.syncReservedAdd(); });
+            row.querySelectorAll('input').forEach(i => { i.addEventListener('change', () => this.captureReservedDraft()); i.addEventListener('input', () => this.captureReservedDraft()); });
+            this.reservedBox.appendChild(row);
+            this.syncReservedAdd();
+        },
+        syncReservedAdd() {
+            const lim = this.engine()?.current?.()?.reserved_limits || { max: 2 };
+            if (this.addReservedBtn) this.addReservedBtn.style.display = this.reservedBox.querySelectorAll('.break-reserved-row').length < lim.max ? 'inline-block' : 'none';
+        },
+        renderReserved(view, now) {
+            const box = this.reservedBox;
+            if (!box) return;
+            const hideAdd = () => { if (this.addReservedBtn) this.addReservedBtn.style.display = 'none'; };
+            if (!view) { box.innerHTML = ''; hideAdd(); return; }
+            const s = view.scheduled, open = !!s.planning && now < s.planning.deadline;
+            const head = '<div class="break-reserved-head"><strong>Reserved breaks</strong><small>Reserve minutes now and start them any time inside the window you choose. Allowance not started in the window, or cut off by a Scheduled break, is gone for the day.</small></div>';
+            if (open) {
+                const rows = this.reservedDraft ?? (view.reserved_breaks || []).map(x => ({ minutes: x.minutes, from: x.from, to: x.to }));
+                box.innerHTML = head;
+                rows.forEach(r => this.addReservedRow(r));
+                this.syncReservedAdd();
+                return;
+            }
+            hideAdd();
+            const list = view.reserved_breaks || [];
+            if (!list.length) { box.innerHTML = ''; return; }
+            const z = view.timezone;
+            const card = x => {
+                const w = `Start between ${this.esc(x.from)} and ${this.esc(x.to)}`;
+                let line = '', action = '';
+                if (x.state === 'pending') line = `Opens at ${this.esc(x.from)}`;
+                else if (x.state === 'open') { line = `Start window open until ${this.esc(x.to)}`; action = x.can_start ? `<button type="button" class="icon-btn btn-primary btn-solid-primary" data-reserved-start="${this.esc(x.id)}">Start now</button>` : '<small>Another break is running.</small>'; }
+                else if (x.state === 'active') line = `Running until ${this.esc(this.clockText(x.ends_at, z))}`;
+                else if (x.state === 'done') line = x.clipped ? `Used ${this.esc(this.minutesText(x.granted_minutes))}; a Scheduled break cut off the rest, which is gone for today.` : `Used ${this.esc(this.minutesText(x.granted_minutes))}.`;
+                else line = 'The start window passed. This allowance is gone for today.';
+                return `<div class="break-reserved-card" data-state="${this.esc(x.state)}"><div><strong>${this.esc(this.minutesText(x.minutes))} reserved</strong><small>${w}</small><span class="break-reserved-line">${line}</span></div>${action}</div>`;
+            };
+            box.innerHTML = head + list.map(card).join('');
+            box.querySelectorAll('[data-reserved-start]').forEach(b => b.addEventListener('click', () => this.startReserved(b.dataset.reservedStart)));
+        },
+        async startReserved(id) {
+            const engine = this.engine(), view = engine?.current?.();
+            const x = view?.reserved_breaks?.find(r => r.id === id);
+            if (!x) return;
+            const ok = await window.TaskitatorConfirm({ title: `Start your ${this.minutesText(x.minutes)} reserved break now?`, confirmLabel: 'Start break',
+                message: this.confirmMessage(['It can’t be ended early.', 'If a Scheduled break begins before it finishes, the remaining time is revoked for today.']) });
+            if (!ok) return;
+            await this.run(() => engine.startReserved(id), 'Break started.');
+        },
+
         getCurrentRowsData() {
             if (!this.rowsContainer) return [];
             return [...this.rowsContainer.querySelectorAll('.break-row-item')].map(r => ({ start: r.querySelector('.b-start')?.value || '', end: r.querySelector('.b-end')?.value || '' }));
@@ -2540,8 +2632,10 @@ window.TaskitatorApp = (() => {
             const engine = this.engine(), view = engine?.current?.();
             if (!view || !this.rowsContainer) return;
             const rows = this.getCurrentRowsData().filter(r => r.start || r.end);
+            const reservedRows = this.getReservedRowsData().filter(r => r.minutes || r.from || r.to);
+            if (reservedRows.some(r => !r.minutes || !r.from || !r.to)) { this.showError('Complete each reserved break: its length and both start times.'); return; }
             const saved = view.scheduled.saved;
-            if (rows.length || !saved) {
+            if (rows.length || (!saved && !reservedRows.length)) {
                 const check = TaskitatorBreaks.validate(rows, engine.getLogicalDayBounds(), view.allowance?.total || 180);
                 if (!check.valid) { this.showError(check.error); return; }
             }
@@ -2552,8 +2646,8 @@ window.TaskitatorApp = (() => {
                         'After that, your last saved schedule is final.']) });
                 if (!ok) return;
             }
-            const result = await this.run(() => engine.saveSchedule(rows), saved ? 'Schedule updated.' : 'Schedule saved.');
-            if (result) this.draft = null;
+            const result = await this.run(() => engine.saveSchedule(rows, reservedRows), saved ? 'Schedule updated.' : 'Schedule saved.');
+            if (result) { this.draft = null; this.reservedDraft = null; }
             if (result) this.renderModal();
         },
 
@@ -2747,7 +2841,7 @@ window.TaskitatorApp = (() => {
                     li.className = 'task-node render-error';
                     const row = document.createElement('div');
                     row.className = 'task-row';
-                    row.style.marginLeft = `${depth * 20}px`;
+                    row.style.marginInlineStart = `${depth * 20}px`;
                     const title = document.createElement('span');
                     title.className = 'task-title';
                     title.textContent = (typeof task?.title === 'string' && task.title ? task.title : 'Untitled task') + ' (could not be displayed)';
@@ -2790,7 +2884,7 @@ window.TaskitatorApp = (() => {
                     const safeId = TaskitatorSafety.escapeHtml(task.id);
                     const graceRow = document.createElement('div');
                     graceRow.className = 'undo-grace-row';
-                    graceRow.style.marginLeft = `${depth * 20}px`;
+                    graceRow.style.marginInlineStart = `${depth * 20}px`;
                     graceRow.innerHTML = `
                         <div class="undo-grace-info">
                             <span class="undo-grace-label">✓ Completed</span>
@@ -2817,7 +2911,7 @@ window.TaskitatorApp = (() => {
 
                 const row = document.createElement('div');
                 row.className = `task-row ${isSelected ? 'row-selected' : ''}`;
-                row.style.marginLeft = `${depth * 20}px`;
+                row.style.marginInlineStart = `${depth * 20}px`;
 
                 if (isBreadcrumb) {
                     row.classList.add('muted-breadcrumb');
@@ -2825,7 +2919,7 @@ window.TaskitatorApp = (() => {
 
                 const pObj = globalPriorities.find(x => x.id === (dynamicPriority.get(task.id) ?? task.priority_id));
                 if (pObj) {
-                    row.style.borderLeftColor = pObj.color;
+                    row.style.borderInlineStartColor = pObj.color;
                     row.style.setProperty('--pc', pObj.color);
                     if (dynamicPriority.has(task.id)) row.title = 'Dynamic Priority: only bonus work remains';
                 }
@@ -2901,8 +2995,8 @@ window.TaskitatorApp = (() => {
                     checkBtn.type = 'button';
                     checkBtn.className = 'check-circle' + (task.ai_locked ? ' is-ai-locked' : '');
                     checkBtn.textContent = isDone ? '✓' : '';
-                    // Animal by priority rank (rank 1 = first animal).
-                    if (window.TaskitatorIcons) checkBtn.appendChild(window.TaskitatorIcons.animal(Number(pObj?.rank) || 1));
+                    // Random animal, stable per task (hash of the id). Ring colour still follows priority.
+                    if (window.TaskitatorIcons) checkBtn.appendChild(window.TaskitatorIcons.animal(window.TaskitatorIcons.animalForId(task.id)));
                     checkBtn.setAttribute('aria-label', isDone ? `Mark "${task.title}" as not done` : `Complete "${task.title}"`);
                     checkBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -3139,7 +3233,7 @@ window.TaskitatorApp = (() => {
                 <div class="completed-item-title">
                     <span class="completed-item-text">${TaskitatorSafety.escapeHtml(task.title)}</span> ${badgesHtml}
                 </div>
-                ${task.completed_at ? `<small class="completed-item-time">Done at: ${new Date(task.completed_at).toLocaleTimeString()}</small>` : ''}
+                ${task.completed_at ? `<small class="completed-item-time">Done at: ${(window.TaskitatorI18n?.time(task.completed_at) ?? new Date(task.completed_at).toLocaleTimeString())}</small>` : ''}
             `;
 
             const actionContainer = document.createElement('div');
@@ -3223,9 +3317,22 @@ window.TaskitatorApp = (() => {
         renderUnifiedView();
     }
 
-    function handleHashRouting() {
-        const hash = window.location.hash.replace('#', '').toLowerCase();
-        setView(hash === 'general' ? 'general' : 'today');
+    // Today <-> General: clouds sweep in, the list swaps underneath, clouds part (Nature theme only; instant otherwise).
+    let routedOnce = false;
+    let routing = false;
+    const hashView = () => (window.location.hash.replace('#', '').toLowerCase() === 'general' ? 'general' : 'today');
+    async function handleHashRouting() {
+        const next = hashView();
+        const nature = window.TaskitatorNature;
+        if (!routedOnce || routing || next === currentView || !nature?.cloudsIn) {
+            routedOnce = true;
+            setView(next);
+            return;
+        }
+        routing = true;
+        let covered = false;
+        try { covered = await nature.cloudsIn(); } catch (_) { covered = false; }
+        try { setView(hashView()); } finally { routing = false; if (covered) nature.cloudsOut(); }
     }
 
     // =========================================================================
@@ -3404,6 +3511,7 @@ window.TaskitatorApp = (() => {
                 });
                 saveStorageAndPush();
                 batchTagsModal.classList.remove('open');
+                clearSelectionAfterAction();
                 renderUnifiedView();
             });
         }
@@ -3449,6 +3557,7 @@ window.TaskitatorApp = (() => {
                 });
                 saveStorageAndPush();
                 batchPriorityModal.classList.remove('open');
+                clearSelectionAfterAction();
                 renderUnifiedView();
             });
         }
@@ -3488,6 +3597,7 @@ window.TaskitatorApp = (() => {
 
                 saveStorageAndPush();
                 batchDueDateModal.classList.remove('open');
+                clearSelectionAfterAction();
                 renderUnifiedView();
 
                 if (protectedCount > 0) {
@@ -3516,6 +3626,7 @@ window.TaskitatorApp = (() => {
             });
             if (changed) saveStorageAndPush();
             batchBonusModal?.classList.remove('open');
+            clearSelectionAfterAction();
             renderUnifiedView();
             const what = makeBonus ? 'bonus' : 'required';
             window.TaskitatorNotify(`${changed} task(s) made ${what}.` + (skipped ? ` ${skipped} skipped (can't change).` : ''));
@@ -3981,9 +4092,20 @@ if ('serviceWorker' in navigator) {
         }
     }
 
+    // Per-device volume (0-100, default 80), set in Settings or in the focus-timer panel.
+    function pomodoroLevel() {
+        try {
+            const raw = localStorage.getItem('taskitator_pomodoro_volume');
+            const v = raw === null ? NaN : Number(raw);
+            return Number.isFinite(v) && v >= 0 && v <= 100 ? v / 100 : 0.8;
+        } catch (_) { return 0.8; }
+    }
+
     function playBell() {
         try {
             initAudio();
+            const level = pomodoroLevel();
+            if (level <= 0) return;
             const now = audioCtx.currentTime;
             // Dual-tone harmonic chime (587.33 Hz D5 + 1174.66 Hz D6 overtone)
             [587.33, 1174.66].forEach((freq, idx) => {
@@ -3993,7 +4115,7 @@ if ('serviceWorker' in navigator) {
                 osc.type = 'sine';
                 osc.frequency.setValueAtTime(freq, now);
 
-                const initialGain = idx === 0 ? 0.35 : 0.18;
+                const initialGain = Math.min(0.95, (idx === 0 ? 0.35 : 0.18) * level * 1.8);
                 gain.gain.setValueAtTime(initialGain, now);
                 gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.2);
 
@@ -4016,7 +4138,7 @@ if ('serviceWorker' in navigator) {
         #pomodoroFabBtn {
             position: fixed;
             bottom: calc(24px + 64px);
-            right: 24px;
+            inset-inline-end: 24px;
             width: 52px;
             height: 52px;
             border-radius: 50%;
@@ -4081,8 +4203,8 @@ if ('serviceWorker' in navigator) {
         .pomo-header-bar {
             position: absolute;
             top: 20px;
-            left: 20px;
-            right: 20px;
+            inset-inline-start: 20px;
+            inset-inline-end: 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -4319,7 +4441,7 @@ if ('serviceWorker' in navigator) {
         fab.id = 'pomodoroFabBtn';
         fab.title = 'Open Pomodoro Clock';
         fab.setAttribute('aria-label', 'Open Pomodoro Clock');
-        fab.innerHTML = window.TaskitatorIcons?.icon('bee') || '';
+        fab.innerHTML = window.TaskitatorIcons?.icon('timer') || '';
         document.body.appendChild(fab);
 
         // Inject Modal Overlay

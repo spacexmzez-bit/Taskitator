@@ -752,7 +752,7 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             const el = (tag, text, css) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (css) n.style.cssText = css; return n; };
             dialog.append(el('h2', 'Choose what to keep', 'margin-top:0'),
                 el('p', `${conflicts.length} item${conflicts.length === 1 ? ' was' : 's were'} changed differently on this device and in the cloud. Everything else merged automatically. Nothing is saved until you press Apply.`));
-            const when = el('p', `This device last edited: ${times.local ? new Date(times.local).toLocaleString() : 'time unknown'} · Cloud saved: ${times.remote ? new Date(times.remote).toLocaleString() : 'time unknown'}`, 'font-size:.8rem;opacity:.75');
+            const when = el('p', `This device last edited: ${times.local ? (window.TaskitatorI18n?.dateTime(times.local) ?? new Date(times.local).toLocaleString()) : 'time unknown'} · Cloud saved: ${times.remote ? (window.TaskitatorI18n?.dateTime(times.remote) ?? new Date(times.remote).toLocaleString()) : 'time unknown'}`, 'font-size:.8rem;opacity:.75');
             dialog.append(when);
             const apply = el('button', 'Apply', 'margin:6px;padding:10px;border-radius:6px;cursor:pointer;');
             apply.type = 'button'; apply.disabled = true;
@@ -765,7 +765,7 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
                 const row = el('div', undefined, 'display:flex;gap:8px;flex-wrap:wrap');
                 const buttons = {};
                 for (const [side, heading, text] of [['mine', 'This device', d.mine], ['theirs', 'Cloud', d.theirs]]) {
-                    const b = el('button', undefined, 'flex:1 1 200px;text-align:left;padding:8px;border-radius:6px;cursor:pointer;');
+                    const b = el('button', undefined, 'flex:1 1 200px;text-align:start;padding:8px;border-radius:6px;cursor:pointer;');
                     b.type = 'button';
                     b.append(el('div', heading, 'font-size:.7rem;opacity:.7'), el('div', text, 'word-break:break-word'));
                     b.addEventListener('click', () => {
@@ -1859,7 +1859,7 @@ window.addEventListener('storage', event => {
                 'Deletion was accepted and account access is blocked. Cloud and sign-in cleanup is in progress.';
             if (data.legacy_review_needed) status.textContent += ' The legacy scan encountered unreadable records whose ownership could not be determined. Contact Mazendev for a manual review; unrelated records were not deleted.';
             if (data.migration_approval_remains) status.textContent += ' The old migration-approval configuration may still contain your username/email. Mazendev needs to remove that entry from its dashboard settings; the deleted workspace cannot be restored through it.';
-            document.getElementById('phoneRecovery').textContent = 'Temporary phone unlock ends: '+new Date(data.phone_recovery_until).toLocaleString()+'.';
+            document.getElementById('phoneRecovery').textContent = 'Temporary phone unlock ends: '+(window.TaskitatorI18n?.dateTime(data.phone_recovery_until) ?? new Date(data.phone_recovery_until).toLocaleString())+'.';
             const local = sessionStorage.getItem('taskitator_deletion_local_cleanup');
             document.getElementById('localCleanup').textContent = local==='complete' ? 'Identified local data was cleared in this browser.' :
                 'Local cleanup may be incomplete. Close other Taskitator tabs and clear site data here after checking the result. This does not affect cloud cleanup.';
@@ -2048,7 +2048,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-nature-v1');
+                    resolve(event.data?.version === 'taskitator-i18n-v1');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });

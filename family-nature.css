@@ -36,7 +36,7 @@ html[data-family="nature"] .tk-ic {
     flex: none;
     pointer-events: none;
 }
-html[data-family="nature"] .tk-ic + :not(.tk-ic) { margin-left: 0; }
+html[data-family="nature"] .tk-ic + :not(.tk-ic) { margin-inline-start: 0; }
 
 /* Scene: three SVG layers (far, mid, near) with CSS-variable colours, behind everything. */
 #tk-scene { display: none; }
@@ -165,8 +165,8 @@ html[data-family="nature"] .task-node.is-bonus > .task-row { background: color-m
     html[data-family="nature"] .task-row:hover { transform: none; background: color-mix(in srgb, #fff 3%, var(--tk-inner)); }
 }
 html[data-family="nature"] .task-row.row-selected {
-    border-color: var(--tk-accent) !important;
-    background: color-mix(in srgb, var(--tk-accent) 10%, var(--tk-inner)) !important;
+    border-color: var(--pc, var(--tk-accent)) !important;
+    background: color-mix(in srgb, var(--pc, var(--tk-accent)) 10%, var(--tk-inner)) !important;
     box-shadow: none;
 }
 html[data-family="nature"] .task-main { gap: 7px 8px; }
@@ -187,14 +187,14 @@ html[data-family="nature"] .task-subtree-inner > .task-node::before {
     pointer-events: none;
 }
 html[data-family="nature"] .task-subtree-inner > .task-node::after {
-    left: calc((var(--d) - 1) * 20px + 13px);
+    inset-inline-start: calc((var(--d) - 1) * 20px + 13px);
     top: -9px;
     width: 2px;
     height: calc(100% + 9px);
 }
 html[data-family="nature"] .task-subtree-inner > .task-node:last-child::after { height: calc(9px + 22px); }
 html[data-family="nature"] .task-subtree-inner > .task-node::before {
-    left: calc((var(--d) - 1) * 20px + 13px);
+    inset-inline-start: calc((var(--d) - 1) * 20px + 13px);
     top: 21px;
     width: 7px;
     height: 2px;
@@ -299,9 +299,9 @@ html[data-family="nature"] :is(.sidebar-drawer, .copilot-drawer) {
     box-shadow: none;
     border: 5px solid var(--tk-frame);
 }
-html[data-family="nature"] .sidebar-drawer { border-left: 0; border-radius: 0 10px 10px 0; }
-html[data-family="nature"] .copilot-drawer { border-right: 0; }
-@media (min-width: 768px) { html[data-family="nature"] .copilot-drawer { border-radius: 10px 0 0 10px; } }
+html[data-family="nature"] .sidebar-drawer { border-inline-start: 0; border-start-start-radius: 0; border-start-end-radius: 10px; border-end-end-radius: 10px; border-end-start-radius: 0; }
+html[data-family="nature"] .copilot-drawer { border-inline-end: 0; }
+@media (min-width: 768px) { html[data-family="nature"] .copilot-drawer { border-start-start-radius: 10px; border-start-end-radius: 0; border-end-end-radius: 0; border-end-start-radius: 10px; } }
 html[data-family="nature"] :is(.drawer-backdrop, .copilot-backdrop, .copilot-drawer-backdrop) { background: rgba(0, 0, 0, .55); backdrop-filter: none; }
 @media (min-width: 768px) { html[data-family="nature"] :is(.copilot-backdrop, .copilot-drawer-backdrop) { background: rgba(0, 0, 0, .3); } }
 html[data-family="nature"] .tk-brand { display: flex; align-items: center; gap: 10px; color: var(--tk-cream) !important; }
@@ -318,6 +318,25 @@ html[data-family="nature"] .drawer-links a {
     border: 1px solid rgba(255, 255, 255, .08);
     border-radius: 8px;
     color: var(--tk-cream);
+    font-weight: 800;
+}
+html[data-family="nature"] .drawer-links > button.icon-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    justify-content: flex-start;
+    min-height: 44px;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 6px !important;
+    padding: 11px 14px;
+    text-align: start;
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--tk-cream);
+    font: inherit;
+    font-size: 0.95rem;
     font-weight: 800;
 }
 html[data-family="nature"] .drawer-links a .tk-ic { width: 24px; height: 24px; color: var(--tk-soft); }
@@ -381,14 +400,14 @@ html[data-family="nature"] .switch:checked { background-color: var(--primary); }
 
 /* Help (inline styles in help.html stay; these flatten them) */
 html[data-family="nature"] .hp-sec { background: var(--tk-panel); border: 1px solid rgba(255, 255, 255, .1); border-radius: 10px; }
-html[data-family="nature"] .hp-sec h3 .tk-ic, html[data-family="nature"] .hp-toc .tk-ic { width: 20px; height: 20px; color: var(--tk-soft); margin-right: 6px; }
+html[data-family="nature"] .hp-sec h3 .tk-ic, html[data-family="nature"] .hp-toc .tk-ic { width: 20px; height: 20px; color: var(--tk-soft); margin-inline-end: 6px; }
 html[data-family="nature"] .hp-toc a { background: rgba(255, 255, 255, .05); }
 html[data-family="nature"] .hp-units a { border-radius: 8px; }
 html[data-family="nature"] .hp-exbody { background: color-mix(in srgb, var(--tk-accent) 10%, transparent); }
 
 /* Sleep and login */
 html[data-family="nature"] .sleep-card { background: var(--tk-panel); border: 2px solid var(--border-color); border-radius: 10px; }
-html[data-family="nature"] .sleep-header h1 .tk-ic { width: 30px; height: 30px; color: var(--tk-soft); margin-right: 6px; }
+html[data-family="nature"] .sleep-header h1 .tk-ic { width: 30px; height: 30px; color: var(--tk-soft); margin-inline-end: 6px; }
 html[data-family="nature"] .login-card {
     background: var(--tk-inner);
     border: 5px solid var(--tk-frame);
@@ -398,14 +417,14 @@ html[data-family="nature"] .login-card {
 
 /* ---------- 7. Tablet and desktop: persistent nav rail, Copilot as a partial panel ---------- */
 @media (min-width: 1180px) {
-    html[data-family="nature"] body:has(> .sidebar-drawer) { padding-left: 250px; }
+    html[data-family="nature"] body:has(> .sidebar-drawer) { padding-inline-start: 250px; }
     html[data-family="nature"] body > .sidebar-drawer {
         transform: none;
         width: 236px;
-        left: 0;
+        inset-inline-start: 0;
         visibility: visible;
         border: 0;
-        border-right: 1px solid var(--tk-line);
+        border-inline-end: 1px solid var(--tk-line);
         border-radius: 0;
         background: color-mix(in srgb, var(--tk-inner) 88%, transparent);
     }
@@ -560,7 +579,7 @@ html[data-family="nature"] .tk-login-logo { width: min(260px, 80%); margin: 0 0 
     font: inherit;
     font-weight: 800;
     cursor: pointer;
-    text-align: left;
+    text-align: start;
     transition: border-color .18s ease, background .18s ease, transform .12s ease;
 }
 .tk-theme-option:active { transform: scale(.98); }
