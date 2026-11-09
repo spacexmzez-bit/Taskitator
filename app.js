@@ -319,7 +319,7 @@ window.TaskitatorAgent = (() => {
         // Matches the Today list: the task or any ancestor is due today/overdue; undated chains are excluded.
         const qualifies = (node, self) => {
             const due = String(node.due_date || '').trim().toLowerCase();
-            return due === 'today' || (/^\d{4}-\d{2}-\d{2}$/.test(due) && due <= day) || (self && node.smart_early_date === day);
+            return due === 'today' || (/^\d{4}-\d{2}-\d{2}$/.test(due) && due <= day) || (self && (node.smart_early_date === day || node.early_date === day));
         };
         const inToday = task => {
             const seen = new Set(); let node = task;
@@ -1274,6 +1274,28 @@ window.TaskitatorApp = (() => {
             if (window.TaskitatorScratchpadBlocked()) {
                 if (lockBanner) lockBanner.style.display = 'flex';
                 if (unlockedBanner) unlockedBanner.style.display = 'none';
+                // Locked: only the first few words of each note are shown (read-only; no editing, deleting or full text).
+                const preview = n => {
+                    const words = String(n.title || n.text || '').trim().split(/\s+/).filter(Boolean);
+                    return words.slice(0, 4).join(' ') + (words.length > 4 ? '…' : '');
+                };
+                notes.forEach(n => {
+                    const card = document.createElement('div');
+                    card.className = 'dump-note-item-card dump-note-locked';
+                    const header = document.createElement('div');
+                    header.className = 'dump-note-header';
+                    const body = document.createElement('div');
+                    body.className = 'dump-note-body';
+                    body.setAttribute('translate', 'no');
+                    body.textContent = preview(n);
+                    const ttl = document.createElement('span');
+                    ttl.className = 'dump-note-ttl';
+                    ttl.textContent = formatRemainingTTL(n.created_at);
+                    header.appendChild(body);
+                    header.appendChild(ttl);
+                    card.appendChild(header);
+                    listEl.appendChild(card);
+                });
                 eModal.classList.add('open');
                 return;
             }
@@ -2763,7 +2785,7 @@ window.TaskitatorApp = (() => {
         const allChildrenMap = new Map();
         const visibleChildrenMap = new Map();
 
-        const displayTasks=tasks.map(t=>{
+        const displayTasks=(globalThis.TaskitatorEarly?.view(tasks,todayStr)??tasks).map(t=>{
             if(t.status!=='active'||t.smart_early_date!==todayStr)return t;
             const parent=tasks.find(p=>p.study_plan_id===t.study_plan_id&&!p.parent_id&&p.due_date===todayStr);
             return parent?{...t,parent_id:parent.id,due_date:todayStr,is_bonus:true}:t;
@@ -3065,7 +3087,19 @@ window.TaskitatorApp = (() => {
                 titleSpan.textContent = task.title;
                 main.appendChild(titleSpan);
 
-                if (task.is_bonus) {
+                if (task.early_due) {
+                    // Early appearance of a real task (its due date is unchanged). A real bonus task also keeps its Bonus tag.
+                    const earlyBadge = document.createElement('span');
+                    earlyBadge.className = 'bonus-badge early-badge';
+                    tkLabel(earlyBadge, 'bonus', 'Early · due '+task.early_due);
+                    main.appendChild(earlyBadge);
+                    if (task.early_bonus) {
+                        const realBonus = document.createElement('span');
+                        realBonus.className = 'bonus-badge';
+                        tkLabel(realBonus, 'bonus', 'Bonus');
+                        main.appendChild(realBonus);
+                    }
+                } else if (task.is_bonus) {
                     const bonusBadge = document.createElement('span');
                     bonusBadge.className = 'bonus-badge';
                     tkLabel(bonusBadge, 'bonus', task.smart_early_date ? 'Early · required '+task.smart_origin_date : 'Bonus');
@@ -3603,6 +3637,16 @@ window.TaskitatorApp = (() => {
                 }
                 const dueIn = document.getElementById('batchDueDateInput');
                 if (dueIn) dueIn.value = getAppTodayStr();
+                const earlyBox = document.getElementById('batchEarlyToggle'), earlyNote = document.getElementById('batchEarlyNotice');
+                if (earlyBox) {
+                    earlyBox.checked = false; earlyBox.disabled = true;
+                    if (earlyNote) { earlyNote.style.display = 'none'; earlyNote.textContent = ''; }
+                    // Pro only: the checkbox stays unpressable until the entitlement check passes.
+                    window.TaskitatorPro?.checkConsecutiveEntitlement?.().then(access => {
+                        if (access?.allowed) { earlyBox.disabled = false; return; }
+                        if (earlyNote) { earlyNote.textContent = 'Early bonus is a Taskitator Pro feature.'; earlyNote.style.display = 'block'; }
+                    }).catch(() => {});
+                }
                 batchDueDateModal.classList.add('open');
             });
         }
@@ -3615,6 +3659,21 @@ window.TaskitatorApp = (() => {
                 const todayStr = getAppTodayStr();
                 const isBypass = isBypassActiveSafe();
                 let protectedCount = 0;
+
+                if (document.getElementById('batchEarlyToggle')?.checked) {
+                    // Early bonus: the due date is untouched; the chosen date becomes an extra optional appearance.
+                    const result = window.TaskitatorEarly.set(tasks, [...selectedTaskIds], targetDate, todayStr);
+                    if (result.set.length) saveStorageAndPush();
+                    batchDueDateModal.classList.remove('open');
+                    clearSelectionAfterAction();
+                    renderUnifiedView();
+                    const I = window.TaskitatorI18n, tr = (k, v) => I ? I.t(k, v) : k.replace(/\{(\w+)\}/g, (_, x) => v[x]);
+                    const parts = [];
+                    if (result.set.length) parts.push(tr('{n} task(s) will show early on {date}.', { n: result.set.length, date: targetDate }));
+                    if (result.skipped.length) parts.push(tr('{n} skipped: {list}', { n: result.skipped.length, list: result.skipped.slice(0, 3).map(x => '"' + x.title + '" (' + (I ? I.translateText(x.reason) : x.reason) + ')').join('; ') + (result.skipped.length > 3 ? '; …' : '') }));
+                    if (parts.length) window.TaskitatorNotify(parts.join(' '));
+                    return;
+                }
 
                 selectedTaskIds.forEach(id => {
                     const t = tasks.find(x => x.id === id);
@@ -3637,6 +3696,22 @@ window.TaskitatorApp = (() => {
                 }
             });
         }
+
+        document.getElementById('batchEarlyHelpBtn')?.addEventListener('click', () => {
+            const help = document.getElementById('batchEarlyHelp'), btn = document.getElementById('batchEarlyHelpBtn');
+            if (!help) return;
+            help.hidden = !help.hidden;
+            btn.setAttribute('aria-expanded', String(!help.hidden));
+        });
+        document.getElementById('batchEarlyClearBtn')?.addEventListener('click', () => {
+            const removed = window.TaskitatorEarly.clear(tasks, [...selectedTaskIds]);
+            if (removed) saveStorageAndPush();
+            batchDueDateModal?.classList.remove('open');
+            clearSelectionAfterAction();
+            renderUnifiedView();
+            const I = window.TaskitatorI18n;
+            window.TaskitatorNotify(removed ? (I ? I.t('{n} early date(s) removed. Due dates are unchanged.', { n: removed }) : removed + ' early date(s) removed. Due dates are unchanged.') : 'None of the selected tasks had an early date.');
+        });
 
         // Batch Bonus State: same rule as the edit modal (shield-protected required work can't become bonus).
         const batchBonusModal = document.getElementById('batchBonusModal');

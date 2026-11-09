@@ -621,3 +621,6 @@ html[data-family="nature"] .copilot-fab-btn {
 html:not([data-family]) #focusTimerTag > .tk-ic { display: none; }
 html:not([data-family]) #focusTimerTag:has(> .tk-ic)::before { content: "\23F1"; }
 @media (max-width: 420px) { .tk-theme-options { grid-template-columns: 1fr; } }
+
+html[data-family="nature"] .copilot-standby-icon .tk-ic.copilot-standby-art { width: 110px; height: 55px; color: var(--tk-soft); }
+html[data-family="nature"] .copilot-standby-card .tk-ic.copilot-standby-art { width: 80px; height: 40px; }

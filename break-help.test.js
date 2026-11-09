@@ -34,9 +34,14 @@ test('help text states the real limits from break-systems.js', () => {
     assert.match(flex, /Reserved breaks belong to the Scheduled system/);
 });
 
-test('Copilot uses the alligator mascot', () => {
+test('Copilot uses the alligator head on buttons and the full body in the drawer', () => {
     const icons = fs.readFileSync(new URL('./icons.js', import.meta.url), 'utf8');
-    assert.match(icons, /'copilot': 'nt-brand-mascot'/);
-    assert.match(icons, /'robot': 'nt-brand-mascot'/);
-    assert.match(fs.readFileSync(new URL('./image/nature_sprites/sprite.svg', import.meta.url), 'utf8'), /<symbol id="nt-brand-mascot"/);
+    assert.match(icons, /'copilot': 'nt-x-copilot-head'/);
+    assert.match(icons, /'robot': 'nt-x-copilot-head'/);
+    assert.match(fs.readFileSync(new URL('./image/nature_sprites/sprite.svg', import.meta.url), 'utf8'), /<symbol id="nt-x-copilot-head"/);
+    assert.match(icons, /'copilot-body': 'nt-x-copilot-body'/);
+    const index = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+    assert.match(index, /copilot-standby-icon"><svg[^>]*><use href="#ic-copilot-body"/);
+    assert.doesNotMatch(index, /#ic-ai"/);
+    assert.equal(fs.readFileSync(new URL('./icons.js', import.meta.url), 'utf8').match(/'trash': '([a-z-]+)'/)[1], 'nt-x-trash');
 });

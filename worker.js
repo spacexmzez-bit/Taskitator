@@ -1,5 +1,6 @@
 import { UniverseRules } from './uni/universe-rules.js';
 import './pro/smart-study.js';
+import './pro/early-bonus.js';
 import './pro/study-plan.js';
 // ============================================================================
 // Taskitator Consolidated Cloudflare Worker & Security Engine (worker.js)
@@ -2140,7 +2141,7 @@ export class TaskitatorSync {
             // Refresh Pro entitlement BEFORE the storage transaction (it may call Keyo). The transaction rechecks
             // the stored entitlement, so a change between this refresh and the commit is still caught.
             let dynamicRefreshError = null;
-            if (push && identity?.userId && (snapshot.tasks.some(t => t.dynamic_priority_target != null) ||
+            if (push && identity?.userId && (snapshot.tasks.some(t => t.dynamic_priority_target != null || t.early_date != null) ||
                 snapshot.recurrence_state?.series?.some(s => s.nodes?.some(n => n.task?.dynamic_priority_target != null)))) {
                 try { await this.pro.licenses.resolve(identity.userId); } catch (e) { dynamicRefreshError = e; }
             }
@@ -2214,11 +2215,14 @@ export class TaskitatorSync {
                         throw new HTTPError(428, 'Refresh Taskitator on this device before syncing tasks that use Dynamic Priority.');
                     }
                     try{globalThis.TaskitatorSmartStudy.guard(previous,snapshot);}catch(e){throw new HTTPError(409,e.message);}
+                    try{globalThis.TaskitatorEarly.guard(previous,snapshot);}catch(e){throw new HTTPError(400,e.message);}
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
                     try { Recurrence.reconcile(snapshot); }
                     catch (err) { throw new HTTPError(400, err.message); }
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
                     await this.protection.guardDynamic(tx,identity.userId,previous,snapshot,dynamicRefreshError);
+                    await this.protection.guardEarly(tx,identity.userId,previous,snapshot,dynamicRefreshError);
+                    globalThis.TaskitatorEarly.apply(snapshot);
                     globalThis.TaskitatorSmartStudy.apply(snapshot,previous);
                     // Breaks are changed only through /breaks. Sync keeps the stored copy, so a stale or
                     // modified device cannot erase a system lock, edit a schedule or restore spent allowance.

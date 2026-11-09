@@ -36,7 +36,7 @@ function apply(snapshot,previous,now=Date.now(),approval=null){
   task.smart_adjusted=true; // consumed once, including when no replacement fits
   if(config.mode==='original'||task.due_date<today)continue;
   const targets=config.mode==='weekend'?nextWeekend(task.smart_early_date,config.weekend_start,config.weekend_end):config.dates;
-  const candidates=list.filter(t=>t.study_plan_id===task.study_plan_id&&t.parent_id&&t.status==='active'&&!t.is_bonus&&!t.smart_early_date&&!t.smart_moved_from&&targets.includes(t.due_date)&&t.due_date>task.due_date).sort((a,b)=>a.due_date.localeCompare(b.due_date)||Number(a.id.split('_unit_').at(-1))-Number(b.id.split('_unit_').at(-1)));
+  const candidates=list.filter(t=>t.study_plan_id===task.study_plan_id&&t.parent_id&&t.status==='active'&&!t.is_bonus&&!t.smart_early_date&&!t.smart_moved_from&&t.early_date===undefined&&targets.includes(t.due_date)&&t.due_date>task.due_date).sort((a,b)=>a.due_date.localeCompare(b.due_date)||Number(a.id.split('_unit_').at(-1))-Number(b.id.split('_unit_').at(-1)));
   const replacement=candidates[0];if(!replacement)continue;
   replacement.smart_moved_from=replacement.due_date;replacement.due_date=task.due_date;replacement.parent_id=task.parent_id;task.smart_replacement_id=replacement.id;
  }

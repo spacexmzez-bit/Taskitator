@@ -161,7 +161,7 @@ test('Settings has a device-only Language card that does not mark settings unsav
 test('RTL: layout CSS uses logical properties (physical left/right only where intentional)', () => {
     // Allowed physical declarations: centring (left:50% + translate), JS-positioned elements
     // (tour card, Universe tab indicator), decorative art (scene, clouds, bird), border-drawn chevrons.
-    const ALLOWED = /\.tt-|#tk-scene|#tk-clouds|\.tk-bird|\.uni-tab-indicator|\.uni-stepper li::after|\.uni-toast|summary::after|left:\s*50%|right:\s*50%|translate\(-50%|translateX\(-50%/;
+    const ALLOWED = /\.tt-|#tk-scene|#tk-clouds|\.tk-bird|\.uni-tab-indicator|\.uni-stepper li::after|\.uni-toast|summary::after|#openDrawerBtn::before|left:\s*50%|right:\s*50%|translate\(-50%|translateX\(-50%/;
     const files = ['style.css', 'family-nature.css', 'tutorial-spotlight.css', 'uni/universe.css'];
     for (const f of files) {
         const css = read(f).replace(/\/\*[\s\S]*?\*\//g, '');

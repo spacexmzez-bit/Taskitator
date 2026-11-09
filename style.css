@@ -1520,7 +1520,7 @@ html.is-offline [data-requires-online] {
 #focusTimerPanel .focus-timer-display {padding:18px 12px;margin:0 0 12px;text-align:center;background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;font-size:1.2rem;font-weight:600;font-variant-numeric:tabular-nums}
 .focus-timer-status,.focus-timer-help {color:var(--text-muted);font-size:.8rem;line-height:1.6}
 .focus-timer-status:empty {display:none}
-.focus-timer-fields {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:20px 0}
+.focus-timer-fields {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:20px 0;align-items:end}
 .focus-timer-fields label {font-size:.8rem;color:var(--text-muted)}
 .focus-timer-fields input {display:block;box-sizing:border-box;width:100%;min-height:44px;margin-top:8px;padding:10px;border:1.5px solid var(--border-color);border-radius:8px;background:var(--card-bg);color:var(--text-color);font:inherit;font-size:1rem}
 .focus-timer-options {display:grid;gap:12px;margin-bottom:20px}
@@ -1573,7 +1573,7 @@ html.is-offline [data-requires-online] {
 }
 @media (max-width:767px) {
     .nav-copilot-label {display:none}
-    #openCopilotNavBtn {width:36px!important;min-width:36px;padding:0!important;gap:0;overflow:hidden}
+    #openCopilotNavBtn {width:auto!important;min-width:44px;padding:0 8px!important;gap:0;overflow:visible}
     .page-title-section:has(.account-username-btn) {grid-template-columns:minmax(0,1fr) auto;row-gap:12px}
     .page-title-section:has(.account-username-btn) h1 {font-size:1.4rem;overflow-wrap:normal}
     .page-title-section .account-username-btn {grid-row:2;grid-column:1;max-width:100%;width:fit-content;height:36px;padding:0 10px;font-size:.85rem}
@@ -5505,3 +5505,26 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .break-help-body .break-help-example { padding: 8px 10px; border-radius: 8px; background: var(--card-subtle); border: 1px solid var(--border-color); }
 .break-help-body .break-help-note { color: var(--text-muted); font-size: .8rem; }
 #breakHelpModal { z-index: 3100; }
+
+/* Early bonus (batch due-date dialog) */
+.early-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--card-subtle); }
+.early-option-label { display: flex; align-items: center; gap: 8px; font-size: .85rem; cursor: pointer; }
+.early-option-label input { width: 16px; height: 16px; accent-color: var(--primary); }
+.early-option-label:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+.early-help { margin-top: 8px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border-color); font-size: .82rem; line-height: 1.45; }
+.early-help p { margin: 0; }
+.early-clear-btn { margin-top: 10px; padding: 5px 10px; font-size: .78rem; }
+.bonus-badge.early-badge { border-style: dashed; }
+.cal-dot-early { width: 5px; height: 5px; box-sizing: border-box; border: 1.5px dashed var(--primary); background: transparent; border-radius: 1px; }
+.calendar-cell.selected .cal-dot-early { border-color: #fff; }
+
+/* Sidebar button hint: a small arrow on the top corner shows that it opens the side drawer. */
+#openDrawerBtn { position: relative; overflow: visible; }
+#openDrawerBtn::after { content: ''; position: absolute; top: -6px; inset-inline-start: -6px; width: 15px; height: 15px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 2px var(--bg-color, #050b17); pointer-events: none; }
+#openDrawerBtn::before { content: ''; position: absolute; top: -1px; inset-inline-start: -2.5px; width: 4px; height: 4px; border-top: 2px solid #fff; border-right: 2px solid #fff; transform: rotate(45deg); z-index: 1; pointer-events: none; }
+
+/* Drawer standby art: the full-body mascot, tinted by the theme. */
+.tk-ic.copilot-standby-art { width: 110px; height: 55px; color: var(--primary); }
+.copilot-standby-card .tk-ic.copilot-standby-art { width: 80px; height: 40px; }
+.dump-note-locked .dump-note-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dump-note-locked .dump-note-body { margin: 0; min-width: 0; overflow-wrap: anywhere; unicode-bidi: plaintext; }

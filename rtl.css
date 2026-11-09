@@ -61,3 +61,6 @@ html[lang="ar"] #universeWorkspace .uni-deselect-all::after { content: 'إلغا
     html[lang="ar"] #universeWorkspace .uni-deselect-all::after { content: 'لا شيء'; }
 }
 html[lang="ar"][data-tier="pro"][data-expiring="1"] .tier-chip::before { content: 'ينتهي خلال ' attr(data-days) ' يوم \00B7  '; }
+
+/* Sidebar hint arrow points the other way: the drawer opens from the right. */
+html[dir="rtl"] #openDrawerBtn::before { transform: rotate(-135deg); inset-inline-start: -1.5px; }

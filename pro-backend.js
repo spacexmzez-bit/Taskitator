@@ -723,6 +723,15 @@ export class TaskProtection {
             checked=true;
         }
     }
+    // Early bonus (Pro): adding or changing an early_date needs verified Pro (fail closed). Clearing one never does.
+    async guardEarly(tx,account,previous,next,refreshError=null){
+        if(!globalThis.TaskitatorEarly.changed(previous,next).length)return;
+        if(refreshError)throw refreshError;
+        const e=await tx.get('pro:entitlement:'+account);
+        if(!e||e.status!=='active'||!DYNAMIC_PRIORITY_TIERS.includes(e.tier)||e.account_id!==account||e.keyo_version!==1||!e.signed_token||
+            !Number.isSafeInteger(e.valid_until)||e.valid_until<=Date.now()||(e.expires_at!==null&&(!Number.isSafeInteger(e.expires_at)||e.expires_at<=Date.now())))
+            throw fail(403,'PRO_REQUIRED','Early bonus is a Taskitator Pro feature. Existing early dates are kept, but adding or changing one needs an active Pro license.');
+    }
     async bypass(store,account){await liveAccount(store,account);const state=await store.get('pro:emergency:'+account);return !!state&&state.active_until_ms>Date.now();}
     async emergency(identity,activate=false){
         return this.storage.transaction(async tx=>{

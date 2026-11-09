@@ -12,21 +12,21 @@
         nature: {
             // shell
             'menu': 'nt-i-earth', 'completed': 'nt-i-leaf', 'breaks': 'nt-i-tent', 'scratchpad': 'nt-i-ff0',
-            'scratchpad-lit': 'nt-i-ff1', 'emergency': 'nt-i-flame', 'copilot': 'nt-brand-mascot', 'sparkle': 'nt-x-sparkle',
+            'scratchpad-lit': 'nt-i-ff1', 'emergency': 'nt-i-flame', 'copilot': 'nt-x-copilot-head', 'sparkle': 'nt-x-sparkle',
             'add': 'nt-x-plus', 'leaf': 'nt-leaf',
             // navigation
             'nav-today': 'nt-e-pine', 'nav-general': 'nt-e-palm', 'nav-calendar': 'nt-e-calendar', 'nav-projects': 'nt-e-briefcase',
-            'nav-stats': 'nt-e-sprout2', 'nav-trash': 'nt-e-leaves', 'nav-drafts': 'nt-e-receipt', 'nav-universe': 'nt-e-planet',
+            'nav-stats': 'nt-e-sprout2', 'nav-trash': 'nt-x-trash', 'nav-drafts': 'nt-e-receipt', 'nav-universe': 'nt-e-planet',
             'nav-sleep': 'nt-e-moon', 'nav-help': 'nt-e-book', 'nav-settings': 'nt-e-mountain', 'nav-login': 'nt-e-key',
             // states and features
             'lock': 'nt-e-lock', 'unlock': 'nt-x-unlock', 'shield': 'nt-e-shield', 'bonus': 'nt-e-star', 'star': 'nt-e-star',
-            'warning': 'nt-e-warning', 'calendar': 'nt-e-calendar', 'robot': 'nt-brand-mascot', 'ai': 'nt-e-owl', 'owl': 'nt-e-owl',
+            'warning': 'nt-e-warning', 'calendar': 'nt-e-calendar', 'robot': 'nt-x-copilot-head', 'copilot-body': 'nt-x-copilot-body', 'ai': 'nt-e-owl', 'owl': 'nt-e-owl',
             'siren': 'nt-e-siren', 'bolt': 'nt-e-bolt', 'bulb': 'nt-e-bulb', 'test': 'nt-e-tube', 'clip': 'nt-e-clip',
             'camera': 'nt-e-camera', 'receipt': 'nt-e-receipt', 'notes': 'nt-e-receipt', 'book': 'nt-e-book', 'key': 'nt-e-key',
             'tag': 'nt-e-tag', 'person': 'nt-e-person', 'phone': 'nt-e-phone', 'inbox': 'nt-e-inbox', 'mail': 'nt-e-mailbox',
             'briefcase': 'nt-e-briefcase', 'folder': 'nt-e-briefcase', 'sliders': 'nt-e-sliders', 'settings': 'nt-e-sliders',
             'moon': 'nt-e-moon', 'planet': 'nt-e-planet', 'mountain': 'nt-e-mountain', 'goal': 'nt-e-mountain', 'pine': 'nt-e-pine',
-            'palm': 'nt-e-palm', 'sprout': 'nt-e-sprout', 'growth': 'nt-e-sprout2', 'leaves': 'nt-e-leaves', 'trash': 'nt-e-leaves',
+            'palm': 'nt-e-palm', 'sprout': 'nt-e-sprout', 'growth': 'nt-e-sprout2', 'leaves': 'nt-e-leaves', 'trash': 'nt-x-trash',
             'butterfly': 'nt-e-butterfly', 'bee': 'nt-e-bee', 'mushroom': 'nt-e-mushroom', 'coffee': 'nt-x-coffee',
             'earth': 'nt-i-earth', 'flame': 'nt-i-flame', 'dove': 'nt-i-dove', 'tent': 'nt-i-tent', 'save': 'nt-e-inbox',
             'search': 'nt-e-sliders', 'stats': 'nt-e-sprout2', 'timer': 'nt-x-timer', 'help': 'nt-e-book',
@@ -51,7 +51,7 @@
     const has = key => typeof key === 'string' && Boolean(mapFor('nature')[key]);
 
     // The mascot is wider than tall, so these keys get a wider box (see .tk-ic-wide).
-    const WIDE = new Set(['copilot', 'robot']);
+    const WIDE = new Set(["copilot","robot"]);
 
     // Markup string. Icons are decorative: the surrounding control carries the label.
     function icon(key, cls) {

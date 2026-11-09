@@ -327,7 +327,7 @@
 
     <div class="copilot-body">
         <div class="copilot-standby-view" id="copilotStandbyView">
-            <div class="copilot-standby-icon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-ai"></use></svg></div>
+            <div class="copilot-standby-icon"><svg class="tk-ic tk-ic-wide copilot-standby-art" aria-hidden="true" focusable="false"><use href="#ic-copilot-body"></use></svg></div>
             <div class="copilot-standby-title">Focus Copilot</div>
             <button class="icon-btn btn-primary" id="startCopilotBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 10px 22px;">
                 Start Conversation
@@ -491,6 +491,15 @@
             <label for="batchDueDateInput">Target Date</label>
             <input type="date" id="batchDueDateInput">
         </div>
+        <div class="early-option">
+            <label class="early-option-label" for="batchEarlyToggle"><input type="checkbox" id="batchEarlyToggle" disabled> <span>Show early as bonus (keep due date)</span></label>
+            <button type="button" class="icon-btn break-help-btn" id="batchEarlyHelpBtn" aria-label="How early bonus works" aria-expanded="false" aria-controls="batchEarlyHelp">?</button>
+        </div>
+        <small id="batchEarlyNotice" class="pro-consecutive-notice" style="display: none;" role="status" aria-live="polite"></small>
+        <div class="early-help" id="batchEarlyHelp" hidden>
+            <p>Shows the task on the date you pick as optional work. Its due date doesn't change and it's still required then. Finish it early and it's done; skip it and it stays due on its original date. Shields, locks and AI checks still apply. Not available for recurring tasks.</p>
+        </div>
+        <button type="button" class="icon-btn early-clear-btn" id="batchEarlyClearBtn">Remove early date from selected</button>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
             <button type="button" class="icon-btn" id="closeBatchDueDateBtn">Cancel</button>
             <button type="button" class="icon-btn btn-primary" id="applyBatchDueDateBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Apply to Selected</button>
@@ -1338,6 +1347,7 @@
 
 <script type="text/taskitator-script" src="pro.js"></script>
     <script type="text/taskitator-script" src="pro/smart-study.js"></script>
+    <script type="text/taskitator-script" src="pro/early-bonus.js"></script>
     <script type="text/taskitator-script" src="pro/study-plan.js"></script>
     <script type="text/taskitator-script" src="task-drafts.js"></script>
     <script type="text/taskitator-script" src="components.js"></script>
