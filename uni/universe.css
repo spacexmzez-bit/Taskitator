@@ -73,15 +73,15 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace button.uni-danger:hover, #universeWorkspace .uni-danger-zone button:hover { color: #fca5a5; background: #450a0a; border-color: var(--danger); box-shadow: 0 4px 0 var(--depth-danger); }
 /* Busy and done feedback, set by run() on the button that started the action. */
 #universeWorkspace button.is-busy { pointer-events: none; color: transparent !important; }
-#universeWorkspace button.is-busy::after { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; border: 2px solid var(--text-color); border-right-color: transparent; border-radius: 50%; animation: uni-spin .7s linear infinite; }
-#universeWorkspace button.btn-primary.is-busy::after, #universeWorkspace button[type=submit].is-busy::after { border-color: #fff; border-right-color: transparent; }
+#universeWorkspace button.is-busy::after { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; border: 2px solid var(--text-color); border-inline-end-color: transparent; border-radius: 50%; animation: uni-spin .7s linear infinite; }
+#universeWorkspace button.btn-primary.is-busy::after, #universeWorkspace button[type=submit].is-busy::after { border-color: #fff; border-inline-end-color: transparent; }
 #universeWorkspace button.is-done { border-color: var(--success); box-shadow: 0 3px 0 #14532d, 0 0 0 3px rgba(34, 197, 94, .25); }
 #universeWorkspace button.is-failed { animation: uni-shake .32s var(--uni-ease); border-color: var(--danger); }
 @keyframes uni-spin { to { transform: rotate(360deg); } }
 @keyframes uni-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 
 /* Loading bar while an action runs */
-#universeWorkspace[aria-busy=true]::before { content: ""; position: fixed; top: 0; left: 0; right: 0; z-index: 5000; height: 3px; background: linear-gradient(90deg, transparent, var(--primary), var(--nebula), transparent); background-size: 50% 100%; background-repeat: no-repeat; animation: uni-progress 1s linear infinite; pointer-events: none; }
+#universeWorkspace[aria-busy=true]::before { content: ""; position: fixed; top: 0; inset-inline-start: 0; inset-inline-end: 0; z-index: 5000; height: 3px; background: linear-gradient(90deg, transparent, var(--primary), var(--nebula), transparent); background-size: 50% 100%; background-repeat: no-repeat; animation: uni-progress 1s linear infinite; pointer-events: none; }
 @keyframes uni-progress { from { background-position: -50% 0; } to { background-position: 150% 0; } }
 
 /* 3. Shell: header, sync badge, tabs, sidebar */
@@ -159,8 +159,8 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 
 /* 5. Task cards (main-site layout: card, 6px priority stripe) */
 #universeWorkspace .task-node { padding: 0; margin: 0 0 8px; border: 0; background: none; overflow: visible; animation: uni-enter var(--dur-slow) var(--uni-ease) both; }
-#universeWorkspace .task-row { position: relative; display: flex; align-items: flex-start; gap: 8px; min-height: 52px; padding: 11px 12px; border: 1.5px solid var(--border-color); border-left: 6px solid var(--priority-color, var(--primary)); border-radius: var(--radius-m); background: var(--card-bg); box-shadow: var(--card-shadow); transition: transform var(--dur-fast) var(--uni-ease), border-color var(--dur-fast), background var(--dur-fast); }
-#universeWorkspace .task-row:hover { border-color: var(--border-hover); border-left-color: var(--priority-color, var(--primary)); background: #17102f; transform: translateY(-1px); }
+#universeWorkspace .task-row { position: relative; display: flex; align-items: flex-start; gap: 8px; min-height: 52px; padding: 11px 12px; border: 1.5px solid var(--border-color); border-inline-start: 6px solid var(--priority-color, var(--primary)); border-radius: var(--radius-m); background: var(--card-bg); box-shadow: var(--card-shadow); transition: transform var(--dur-fast) var(--uni-ease), border-color var(--dur-fast), background var(--dur-fast); }
+#universeWorkspace .task-row:hover { border-color: var(--border-hover); border-inline-start-color: var(--priority-color, var(--primary)); background: #17102f; transform: translateY(-1px); }
 #universeWorkspace .task-main { display: flex; flex: 1; gap: 10px; align-items: flex-start; flex-wrap: nowrap; min-width: 0; }
 #universeWorkspace .collapse-toggle, #universeWorkspace .collapse-spacer { width: 24px; min-height: 24px; height: 24px; padding: 0; border: 0; background: none; box-shadow: none; color: var(--primary-hover); flex-shrink: 0; }
 #universeWorkspace .collapse-toggle:hover, #universeWorkspace .collapse-toggle:active { transform: none; box-shadow: none; background: var(--accent-light); }
@@ -191,7 +191,7 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .task-badges-wrap > .uni-meta-progress { color: #86efac; background: rgba(34, 197, 94, .1); }
 #universeWorkspace .uni-child-tree { display: grid; grid-template-rows: 1fr; transition: grid-template-rows var(--dur-med) var(--uni-ease), opacity var(--dur-med); }
 #universeWorkspace .uni-child-tree.uni-collapsed { grid-template-rows: 0fr; opacity: 0; }
-#universeWorkspace .uni-child-inner { min-height: 0; overflow: hidden; margin-inline-start: 19px; padding: 8px 0 0 14px; border-inline-start: 2px dashed var(--border-color); }
+#universeWorkspace .uni-child-inner { min-height: 0; overflow: hidden; margin-inline-start: 19px; padding-block: 8px 0; padding-inline: 14px 0; border-inline-start: 2px dashed var(--border-color); }
 #universeWorkspace .uni-child-tree:not(.uni-collapsed) > .uni-child-inner { overflow: visible; }
 #universeWorkspace .uni-child-tree .uni-child-tree .uni-child-tree .uni-child-inner { margin-inline-start: 4px; }
 #universeWorkspace .uni-state { align-self: center; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--accent-light); color: var(--primary-hover); flex-shrink: 0; white-space: nowrap; }
@@ -201,7 +201,7 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-fab:hover { background: var(--primary); color: #fff; transform: translateY(-2px); box-shadow: 0 6px 0 var(--depth-primary), 0 14px 28px rgba(124, 58, 237, .5); }
 #universeWorkspace .uni-fab:active { transform: translateY(4px); box-shadow: 0 0 0 var(--depth-primary), 0 4px 10px rgba(124, 58, 237, .4); }
 @media (min-width: 768px) {
-  #universeWorkspace .uni-fab { width: auto; padding: 0 20px 0 16px; gap: 8px; border-radius: 14px; }
+  #universeWorkspace .uni-fab { width: auto; padding-block: 0 0; padding-inline: 16px 20px; gap: 8px; border-radius: 14px; }
   #universeWorkspace .uni-fab::after { content: 'New task'; font-size: 15px; font-weight: 700; }
 }
 
@@ -226,7 +226,7 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace input:not([type=checkbox]):not([type=file]):not([type=color]), #universeWorkspace select, #universeWorkspace textarea { display: block; width: 100%; max-width: 100%; margin-top: 6px; padding: 10px 12px; border: 1.5px solid var(--border-color); border-radius: var(--radius-s); background: var(--card-subtle); color: var(--text-color); font: inherit; font-size: 14px; font-weight: 400; outline: none; transition: border-color var(--dur-fast), box-shadow var(--dur-fast); color-scheme: dark; }
 #universeWorkspace input:focus, #universeWorkspace select:focus, #universeWorkspace textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(139, 92, 246, .25); }
 #universeWorkspace input:disabled, #universeWorkspace select:disabled, #universeWorkspace textarea:disabled { opacity: .5; cursor: not-allowed; }
-#universeWorkspace input[type=checkbox] { width: 16px; height: 16px; margin: 0 8px 0 0; accent-color: var(--primary); vertical-align: middle; }
+#universeWorkspace input[type=checkbox] { width: 16px; height: 16px; margin-block: 0 0; margin-inline: 0 8px; accent-color: var(--primary); vertical-align: middle; }
 #universeWorkspace input[type=color] { display: block; width: 54px; height: 42px; margin-top: 6px; padding: 3px; border: 1.5px solid var(--border-color); border-radius: var(--radius-s); background: var(--card-subtle); cursor: pointer; }
 /* File inputs look like the main site's dashed picker. */
 #universeWorkspace input[type=file] { display: block; width: 100%; margin-top: 6px; padding: 12px; border: 1.5px dashed var(--primary); border-radius: var(--radius-s); background: rgba(139, 92, 246, .08); color: var(--text-muted); font: inherit; font-size: 13px; cursor: pointer; transition: background var(--dur-fast), border-style var(--dur-fast); }
@@ -236,12 +236,12 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace fieldset { min-width: 0; margin: 12px 0; padding: 0; border: 0; max-height: 280px; overflow: auto; }
 #universeWorkspace legend { margin-bottom: 4px; font-size: 12.5px; font-weight: 700; color: var(--text-color); }
 /* Checkbox labels inside fieldsets become tap chips. */
-#universeWorkspace fieldset > label, #universeWorkspace .uni-tag-options label, #universeWorkspace details[style] > label { display: inline-flex; align-items: center; min-height: 34px; margin: 6px 6px 0 0; padding: 0 12px; border: 1.5px solid var(--border-color); border-radius: 17px; background: var(--card-bg); color: var(--text-muted); font-weight: 600; cursor: pointer; transition: all var(--dur-fast); user-select: none; }
+#universeWorkspace fieldset > label, #universeWorkspace .uni-tag-options label, #universeWorkspace details[style] > label { display: inline-flex; align-items: center; min-height: 34px; margin-block: 6px 0; margin-inline: 0 6px; padding: 0 12px; border: 1.5px solid var(--border-color); border-radius: 17px; background: var(--card-bg); color: var(--text-muted); font-weight: 600; cursor: pointer; transition: all var(--dur-fast); user-select: none; }
 #universeWorkspace fieldset > label:hover, #universeWorkspace details[style] > label:hover { border-color: var(--primary-hover); color: var(--text-color); }
 #universeWorkspace fieldset > label:active, #universeWorkspace details[style] > label:active { transform: scale(.96); }
 #universeWorkspace fieldset > label:has(input:checked), #universeWorkspace details[style] > label:has(input:checked), #universeWorkspace .uni-priority-options button[aria-pressed=true] { border-color: var(--primary-hover); background: var(--primary-fill); color: #fff; }
 #universeWorkspace fieldset > label input[type=checkbox], #universeWorkspace details[style] > label input[type=checkbox] { position: absolute; opacity: 0; pointer-events: none; }
-#universeWorkspace .uni-priority-options button { margin: 6px 6px 0 0; min-height: 34px; border-radius: 17px; background: var(--card-bg); box-shadow: none; }
+#universeWorkspace .uni-priority-options button { margin-block: 6px 0; margin-inline: 0 6px; min-height: 34px; border-radius: 17px; background: var(--card-bg); box-shadow: none; }
 #universeWorkspace .uni-priority-options button::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--uni-dot, var(--primary)); }
 
 #universeWorkspace details { margin: 10px 0; padding: 0 16px; border: 1.5px solid var(--border-color); border-radius: 12px; background: var(--card-bg); box-shadow: var(--card-shadow); interpolate-size: allow-keywords; }
@@ -266,14 +266,14 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-editor-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 24px 20px; }
 #universeWorkspace .uni-editor details { background: var(--card-subtle); box-shadow: none; }
 #universeWorkspace .uni-editor-actions { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 24px calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1.5px solid var(--border-color); background: var(--card-bg); }
-#universeWorkspace .uni-editor-actions p { margin: 0 auto 0 0; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+#universeWorkspace .uni-editor-actions p { margin-block: 0 0; margin-inline: 0 auto; font-size: 12px; display: flex; align-items: center; gap: 6px; }
 #universeWorkspace .uni-editor-actions p.uni-dirty::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--warning); box-shadow: 0 0 0 3px rgba(251, 191, 36, .2); }
 #universeWorkspace .uni-select-all::after { content: 'Select all'; }
 #universeWorkspace .uni-deselect-all::after { content: 'Deselect all'; }
 #universeWorkspace .uni-select-all { margin-inline-end: 8px; }
 #universeWorkspace form:not(.uni-editor) { margin: 12px 0; padding: 16px; border: 1.5px solid var(--border-color); border-radius: var(--radius-l); background: var(--card-bg); box-shadow: var(--card-shadow); }
 #universeWorkspace details form:not(.uni-editor), #universeWorkspace .uni-settings-section form:not(.uni-editor) { padding: 0; border: 0; box-shadow: none; background: none; }
-#universeWorkspace form:not(.uni-editor) > button { margin: 8px 8px 0 0; }
+#universeWorkspace form:not(.uni-editor) > button { margin-block: 8px 0; margin-inline: 0 8px; }
 
 #universeWorkspace .uni-detail.modal-box, #universeWorkspace .uni-detail-frame { display: flex; flex-direction: column; width: 780px; max-width: 100%; max-height: min(720px, 90dvh); padding: 0; margin: 0; border: 1.5px solid var(--border-hover); border-radius: 16px; background: var(--card-bg); overflow: hidden; box-shadow: 0 24px 80px rgba(0, 0, 0, .6); }
 #universeWorkspace .uni-dialog-heading { display: flex; flex: none; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 24px 14px; border-bottom: 1.5px solid var(--border-color); }
@@ -291,7 +291,7 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-color); }
 #universeWorkspace .uni-detail-main article { padding: 12px 14px; margin: 10px 0; border: 1.5px solid var(--border-color); border-radius: var(--radius-m); background: var(--card-subtle); }
 #universeWorkspace .uni-detail-main article p { margin: 2px 0 6px; }
-#universeWorkspace .uni-detail-main > button { margin: 6px 6px 6px 0; }
+#universeWorkspace .uni-detail-main > button { margin-block: 6px 6px; margin-inline: 0 6px; }
 /* Assignment progress stepper */
 #universeWorkspace .uni-stepper { display: flex; margin: 0 0 16px; padding: 0; list-style: none; }
 #universeWorkspace .uni-stepper li { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; overflow-wrap: normal; position: relative; flex: 1; text-align: center; font-size: 11.5px; font-weight: 600; color: var(--text-muted); }
@@ -323,7 +323,7 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-section-heading { margin-bottom: 12px; }
 #universeWorkspace .uni-section-heading h3 { margin-bottom: 2px; }
 #universeWorkspace .uni-section-heading p { max-width: 65ch; margin: 0; font-size: 13px; }
-#universeWorkspace .uni-settings-section > button, #universeWorkspace .uni-invite-result button { margin: 4px 8px 4px 0; }
+#universeWorkspace .uni-settings-section > button, #universeWorkspace .uni-invite-result button { margin-block: 4px 4px; margin-inline: 0 8px; }
 #universeWorkspace .uni-settings-section > select { margin-bottom: 10px; }
 #universeWorkspace .uni-member-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 #universeWorkspace li.uni-member-row { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 10px 12px; border: 1.5px solid var(--border-color); border-radius: var(--radius-m); background: var(--card-subtle); }
@@ -335,7 +335,7 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-member-actions:not([open]) { padding: 0; border-radius: var(--radius-s); }
 #universeWorkspace .uni-member-actions:not([open]) > summary { margin: 0; padding: 7px 12px; font-size: 12.5px; }
 #universeWorkspace .uni-member-actions[open] { flex-basis: 100%; }
-#universeWorkspace .uni-member-actions button { margin: 0 8px 8px 0; }
+#universeWorkspace .uni-member-actions button { margin-block: 0 8px; margin-inline: 0 8px; }
 #universeWorkspace .uni-list-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; margin-bottom: 8px; border: 1.5px solid var(--border-color); border-radius: var(--radius-m); background: var(--card-subtle); transition: opacity var(--dur-med), transform var(--dur-med); }
 #universeWorkspace .uni-list-row p { margin: 0; color: var(--text-color); text-transform: capitalize; }
 #universeWorkspace .uni-invite-result:empty { display: none; }
@@ -350,7 +350,7 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-stat-card span { font-size: 12px; color: var(--text-muted); }
 #universeWorkspace .uni-release-section article { margin-block: 10px; padding: 12px 14px; border: 1.5px solid var(--border-color); border-radius: var(--radius-m); background: var(--card-subtle); }
 #universeWorkspace .uni-release-section article p { margin: 4px 0; }
-#universeWorkspace .uni-release-section button { margin: 4px 6px 6px 0; }
+#universeWorkspace .uni-release-section button { margin-block: 4px 6px; margin-inline: 0 6px; }
 #universeWorkspace .uni-release-section .uni-comment p:first-child { font-size: 12px; }
 #universeWorkspace .uni-release-section .uni-comment p:nth-child(2) { color: var(--text-color); }
 #universeWorkspace .uni-import-preview:not(:empty) { margin: 12px 0; padding: 12px; border: 1.5px solid var(--border-color); border-radius: var(--radius-m); background: var(--card-subtle); }
@@ -380,9 +380,9 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-empty { text-align: center; padding: 48px 16px; border: 1.5px dashed var(--border-color); border-radius: var(--radius-l); }
 #universeWorkspace .uni-empty h3 { color: var(--primary-hover); margin-bottom: 4px; }
 #universeWorkspace .uni-empty p { margin: 0; }
-#universeWorkspace .uni-toast { position: fixed; bottom: calc(92px + env(safe-area-inset-bottom, 0px)); left: 50%; z-index: 4200; display: flex; align-items: center; gap: 10px; width: min(380px, calc(100% - 32px)); padding: 12px 14px; border: 1.5px solid var(--border-hover); border-left: 4px solid var(--success); border-radius: 12px; background: var(--card-subtle); color: var(--text-color); font-size: 13.5px; font-weight: 600; box-shadow: 0 10px 30px rgba(0, 0, 0, .6); transform: translateX(-50%); animation: uni-toast .38s var(--uni-spring); }
-#universeWorkspace .uni-toast[data-tone=error] { border-left-color: var(--danger); }
-#universeWorkspace .uni-toast[data-tone=info] { border-left-color: var(--primary); }
+#universeWorkspace .uni-toast { position: fixed; bottom: calc(92px + env(safe-area-inset-bottom, 0px)); left: 50%; z-index: 4200; display: flex; align-items: center; gap: 10px; width: min(380px, calc(100% - 32px)); padding: 12px 14px; border: 1.5px solid var(--border-hover); border-inline-start: 4px solid var(--success); border-radius: 12px; background: var(--card-subtle); color: var(--text-color); font-size: 13.5px; font-weight: 600; box-shadow: 0 10px 30px rgba(0, 0, 0, .6); transform: translateX(-50%); animation: uni-toast .38s var(--uni-spring); }
+#universeWorkspace .uni-toast[data-tone=error] { border-inline-start-color: var(--danger); }
+#universeWorkspace .uni-toast[data-tone=info] { border-inline-start-color: var(--primary); }
 #universeWorkspace .uni-toast span { flex: 1; }
 #universeWorkspace .uni-toast button { min-height: 30px; padding: 4px 10px; font-size: 12px; }
 @keyframes uni-toast { from { opacity: 0; transform: translate(-50%, 24px) scale(.96); } }
