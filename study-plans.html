@@ -45,6 +45,20 @@
 .plan-day-units{color:var(--text-muted,#9bb1d3);overflow-wrap:anywhere;font-size:.8rem}
 .plan-step{display:flex;align-items:center;gap:6px}
 .plan-panel .plan-step .icon-btn{padding:4px 10px}
+
+.plans-wrap{padding-bottom:110px}
+.plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.plan-grid .plan-field{margin:8px 0 0}
+.plan-chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.plan-chip{padding:3px 9px;border-radius:99px;border:1px solid var(--border-color,#344b7e);font-size:.8rem}.plan-chip.lock::before{content:"\1F512 "}.plan-chip.skip{opacity:.5;text-decoration:line-through}.plan-chip.done{opacity:.6}
+.plan-delbox{margin-top:16px;border-top:1px solid var(--border-color,#344b7e);padding-top:12px}
+.plan-savebar{position:fixed;inset-inline:0;bottom:0;z-index:5;display:flex;gap:10px;align-items:center;padding:10px 14px;background:var(--card-bg,#081226);border-top:1px solid var(--border-color,#344b7e)}
+.plan-savebar[hidden],.plan-confirm:not([open]){display:none}
+.plan-savebar-msg{flex:1;font-size:.78rem;color:var(--text-muted,#9bb1d3);line-height:1.4}
+.plan-savebar .icon-btn,.plan-confirm .icon-btn{width:auto;padding:10px 16px}
+.plan-save{background:var(--primary,#3b82f6);border-color:var(--primary,#3b82f6);color:#fff}.plan-save.is-apply{background:#16a34a;border-color:#16a34a}.plan-save:disabled{opacity:.45}
+.plan-confirm{max-width:400px;width:calc(100% - 32px);border:1px solid var(--border-color,#344b7e);border-radius:14px;background:var(--card-bg,#081226);color:var(--text-color,#fff);padding:16px}
+.plan-confirm::backdrop{background:rgba(0,0,0,.65)}.plan-confirm h3{margin:0 0 8px}.plan-confirm ul{margin:0;padding-inline-start:18px;line-height:1.6;font-size:.88rem}
+.plan-confirm-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+.plan-ai-grid{margin-top:10px}
 @media(max-width:480px){.plan-row{grid-template-columns:1fr}.plans-wrap{padding:10px}.plan-card{padding:12px}}
 </style><link rel="icon" type="image/svg+xml" href="image/nature_sprites/favicon.svg">
 <link rel="stylesheet" href="palettes.css">
@@ -57,8 +71,26 @@
 <script defer src="icons.js"></script>
 <script defer src="nature.js"></script>
 </head><body>
+<!-- Sidebar Drawer -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<aside class="sidebar-drawer" id="sidebarDrawer">
+    <div class="tk-brand" role="img" aria-label="Taskitator"><svg class="tk-brand-logo" viewBox="0 0 682.3 235.7" aria-hidden="true" focusable="false"><use href="#ic-brand-hybrid"></use></svg></div>
+    <nav class="drawer-links" id="drawerNavLinks">
+        <a href="index.html#today"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-today"></use></svg> Today</a>
+        <a href="index.html#general"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-general"></use></svg> General Tasks</a>
+        <a href="components.html?view=calendar"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-calendar"></use></svg> Calendar</a>
+        <a href="components.html?view=projects"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-projects"></use></svg> Projects</a>
+        <a href="components.html?view=stats"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-stats"></use></svg> Stats</a>
+        <a href="components.html?view=trash"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-trash"></use></svg> Trash</a>
+        <a href="components.html?view=universe"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-universe"></use></svg> Universe</a>
+        <a href="sleep.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-sleep"></use></svg> Sleep Lock</a>
+        <a href="study-plans.html" class="active"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</a>
+        <a href="help.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-help"></use></svg> Help</a>
+        <a href="settings.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-settings"></use></svg> Settings</a>
+    </nav>
+</aside>
 <main class="plans-wrap">
-<header class="plans-header"><a class="icon-btn" href="index.html" aria-label="Back to tasks">←</a><h1><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</h1></header>
+<header class="plans-header"><button type="button" class="icon-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-menu"></use></svg></button><h1><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</h1></header>
 <p class="plans-note">See the plans created by study recurrence, change their names and priorities, add AI criteria, or delete them.</p>
 <p id="plansNotice" class="plans-notice" hidden></p>
 <div id="plansCurrent"></div>
@@ -67,8 +99,11 @@
 <p id="plansEmpty" class="plans-note plans-empty" hidden>No study plans yet. Create one from a study recurrence on the Tasks page.</p>
 <p id="plansStatus" role="status" aria-live="polite"></p>
 </main>
+<div class="plan-savebar" id="planSaveBar" hidden><span class="plan-savebar-msg" id="planSaveMsg" role="status"></span><button type="button" class="icon-btn" id="planDiscard">Discard</button><button type="button" class="icon-btn plan-save" id="planSave">Save changes</button></div>
+<dialog id="planConfirm" class="plan-confirm"><h3 id="planConfirmTitle"></h3><div id="planConfirmBody"></div><div class="plan-confirm-actions"><button type="button" class="icon-btn" id="planConfirmNo">Cancel</button><button type="button" class="icon-btn plan-save" id="planConfirmYes">Confirm</button></div></dialog>
 <script type="text/taskitator-script" src="pro.js"></script>
 <script type="text/taskitator-script" src="pro/study-plan.js"></script>
+<script type="text/taskitator-script" src="pro/study-schedule.js"></script>
 <script type="text/taskitator-script" src="pro/study-manage.js"></script>
 <script type="text/taskitator-script" src="study-plans.js"></script>
 <script defer src="core.js"></script></body></html>

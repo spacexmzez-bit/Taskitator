@@ -12,17 +12,20 @@
   const counts=c.counts??Array.from({length:days},(_,i)=>Math.floor(total/days)+(i<total%days?1:0));if(!Array.isArray(counts)||counts.length!==days||counts.some(n=>!Number.isSafeInteger(n)||n<1||n>1000))throw Error('Each day needs at least one unit.');
   if(typeof c.description!=='undefined'&&(typeof c.description!=='string'||c.description.length>8000))throw Error('Description exceeds 8,000 characters.');
   const prio=v=>{if(v==null||v==='')return null;if(typeof v!=='string'||v.length>64||/[^\w-]/.test(v))throw Error('Choose valid priorities.');return v;},parentPriority=prio(c.parent_priority),unitPriority=prio(c.unit_priority);
+  let dates=c.dates;if(dates!=null){if(!Array.isArray(dates)||dates.length!==days||dates.some((d,i)=>!dateOK(d)||d<c.start||(i&&d<=dates[i-1])))throw Error('Choose valid study dates.');dates=[...dates];}
+  const exclude=[...new Set(c.exclude??[])].sort((a,b)=>a-b);if(exclude.length>1000||exclude.some(n=>!Number.isSafeInteger(n)||n<first||n>first+total+1000))throw Error('Invalid excluded unit.');
   let titles=c.titles??[];if(!Array.isArray(titles)||titles.length>days||titles.some(t=>typeof t!=='string'||!t.trim()||t.length>200))throw Error('Enter valid parent titles.');titles=Array.from({length:days},(_,i)=>titles[i]||c.title.trim()+' '+(i+1));
-  return {title:c.title.trim(),unit,plural,total,days,first,start:c.start,weekdays:[...new Set(weekdays)],skipped,counts:[...counts],titles:[...titles],description:c.description||'',...(parentPriority?{parent_priority:parentPriority}:{}),...(unitPriority?{unit_priority:unitPriority}:{}),...(c.smart?{smart:root.TaskitatorSmartStudy.normalize(c.smart,rows({...c,smart:null}))}:{})};
+  return {title:c.title.trim(),unit,plural,total,days,first,start:c.start,weekdays:[...new Set(weekdays)],skipped,counts:[...counts],titles:[...titles],...(dates?{dates}:{}),...(exclude.length?{exclude}:{}),description:c.description||'',...(parentPriority?{parent_priority:parentPriority}:{}),...(unitPriority?{unit_priority:unitPriority}:{}),...(c.smart?{smart:root.TaskitatorSmartStudy.normalize(c.smart,rows({...c,smart:null}))}:{})};
  }
  function rows(input){const c=normalize(input),allowed=new Set(c.weekdays.length?c.weekdays:[0,1,2,3,4,5,6]),skip=new Set(c.skipped),units=[];for(let n=c.first;units.length<c.total;n++)if(!skip.has(n))units.push(n);
-  let at=Date.parse(c.start+'T00:00:00Z'),offset=0;return c.counts.map((count,i)=>{while(!allowed.has(new Date(at).getUTCDay()))at+=86400000;const date=new Date(at).toISOString().slice(0,10);at+=86400000;const numbers=units.slice(offset,offset+count);offset+=count;return {date,numbers,count,title:c.titles[i]||c.title+' '+(i+1)};});
+  let at=Date.parse(c.start+'T00:00:00Z'),offset=0;return c.counts.map((count,i)=>{let date;if(c.dates)date=c.dates[i];else{while(!allowed.has(new Date(at).getUTCDay()))at+=86400000;date=new Date(at).toISOString().slice(0,10);at+=86400000;}const numbers=units.slice(offset,offset+count);offset+=count;return {date,numbers,count,title:c.titles[i]||c.title+' '+(i+1)};});
  }
  function coverage(unit,numbers){const consecutive=numbers.every((n,i)=>!i||n===numbers[i-1]+1);return 'Covers '+unit.toLowerCase()+' '+(consecutive&&numbers.length>1?numbers[0]+' to '+numbers.at(-1):numbers.join(', '));}
  function build(input,id,created,audit=false,criteria=''){
   const c=normalize(input);if(c.counts.reduce((a,b)=>a+b,0)!==c.total)throw Error('The daily total must equal the requested unit amount.');if(!/^[A-Za-z0-9_-]{8,80}$/.test(id))throw Error('Invalid plan identifier.');if(typeof created!=='string'||!Number.isFinite(Date.parse(created)))throw Error('Invalid creation time.');
   if(typeof criteria!=='string'||criteria.length>4000||audit&&!criteria.trim())throw Error('Enter audit criteria.');if(audit&&/\{(?!num\})[^}]*\}/.test(criteria))throw Error('Only {num} is available in study criteria.');
-  const tasks=[];for(const [i,r]of rows(c).entries()){const pid='study_'+id+'_day_'+i,base={study_plan_id:id,status:'active',project_id:'inbox',tags:[],is_bonus:false,created_at:created,completed_at:null,due_date:r.date};tasks.push({...base,id:pid,parent_id:null,title:r.title,raw_title:r.title,description:coverage(c.plural,r.numbers)+(c.description?'\n'+c.description:''),ai_locked:false,proof_criteria:'',raw_proof_criteria:'',strict_prerequisites:true,...(c.parent_priority?{priority_id:c.parent_priority}:{})});for(const n of r.numbers)tasks.push({...base,id:'study_'+id+'_unit_'+n,parent_id:pid,title:c.unit+'.'+n,raw_title:c.unit+'.{num=='+n+'}',description:'',ai_locked:audit,proof_criteria:audit?criteria.replace(/\{num\}/g,String(n)):'',raw_proof_criteria:audit?criteria:'',strict_prerequisites:false,...(c.unit_priority?{priority_id:c.unit_priority}:{})});}return root.TaskitatorSmartStudy?root.TaskitatorSmartStudy.decorate(tasks,c.smart):tasks;
+  const skipAudit=new Set(c.exclude||[]);if(audit&&rows(c).every(r=>r.numbers.every(n=>skipAudit.has(n))))throw Error('Every unit is excluded from the criteria.');
+  const tasks=[];for(const [i,r]of rows(c).entries()){const pid='study_'+id+'_day_'+i,base={study_plan_id:id,status:'active',project_id:'inbox',tags:[],is_bonus:false,created_at:created,completed_at:null,due_date:r.date};tasks.push({...base,id:pid,parent_id:null,title:r.title,raw_title:r.title,description:coverage(c.plural,r.numbers)+(c.description?'\n'+c.description:''),ai_locked:false,proof_criteria:'',raw_proof_criteria:'',strict_prerequisites:true,...(c.parent_priority?{priority_id:c.parent_priority}:{})});for(const n of r.numbers)tasks.push({...base,id:'study_'+id+'_unit_'+n,parent_id:pid,title:c.unit+'.'+n,raw_title:c.unit+'.{num=='+n+'}',description:'',ai_locked:audit&&!skipAudit.has(n),proof_criteria:audit&&!skipAudit.has(n)?criteria.replace(/\{num\}/g,String(n)):'',raw_proof_criteria:audit&&!skipAudit.has(n)?criteria:'',strict_prerequisites:false,...(c.unit_priority?{priority_id:c.unit_priority}:{})});}return root.TaskitatorSmartStudy?root.TaskitatorSmartStudy.decorate(tasks,c.smart):tasks;
  }
  function defaultDays(settings={}){const start=Number(settings.weekend_start??5),end=Number(settings.weekend_end??6),weekend=new Set();if(![start,end].every(n=>Number.isInteger(n)&&n>=0&&n<=6))return [0,1,2,3,4];for(let n=start;;n=(n+1)%7){weekend.add(n);if(n===end)break;}return [0,1,2,3,4,5,6].filter(n=>!weekend.has(n));}
  // Units-per-day split: whole units only, the last day takes the remainder (20 at 6 per day: 6,6,6,2).
@@ -42,6 +45,16 @@
   const counts=[],dates=[];let left=total,at=Date.parse(start+'T00:00:00Z'),clipped=false;
   while(left>0){const dow=new Date(at).getUTCDay();if(allowed.has(dow)){if(counts.length>=365)throw Error('This split needs more than 365 study days. The limit is 365.');const rate=over[dow]??def,n=Math.min(rate,left);if(n<rate)clipped=true;counts.push(n);dates.push(new Date(at).toISOString().slice(0,10));left-=n;}at+=86400000;}
   return {counts,dates,end:dates.at(-1),clipped,ignored,lastRate:counts.length?(over[new Date(dates.at(-1)+'T00:00:00Z').getUTCDay()]??def):def};
+ }
+ // Dates and daily amounts for a number of units: equal split over N study days, or a per-day rate (with weekday overrides).
+ // weekdays empty = every day. Used by the plan page and the create dialog so both build the same schedule.
+ function schedule(total,o){
+  int(total,1,1000);if(!dateOK(o.start))throw Error('Choose a valid starting date.');
+  if(o.mode==='perDay'){const r=weekdayPlan(total,int(Number(o.per),1,1000),o.rates||{},o.weekdays||[],o.start);return {dates:r.dates,counts:r.counts,clipped:r.clipped,lastRate:r.lastRate};}
+  const days=int(Number(o.days),1,365);if(days>total)throw Error('Each study day needs at least one unit.');
+  const allowed=new Set((o.weekdays||[]).length?o.weekdays:[0,1,2,3,4,5,6]),dates=[];let at=Date.parse(o.start+'T00:00:00Z');
+  while(dates.length<days){if(allowed.has(new Date(at).getUTCDay()))dates.push(new Date(at).toISOString().slice(0,10));at+=86400000;}
+  return {dates,counts:Array.from({length:days},(_,i)=>Math.floor(total/days)+(i<total%days?1:0))};
  }
  // Skipped units typed as real unit numbers: "8", "8, 12", "8-10", "8, 10-12". Arabic digits and comma accepted.
  // All or nothing: any bad item rejects the whole input. Numbers already skipped are ignored.
@@ -73,7 +86,7 @@
   const r=o2.reduce((acc,op,i)=>op==='+'?acc+n2[i+1]:acc-n2[i+1],n2[0]);
   if(!Number.isFinite(r))throw Error('Error');return Math.round(r*1e10)/1e10;
  }
- const core={normalize,rows,build,coverage,defaultDays,perDay,weekdayPlan,parseSkips,calculate};root.TaskitatorStudyCore=core;
+ const core={normalize,rows,build,coverage,defaultDays,perDay,weekdayPlan,schedule,parseSkips,calculate};root.TaskitatorStudyCore=core;
  if(typeof window==='undefined'||!root.document)return;
  const node=(tag,text,p,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;p?.append(e);return e;};
  const longDate=iso=>window.TaskitatorI18n?.date(iso+'T12:00:00Z',{weekday:'long',year:'numeric',month:'long',day:'numeric',timeZone:'UTC'})??new Date(iso+'T12:00:00Z').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric',timeZone:'UTC'});
@@ -87,7 +100,7 @@
   const head=node('div',undefined,d,'study-head');node('h2','Study recurrence · Pro',head);
   const calcBtn=node('button','+ − × ÷',head,'icon-btn study-calc-toggle');calcBtn.type='button';calcBtn.setAttribute('aria-label','Calculator');calcBtn.setAttribute('aria-expanded','false');
   const calcBox=node('div',undefined,d,'study-calc');calcBox.hidden=true;calcBox.setAttribute('dir','ltr');
-  const status=node('p','Nothing is created until you confirm.',d,'study-status');status.setAttribute('role','status');let busy=false,plan=null,validation=null,used=false;const customTitles={};
+  const status=node('p','Nothing is created until you confirm.',d,'study-status');status.setAttribute('role','status');let busy=false,used=false,confirmBtn=null;
   function button(text,p,fn,cls='icon-btn study-btn'){const b=node('button',text,p,cls);b.type='button';b.onclick=()=>run(fn);return b;}
   async function run(fn){if(busy)return;busy=true;const inputs=[...d.querySelectorAll('input,textarea,select')],prior=inputs.map(e=>e.disabled);inputs.forEach(e=>e.disabled=true);try{if(actor!==window.Clerk?.session?.id)throw Error('Account changed. Reopen this preview.');await fn();}catch(e){status.textContent=e.message;}finally{inputs.forEach((e,i)=>e.disabled=prior[i]);busy=false;}}
   function field(label,value,type='text',parent=d,cls){const l=node('label',label,parent,type==='checkbox'?'study-check':'study-field'+(cls?' '+cls:''));const e=node(type==='textarea'?'textarea':'input',undefined,l);if(type!=='textarea')e.type=type;e.value=value;return e;}
@@ -95,38 +108,63 @@
   let calcExpr='',calcShow=null;
   function calcKey(k){if(k==='C'){calcExpr='';}else if(k==='⌫'){calcExpr=calcExpr.slice(0,-1);}else if(k==='='){try{calcExpr=String(calculate(calcExpr));}catch{calcShow.textContent='Error';calcExpr='';return;}}else{if(/[+−×÷]/.test(k)&&/[+−×÷]$/.test(calcExpr))calcExpr=calcExpr.slice(0,-1);if(calcExpr.length<40)calcExpr+=k;}calcShow.textContent=calcExpr||'0';}
   calcBtn.onclick=()=>{if(!calcShow){calcShow=node('div','0',calcBox,'study-calc-display');calcShow.setAttribute('aria-live','polite');const pad=node('div',undefined,calcBox,'study-calc-pad');for(const k of ['7','8','9','÷','4','5','6','×','1','2','3','−','0','.','=','+','C','⌫']){const b=node('button',k,pad,'icon-btn study-calc-key'+(/[+−×÷=]/.test(k)?' is-op':''));b.type='button';b.onclick=()=>calcKey(k);}}calcBox.hidden=!calcBox.hidden;calcBtn.setAttribute('aria-expanded',String(!calcBox.hidden));};
-  // Plan settings
-  const basics=node('div',undefined,d,'study-grid');
-  const title=field('Title',initial.title||'','text',basics,'study-wide'),unit=field('Unit name (singular)',initial.unit||'Chapter','text',basics),plural=field('Unit name (plural)',initial.plural||(initial.unit?initial.unit+'s':'Chapters'),'text',basics),total=field('Units to study (1–1,000)',initial.total??20,'number',basics),first=field('Starting unit',initial.first??1,'number',basics),start=field('Starting date',initial.start||today,'date',basics);
+  // Tabs: Task info, AI criteria, Scheduling (Phase 2.6)
+  const tabBar=node('div',undefined,d,'tk-tabs'),panels={},tabButtons={};tabBar.setAttribute('role','tablist');
+  for(const [key,text]of [['info','Task info'],['ai','AI criteria'],['sched','Scheduling']]){const b=node('button',text,tabBar,'tk-tab');b.type='button';b.setAttribute('role','tab');b.onclick=()=>showTab(key);tabButtons[key]=b;panels[key]=node('div',undefined,d,'study-panel');}
+  function showTab(k){for(const [key,p]of Object.entries(panels)){p.hidden=key!==k;tabButtons[key].setAttribute('aria-selected',String(key===k));}}
+  // -- Task info --
+  const info=panels.info,title=field('Title',initial.title||'','text',info);
+  const grid=node('div',undefined,info,'ss-grid');grid.style.marginTop='12px';
+  const unit=field('Unit name',initial.unit||'Chapter','text',grid),total=field('Total units (1–1,000)',initial.total??20,'number',grid);
   const prios=(()=>{try{const st=JSON.parse(localStorage.getItem('taskitator_settings')||'{}');return Array.isArray(st.custom_priorities)&&st.custom_priorities.length?st.custom_priorities:[{id:'prio_high',name:'High',rank:1},{id:'prio_med',name:'Medium',rank:2},{id:'prio_low',name:'Low',rank:3}];}catch{return [];}})();
   const prioRank=id=>{if(!id)return Infinity;const p=prios.find(x=>x.id===id);return p?(Number(p.rank)||prios.indexOf(p)+1):Infinity;};
-  const prioField=label=>{const l=node('label',label,basics,'study-field');const e=node('select',undefined,l);node('option','No priority',e).value='';for(const p of prios)node('option',p.name||p.id,e).value=p.id;e.addEventListener('change',()=>invalidate());return e;};
+  const prioField=label=>{const l=node('label',label,grid,'study-field');const e=node('select',undefined,l);node('option','No priority',e).value='';for(const p of prios)node('option',p.name||p.id,e).value=p.id;e.addEventListener('change',()=>refresh());return e;};
   const parentPrio=prioField('Parent task priority'),unitPrio=prioField('Unit priority');
-  const split=node('fieldset',undefined,d,'study-card');node('legend','Split units by',split);
-  const modes=node('div',undefined,split,'study-segment');let splitMode='days';const modeBtns={};
-  for(const [value,text]of [['days','Number of study days'],['perDay','Units per day']]){const b=node('button',text,modes,'study-seg-btn');b.type='button';b.onclick=()=>{splitMode=value;syncMode();invalidate();};modeBtns[value]=b;}
-  const days=field('Study days (1–365)',initial.days??5,'number',split),per=field('Units per day',4,'number',split);
-  const rateBox=node('div',undefined,split,'study-rates');node('span','Different amount on specific weekdays (optional)',rateBox,'study-rates-title');const rateRow=node('div',undefined,rateBox,'study-rates-row');
-  const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],rateInputs=WD.map(name=>{const l=node('label',name,rateRow,'study-rate');const e=node('input',undefined,l);e.type='number';e.min='1';e.max='1000';e.inputMode='numeric';e.addEventListener('input',()=>{invalidate();updateSplit();});return e;});
-  const splitLine=node('p','',split,'study-hint'),splitCounts=node('p','',split,'study-hint'),splitEnd=node('p','',split,'study-hint'),splitWarn=node('p','',split,'study-hint study-warn'),splitIgnore=node('p','',split,'study-hint study-warn');
-  const rateMap=()=>Object.fromEntries(rateInputs.flatMap((e,i)=>e.value.trim()===''?[]:[[i,Number(e.value)]]));
-  const checkedDays=()=>checks.flatMap((e,i)=>e.checked?[i]:[]);
-  const perDayPlan=()=>weekdayPlan(Number(total.value),Number(per.value),rateMap(),checkedDays(),start.value);
-  function syncMode(){for(const [k,b]of Object.entries(modeBtns)){b.className='study-seg-btn'+(k===splitMode?' is-active':'');b.setAttribute('aria-pressed',String(k===splitMode));}days.parentElement.hidden=splitMode!=='days';per.parentElement.hidden=splitMode!=='perDay';rateBox.hidden=splitMode!=='perDay';updateSplit();}
-  function updateSplit(){const t=Number(total.value);splitWarn.textContent='';splitIgnore.textContent='';splitEnd.textContent='';splitCounts.textContent='';try{if(splitMode==='perDay'){const r=perDayPlan();splitLine.textContent=t+' units over '+r.counts.length+' days';splitCounts.textContent='Daily: '+r.counts.join(', ');splitEnd.textContent='Ends on '+r.end;splitWarn.textContent=r.clipped?'The last day has only '+r.counts.at(-1)+' of its '+r.lastRate+' units.':'';splitIgnore.textContent=r.ignored.length?'Amounts set on unchecked weekdays are ignored: '+r.ignored.map(i=>WD[i]).join(', ')+'.':'';}else{const n=Number(days.value);if(!Number.isSafeInteger(t)||!Number.isSafeInteger(n)||n<1||t<1||n>t){splitLine.textContent='';return;}splitLine.textContent=t+' units over '+n+' days';splitCounts.textContent='Daily: '+Array.from({length:n},(_,i)=>Math.floor(t/n)+(i<t%n?1:0)).join(', ');}}catch(e){splitLine.textContent=e.message;}}
-  const weekdays=node('fieldset',undefined,d,'study-card');node('legend','Study weekdays',weekdays);const dayRow=node('div',undefined,weekdays,'study-weekdays');const checks=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((name,i)=>{const l=node('label',name,dayRow,'study-day-chip');const e=node('input',undefined,l);e.type='checkbox';e.checked=(initial.weekdays??defaultDays(settings)).includes(i);return e;});node('small','Defaults exclude your Settings weekends. No days selected means every day.',weekdays,'study-hint');
-  const desc=field('Description (optional)','','textarea');
-  const preview=node('section',undefined,undefined,'study-preview');
-  function invalidate(){plan=null;validation=null;preview.replaceChildren();skips.hidden=true;confirmBtn.disabled=true;status.textContent='Settings changed. Generate the schedule again.';}
-  const setup=[title,unit,plural,total,days,per,first,start,desc,...checks];for(const e of setup)e.addEventListener('input',()=>{invalidate();updateSplit();});
-  let autoPlural=!initial.plural;plural.addEventListener('input',()=>{autoPlural=false;});unit.addEventListener('input',()=>{if(autoPlural)plural.value=unit.value+'s';});
-  let smartEnabled=false,smartMode='original',smartDates=new Set(),smartAppearances=new Map();
-  const smartPanel=node('details',undefined,d,'study-collapse');node('summary','Smart Study Recurrence · Pro',smartPanel);
+  const desc=field('Description (optional)','','textarea',info);
+  // The plural is automatic ("Chapter" gives "Chapters") unless Copilot supplied one for the unit it named.
+  const pluralOf=()=>initial.plural&&unit.value===(initial.unit||'Chapter')?initial.plural:unit.value.trim()+'s';
+  // -- AI criteria --
+  const ai=panels.ai,audit=field('Enable AI audits for unit subtasks only',false,'checkbox',ai);audit.checked=false;
+  const aiBody=node('div',undefined,ai);aiBody.hidden=true;
+  const criteria=field('Proof criteria for the units. Use {num} for each unit number.','','textarea',aiBody);criteria.maxLength=4000;
+  const exclude=field('Exclude units from the criteria (optional)','','text',aiBody);exclude.placeholder='8, 10-12';exclude.dir='ltr';exclude.inputMode='numeric';
+  node('p','Every unit gets the criteria unless you list it here.',aiBody,'study-hint');
+  const validationText=node('p','',aiBody,'study-hint');
+  let validation=null,validationStamp='';
+  // -- Scheduling --
+  const sched=window.TaskitatorStudySchedule.mount(panels.sched,{today,start:initial.start||today,weekdays:initial.weekdays??defaultDays(settings),startUnit:initial.first??1,startUnitHint:1,days:initial.days??5,
+   note:'Choose how the units are spread over days.',label:()=>unit.value.trim()||'Unit',units:o=>unitSpec(o).numbers,
+   parentTitle:i=>title.value.trim()+' '+(i+1),disabled:()=>false,onChange:()=>refresh()});
+  function unitSpec(o){
+   const n=Number(total.value);if(!Number.isSafeInteger(n)||n<1||n>1000)throw Error('Use whole numbers within the displayed limits.');
+   const first=o.startUnit==null||Number.isNaN(o.startUnit)?1:o.startUnit;if(!Number.isSafeInteger(first)||first<1)throw Error('Use whole numbers within the displayed limits.');
+   const skipped=String(o.skipText||'').trim()?parseSkips(o.skipText,first,n,[]):[],skip=new Set(skipped),numbers=[];for(let k=first;numbers.length<n;k++)if(!skip.has(k))numbers.push(k);
+   return {first,total:n,skipped,numbers};
+  }
+  const audited=()=>{const sp=unitSpec(sched.state().options);const ex=exclude.value.trim()?parseSkips(exclude.value,sp.first,sp.total,sp.skipped):[];return {sp,exclude:ex};};
+  let smartEnabled=false,smartMode='original',smartDates=new Set(),smartAppearances=new Map(),plan=null,planError='';
+  const smartPanel=node('details',undefined,panels.sched,'study-collapse');node('summary','Smart Study Recurrence · Pro',smartPanel);
+  for(const e of [title,unit,desc])e.addEventListener('input',()=>refresh());
+  total.addEventListener('input',()=>{sched.invalidate();});
+  audit.onchange=()=>{aiBody.hidden=!audit.checked;validation=null;refresh();};criteria.oninput=()=>{validation=null;validationText.textContent='Criteria changed. Validate again.';refresh();};exclude.addEventListener('input',()=>refresh());
+  button('Validate reusable criteria',aiBody,async()=>{
+   if(!audit.checked)throw Error('Enable audits first.');if(!criteria.value.trim())throw Error('Enter the criteria for the units.');
+   const stub=normalize({title:title.value,unit:unit.value,plural:pluralOf(),total:unitSpec(sched.state().options).total,days:1,first:unitSpec(sched.state().options).first,skipped:unitSpec(sched.state().options).skipped,start:today});
+   const selection=window.TaskitatorEngine.AuditEngine.selection();const r=await window.TaskitatorAuth.api('/study-plan',{method:'POST',body:JSON.stringify({action:'validate',config:stub,criteria:criteria.value,provider:selection.provider,model:selection.primary,key_version:selection.keyVersion})});
+   validation=r;validationStamp=stampOf();validationText.textContent=r.score+'/10 · '+r.critique;refresh();
+  });
+  const stampOf=()=>{try{const sp=unitSpec(sched.state().options);return JSON.stringify([criteria.value,title.value.trim(),unit.value.trim(),sp.total,sp.first,sp.skipped]);}catch{return '';}};
+  const strict=settings.strict_criteria_validation!==false;
+  function buildPlan(){
+   planError='';const st=sched.state();if(!st.hasPreview||st.stale||st.balance!==0||!st.sched.length)return null;
+   try{const {sp,exclude:ex}=audited();return normalize({title:title.value,unit:unit.value,plural:pluralOf(),parent_priority:parentPrio.value||null,unit_priority:unitPrio.value||null,total:sp.total,days:st.sched.length,counts:st.sched.map(x=>x.count),dates:st.sched.map(x=>x.date),first:sp.first,start:st.sched[0].date,weekdays:st.options.weekdays,skipped:sp.skipped,description:desc.value,...(audit.checked&&ex.length?{exclude:ex}:{})});}
+   catch(e){planError=e.message;return null;}
+  }
   function renderSmart(){
    const wasOpen=smartPanel.open;smartPanel.replaceChildren();node('summary','Smart Study Recurrence · Pro',smartPanel);smartPanel.open=wasOpen;const body=node('div',undefined,smartPanel,'study-collapse-body');
    const enable=field('Enable early bonus opportunities',false,'checkbox',body);enable.checked=smartEnabled;enable.onchange=()=>{smartEnabled=enable.checked;renderSmart();};
    node('p','Only tasks in this recurrence can be shown early or rearranged. Each opportunity expires at the end of its chosen study day. Unfinished work stays required on its original date.',body,'study-hint');
-   if(!smartEnabled)return;if(!plan){node('p','Generate dates first.',body,'study-hint');return;}
+   if(!smartEnabled)return;if(!plan){node('p','Preview a balanced schedule first.',body,'study-hint');return;}
    const schedule=rows(plan);
    node('p','Choose an earlier date for each specific future unit you want to show as bonus work. Leave other units unchanged.',body);
    const options=node('div',undefined,body,'study-scroll');
@@ -136,61 +174,25 @@
    node('small','Option B targets the next weekend starting after each early date; a weekend already underway is skipped. It is unavailable when that next weekend has no tasks. Use C to select other dates. Completed bonus tasks free slots on their original dates; at most one eligible task moves per freed slot.',body,'study-hint');
    if(smartMode==='dates'){node('p','Choose dates to lighten. Eligible unfinished units move in date order, finishing the earliest date first.',body);for(const r of schedule){const l=node('label',r.date,body,'study-check');const c=node('input',undefined,l);c.type='checkbox';c.checked=smartDates.has(r.date);c.onchange=()=>c.checked?smartDates.add(r.date):smartDates.delete(r.date);}}
   }
-  renderSmart();
-  const generateRow=node('div',undefined,d,'study-actions');
-  d.append(preview);
-  // Skipped units: typed as real unit numbers, lists or ranges.
-  const skips=node('details',undefined,d,'study-collapse');skips.hidden=true;const skipSummary=node('summary','Skipped units',skips);const skipBox=node('div',undefined,skips,'study-collapse-body');
-  node('p','Type the real unit number to skip (if units start at 5, type 8 for unit 8). Lists and ranges work: 8, 10-12.',skipBox,'study-hint');
-  const skipRow=node('div',undefined,skipBox,'study-inline'),skipInput=node('input',undefined,skipRow,'study-input');skipInput.type='text';skipInput.name='studySkips';skipInput.setAttribute('inputmode','numeric');skipInput.placeholder='8, 10-12';
-  const skipError=node('p','',skipBox,'study-error');skipError.setAttribute('role','alert');const chips=node('div',undefined,skipBox,'study-chips');
-  function addSkips(){if(!plan)return;skipError.textContent='';try{const fresh=parseSkips(skipInput.value,plan.first,plan.total,plan.skipped);plan.skipped=[...new Set([...plan.skipped,...fresh])].sort((a,b)=>a-b);skipInput.value='';validation=null;render();}catch(e){skipError.textContent=e.message;}}
-  button('Add skipped',skipRow,addSkips);skipInput.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();run(addSkips);}});
-  function renderSkips(){skipSummary.textContent=plan.skipped.length?'Skipped units · '+plan.skipped.length:'Skipped units';chips.replaceChildren();for(const n of plan.skipped)button(plan.unit+' '+n+' ✕',chips,()=>{plan.skipped=plan.skipped.filter(x=>x!==n);validation=null;render();},'study-chip');}
-  const audit=field('Enable AI audits for unit subtasks only',false,'checkbox');audit.checked=false;const criteria=field('Shared criteria — use {num} for each unit number','','textarea');criteria.maxLength=4000;criteria.parentElement.hidden=true;const validationText=node('p','',d,'study-hint');
-  audit.onchange=()=>{criteria.parentElement.hidden=!audit.checked;validation=null;};criteria.oninput=()=>{validation=null;validationText.textContent='Criteria changed. Validate again.';};
-  button('Validate reusable criteria',d,async()=>{if(!plan||!audit.checked)throw Error('Generate the schedule and enable audits first.');const selection=window.TaskitatorEngine.AuditEngine.selection();const r=await window.TaskitatorAuth.api('/study-plan',{method:'POST',body:JSON.stringify({action:'validate',config:plan,criteria:criteria.value,provider:selection.provider,model:selection.primary,key_version:selection.keyVersion})});validation=r;validationText.textContent=r.score+'/10 · '+r.critique;});
-  // Preview: list or calendar. Both edit the same day state.
-  let view='list',calMonth=null,calPick=0;
-  function dayCard(i,r,numbers,parent){
-   const row=node('article',undefined,parent,'study-day');node('h4',longDate(r.date),row);
-   const name=field('Parent title',r.title,'text',row);name.oninput=()=>{plan.titles[i]=name.value;customTitles[i]=name.value;};
-   node('p',coverage(plan.plural,numbers),row,'study-coverage');node('p',numbers.map(n=>plan.unit+'.'+n).join(', '),row,'study-units');
-   const step=node('div',undefined,row,'study-stepper');
-   button('−',step,()=>{if(plan.counts[i]>1){plan.counts[i]--;validation=null;render();}});node('span',String(plan.counts[i]),step,'study-count');button('+',step,()=>{if(plan.counts[i]<1000){plan.counts[i]++;validation=null;render();}});
+  // One place decides whether "Create plan" is available and says why not.
+  function refresh(){
+   plan=buildPlan();renderSmart();const st=sched.state();let msg='',ok=false;
+   if(!title.value.trim())msg='Enter a title.';
+   else if(prioRank(unitPrio.value)<prioRank(parentPrio.value))msg='Units cannot have a higher priority than their parent task.';
+   else if(!st.hasPreview)msg='Preview a schedule to create the plan.';
+   else if(st.stale)msg='Preview the new schedule again to create the plan.';
+   else if(st.balance!==0)msg=(st.balance>0?'Settle '+st.balance+' surplus unit(s) first.':'Settle '+(-st.balance)+' missing unit(s) first.');
+   else if(audit.checked&&!criteria.value.trim())msg='Enter the criteria for the units.';
+   else if(audit.checked&&strict&&!(validation?.passed&&validationStamp===stampOf()))msg='Validate the criteria (7/10 or higher) before creating.';
+   else if(!plan)msg=planError||'Check the plan settings.';
+   else{ok=true;msg='Review the schedule, then create the plan.';}
+   status.textContent=msg;if(confirmBtn)confirmBtn.disabled=!ok||used;
   }
-  function render(){renderSmart();preview.replaceChildren();renderSkips();const sum=plan.counts.reduce((a,b)=>a+b,0);
-   const bar=node('div',undefined,preview,'study-preview-head');node('h3','Preview · '+sum+' / '+plan.total+' units',bar);
-   const toggle=node('div',undefined,bar,'study-segment');for(const [value,text]of [['list','List'],['calendar','Calendar']]){const b=node('button',text,toggle,'study-seg-btn'+(view===value?' is-active':''));b.type='button';b.setAttribute('aria-pressed',String(view===value));b.onclick=()=>{view=value;render();};}
-   let index=0;const sequence=[];for(let n=plan.first;sequence.length<Math.max(sum,plan.total);n++)if(!plan.skipped.includes(n))sequence.push(n);
-   const schedule=rows(plan).map((r,i)=>{const numbers=sequence.slice(index,index+plan.counts[i]);index+=plan.counts[i];return {r,i,numbers};});
-   if(view==='list'){for(const {r,i,numbers}of schedule)dayCard(i,r,numbers,preview);}
-   else{
-    const byDate=new Map(schedule.map(x=>[x.r.date,x]));if(calPick>=schedule.length)calPick=0;
-    if(!calMonth)calMonth=schedule[0].r.date.slice(0,7);
-    const [y,m]=calMonth.split('-').map(Number),firstDay=new Date(Date.UTC(y,m-1,1)),lead=(firstDay.getUTCDay()+6)%7,len=new Date(Date.UTC(y,m,0)).getUTCDate();
-    const nav=node('div',undefined,preview,'study-cal-nav');
-    const shift=k=>{const t=new Date(Date.UTC(y,m-1+k,1));calMonth=t.toISOString().slice(0,7);render();};
-    const prev=node('button','‹',nav,'icon-btn study-cal-arrow');prev.type='button';prev.setAttribute('aria-label','Previous month');prev.onclick=()=>shift(-1);
-    node('strong',window.TaskitatorI18n?.date(firstDay,{month:'long',year:'numeric',timeZone:'UTC'})??firstDay.toLocaleDateString(undefined,{month:'long',year:'numeric',timeZone:'UTC'}),nav);
-    const next=node('button','›',nav,'icon-btn study-cal-arrow');next.type='button';next.setAttribute('aria-label','Next month');next.onclick=()=>shift(1);
-    const grid=node('div',undefined,preview,'study-cal-grid');for(const w of ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'])node('span',w,grid,'study-cal-wd');
-    for(let k=0;k<lead;k++)node('span','',grid,'study-cal-cell is-empty');
-    for(let dd=1;dd<=len;dd++){const iso=calMonth+'-'+String(dd).padStart(2,'0'),hit=byDate.get(iso);
-     if(!hit){node('span',String(dd),grid,'study-cal-cell');continue;}
-     const cell=node('button',undefined,grid,'study-cal-cell is-study'+(hit.i===calPick?' is-picked':''));cell.type='button';node('span',String(dd),cell,'study-cal-num');
-     const ns=hit.numbers;node('span',ns.length>1?ns[0]+'–'+ns.at(-1):String(ns[0]??''),cell,'study-cal-units');cell.onclick=()=>{calPick=hit.i;render();};}
-    node('p','Tap a study day to edit it.',preview,'study-hint');
-    const pick=schedule[calPick];if(pick)dayCard(pick.i,pick.r,pick.numbers,preview);
-   }
-   confirmBtn.disabled=sum!==plan.total||used;status.textContent=sum===plan.total?'Review every date and title, then confirm.':sum+' / '+plan.total+' units. '+(sum>plan.total?'Remove '+(sum-plan.total):'Add '+(plan.total-sum))+' before confirming.';
-  }
-  button('Generate dates',generateRow,()=>{const t=Number(total.value),counts=splitMode==='perDay'?perDayPlan().counts:null;if(prioRank(unitPrio.value)<prioRank(parentPrio.value)){status.textContent='Units cannot have a higher priority than their parent task.';return;}plan=normalize({title:title.value,unit:unit.value,plural:plural.value,parent_priority:parentPrio.value||null,unit_priority:unitPrio.value||null,total:t,days:counts?counts.length:Number(days.value),...(counts?{counts}:{}),first:Number(first.value),start:start.value,weekdays:checks.flatMap((e,i)=>e.checked?[i]:[]),description:desc.value});plan.titles=plan.titles.map((t,i)=>customTitles[i]||t);calMonth=null;calPick=0;skips.hidden=false;render();},'icon-btn study-btn study-primary');
+  showTab('info');
   const actions=node('div',undefined,d,'study-actions study-footer');
-  syncMode();
   const planId=crypto.randomUUID(),created=new Date().toISOString();
-  const confirmBtn=button('Confirm and create',actions,async()=>{
-   if(used||!plan)throw Error('Generate the schedule first.');if(window.TaskitatorEditorDraft)throw Error('Save or cancel your open task editor first.');
+  confirmBtn=button('Create plan',actions,async()=>{
+   refresh();if(used||!plan||confirmBtn.disabled)throw Error(status.textContent||'Preview a balanced schedule first.');if(window.TaskitatorEditorDraft)throw Error('Save or cancel your open task editor first.');
    const frozen=normalize({...plan,...(smartEnabled?{smart:{mode:smartMode,dates:[...smartDates],appearances:[...smartAppearances].map(([unit,date])=>({unit,date})),weekend_start:Number(settings.weekend_start??5),weekend_end:Number(settings.weekend_end??6)}}:{})}),payload={action:'authorize',config:frozen,plan_id:planId,created_at:created,audit:audit.checked,criteria:criteria.value,validation_id:validation?.id};
    if(!await window.SyncEngine.forceImmediateSync())throw Error('Sync your workspace successfully before creating the plan.');if(actor!==window.Clerk?.session?.id)throw Error('Account changed. Reopen the preview.');const before=localStorage.getItem('taskitator_tasks');
    if(!d.open)throw Error('Preview closed. Nothing was created.');const tasks=build(frozen,planId,created,audit.checked,criteria.value);await window.TaskitatorAuth.api('/study-plan',{method:'POST',body:JSON.stringify(payload)});

@@ -57,7 +57,11 @@ test('add criteria: only plans without criteria, only unfinished units, {num} fi
  assert.equal(units.study_plan_manage_1_unit_2.ai_locked,true);assert.equal(units.study_plan_manage_1_unit_2.proof_criteria,'Show notes for chapter 2.');
  assert.equal(units.study_plan_manage_1_unit_2.raw_proof_criteria,'Show notes for chapter {num}.');assert.equal(units.study_plan_manage_1_unit_4.ai_locked,false,'unselected units stay unaudited');
  assert.deepEqual(M.openUnits(M.plans(tasks)[0]),[2,3,4,5,6]);
- assert.throws(()=>M.addCriteria(r.tasks,'plan_manage_1','Again {num}',[4]),/already has AI criteria/);
+ const more=M.addCriteria(r.tasks,'plan_manage_1','Again {num}',[2,4]);
+ assert.equal(more.changed,1,'unit 2 already has criteria and stays locked; only unit 4 is added');
+ assert.equal(more.tasks.find(t=>t.id==='study_plan_manage_1_unit_2').raw_proof_criteria,'Show notes for chapter {num}.');
+ assert.equal(more.tasks.find(t=>t.id==='study_plan_manage_1_unit_4').proof_criteria,'Again 4');
+ assert.throws(()=>M.addCriteria(r.tasks,'plan_manage_1','Again {num}',[2]),/at least one/);
  assert.throws(()=>M.addCriteria(tasks,'plan_manage_1','',[2]));assert.throws(()=>M.addCriteria(tasks,'plan_manage_1','Bad {oops}',[2]),/Only \{num\}/);
  assert.throws(()=>M.addCriteria(tasks,'plan_manage_1','Fine {num}',[1]),/at least one/);
 });
@@ -126,4 +130,28 @@ test('re-plan impact: AI units later or removed; counting work due today moved o
  assert.deepEqual(M.replanImpact(plain,M.replan(plain,ID,opts({start:today,per:6})).tasks,ID,today,{}).today,[],'pulling into today is fine');
  assert.deepEqual(M.replanImpact(plain,M.replan(plain,ID,opts({start:'2026-11-10'})).tasks,ID,today,{}).today.sort(),['study_plan_manage_1_unit_1','study_plan_manage_1_unit_2']);
  assert.deepEqual(M.replanImpact(plain,M.replan(plain,ID,opts({start:'2026-11-10'})).tasks,ID,today,{status_mode:'limited'}).today,[],'Limited: non-AI work does not count');
+});
+
+test('audit targets: every unfinished unit unless excluded; already locked units are never reached',()=>{
+ const tasks=finish(build(),'study_plan_manage_1_unit_1');let plan=M.plans(tasks)[0];
+ assert.deepEqual(M.auditTargets(plan,''),{numbers:[2,3,4,5,6],locked:[],excluded:[]});
+ assert.deepEqual(M.auditTargets(plan,'3, 5-6'),{numbers:[2,4],locked:[],excluded:[3,5,6]});
+ assert.throws(()=>M.auditTargets(plan,'9'),/outside this plan/);
+ const locked=M.addCriteria(tasks,'plan_manage_1','Notes {num}',[2]).tasks;plan=M.plans(locked)[0];
+ assert.deepEqual(M.auditTargets(plan,'2'),{numbers:[3,4,5,6],locked:[2],excluded:[]},'a locked unit cannot be excluded');
+});
+test('balance and unit assignment follow the dates in order',()=>{
+ const sched=[{date:'2026-11-12',count:2},{date:'2026-11-14',count:1}];
+ assert.equal(M.balance(sched,3),0);assert.equal(M.balance(sched,5),-2);assert.equal(M.balance(sched,2),1);
+ assert.deepEqual([...M.assignUnits([4,5,6,7],sched)],[['2026-11-12',[4,5]],['2026-11-14',[6]]]);
+});
+test('re-plan accepts explicit dates, keeps the total, and rejects bad dates',()=>{
+ const tasks=build(),plan=M.plans(tasks)[0],open=M.openUnits(plan).length,base={rev:'abc123',start:'2026-12-01',mode:'days',days:2,weekdays:[]};
+ const counts=[open-1,1],dates=['2026-12-01','2026-12-09'];
+ const r=M.replan(tasks,'plan_manage_1',{...base,counts,dates});
+ assert.deepEqual(r.dates,dates);assert.deepEqual(r.counts,counts);assert.equal(r.scheduled,open);
+ assert.throws(()=>M.replan(tasks,'plan_manage_1',{...base,counts,dates:['2026-12-09','2026-12-01']}),/valid study dates/);
+ assert.throws(()=>M.replan(tasks,'plan_manage_1',{...base,counts,dates:['2026-11-30','2026-12-09']}),/valid study dates/);
+ assert.throws(()=>M.replan(tasks,'plan_manage_1',{...base,counts,dates:['2026-12-01']}),/valid study dates/);
+ assert.throws(()=>M.replan(tasks,'plan_manage_1',{...base,counts:[1,1],dates}),/add up/);
 });

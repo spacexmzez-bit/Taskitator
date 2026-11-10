@@ -2364,3 +2364,22 @@ test('criteria edit: shared rules and output shape',async()=>{
  assert.throws(()=>CE.check({ai_locked:true,status:'active',recurrence_series_id:'s1',proof_criteria:'A'},'B'),/Recurrence/);
  assert.throws(()=>CE.check({ai_locked:true,status:'completed',proof_criteria:'A'},'B'),/unfinished/);
 });
+test('re-plan with explicit per-date schedule: matches the local computation, syncs with the grant, rejects a balance mismatch',async()=>{
+ const {f,a,push,pull}=await plannedFixture('plan_replan_dates',{config:futureConfig(10)});
+ const call=opts=>f.call('/study-plan/manage',a.token,'POST',{action:'replan',plan_id:'plan_replan_dates',options:opts});
+ const dates=[dayOf(12),dayOf(13),dayOf(30)],opts={rev:'dddd1',start:dates[0],mode:'days',days:3,weekdays:[],counts:[1,6,3],dates};
+ let r=await call({...opts,counts:[1,6,4]});assert.equal(r.status,400,'a surplus is refused');assert.match(JSON.stringify(r.body),/add up/);
+ r=await call({...opts,dates:[dates[1],dates[0],dates[2]]});assert.equal(r.status,400,'dates must be in order');
+ r=await call(opts);assert.equal(r.status,200,JSON.stringify(r.body));assert.equal(r.body.days,3);
+ const local=await pull(),next=merge(local,'plan_replan_dates',r.body.tasks);
+ assert.deepEqual(SM.replan(local,'plan_replan_dates',opts).tasks.filter(t=>SM.planTree(next,'plan_replan_dates').has(t.id)).sort((x,y)=>x.id.localeCompare(y.id)),r.body.tasks);
+ assert.equal((await push(next)).status,200);
+ const after=(await pull()).filter(t=>!t.parent_id);assert.deepEqual(after.map(t=>t.due_date).sort(),dates);
+});
+test('study plan creation with explicit dates and excluded units: the Worker builds and pins exactly what the browser builds',async()=>{
+ const dates=['2026-10-27','2026-10-29','2026-11-10','2026-11-11','2026-11-20'],config={...studyConfig,days:5,counts:[3,1,2,1,3],dates,exclude:[2,9]};
+ const {f,pull}=await plannedFixture('plan_dates_excl',{audit:true,config});
+ const tasks=await pull(),units=tasks.filter(t=>t.parent_id);
+ assert.equal(units.length,10);assert.deepEqual(tasks.filter(t=>!t.parent_id).map(t=>t.due_date).sort(),dates);
+ assert.deepEqual(units.filter(u=>!u.ai_locked).map(u=>u.raw_title).sort(),['Lesson.{num==2}','Lesson.{num==9}']);
+});

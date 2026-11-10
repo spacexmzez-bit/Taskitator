@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-phase2-v12';
+const CACHE_NAME = 'taskitator-phase2-v13';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -13,6 +13,7 @@ const STATIC_ASSETS = [
     './uni/universe-shell.js',
     './uni/universe.css',
     './pro/study-plan.js',
+    './pro/study-schedule.js',
     './pro/smart-study.js',
     './pro/early-bonus.js',
     './pro/status-count.js',

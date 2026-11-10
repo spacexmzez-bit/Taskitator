@@ -1,4 +1,6 @@
-/* Study plans page (Phase 2.4a). Lists the plans made by study recurrence and edits them through TaskitatorStudyManage.
+/* Study plans page (Phase 2.4a, redesigned in 2.6). Lists the plans made by study recurrence and edits them through TaskitatorStudyManage.
+   One open plan, three tabs (Task info, AI criteria, Scheduling) and one save bar. Saving is sequential, not atomic:
+   task info and criteria are pushed first, then the schedule is re-planned by the Worker.
    Rules enforced by the Worker, mirrored here: editing needs Pro; deleting needs a server grant; plans with AI criteria cost
    2 Emergency Bypass uses (1 more if a window is already open). Viewing, finishing and deleting stay open after Pro ends. */
 (() => {
@@ -9,8 +11,9 @@ const $ = id => document.getElementById(id);
 const tr = (key, vars) => (window.TaskitatorI18n?.t ? window.TaskitatorI18n.t(key, vars) : key.replace(/\{(\w+)\}/g, (_, k) => vars?.[k] ?? ''));
 const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; } catch (e) { return fallback; } };
 function el(tag, text, parent, cls) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; if (parent) parent.append(e); return e; }
-let tasks = [], state = { series: [], history: [] }, settings = {}, pro = null, bypass = { active: false, uses: null }, busy = false;
-const open = new Set(), validated = new Map();
+let tasks = [], state = { series: [], history: [] }, settings = {}, pro = null, bypass = { active: false, uses: null }, busy = false, checking = false;
+let current = null;
+const drafts = new Map(), validated = new Map();
 const status = text => { $('plansStatus').textContent = text || ''; };
 const syncing = () => window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured();
 
@@ -20,12 +23,18 @@ async function access() {
     try { const e = await TaskitatorAuth.api('/emergency'); bypass = { active: !!e.active_until && Date.parse(e.active_until) > Date.now(), uses: Number.isFinite(e.uses_left) ? e.uses_left : null }; } catch (e) { /* keep last known */ }
 }
 const canEdit = () => pro === true;
+const planOf = id => M.plans(tasks).find(p => p.id === id);
+function localToday() {
+    const h = Number(settings.day_start_hour) || 0, d = new Date(Date.now() - (h >= 0 && h <= 4 ? h : 0) * 3600000);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
 
-// Save, push now, and put everything back if the server refuses (offline keeps the change and syncs later).
+// Save, push now, and put everything back if the server refuses (offline keeps the change and syncs later). Returns true when saved.
 async function commit(change, done) {
-    if (busy) return;
+    if (busy) return false;
     busy = true; render();
     const before = { tasks: localStorage.getItem(TASKS), state: localStorage.getItem(STATE) };
+    let ok = false;
     try {
         const result = change();
         localStorage.setItem(TASKS, JSON.stringify(result.tasks));
@@ -39,9 +48,10 @@ async function commit(change, done) {
             }
         }
         window.dispatchEvent(new CustomEvent('taskitator-tasks-updated'));
-        status(done ? done(result) : tr('Saved.'));
+        status(done ? done(result) : tr('Saved.')); ok = true;
     } catch (e) { status(e.message); }
     finally { load(); await access(); busy = false; render(); }
+    return ok;
 }
 
 function fmtDate(d) { return d ? new Date(d + 'T00:00:00Z').toLocaleDateString(document.documentElement.lang === 'ar' ? 'ar' : undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }) : ''; }
@@ -49,12 +59,123 @@ function field(label, parent, value, type = 'text') {
     const wrap = el('label', label, parent, 'plan-field'), input = el(type === 'textarea' ? 'textarea' : type === 'select' ? 'select' : 'input', undefined, wrap);
     if (type !== 'select' && type !== 'textarea') input.type = type; if (value !== undefined && type !== 'select') input.value = value; return input;
 }
-function section(title, parent) { const f = el('fieldset', undefined, parent, 'plan-section'); el('legend', title, f); return f; }
-function actionButton(label, parent, fn, enabled = true) { const b = el('button', label, parent, 'icon-btn'); b.type = 'button'; b.disabled = !enabled || busy; b.addEventListener('click', fn); return b; }
 const priorityName = (list, id) => id === undefined ? tr('Mixed') : id === null ? tr('No priority') : (list.find(p => p.id === id)?.name || id);
+const newRev = () => Math.random().toString(36).slice(2, 10).replace(/[^a-z0-9]/g, 'a').padEnd(6, 'a');
+const MIXED = '__mixed';
 
+// ---- drafts: what the person has typed but not saved ----
+function draftFor(plan) {
+    let d = drafts.get(plan.id);
+    if (!d) { d = { tab: 'info', info: infoOf(plan), ai: { criteria: '', exclude: '' }, sched: null, host: null, rev: null }; drafts.set(plan.id, d); mountSchedule(plan, d); }
+    return d;
+}
+const infoOf = plan => ({ title: plan.base, unit: plan.unit, parent: plan.parentPriority === undefined ? MIXED : plan.parentPriority ?? '', unitP: plan.unitPriority === undefined ? MIXED : plan.unitPriority ?? '' });
+const origInfo = plan => infoOf(plan);
+const infoDirty = (plan, d) => { const o = origInfo(plan); return d.info.title !== o.title || d.info.unit !== o.unit || d.info.parent !== o.parent || d.info.unitP !== o.unitP; };
+const aiDirty = d => Boolean(d.ai.criteria.trim() || d.ai.exclude.trim());
+const schedDirty = d => Boolean(d.sched?.state().touched);
+const anyDirty = () => [...drafts.entries()].some(([id, d]) => { const p = planOf(id); return p && (infoDirty(p, d) || aiDirty(d) || schedDirty(d)); });
+
+function keepUnits(plan, { startUnit, skipText }) {
+    const nums = plan.units.map(M.unitNumber).filter(n => n !== null).sort((a, b) => a - b), have = new Set(nums), gaps = [];
+    for (let n = nums[0]; n <= nums.at(-1); n++) if (!have.has(n)) gaps.push(n);
+    const skipped = String(skipText || '').trim() ? S.parseSkips(skipText, nums[0], nums.length, gaps) : [], sk = new Set(skipped);
+    const keep = M.openUnits(plan).filter(n => !sk.has(n) && (startUnit === null || n >= startUnit));
+    return { keep, skipped, startUnit };
+}
+function replanOptions(plan, d, st) {
+    const k = keepUnits(plan, st.options);
+    return { rev: d.rev || (d.rev = newRev()), start: st.sched[0].date, mode: 'days', days: st.sched.length, weekdays: st.options.weekdays, start_unit: k.startUnit, skipped: k.skipped, counts: st.sched.map(x => x.count), dates: st.sched.map(x => x.date) };
+}
+// What the previewed schedule would do, once it is balanced. null until then.
+function analysis(plan, d) {
+    const st = d.sched.state();
+    if (!st.hasPreview || st.stale || st.balance !== 0 || !st.sched.length) return null;
+    try {
+        const opts = replanOptions(plan, d, st), result = M.replan(tasks, plan.id, opts);
+        return { opts, result, impact: M.replanImpact(tasks, result.tasks, plan.id, localToday(), settings) };
+    } catch (e) { return { error: e.message }; }
+}
+const todayPending = () => { try { return window.TaskitatorStatusCount?.pending ? window.TaskitatorStatusCount.pending(tasks, localToday()) : true; } catch (e) { return true; } };
+
+function mountSchedule(plan, d) {
+    const id = plan.id, P = () => planOf(id);
+    d.host = el('div', undefined, undefined, 'plan-sched');
+    const open = M.openUnits(plan);
+    d.sched = window.TaskitatorStudySchedule.mount(d.host, {
+        today: localToday(), start: localToday(), weekdays: S.defaultDays(settings), startUnit: '', startUnitHint: open[0],
+        days: Math.min(open.length, Math.max(1, plan.parents.filter(p => p.status === 'active').length)),
+        note: tr('{done} of {total} units done. Only the {n} unfinished units move; finished units and past days stay as they are.', { done: plan.done, total: plan.total, n: open.length }),
+        label: () => P()?.unit || tr('Unit'),
+        units: opts => keepUnits(P(), opts).keep,
+        fixed: () => {
+            const p = P(), out = new Map(); if (!p) return out;
+            const byId = new Map(p.parents.map(x => [x.id, x]));
+            for (const u of p.units) if (u.status === 'completed') {
+                const date = (u.due_date || byId.get(u.parent_id)?.due_date || '').slice(0, 10); if (!date) continue;
+                if (!out.has(date)) out.set(date, []);
+                out.get(date).push({ text: (p.unit || tr('Unit')) + '.' + M.unitNumber(u), done: true });
+            }
+            return out;
+        },
+        parentTitle: (index, date) => { const p = P(), a = p && drafts.get(id) && analysis(p, drafts.get(id)); return a?.result?.tasks.find(t => !t.parent_id && t.study_plan_id === id && t.due_date === date && t.id.includes('_' + a.opts.rev + '_day_'))?.title || ''; },
+        chip: (n, date) => {
+            const p = P(), dr = drafts.get(id), a = p && dr && analysis(p, dr), unit = p?.units.find(u => M.unitNumber(u) === n), label = (p?.unit || tr('Unit')) + '.' + n;
+            const locked = unit && M.isAudited(unit), later = locked && a?.impact?.later.includes(unit.id);
+            return { text: label + (later ? ' · ' + tr('later') : ''), cls: (locked ? 'is-locked' : '') + (later ? ' is-later' : '') };
+        },
+        notes: () => {
+            const p = P(), dr = drafts.get(id), a = p && dr && analysis(p, dr), out = [];
+            if (!a) return out;
+            if (a.error) return [{ text: a.error, warn: true }];
+            if (a.impact.later.length) out.push({ warn: !bypass.active, text: bypass.active ? tr('{n} AI-audited unit(s) move later or are removed. Emergency Bypass is active, so this is allowed (no extra use).', { n: a.impact.later.length }) : tr('{n} AI-audited unit(s) move later or are removed. Activate Emergency Bypass from the bypass panel first (1 use, 15 minutes), then come back.', { n: a.impact.later.length }) });
+            if (a.impact.today.length && todayPending()) out.push({ warn: !bypass.active, text: bypass.active ? tr('Work due today moves off today. Emergency Bypass is active, so this is allowed.') : tr('Work due today moves off today. That is locked until all of today\'s tasks are finished or Emergency Bypass is on.') });
+            return out;
+        },
+        disabled: () => !canEdit() || busy,
+        onChange: () => chrome()
+    });
+}
+
+// ---- save bar and tab dots ----
+let ui = { dots: {} };
+function barInfo(plan, d) {
+    const dirty = { info: infoDirty(plan, d), ai: aiDirty(d), sched: schedDirty(d) }, names = [];
+    if (dirty.info) names.push(tr('Task info')); if (dirty.ai) names.push(tr('AI criteria')); if (dirty.sched) names.push(tr('Scheduling'));
+    const info = { dirty, ok: names.length > 0, msg: names.length ? tr('Unsaved: {list}', { list: names.join(', ') }) : tr('No changes'), apply: dirty.sched };
+    if (!names.length) return info;
+    const fail = msg => { info.ok = false; info.msg = msg; };
+    if (dirty.info && !d.info.title?.trim() && plan.base) fail(tr('Enter a title, up to 160 characters.'));
+    if (dirty.info && (d.info.parent !== origInfo(plan).parent || d.info.unitP !== origInfo(plan).unitP) && (d.info.parent === MIXED || d.info.unitP === MIXED)) fail(tr('Choose a priority for both fields.'));
+    if (dirty.ai) { if (!d.ai.criteria.trim()) fail(tr('Enter the criteria for the units.')); else try { if (!M.auditTargets(plan, d.ai.exclude).numbers.length) fail(tr('Select at least one unfinished unit.')); } catch (e) { fail(e.message); } }
+    if (dirty.sched) {
+        const st = d.sched.state();
+        if (!st.hasPreview) fail(tr('Generate a preview to save the schedule.'));
+        else if (st.stale) fail(tr('Preview the new schedule again to apply it.'));
+        else if (st.balance !== 0) fail(tr(st.balance > 0 ? 'Settle {n} surplus unit(s) first.' : 'Settle {n} missing unit(s) first.', { n: Math.abs(st.balance) }));
+        else {
+            const a = analysis(plan, d);
+            if (!a || a.error) fail(a?.error || tr('Generate a preview to save the schedule.'));
+            else if (a.impact.later.length && !bypass.active) fail(tr('AI units move later: activate Emergency Bypass first.'));
+            else if (a.impact.today.length && todayPending() && !bypass.active) fail(tr('Work due today moves off today: finish today\'s tasks or activate Emergency Bypass.'));
+        }
+    }
+    return info;
+}
+function chrome() {
+    const plan = current && planOf(current), bar = $('planSaveBar');
+    if (!plan || !canEdit()) { bar.hidden = true; return; }
+    const d = draftFor(plan), info = barInfo(plan, d);
+    for (const [k, dot] of Object.entries(ui.dots)) dot.hidden = !info.dirty[k];
+    bar.hidden = false; $('planSaveMsg').textContent = info.msg;
+    $('planDiscard').disabled = busy || !info.dirty.info && !info.dirty.ai && !info.dirty.sched;
+    const save = $('planSave'); save.textContent = info.apply ? tr('Apply re-plan') : tr('Save changes');
+    save.classList.toggle('is-apply', info.apply && info.ok); save.disabled = busy || checking || !info.ok;
+}
+
+// ---- cards ----
 function card(plan, parent) {
-    const list = M.prioritiesOf(settings), edit = canEdit() && !busy;
+    const list = M.prioritiesOf(settings), isOpen = current === plan.id;
     const c = el('section', undefined, parent, 'plan-card');
     const top = el('div', undefined, c, 'plan-top'); el('h2', plan.base || tr('Study plan'), top);
     const badges = el('div', undefined, top, 'plan-badges');
@@ -62,168 +183,148 @@ function card(plan, parent) {
     if (plan.audited) el('span', tr('AI audited: {n}', { n: plan.audited }), badges, 'plan-badge ai');
     el('p', tr('{done} of {total} done', { done: plan.done, total: plan.total }) + ' · ' + tr('{n} study days', { n: plan.days }) + (plan.start ? ' · ' + fmtDate(plan.start) + ' – ' + fmtDate(plan.end) : ''), c, 'plan-meta');
     const bar = el('div', undefined, c, 'plan-bar'); el('span', undefined, bar).style.width = (plan.total ? Math.round(plan.done / plan.total * 100) : 0) + '%';
-    el('p', tr('Parent priority: {a} · Unit priority: {b}', { a: priorityName(list, plan.parentPriority), b: priorityName(list, plan.unitPriority) }), c, 'plan-meta');
     const actions = el('div', undefined, c, 'plan-actions');
-    actionButton(open.has(plan.id) ? tr('Close') : tr('Edit'), actions, () => { open.has(plan.id) ? open.delete(plan.id) : open.add(plan.id); render(); });
-    const del = actionButton(tr('Delete plan'), actions, () => removePlan(plan), true); del.classList.add('plan-delete');
-    if (!open.has(plan.id)) return;
+    const toggle = el('button', isOpen ? tr('Close') : tr('Edit'), actions, 'icon-btn'); toggle.type = 'button'; toggle.disabled = busy;
+    toggle.addEventListener('click', () => { current = isOpen ? null : plan.id; render(); });
+    if (!isOpen) return;
+    const d = draftFor(plan), edit = canEdit() && !busy;
+    if (!canEdit()) el('p', pro === null ? tr('Could not confirm your Pro license, so editing is off. You can still delete this plan.') : tr('Editing study plans needs an active Pro license. You can still view, finish and delete this plan.'), c, 'plan-hint warn');
+    const tabs = el('div', undefined, c, 'tk-tabs'); tabs.setAttribute('role', 'tablist'); ui = { dots: {} };
+    for (const [key, text] of [['info', tr('Task info')], ['ai', tr('AI criteria')], ['sched', tr('Scheduling')]]) {
+        const b = el('button', text, tabs, 'tk-tab'); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(d.tab === key));
+        ui.dots[key] = el('span', undefined, b, 'tk-tab-dot'); ui.dots[key].hidden = true;
+        b.addEventListener('click', () => { d.tab = key; render(); });
+    }
     const panel = el('div', undefined, c, 'plan-panel');
-    if (!canEdit()) el('p', pro === null ? tr('Could not confirm your Pro license, so editing is off. You can still delete this plan.') : tr('Editing study plans needs an active Pro license. You can still view, finish and delete this plan.'), panel, 'plan-hint warn');
+    if (d.tab === 'info') infoTab(plan, d, panel, list, edit);
+    else if (d.tab === 'ai') aiTab(plan, d, panel, edit);
+    else { panel.append(d.host); d.sched.disable(); }
+    chrome();
+}
 
-    // 1. Parent title
-    const nameBox = section(tr('Plan title'), panel);
+function infoTab(plan, d, panel, list, edit) {
+    const fs = el('fieldset', undefined, panel, 'plan-fs'); fs.disabled = !edit; fs.style.cssText = 'border:0;padding:0;margin:0;min-width:0';
     if (plan.base) {
-        const input = field(tr('Title shown on each study day'), nameBox, plan.base); input.disabled = !edit; input.maxLength = 160;
-        if (plan.custom) el('p', tr('{n} day(s) have their own custom title and are not changed.', { n: plan.custom }), nameBox, 'plan-hint');
-        actionButton(tr('Save title'), nameBox, () => commit(() => M.renamePlan(tasks, plan.id, input.value), r => tr('Title updated on {n} study days.', { n: r.changed })), edit);
-    } else el('p', tr('This plan has custom day titles, so there is no single title to change.'), nameBox, 'plan-hint');
-
-    // 2. Unit name
-    const unitBox = section(tr('Unit name'), panel);
+        const title = field(tr('Title'), fs, d.info.title); title.maxLength = 160;
+        title.addEventListener('input', () => { d.info.title = title.value; chrome(); });
+        if (plan.custom) el('p', tr('{n} day(s) have their own custom title and are not changed.', { n: plan.custom }), fs, 'plan-hint');
+    } else el('p', tr('This plan has custom day titles, so there is no single title to change.'), fs, 'plan-hint');
+    const grid = el('div', undefined, fs, 'plan-grid');
     if (plan.unit) {
-        const row = el('div', undefined, unitBox, 'plan-row');
-        const singular = field(tr('Unit name (singular)'), row, plan.unit), plural = field(tr('Unit name (plural)'), row, plan.plural || plan.unit.toLowerCase() + 's');
-        const locked = plan.audited > 0 && !bypass.active;
-        singular.disabled = plural.disabled = !edit || locked;
-        if (plan.audited) el('p', locked ? tr('This plan has AI-audited units. Renaming them needs Emergency Bypass: activate it from the bypass panel, then come back.') : tr('Emergency Bypass is active, so audited units can be renamed.'), unitBox, 'plan-hint warn');
-        actionButton(tr('Save unit name'), unitBox, () => commit(() => M.renameUnit(tasks, plan.id, singular.value, plural.value, { bypass: bypass.active }), r => tr('Renamed {n} units.', { n: r.changed })), edit && !locked);
-    }
-
-    // 3. Priorities
-    const prioBox = section(tr('Priorities'), panel), row = el('div', undefined, prioBox, 'plan-row');
+        const unit = field(tr('Unit name'), grid, d.info.unit), locked = plan.audited > 0 && !bypass.active; unit.maxLength = 40; unit.disabled = !edit || locked;
+        unit.addEventListener('input', () => { d.info.unit = unit.value; chrome(); });
+    } else el('div', undefined, grid);
     const choices = [['', tr('No priority')], ...list.map(p => [p.id, p.name || p.id])];
-    const make = (label, current) => { const s = field(label, row, undefined, 'select'); for (const [v, t] of choices) el('option', t, s).value = v; s.value = current ?? ''; s.disabled = !edit; return s; };
-    const parentSel = make(tr('Parent task priority'), plan.parentPriority), unitSel = make(tr('Unit priority'), plan.unitPriority);
-    el('p', tr('Units cannot be more important than their parent. Finished tasks keep their priority.'), prioBox, 'plan-hint');
-    actionButton(tr('Save priorities'), prioBox, () => commit(() => M.setPriorities(tasks, plan.id, { parent: parentSel.value || null, unit: unitSel.value || null }, settings), r => tr('Priority updated on {n} tasks.', { n: r.changed })), edit);
-
-    // 4. AI criteria
-    const aiBox = section(tr('AI criteria'), panel);
-    const openUnits = M.openUnits(plan);
-    if (plan.audited) el('p', tr('This plan has AI criteria. They cannot be edited or removed here. The only way to remove them is to delete the plan, which uses 2 Emergency Bypass uses.'), aiBox, 'plan-hint warn');
-    else if (!openUnits.length) el('p', tr('All units are finished, so there is nothing left to audit.'), aiBox, 'plan-hint');
-    else criteriaForm(plan, aiBox, openUnits, edit);
-
-    // 5. Re-plan
-    const replanBox = section(tr('Re-plan'), panel);
-    if (!openUnits.length) el('p', tr('All units are finished, so there is nothing left to re-plan.'), replanBox, 'plan-hint');
-    else replanForm(plan, replanBox, edit);
+    const make = (label, key) => { const s = field(label, grid, undefined, 'select'); if (d.info[key] === MIXED) el('option', tr('Mixed'), s).value = MIXED; for (const [v, t] of choices) el('option', t, s).value = v; s.value = d.info[key]; s.addEventListener('change', () => { d.info[key] = s.value; chrome(); }); return s; };
+    make(tr('Parent task priority'), 'parent'); make(tr('Unit priority'), 'unitP');
+    el('p', tr('Units cannot be more important than their parent. Finished tasks keep their priority.'), fs, 'plan-hint');
+    if (plan.audited && plan.unit) el('p', bypass.active ? tr('Emergency Bypass is active, so audited units can be renamed.') : tr('This plan has AI-audited units. Renaming them needs Emergency Bypass: activate it from the bypass panel, then come back.'), fs, 'plan-hint warn');
+    // Deleting stays outside the save bar and outside Pro.
+    const del = el('div', undefined, panel, 'plan-delbox');
+    const b = el('button', tr('Delete plan'), del, 'icon-btn plan-delete'); b.type = 'button'; b.disabled = busy; b.addEventListener('click', () => removePlan(plan));
+    el('p', plan.audited > 0 ? tr('This plan has AI criteria: deleting costs 2 Emergency Bypass uses (1 if a bypass window is open).') : tr('Allowed: this plan has no AI criteria, so deleting it is free.'), del, 'plan-hint');
 }
 
-// Re-plan (Phase 2.4b). Only unfinished units move, from today or later. The Worker rebuilds the same schedule and decides:
-// AI-audited units moved later or removed need an active Emergency Bypass window; work due today moved off today follows the phone-lock rule.
-const drafts = new Map();
-function localToday() {
-    const h = Number(settings.day_start_hour) || 0, d = new Date(Date.now() - (h >= 0 && h <= 4 ? h : 0) * 3600000);
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-function replanForm(plan, box, edit) {
-    const today = localToday(), open = M.openUnits(plan);
-    const d = drafts.get(plan.id) || { start: today, mode: 'days', days: Math.min(open.length, Math.max(1, plan.parents.filter(p => p.status === 'active').length)), per: 2, rates: {}, weekdays: S.defaultDays(settings), startUnit: '', skipped: '', counts: null, preview: false };
-    drafts.set(plan.id, d);
-    el('p', tr('{done} of {total} units done. Only the {n} unfinished units move; finished units and past days stay as they are.', { done: plan.done, total: plan.total, n: open.length }), box, 'plan-hint');
-    const reset = () => { d.counts = null; d.preview = false; };
-    const start = field(tr('Starting date'), box, d.start, 'date'); start.min = today; start.disabled = !edit;
-    start.addEventListener('change', () => { d.start = start.value; reset(); render(); });
-    const seg = el('div', undefined, box, 'plan-seg');
-    for (const [value, text] of [['days', tr('Number of study days')], ['perDay', tr('Units per day')]]) {
-        const b = el('button', text, seg, 'plan-seg-btn' + (d.mode === value ? ' is-active' : '')); b.type = 'button'; b.disabled = !edit; b.setAttribute('aria-pressed', String(d.mode === value));
-        b.addEventListener('click', () => { d.mode = value; reset(); render(); });
-    }
-    const num = (label, key, min, max) => { const i = field(label, box, d[key], 'number'); i.min = min; i.max = max; i.inputMode = 'numeric'; i.disabled = !edit; i.addEventListener('change', () => { d[key] = i.value; reset(); render(); }); return i; };
-    if (d.mode === 'days') num(tr('Study days (1–365)'), 'days', 1, 365);
-    else {
-        num(tr('Units per day'), 'per', 1, 1000);
-        el('p', tr('Different amount on specific weekdays (optional)'), box, 'plan-hint');
-        const rates = el('div', undefined, box, 'plan-rates');
-        WEEKDAYS.forEach((w, i) => { const l = el('label', tr(w), rates, 'plan-rate'), inp = el('input', undefined, l); inp.type = 'number'; inp.min = 1; inp.max = 1000; inp.inputMode = 'numeric'; inp.value = d.rates[i] ?? ''; inp.disabled = !edit; inp.addEventListener('change', () => { if (inp.value.trim()) d.rates[i] = Number(inp.value); else delete d.rates[i]; reset(); render(); }); });
-    }
-    el('p', tr('Study weekdays'), box, 'plan-hint');
-    const days = el('div', undefined, box, 'plan-weekdays');
-    WEEKDAYS.forEach((w, i) => { const l = el('label', tr(w), days, 'plan-day'), c = el('input', undefined, l); c.type = 'checkbox'; c.checked = d.weekdays.includes(i); c.disabled = !edit; c.addEventListener('change', () => { d.weekdays = c.checked ? [...d.weekdays, i].sort() : d.weekdays.filter(x => x !== i); reset(); render(); }); });
-    el('p', tr('No days selected means every day.'), box, 'plan-hint');
-    const row = el('div', undefined, box, 'plan-row');
-    const su = field(tr('Start from unit (optional)'), row, d.startUnit, 'number'); su.placeholder = String(open[0]); su.disabled = !edit;
-    su.addEventListener('change', () => { d.startUnit = su.value; reset(); render(); });
-    const sk = field(tr('Skip units (optional)'), row, d.skipped); sk.placeholder = '8, 10-12'; sk.dir = 'ltr'; sk.disabled = !edit;
-    sk.addEventListener('change', () => { d.skipped = sk.value; reset(); render(); });
-    el('p', tr('Unfinished units before the starting unit, and skipped units, are removed from the plan.'), box, 'plan-hint');
-    const options = () => {
-        const nums = plan.units.map(M.unitNumber).filter(n => n !== null).sort((a, b) => a - b), have = new Set(nums), gaps = [];
-        for (let n = nums[0]; n <= nums.at(-1); n++) if (!have.has(n)) gaps.push(n);
-        const skipped = d.skipped.trim() ? S.parseSkips(d.skipped, nums[0], nums.length, gaps) : [];
-        return { rev: d.rev || (d.rev = Math.random().toString(36).slice(2, 10).replace(/[^a-z0-9]/g, 'a').padEnd(6, 'a')), start: d.start, mode: d.mode, days: Number(d.days), per: Number(d.per), rates: d.rates, weekdays: d.weekdays, start_unit: d.startUnit === '' ? null : Number(d.startUnit), skipped, counts: d.counts };
+function aiTab(plan, d, panel, edit) {
+    const open = M.openUnits(plan);
+    if (!open.length) { el('p', tr('All units are finished, so there is nothing left to audit.'), panel, 'plan-hint'); return; }
+    const fs = el('fieldset', undefined, panel, 'plan-fs'); fs.disabled = !edit; fs.style.cssText = 'border:0;padding:0;margin:0;min-width:0';
+    const criteria = field(tr('Proof criteria for the units. Use {num} for each unit number.'), fs, d.ai.criteria, 'textarea'); criteria.maxLength = 4000; criteria.rows = 4;
+    const ex = field(tr('Exclude units from the criteria (optional)'), fs, d.ai.exclude); ex.placeholder = '8, 10-12'; ex.dir = 'ltr'; ex.inputMode = 'numeric';
+    el('p', tr('Every unfinished unit gets the criteria unless you list it here. Finished units are never included.'), fs, 'plan-hint');
+    const chips = el('div', undefined, fs, 'plan-chips'), note = el('p', '', fs, 'plan-hint'), check = el('p', '', fs, 'plan-hint');
+    if (plan.audited) el('p', tr('Units that already have criteria stay locked: they cannot be excluded or changed here. Use the task editor to edit their criteria.'), fs, 'plan-hint warn');
+    const paint = () => {
+        chips.replaceChildren(); note.textContent = '';
+        let t; try { t = M.auditTargets(plan, d.ai.exclude); } catch (e) { note.textContent = e.message; return; }
+        const target = new Set(t.numbers), locked = new Set(t.locked), name = plan.unit || tr('Unit');
+        for (const n of open) el('span', name + '.' + n, chips, 'plan-chip' + (locked.has(n) ? ' done' : target.has(n) ? ' lock' : ' skip'));
+        note.textContent = tr('🔒 = will get the criteria. Struck through = excluded.');
     };
-    actionButton(tr('Preview new schedule'), box, () => { d.preview = true; render(); }, edit);
-    if (!d.preview) return;
-    let result, opts;
-    try { opts = options(); if (opts.start < today) throw Error(tr('The new schedule cannot start before today.')); result = M.replan(tasks, plan.id, opts); }
-    catch (e) { el('p', e.message, box, 'plan-hint warn'); return; }
-    d.counts = result.counts;
-    const list = el('div', undefined, box, 'plan-days');
-    const moved = result.tasks.filter(t => t.parent_id && t.id.startsWith('study_' + plan.id + '_unit_'));
-    result.dates.forEach((date, i) => {
-        const pid = 'study_' + plan.id + '_' + opts.rev + '_day_' + i, nums = moved.filter(u => u.parent_id === pid).map(M.unitNumber);
-        const r = el('div', undefined, list, 'plan-day-row');
-        el('strong', fmtDate(date), r); el('span', plan.unit ? nums.map(n => plan.unit + '.' + n).join(', ') : nums.join(', '), r, 'plan-day-units');
-        const step = el('div', undefined, r, 'plan-step');
-        const bump = delta => { try { d.counts = M.adjustCounts(d.counts, i, delta); render(); } catch (e) { status(e.message); } };
-        actionButton('−', step, () => bump(-1), edit); el('span', String(result.counts[i]), step); actionButton('+', step, () => bump(1), edit);
-    });
-    el('p', tr('Changing a day keeps the total: + takes a unit from the end of the plan, − pushes one to the end.'), box, 'plan-hint');
-    el('p', tr('{n} units over {d} study days, ending {date}.', { n: result.scheduled, d: result.days, date: fmtDate(result.end) }) + (result.removed ? ' ' + tr('{n} unfinished unit(s) removed.', { n: result.removed }) : ''), box, 'plan-hint');
-    const impact = M.replanImpact(tasks, result.tasks, plan.id, today, settings);
-    let blocked = false;
-    if (impact.later.length) { el('p', bypass.active ? tr('{n} AI-audited unit(s) move later or are removed. Emergency Bypass is active, so this is allowed (no extra use).', { n: impact.later.length }) : tr('{n} AI-audited unit(s) move later or are removed. Activate Emergency Bypass from the bypass panel first (1 use, 15 minutes), then come back.', { n: impact.later.length }), box, 'plan-hint warn'); blocked ||= !bypass.active; }
-    if (impact.today.length) { el('p', bypass.active ? tr('Work due today moves off today. Emergency Bypass is active, so this is allowed.') : tr('Work due today moves off today. That is locked until all of today\'s tasks are finished or Emergency Bypass is on.'), box, 'plan-hint warn'); blocked ||= !bypass.active; }
-    actionButton(tr('Apply re-plan'), box, () => applyReplan(plan, opts, result), edit && !blocked);
+    criteria.addEventListener('input', () => { d.ai.criteria = criteria.value; check.textContent = ''; chrome(); });
+    ex.addEventListener('input', () => { d.ai.exclude = ex.value; paint(); chrome(); });
+    paint();
+    if (settings.strict_criteria_validation !== false) {
+        const b = el('button', tr('Check criteria'), fs, 'icon-btn'); b.type = 'button';
+        b.addEventListener('click', async () => { try { const v = await validateCriteria(plan, d); check.textContent = v.score + '/10 · ' + v.critique; } catch (e) { check.textContent = e.message; } });
+    }
 }
-async function applyReplan(plan, opts, preview) {
+const stamp = (plan, d) => JSON.stringify([d.ai.criteria, plan.id]);
+async function validateCriteria(plan, d) {
+    if (!d.ai.criteria.trim()) throw Error(tr('Enter audit criteria, up to 4,000 characters.'));
+    const key = stamp(plan, d); if (validated.has(key)) return validated.get(key);
+    const choice = window.TaskitatorEngine.AuditEngine.selection();
+    checking = true; chrome();
+    try {
+        const result = await TaskitatorAuth.api('/study-plan', { method: 'POST', body: JSON.stringify({ action: 'validate', config: M.configOf(plan), criteria: d.ai.criteria, provider: choice.provider, model: choice.primary, key_version: choice.keyVersion }) });
+        validated.set(key, result); return result;
+    } finally { checking = false; chrome(); }
+}
+
+// ---- saving ----
+function ask(title, lines, yes) {
+    return new Promise(resolve => {
+        const dlg = $('planConfirm'), body = $('planConfirmBody'); $('planConfirmTitle').textContent = title; body.replaceChildren();
+        const ul = el('ul', undefined, body); for (const l of lines) el('li', l, ul);
+        $('planConfirmYes').textContent = yes; let settled = false;
+        const finish = v => { if (settled) return; settled = true; if (dlg.open) dlg.close(); resolve(v); };
+        $('planConfirmYes').onclick = () => finish(true); $('planConfirmNo').onclick = () => finish(false); dlg.onclose = () => finish(false);
+        dlg.showModal();
+    });
+}
+async function save() {
+    const plan = current && planOf(current); if (!plan || busy) return;
+    const d = draftFor(plan), info = barInfo(plan, d); if (!info.ok) return;
+    try {
+        if (info.dirty.ai && settings.strict_criteria_validation !== false) {
+            const v = await validateCriteria(plan, d);
+            if (!v.passed) throw Error(tr('The criteria must pass the check (7/10 or higher). {score}/10 · {critique}', { score: v.score, critique: v.critique }));
+        }
+    } catch (e) { status(e.message); return; }
+    const lines = [];
+    if (info.dirty.info) lines.push(tr('Task info: title, unit name and priorities are updated.'));
+    if (info.dirty.ai) { const t = M.auditTargets(plan, d.ai.exclude); lines.push(tr('AI criteria are added to {n} unit(s). They cannot be edited or removed later except by deleting the plan, which uses 2 Emergency Bypass uses.', { n: t.numbers.length })); }
+    let a = null;
+    if (info.dirty.sched) {
+        a = analysis(plan, d);
+        lines.push(tr('Re-plan {n} unfinished units over {d} study days, ending {date}.', { n: a.result.scheduled, d: a.result.days, date: fmtDate(a.result.end) }) + (a.result.removed ? ' ' + tr('{n} unfinished unit(s) will be removed.', { n: a.result.removed }) : ''));
+        lines.push(tr('Finished units and past days stay as they are.'));
+        if (info.dirty.info || info.dirty.ai) lines.push(tr('Saved in two steps: task info and criteria first, then the schedule. If the schedule step fails, the first step stays saved.'));
+    }
+    if (!await ask(info.apply ? tr('Apply re-plan?') : tr('Save changes?'), lines, info.apply ? tr('Apply re-plan') : tr('Save'))) return;
+    if (info.dirty.info || info.dirty.ai) {
+        const ok = await commit(() => {
+            let t = tasks;
+            if (info.dirty.info) {
+                const o = origInfo(plan);
+                if (plan.base && d.info.title !== o.title) t = M.renamePlan(t, plan.id, d.info.title).tasks;
+                if (plan.unit && d.info.unit !== o.unit) t = M.renameUnit(t, plan.id, d.info.unit, d.info.unit.trim() + 's', { bypass: bypass.active }).tasks;
+                if (d.info.parent !== o.parent || d.info.unitP !== o.unitP) t = M.setPriorities(t, plan.id, { parent: d.info.parent || null, unit: d.info.unitP || null }, settings).tasks;
+            }
+            if (info.dirty.ai) t = M.addCriteria(t, plan.id, d.ai.criteria, M.auditTargets(plan, d.ai.exclude).numbers).tasks;
+            return { tasks: t };
+        }, () => tr('Saved.'));
+        if (!ok) return;
+        const fresh = planOf(plan.id); if (fresh) { d.info = infoOf(fresh); d.ai = { criteria: '', exclude: '' }; }
+        if (!info.dirty.sched) { drafts.delete(plan.id); render(); return; }
+    }
+    if (info.dirty.sched) { const fresh = planOf(plan.id); if (fresh) await applyReplan(fresh, d); }
+}
+
+async function applyReplan(plan, d) {
     if (busy) return;
-    if (!confirm(tr('Re-plan {n} unfinished units over {d} study days?', { n: preview.scheduled, d: preview.days }) + (preview.removed ? ' ' + tr('{n} unfinished unit(s) will be removed.', { n: preview.removed }) : ''))) return;
+    const st = d.sched.state(); let opts;
     busy = true; render();
     let answer;
     try {
+        opts = replanOptions(plan, d, st);
         if (!syncing()) throw Error(tr('Connect your account to re-plan a study plan.'));
         if (SyncEngine.isDirty?.()) { const sent = await SyncEngine.syncNow({ origin: 'manual' }); if (sent && sent.success === false) throw Error(sent.error || tr('Sync first, then try again.')); }
         answer = await TaskitatorAuth.api('/study-plan/manage', { method: 'POST', body: JSON.stringify({ action: 'replan', plan_id: plan.id, options: opts }) });
-    } catch (e) { status(e.message); busy = false; await access(); render(); return; }
-    busy = false; drafts.delete(plan.id);
-    await commit(() => { const ids = M.planTree(tasks, plan.id); return { tasks: [...tasks.filter(t => !ids.has(t.id)), ...answer.tasks], answer }; }, () => tr('Re-planned: {n} units over {d} study days.', { n: answer.scheduled, d: answer.days }));
-}
-
-function criteriaForm(plan, box, openUnits, edit) {
-    const criteria = field(tr('Criteria. Use {num} for each unit number.'), box, '', 'textarea'); criteria.maxLength = 4000; criteria.disabled = !edit;
-    const which = field(tr('Units to audit. Leave empty for every unfinished unit.'), box, ''); which.disabled = !edit;
-    which.placeholder = openUnits.length > 1 ? openUnits[0] + '-' + openUnits.at(-1) : String(openUnits[0]);
-    const strict = settings.strict_criteria_validation !== false, check = el('p', '', box, 'plan-hint');
-    const stamp = () => JSON.stringify([criteria.value, plan.id]);
-    const picked = () => {
-        if (!which.value.trim()) return openUnits;
-        const nums = M.plans(tasks).find(p => p.id === plan.id).units.map(M.unitNumber).filter(n => n !== null).sort((a, b) => a - b);
-        const have = new Set(nums), skipped = []; for (let n = nums[0]; n <= nums.at(-1); n++) if (!have.has(n)) skipped.push(n);
-        const chosen = S.parseSkips(which.value, nums[0], nums.length, skipped).filter(n => openUnits.includes(n));
-        if (!chosen.length) throw Error(tr('Select at least one unfinished unit.'));
-        return chosen;
-    };
-    criteria.addEventListener('input', () => { check.textContent = ''; });
-    if (strict) actionButton(tr('Check criteria'), box, async () => {
-        try {
-            if (!criteria.value.trim()) throw Error(tr('Enter audit criteria, up to 4,000 characters.'));
-            const choice = window.TaskitatorEngine.AuditEngine.selection();
-            const result = await TaskitatorAuth.api('/study-plan', { method: 'POST', body: JSON.stringify({ action: 'validate', config: M.configOf(plan), criteria: criteria.value, provider: choice.provider, model: choice.primary, key_version: choice.keyVersion }) });
-            validated.set(stamp(), result); check.textContent = result.score + '/10 · ' + result.critique;
-        } catch (e) { check.textContent = e.message; }
-    }, edit);
-    actionButton(tr('Add AI criteria'), box, () => {
-        try {
-            if (strict && !validated.get(stamp())?.passed) throw Error(tr('Check the criteria first. They must pass (7/10 or higher).'));
-            const numbers = picked();
-            if (!confirm(tr('Add these criteria to {n} unit(s)? They cannot be edited or removed later except by deleting the plan, which uses 2 Emergency Bypass uses.', { n: numbers.length }))) return;
-            commit(() => M.addCriteria(tasks, plan.id, criteria.value, numbers), r => tr('AI criteria added to {n} units.', { n: r.changed }));
-        } catch (e) { status(e.message); }
-    }, edit);
+    } catch (e) { d.rev = null; status(e.message); busy = false; await access(); render(); return; }
+    busy = false;
+    const ok = await commit(() => { const ids = M.planTree(tasks, plan.id); return { tasks: [...tasks.filter(t => !ids.has(t.id)), ...answer.tasks], answer }; }, () => tr('Re-planned: {n} units over {d} study days.', { n: answer.scheduled, d: answer.days }));
+    if (ok) { drafts.delete(plan.id); render(); }
 }
 
 async function removePlan(plan) {
@@ -244,12 +345,13 @@ async function removePlan(plan) {
         } else if (guarded) throw Error(tr('Connect your account to delete a plan with AI criteria.'));
     } catch (e) { status(e.message); busy = false; await access(); render(); return; }
     busy = false;
-    open.delete(plan.id);
+    if (current === plan.id) current = null; drafts.delete(plan.id);
     await commit(() => M.deletePlan(tasks, state, plan.id), r => tr('Plan deleted. {n} tasks removed.', { n: r.removed }));
 }
 
 function render() {
     const plans = M.plans(tasks), now = plans.filter(p => !p.finished), done = plans.filter(p => p.finished);
+    if (current && !plans.some(p => p.id === current)) current = null;
     $('plansCurrent').replaceChildren(); $('plansPrevious').replaceChildren();
     for (const p of now) card(p, $('plansCurrent'));
     for (const p of done) card(p, $('plansPrevious'));
@@ -257,11 +359,23 @@ function render() {
     const note = $('plansNotice');
     note.hidden = canEdit() || !plans.length;
     note.textContent = pro === null ? tr('Could not confirm your Pro license, so editing is off. You can still view and delete plans.') : tr('Editing study plans needs an active Pro license. You can still view, finish and delete plans. Resubscribing restores editing.');
+    if (!current) $('planSaveBar').hidden = true;
 }
 let started = false;
-async function start() { if (started) return; started = true; load(); render(); await access(); render(); }
-window.addEventListener('focus', () => { if (!busy) { load(); access().then(render); } });
-window.addEventListener('storage', () => { if (!busy) { load(); render(); } });
+async function start() {
+    if (started) return; started = true;
+    const drawer = $('sidebarDrawer'), backdrop = $('drawerBackdrop'), openBtn = $('openDrawerBtn');
+    if (openBtn && drawer && backdrop) {
+        openBtn.addEventListener('click', () => { drawer.classList.add('open'); backdrop.classList.add('open'); });
+        backdrop.addEventListener('click', () => { drawer.classList.remove('open'); backdrop.classList.remove('open'); });
+    }
+    $('planSave').addEventListener('click', () => save());
+    $('planDiscard').addEventListener('click', () => { if (current) { drafts.delete(current); render(); status(''); } });
+    load(); render(); await access(); render();
+}
+const refresh = () => { if (!busy && !anyDirty()) { load(); access().then(render); } };
+window.addEventListener('focus', refresh);
+window.addEventListener('storage', () => { if (!busy && !anyDirty()) { load(); render(); } });
 document.addEventListener('DOMContentLoaded', start);
 if (document.readyState !== 'loading') start();
 })();

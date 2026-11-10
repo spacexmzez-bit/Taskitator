@@ -68,15 +68,36 @@ function setPriorities(tasks,id,{parent,unit},settings){
 // Add AI criteria to a plan that has none. Only unfinished units can be audited; {num} becomes the unit number.
 function addCriteria(tasks,id,criteria,numbers){
  const plan=forPlan(tasks,id);criteria=String(criteria??'');
- if(plan.audited)throw Error('This plan already has AI criteria. Editing them is not available yet.');
- if(!criteria.trim()||criteria.length>4000)throw Error('Enter audit criteria, up to 4,000 characters.');
+  if(!criteria.trim()||criteria.length>4000)throw Error('Enter audit criteria, up to 4,000 characters.');
  if(/\{(?!num\})[^}]*\}/.test(criteria))throw Error('Only {num} is available in study criteria.');
  const pick=new Set(numbers),out=copy(tasks),mine=new Map(plan.units.map(u=>[u.id,u]));let changed=0;
- for(const t of out){const u=mine.get(t.id);if(!u||u.status!=='active')continue;const n=unitNumber(u);if(n===null||!pick.has(n))continue;
+ for(const t of out){const u=mine.get(t.id);if(!u||u.status!=='active'||isAudited(u))continue;const n=unitNumber(u);if(n===null||!pick.has(n))continue;
   t.ai_locked=true;t.proof_criteria=criteria.replace(/\{num\}/g,String(n));t.raw_proof_criteria=criteria;changed++;}
  if(!changed)throw Error('Select at least one unfinished unit.');
  return {tasks:out,changed};
 }
+// Which unfinished units a criteria edit reaches. Units that already have criteria stay locked and are never changed here.
+// excludeText uses the skipped-units syntax ("8, 10-12"). Returns {numbers, locked, excluded}.
+function auditTargets(plan,excludeText){
+ const open=plan.units.filter(u=>u.status==='active').map(u=>({n:unitNumber(u),locked:isAudited(u)})).filter(u=>u.n!==null).sort((a,b)=>a.n-b.n);
+ const locked=open.filter(u=>u.locked).map(u=>u.n),free=open.filter(u=>!u.locked).map(u=>u.n);
+ let excluded=[];
+ if(String(excludeText??'').trim()){
+  const all=plan.units.map(unitNumber).filter(n=>n!==null).sort((a,b)=>a-b),have=new Set(all),gaps=[];
+  for(let n=all[0];n<=all.at(-1);n++)if(!have.has(n))gaps.push(n);
+  excluded=root.TaskitatorStudyCore.parseSkips(excludeText,all[0],all.length,gaps);
+ }
+ const ex=new Set(excluded);
+ return {numbers:free.filter(n=>!ex.has(n)),locked,excluded:free.filter(n=>ex.has(n))};
+}
+// Assign unit numbers to dates in order: sched = [{date,count}] sorted by date. Returns Map date -> numbers.
+function assignUnits(numbers,sched){
+ const out=new Map();let i=0;
+ for(const {date,count}of sched){out.set(date,numbers.slice(i,i+count));i+=count;}
+ return out;
+}
+// Surplus (positive) or missing (negative) units compared with the units that need a date.
+const balance=(sched,total)=>sched.reduce((a,x)=>a+x.count,0)-total;
 // Unit numbers of a plan's unfinished units (for the audit picker).
 const openUnits=plan=>plan.units.filter(u=>u.status==='active').map(unitNumber).filter(n=>n!==null).sort((a,b)=>a-b);
 // Config the Worker's study validator understands, rebuilt from the generated tasks.
@@ -125,8 +146,10 @@ function replanOptions(o){
  const skipped=[...new Set(o.skipped??[])];if(skipped.length>1000||skipped.some(n=>!Number.isSafeInteger(n)||n<0))throw Error('Invalid skipped unit.');
  const rates={};for(const [k,v]of Object.entries(o.rates||{})){const d=Number(k);if(!Number.isInteger(d)||d<0||d>6)throw Error('Choose valid weekdays.');if(v===''||v==null)continue;rates[d]=whole(Number(v),1,1000,'Use whole numbers within the displayed limits.');}
  const counts=o.counts==null?null:o.counts;
+ const dates=o.dates==null?null:o.dates;
+ if(dates&&(!counts||!Array.isArray(dates)||dates.length!==counts.length||dates.some((d,i)=>!dateOK(d)||d<o.start||(i&&d<=dates[i-1]))))throw Error('Choose valid study dates.');
  if(counts&&(!Array.isArray(counts)||!counts.length||counts.length>365||counts.some(n=>!Number.isSafeInteger(n)||n<1||n>1000)))throw Error('Each study day needs at least one unit.');
- return {rev,start:o.start,weekdays:weekdays.sort((a,b)=>a-b),mode,days:mode==='days'?whole(Number(o.days),1,365,'Study days must be 1–365.'):null,per:mode==='perDay'?whole(Number(o.per),1,1000,'Units per day must be 1–1,000.'):null,rates,startUnit,skipped:skipped.sort((a,b)=>a-b),counts:counts?[...counts]:null};
+ return {rev,start:o.start,weekdays:weekdays.sort((a,b)=>a-b),mode,days:mode==='days'?whole(Number(o.days),1,365,'Study days must be 1–365.'):null,per:mode==='perDay'?whole(Number(o.per),1,1000,'Units per day must be 1–1,000.'):null,rates,startUnit,skipped:skipped.sort((a,b)=>a-b),counts:counts?[...counts]:null,dates:dates?[...dates]:null};
 }
 // Which unfinished units get scheduled, before any dates are chosen.
 function replanUnits(plan,o){
@@ -143,7 +166,7 @@ function replanCounts(total,o){
  if(o.days>total)throw Error('Each study day needs at least one unit.');
  return Array.from({length:o.days},(_,i)=>Math.floor(total/o.days)+(i<total%o.days?1:0));
 }
-function replanDates(n,o){const allowed=new Set(o.weekdays.length?o.weekdays:[0,1,2,3,4,5,6]),out=[];let at=Date.parse(o.start+'T00:00:00Z');while(out.length<n){if(allowed.has(new Date(at).getUTCDay()))out.push(iso(at));at+=DAY;}return out;}
+function replanDates(n,o){if(o.dates)return o.dates;const allowed=new Set(o.weekdays.length?o.weekdays:[0,1,2,3,4,5,6]),out=[];let at=Date.parse(o.start+'T00:00:00Z');while(out.length<n){if(allowed.has(new Date(at).getUTCDay()))out.push(iso(at));at+=DAY;}return out;}
 // Per-date edit with the total fixed (Option A): +1 takes a unit from the end of the plan, −1 pushes one to the end.
 function adjustCounts(counts,index,delta){
  const c=[...counts],last=c.length-1;if(!Number.isInteger(index)||index<0||index>last)throw Error('Choose a study day.');
@@ -213,5 +236,5 @@ function replanImpact(before,after,id,today,settings){
  return {later,today:dueToday};
 }
 
-root.TaskitatorStudyManage={planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
+root.TaskitatorStudyManage={auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
 })(typeof window==='undefined'?globalThis:window);

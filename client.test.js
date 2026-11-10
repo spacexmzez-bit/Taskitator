@@ -65,28 +65,42 @@ function studyUI(pro=true){
   set textContent(t){this._text=String(t);this.children=[];}get textContent(){return this._text+this.children.map(e=>e.textContent).join(' ');}
   replaceChildren(...nodes){this.children=[];for(const n of nodes)this.append(n);}
   addEventListener(name,fn){(this.handlers[name]??=[]).push(fn);}setAttribute(){}focus(){}
+  get classList(){const self=this,has=c=>(' '+(self.className||'')+' ').includes(' '+c+' ');return {contains:has,add(c){if(!has(c))self.className=((self.className||'')+' '+c).trim();},remove(c){self.className=(self.className||'').split(' ').filter(x=>x&&x!==c).join(' ');},toggle(c,on){(on??!has(c))?this.add(c):this.remove(c);}};}
   querySelectorAll(tags){const set=new Set(tags.split(','));return this.children.flatMap(e=>[...(set.has(e.tag)?[e]:[]),...e.querySelectorAll(tags)]);}
   showModal(){this.open=true;}close(){this.open=false;for(const fn of this.handlers.close||[])fn();}remove(){this.isConnected=false;}
  }
  const body=new Element('body'),storage=new LocalStorage(),requests=[];storage.setItem('taskitator_tasks','[]');storage.setItem('taskitator_settings',JSON.stringify({weekend_start:5,weekend_end:6}));
  const document={body,createElement:tag=>new Element(tag)},window={document,Clerk:{session:{id:'session_study'}},TaskitatorPro:{checkConsecutiveEntitlement:async()=>({allowed:pro})},TaskitatorRecurrence:{today:()=> '2026-10-27'},SyncEngine:{forceImmediateSync:async()=>true},TaskitatorApp:{loadStorage(){},saveStorageAndPush(){},renderUnifiedView(){}},TaskitatorAuth:{api:async(path,options)=>{requests.push(JSON.parse(options.body));return {authorized:true};}},dispatchEvent(){}};
- const context=vm.createContext({window,document,location:{search:''},localStorage:storage,crypto:webcrypto,URLSearchParams,Event:class{},confirm:()=>true,console});vm.runInContext(fs.readFileSync(new URL('pro/study-plan.js',root),'utf8'),context);
- return {window,body,storage,requests,button:(text,container=body)=>container.querySelectorAll('button').find(b=>b.textContent===text),inputs:()=>body.querySelectorAll('input')};
+ const context=vm.createContext({window,document,location:{search:''},localStorage:storage,crypto:webcrypto,URLSearchParams,Event:class{},confirm:()=>true,console});vm.runInContext(fs.readFileSync(new URL('pro/study-plan.js',root),'utf8'),context);for(const f of ['pro/study-manage.js','pro/study-schedule.js'])vm.runInContext(fs.readFileSync(new URL(f,root),'utf8'),context);
+ const fire=(e,name='input')=>{for(const fn of e.handlers[name]||[])fn({});};
+ return {window,body,storage,requests,fire,button:(text,container=body)=>container.querySelectorAll('button').find(b=>b.textContent===text),inputs:()=>body.querySelectorAll('input')};
 }
-test('Study preview: cancellation creates nothing, +/- requires exact total, renamed titles and skips survive confirmation',async()=>{
- const f=studyUI();await f.window.TaskitatorStudy.open({title:'Math',unit:'Lesson',plural:'Lessons',total:10,days:5});assert.equal(f.storage.getItem('taskitator_tasks'),'[]');await f.button('Generate dates').onclick();assert.equal(f.body.querySelectorAll('article').length,5);
- await f.button('+').onclick();assert.equal(f.button('Confirm and create').disabled,true);await f.button('−').onclick();assert.equal(f.button('Confirm and create').disabled,false);
- const parentInput=f.body.querySelectorAll('article')[0].querySelectorAll('input')[0];parentInput.value='Algebra';parentInput.oninput();const skip=f.inputs().find(i=>i.name==='studySkips');skip.value='2-3';await f.button('Add skipped').onclick();await f.button('Lesson 2 ✕').onclick();
- await f.button('Confirm and create').onclick();const tasks=JSON.parse(f.storage.getItem('taskitator_tasks'));assert.equal(tasks.length,15);assert.equal(tasks[0].title,'Algebra');assert.equal(tasks.at(-1).raw_title,'Lesson.{num==11}');assert.equal(f.requests.filter(r=>r.action==='authorize').length,1);
+test('Study preview: nothing is created before a balanced preview; +/- on a date needs the exact total; skips survive confirmation',async()=>{
+ const f=studyUI();await f.window.TaskitatorStudy.open({title:'Math',unit:'Lesson',plural:'Lessons',total:10,days:5});assert.equal(f.storage.getItem('taskitator_tasks'),'[]');
+ assert.equal(f.button('Create plan').disabled,true,'no preview yet');
+ await f.button('Preview new schedule').onclick?.();f.button('Preview new schedule').handlers.click.forEach(fn=>fn());
+ assert.equal(f.button('Create plan').disabled,false);assert.equal(f.button('Preview generated ✓').disabled,true,'the preview button is pressed after generating');
+ const cell=()=>f.body.querySelectorAll('button').find(b=>/ss-cell/.test(b.className)&&b.querySelectorAll('small').length);
+ cell().handlers.click.forEach(fn=>fn());f.button('+').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,true,'surplus blocks creating');
+ f.button('−').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,false);
+ const skip=f.inputs().filter(i=>i.placeholder==='8, 10-12'&&i.type==='text').at(-1);skip.value='2-3';f.fire(skip);
+ assert.equal(f.button('Create plan').disabled,true,'changing a setting makes the preview stale');assert.ok(f.button('Preview new schedule'),'and re-enables the preview button');
+ f.button('Preview new schedule').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,false);
+ await f.button('Create plan').onclick();const tasks=JSON.parse(f.storage.getItem('taskitator_tasks'));assert.equal(tasks.length,15);assert.equal(tasks.at(-1).raw_title,'Lesson.{num==12}');assert.equal(f.requests.filter(r=>r.action==='authorize').length,1);
  const cancelled=studyUI();await cancelled.window.TaskitatorStudy.open({title:'Biology'});await cancelled.button('Cancel').onclick();assert.equal(cancelled.storage.getItem('taskitator_tasks'),'[]');assert.equal(cancelled.requests.length,0);
 });
-test('Study preview: units-per-day split, calendar view edits the same days, bad skips add nothing',async()=>{
+test('Study preview: units-per-day split, list and calendar share the same dates, bad skips are refused',async()=>{
  const f=studyUI();await f.window.TaskitatorStudy.open({title:'Math',unit:'Lesson',plural:'Lessons',total:20,days:5});
- await f.button('Units per day').onclick();const per=f.inputs().find(i=>i.type==='number'&&i.parentElement.textContent.startsWith('Units per day'));per.value='6';
- await f.button('Generate dates').onclick();assert.equal(f.body.querySelectorAll('article').length,4);assert.deepEqual(f.body.querySelectorAll('article').map(a=>a.querySelectorAll('span').at(-1).textContent),['6','6','6','2']);
- const skip=f.inputs().find(i=>i.name==='studySkips');skip.value='3, 99';await f.button('Add skipped').onclick();assert.equal(f.button('Lesson 3 ✕'),undefined);
- await f.button('Calendar').onclick();assert.equal(f.body.querySelectorAll('article').length,1);await f.button('+').onclick();assert.equal(f.button('Confirm and create').disabled,true);
- await f.button('List').onclick();assert.equal(f.body.querySelectorAll('article')[0].querySelectorAll('span').at(-1).textContent,'7');
+ f.button('Units per day').handlers.click.forEach(fn=>fn());const per=f.inputs().find(i=>i.type==='number'&&i.parentElement.textContent.startsWith('Units per day'));per.value='6';f.fire(per);
+ f.button('Preview new schedule').handlers.click.forEach(fn=>fn());f.button('List').handlers.click.forEach(fn=>fn());
+ const rows=()=>f.body.querySelectorAll('div').filter(e=>/(^| )ss-row( |$)/.test(e.className||''));
+ assert.deepEqual(rows().map(r=>r.querySelectorAll('span').at(-1).textContent.split(', ').length),[6,6,6,2]);
+ const skip=f.inputs().filter(i=>i.placeholder==='8, 10-12'&&i.type==='text').at(-1);skip.value='3, 99';f.fire(skip);f.button('Preview new schedule').handlers.click.forEach(fn=>fn());
+ assert.match(f.body.textContent,/99 is outside this plan/);assert.equal(f.button('Create plan').disabled,true);
+ skip.value='';f.fire(skip);f.button('Preview new schedule').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,false);
+ f.button('Calendar').handlers.click.forEach(fn=>fn());const cell=f.body.querySelectorAll('button').find(b=>/ss-cell/.test(b.className)&&b.querySelectorAll('small').length);cell.handlers.click.forEach(fn=>fn());
+ f.button('+').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,true);
+ f.button('List').handlers.click.forEach(fn=>fn());assert.equal(rows()[0].querySelectorAll('span').at(-1).textContent.split(', ').length,7);
 });
 test('Study Copilot: Free receives gentle Pro explanation and cannot set criteria or audits',async()=>{
  const free=studyUI(false),r=await free.window.TaskitatorStudy.propose({title:'Math',total:10,days:5});assert.equal(r.status,'pro_required');assert.equal(free.body.children.length,0);const f=studyUI();assert.equal((await f.window.TaskitatorStudy.propose({title:'Math'})).status,'needs_input');assert.equal((await f.window.TaskitatorStudy.propose({title:'Math',total:10,days:5,audit:true})).status,'error');assert.equal(f.requests.length,0);
@@ -346,7 +360,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v12'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v13'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
