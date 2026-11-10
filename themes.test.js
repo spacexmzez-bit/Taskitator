@@ -193,7 +193,7 @@ test('every #ic- reference in chrome resolves to a mapped icon key', () => {
     const keys = new Set([...icons.match(/nature: \{([\s\S]*?)\n        \}/)[1].matchAll(/'([a-z0-9-]+)': '/g)].map(m => m[1]));
     const animals = icons.match(/const ANIMALS = \[([^\]]+)\]/)[1].match(/'([a-z]+)'/g).map(a => 'animal-' + a.slice(1, -1));
     animals.forEach(k => keys.add(k)); ['bird0', 'bird1', 'bird2'].forEach(k => keys.add(k));
-    for (const f of ['index.html', 'components.html', 'settings.html', 'help.html', 'sleep.html', 'login.html', 'app.js', 'components.js', 'pro.js', 'nature.js']) {
+    for (const f of ['index.html', 'components.html', 'settings.html', 'help.html', 'sleep.html', 'study-plans.html', 'login.html', 'app.js', 'components.js', 'pro.js', 'nature.js']) {
         for (const [, key] of read(f).matchAll(/#ic-([a-z0-9-]+)/g)) assert.ok(keys.has(key), `${f}: #ic-${key}`);
     }
     for (const [, key] of read('tutorial-integration.js').matchAll(/icon: '([a-z][a-z0-9-]+)'/g)) assert.ok(keys.has(key), 'tour icon ' + key);
@@ -207,7 +207,7 @@ test('service worker precaches every new theme file and the cache version change
         assert.ok(fs.existsSync(new URL(f, root)), f + ' exists');
     }
     assert.doesNotMatch(sw, /taskitator-button-startup-v1/);
-    for (const page of ['index.html', 'components.html', 'settings.html', 'help.html', 'sleep.html', 'login.html']) {
+    for (const page of ['index.html', 'components.html', 'settings.html', 'help.html', 'sleep.html', 'study-plans.html', 'login.html']) {
         const html = read(page);
         const i = html.indexOf('registry.js'), j = html.indexOf('theme-boot.js');
         assert.ok(i > 0 && j > i && j < html.indexOf('</head>'), page + ': registry then boot, blocking, in <head>');
@@ -248,7 +248,7 @@ test('emoji lint: app chrome uses icons; only user content and Universe keep emo
     const KEEP = new Set([...'✕✓☑✎⛶⇅▼↻←→↑↓◆◇•·☰']);
     // Allow-list: user-chosen project icons and the Inbox default (user data), Universe (not in this project).
     const ALLOW = /PROJECT_ICONS|is_default: true|projectObj\.icon \|\||🌌|\.replace\(\/\[/;
-    const files = ['index.html', 'components.html', 'settings.html', 'help.html', 'sleep.html', 'login.html', 'app.js', 'components.js', 'pro.js', 'tutorial-integration.js', 'tutorial-spotlight.js', 'theme-boot.js', 'icons.js', 'nature.js', 'appearance-ui.js'];
+    const files = ['index.html', 'components.html', 'settings.html', 'help.html', 'sleep.html', 'study-plans.html', 'login.html', 'app.js', 'components.js', 'pro.js', 'tutorial-integration.js', 'tutorial-spotlight.js', 'theme-boot.js', 'icons.js', 'nature.js', 'appearance-ui.js'];
     const hits = [];
     for (const f of files) read(f).split('\n').forEach((line, i) => {
         if (ALLOW.test(line)) return;

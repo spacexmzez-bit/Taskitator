@@ -2156,3 +2156,211 @@ test('Audit F07: deletion also removes credit plan/epoch and hosted-AI counters,
     for(const k of keys('user_A'))assert.equal(await f.storage.get(k),undefined,k);
     for(const k of keys('user_B'))assert.ok(await f.storage.get(k),k);
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2.4a: study plan management (edit = Pro, delete = grant, AI plans = 2 bypass uses)
+// ---------------------------------------------------------------------------
+async function plannedFixture(planId,{audit=false,config=studyConfig}={}){
+ const {f,a}=await studyFixture(),created=new Date().toISOString();
+ if(audit)assert.equal((await f.call('/sync/push',a.token,'POST',{tasks:[],settings:{strict_criteria_validation:false},base_version:0,mutation_id:'plan_settings_'+planId})).status,200);
+ const criteria=audit?'Show notes for lesson {num}.':'';
+ let r=await f.call('/study-plan',a.token,'POST',{action:'authorize',config,plan_id:planId,created_at:created,audit,criteria,validation_id:null});assert.equal(r.status,200,JSON.stringify(r.body));
+ const tasks=Study.build(config,planId,created,audit,criteria),pulled=await f.call('/sync/pull',a.token);
+ r=await f.call('/sync/push',a.token,'POST',{tasks,settings:audit?{strict_criteria_validation:false}:{},base_version:pulled.body.version??0,mutation_id:'plan_push_'+planId});assert.equal(r.status,200,JSON.stringify(r.body));
+ const push=async list=>{const p=await f.call('/sync/pull',a.token);return f.call('/sync/push',a.token,'POST',{tasks:list,settings:audit?{strict_criteria_validation:false}:{},base_version:p.body.version,mutation_id:crypto.randomUUID()});};
+ const pull=async()=>(await f.call('/sync/pull',a.token)).body.tasks;
+ return {f,a,push,pull,planId};
+}
+test('study plans: editing needs active Pro, viewing and unchanged syncs do not',async()=>{
+ const {f,push,pull}=await plannedFixture('plan_edit_123');
+ const tasks=structuredClone(await pull());for(const t of tasks)if(!t.parent_id)t.title=t.raw_title='Renamed '+t.id.slice(-1);
+ assert.equal((await push(tasks)).status,200,'Pro can edit');
+ await f.storage.delete('pro:entitlement:user_A');
+ const again=structuredClone(await pull());assert.equal((await push(again)).status,200,'an unchanged sync is fine without Pro');
+ again[0].priority_id='prio_high';const blocked=await push(again);assert.equal(blocked.status,403);assert.match(JSON.stringify(blocked.body),/Pro/);
+});
+test('study plans: deleting needs a grant; plans without AI criteria are free',async()=>{
+ const {f,a,push,pull}=await plannedFixture('plan_free_del_1');
+ await f.storage.delete('pro:entitlement:user_A');
+ assert.equal((await push([])).status,403,'removing a shielded plan without a grant is refused');
+ const grant=await f.call('/study-plan/manage',a.token,'POST',{action:'delete',plan_id:'plan_free_del_1'});
+ assert.equal(grant.status,200,JSON.stringify(grant.body));assert.equal(grant.body.guarded,false);assert.equal(grant.body.bypass,null);
+ assert.equal(await f.storage.get('pro:emergency:user_A'),undefined,'no bypass charged');
+ const partial=structuredClone(await pull()).slice(0,3);assert.equal((await push(partial)).status,403,'removing only part of the plan is refused');
+ {const r=await push([]);assert.equal(r.status,200,JSON.stringify(r.body));}
+ assert.equal(await f.storage.get('pro:study-delete:user_A:plan_free_del_1'),undefined,'the grant is single use');
+ assert.equal((await f.call('/study-plan/manage',a.token,'POST',{action:'delete',plan_id:'plan_free_del_1'})).status,404,'already gone');
+ assert.equal((await f.call('/study-plan/manage',a.token,'POST',{action:'delete',plan_id:'bad id'})).status,400);
+});
+test('study plans: an AI-audited plan costs 2 bypass uses (1 more when a window is open) and opens the 15-minute window',async()=>{
+ const {f,a,push,pull}=await plannedFixture('plan_ai_del_123',{audit:true});
+ assert.equal((await push([])).status,403,'AI-protected tasks cannot just disappear');
+ const seed=async patch=>{const s=await f.storage.get('pro:emergency:user_A')||{cycle_id:'x',uses_left:4,active_until_ms:0,reset_at:Date.now()+86400000};await f.storage.put('pro:emergency:user_A',{...s,reset_at:Date.now()+86400000,...patch});};
+ await seed({uses_left:1,active_until_ms:0});
+ let r=await f.call('/study-plan/manage',a.token,'POST',{action:'delete',plan_id:'plan_ai_del_123'});assert.equal(r.status,429);assert.match(JSON.stringify(r.body),/needs 2/);
+ assert.equal((await f.storage.get('pro:emergency:user_A')).uses_left,1,'nothing charged when blocked');
+ await seed({uses_left:4,active_until_ms:0});
+ r=await f.call('/study-plan/manage',a.token,'POST',{action:'delete',plan_id:'plan_ai_del_123'});assert.equal(r.status,200,JSON.stringify(r.body));
+ assert.equal(r.body.guarded,true);assert.equal(r.body.bypass.charged,2);let s=await f.storage.get('pro:emergency:user_A');assert.equal(s.uses_left,2);
+ assert.ok(s.active_until_ms>Date.now()&&s.active_until_ms<=Date.now()+15*60000+1000,'normal 15-minute window');
+ const window=s.active_until_ms;
+ // Window already open: only one more use, the window does not move.
+ await seed({uses_left:3,active_until_ms:window});
+ r=await f.call('/study-plan/manage',a.token,'POST',{action:'delete',plan_id:'plan_ai_del_123'});assert.equal(r.status,200);assert.equal(r.body.bypass.charged,1);
+ s=await f.storage.get('pro:emergency:user_A');assert.equal(s.uses_left,2);assert.equal(s.active_until_ms,window);
+ await seed({uses_left:0,active_until_ms:window});
+ assert.equal((await f.call('/study-plan/manage',a.token,'POST',{action:'delete',plan_id:'plan_ai_del_123'})).status,429,'an open window with no uses left cannot pay the second use');
+ assert.equal((await push([])).status,200,'the plan is removed inside the window');
+});
+test('study plans: a grant for one plan never frees other protected tasks',async()=>{
+ const {f,a,push,pull}=await plannedFixture('plan_scope_1234');
+ const tasks=structuredClone(await pull());tasks.push({id:'other_locked',title:'Other',status:'active',ai_locked:true,proof_criteria:'Show it',raw_proof_criteria:'Show it',due_date:'2099-01-01'});
+ assert.equal((await push(tasks)).status,200);
+ assert.equal((await f.call('/study-plan/manage',a.token,'POST',{action:'delete',plan_id:'plan_scope_1234'})).status,200);
+ const gone=(await pull()).filter(t=>t.id==='other_locked');assert.equal((await push(gone)).status,200,'only the plan goes');
+ assert.equal((await push([])).status,403,'the unrelated locked task still needs authorization');
+});
+test('study plans: creation priorities are validated against the saved priorities and units cannot outrank the parent',async()=>{
+ const {f,a}=await studyFixture(),created=new Date().toISOString();
+ const auth=cfg=>f.call('/study-plan',a.token,'POST',{action:'authorize',config:{...studyConfig,...cfg},plan_id:'plan_prio_'+Math.random().toString(36).slice(2,10),created_at:created,audit:false,criteria:''});
+ assert.equal((await auth({parent_priority:'prio_high',unit_priority:'prio_low'})).status,200);
+ assert.equal((await auth({parent_priority:'prio_low',unit_priority:'prio_high'})).status,400,'unit above parent');
+ assert.equal((await auth({parent_priority:'nope'})).status,400,'unknown priority');
+ const t=Study.build({...studyConfig,parent_priority:'prio_med',unit_priority:'prio_low'},'plan_prio_build',created);
+ assert.ok(t.filter(x=>!x.parent_id).every(x=>x.priority_id==='prio_med')&&t.filter(x=>x.parent_id).every(x=>x.priority_id==='prio_low'));
+ assert.equal(Study.build(studyConfig,'plan_prio_none',created).some(x=>'priority_id' in x),false,'no priority keys when unset');
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2.4b: re-plan (Worker computes, grant pins the plan's task tree, AI later = bypass, today = phone-lock rule)
+// ---------------------------------------------------------------------------
+const SM=globalThis.TaskitatorStudyManage;
+const dayOf=n=>new Date(Date.now()+3*3600000+n*86400000).toISOString().slice(0,10);
+const futureConfig=n=>({...studyConfig,start:dayOf(n),weekdays:[]});
+const merge=(local,planId,tree)=>{const ids=SM.planTree(local,planId);return [...local.filter(t=>!ids.has(t.id)),...tree];};
+const seedBypass=async(f,patch)=>{const s=await f.storage.get('pro:emergency:user_A')||{cycle_id:'x',uses_left:4,active_until_ms:0,reset_at:Date.now()+86400000};await f.storage.put('pro:emergency:user_A',{...s,reset_at:Date.now()+86400000,...patch});};
+test('re-plan: Pro only; plans without AI criteria can move later for free; new day parents sync with the grant',async()=>{
+ const {f,a,push,pull}=await plannedFixture('plan_replan_free',{config:futureConfig(10)});
+ const opts={rev:'aaaa1',start:dayOf(20),mode:'perDay',per:3,weekdays:[]};
+ let r=await f.call('/study-plan/manage',a.token,'POST',{action:'replan',plan_id:'plan_replan_free',options:opts});
+ assert.equal(r.status,200,JSON.stringify(r.body));assert.equal(r.body.scheduled,10);assert.equal(r.body.days,4);assert.equal(r.body.bypass_used,false);
+ assert.equal(await f.storage.get('pro:emergency:user_A'),undefined,'nothing charged');
+ const local=await pull(),next=merge(local,'plan_replan_free',r.body.tasks);
+ // Local computation matches the Worker exactly.
+ assert.deepEqual(SM.replan(local,'plan_replan_free',opts).tasks.filter(t=>SM.planTree(next,'plan_replan_free').has(t.id)).sort((x,y)=>x.id.localeCompare(y.id)),r.body.tasks);
+ r=await push(next);assert.equal(r.status,200,JSON.stringify(r.body));
+ const after=await pull(),units=after.filter(t=>t.parent_id);assert.equal(units.length,10);assert.ok(units.every(u=>u.due_date>=dayOf(20)));
+ assert.equal(after.filter(t=>!t.parent_id).length,4,'old empty days removed, 4 new days');
+ assert.equal(await f.storage.get('pro:study-replan:user_A:plan_replan_free'),undefined,'grant is single use');
+ // Without a grant, moving a unit to another day is still refused (shield).
+ const manual=structuredClone(after),u=manual.find(t=>t.parent_id),other=manual.find(t=>!t.parent_id&&t.id!==u.parent_id);u.parent_id=other.id;
+ assert.equal((await push(manual)).status,403);
+ await f.storage.delete('pro:entitlement:user_A');
+ r=await f.call('/study-plan/manage',a.token,'POST',{action:'replan',plan_id:'plan_replan_free',options:{...opts,rev:'aaaa2'}});assert.equal(r.status,403);assert.match(JSON.stringify(r.body),/Pro/);
+});
+test('re-plan: AI units moved later or removed need an active bypass window (no extra use); moving earlier is free',async()=>{
+ const {f,a,push,pull}=await plannedFixture('plan_replan_ai1',{audit:true,config:futureConfig(10)});
+ const call=opts=>f.call('/study-plan/manage',a.token,'POST',{action:'replan',plan_id:'plan_replan_ai1',options:opts});
+ let r=await call({rev:'bbbb1',start:dayOf(20),mode:'days',days:5,weekdays:[]});assert.equal(r.status,403);assert.match(JSON.stringify(r.body),/Emergency Bypass/);
+ r=await call({rev:'bbbb2',start:dayOf(10),mode:'days',days:5,weekdays:[],skipped:[10]});assert.equal(r.status,403,'removing an AI unit is loosening');
+ r=await call({rev:'bbbb3',start:dayOf(5),mode:'perDay',per:5,weekdays:[]});assert.equal(r.status,200,'earlier and denser is free: '+JSON.stringify(r.body));
+ assert.equal((await push(merge(await pull(),'plan_replan_ai1',r.body.tasks))).status,200);
+ assert.ok((await pull()).filter(t=>t.parent_id).every(t=>t.due_date<=dayOf(6)&&t.ai_locked),'units keep their AI lock');
+ await seedBypass(f,{uses_left:3,active_until_ms:Date.now()+10*60000});
+ r=await call({rev:'bbbb4',start:dayOf(30),mode:'days',days:2,weekdays:[]});assert.equal(r.status,200,JSON.stringify(r.body));assert.equal(r.body.bypass_used,true);
+ assert.equal((await f.storage.get('pro:emergency:user_A')).uses_left,3,'re-plan never charges a use by itself');
+ await seedBypass(f,{active_until_ms:0});
+ assert.equal((await push(merge(await pull(),'plan_replan_ai1',r.body.tasks))).status,200,'the grant outlives the window it was approved in');
+});
+test('re-plan: work due today moved off today follows the phone-lock rule',async()=>{
+ const {f,a,push,pull}=await plannedFixture('plan_replan_today',{config:futureConfig(0)});
+ const call=opts=>f.call('/study-plan/manage',a.token,'POST',{action:'replan',plan_id:'plan_replan_today',options:opts});
+ let r=await call({rev:'cccc1',start:dayOf(1),mode:'days',days:5,weekdays:[]});assert.equal(r.status,403);assert.match(JSON.stringify(r.body),/today/);
+ assert.equal((await call({rev:'cccc2',start:dayOf(-1),mode:'days',days:5,weekdays:[]})).status,400,'cannot start before today');
+ r=await call({rev:'cccc3',start:dayOf(0),mode:'perDay',per:10,weekdays:[]});assert.equal(r.status,200,'pulling everything into today is tightening');
+ await seedBypass(f,{uses_left:4,active_until_ms:Date.now()+10*60000});
+ r=await call({rev:'cccc4',start:dayOf(1),mode:'days',days:5,weekdays:[]});assert.equal(r.status,200,JSON.stringify(r.body));
+ assert.equal((await push(merge(await pull(),'plan_replan_today',r.body.tasks))).status,200);
+});
+test('re-plan: the grant pins the whole plan tree; tampering or detaching a unit is checked normally',async()=>{
+ const {f,a,push,pull}=await plannedFixture('plan_replan_tamp',{audit:true,config:futureConfig(10)});
+ await seedBypass(f,{uses_left:4,active_until_ms:Date.now()+10*60000});
+ const r=await f.call('/study-plan/manage',a.token,'POST',{action:'replan',plan_id:'plan_replan_tamp',options:{rev:'dddd1',start:dayOf(12),mode:'days',days:5,weekdays:[],skipped:[10]}});
+ assert.equal(r.status,200,JSON.stringify(r.body));
+ await seedBypass(f,{active_until_ms:0});
+ const local=await pull();
+ const changed=structuredClone(merge(local,'plan_replan_tamp',r.body.tasks));changed.find(t=>t.parent_id).due_date=dayOf(90);
+ assert.equal((await push(changed)).status,403,'one unit pushed further than approved');
+ const detached=structuredClone(merge(local,'plan_replan_tamp',r.body.tasks));const u10=structuredClone(local.find(t=>t.id.endsWith('_unit_10')));delete u10.study_plan_id;u10.parent_id=null;u10.due_date=dayOf(90);detached.push(u10);
+ assert.equal((await push(detached)).status,403,'a removed AI unit cannot survive outside the plan');
+ assert.equal((await push(merge(local,'plan_replan_tamp',r.body.tasks))).status,200,'the exact approved result syncs');
+ assert.equal((await pull()).some(t=>t.id.endsWith('_unit_10')),false);
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2.5: criteria editing (one AI request: validation + comparison against the ORIGINAL; Worker decides)
+// ---------------------------------------------------------------------------
+const CE=globalThis.TaskitatorCriteriaEdit;
+async function criteriaFixture(){
+ const f=fixture(),a=await create(f),ORIG='Photo of 2 handwritten pages with today\'s date.';
+ const base={id:'lock_ce_1',title:'Essay',status:'active',ai_locked:true,proof_criteria:ORIG,raw_proof_criteria:ORIG,due_date:'2099-01-01'};
+ let r=await f.call('/sync/push',a.token,'POST',{tasks:[base,{id:'plain_ce',title:'Plain',status:'active'}],settings:{},base_version:0,mutation_id:'criteria_edit_seed'});assert.equal(r.status,200,JSON.stringify(r.body));
+ let reply={score:9,passed:true,critique:'Clear',suggested_rewrite:'',comparison:'stricter',comparison_reason:'Adds a page.'};const prompts=[];
+ f.service.ai.generate=async(identity,body)=>{prompts.push(body.payload.contents[0].parts[0].text);assert.equal(body.payload.taskitatorFormat,'criteria-edit');return {candidates:[{content:{parts:[{text:JSON.stringify(reply)}]}}]};};
+ const edit=criteria=>f.call('/criteria/edit',a.token,'POST',{task_id:'lock_ce_1',criteria,provider:'gemini',model:'test'});
+ const pull=async()=>(await f.call('/sync/pull',a.token)).body.tasks;
+ const push=async list=>{const p=await f.call('/sync/pull',a.token);return f.call('/sync/push',a.token,'POST',{tasks:list,settings:{},base_version:p.body.version,mutation_id:crypto.randomUUID()});};
+ return {f,a,ORIG,edit,pull,push,prompts,set:r=>{reply={...reply,...r};}};
+}
+test('criteria edit: same or stricter is granted; only the exact granted text syncs; the grant is single use',async()=>{
+ const {f,ORIG,edit,pull,push,prompts}=await criteriaFixture();
+ let r=await edit('Photo of 3 handwritten pages with today\'s date.');assert.equal(r.status,200,JSON.stringify(r.body));
+ assert.equal(r.body.allowed,true);assert.equal(r.body.override,false);assert.deepEqual(r.body.grant,{proof_criteria:'Photo of 3 handwritten pages with today\'s date.',raw_proof_criteria:'Photo of 3 handwritten pages with today\'s date.',original_proof_criteria:ORIG});
+ assert.match(prompts[0],/original_criteria/);assert.ok(prompts[0].includes(JSON.stringify(ORIG).slice(1,-1)));
+ const tasks=await pull(),tampered=tasks.map(t=>t.id==='lock_ce_1'?{...CE.apply(t,r.body.grant),proof_criteria:'Anything'}:t);
+ assert.equal((await push(tampered)).status,403,'text other than the granted text is refused');
+ assert.equal((await push(tasks.map(t=>t.id==='lock_ce_1'?CE.apply(t,r.body.grant):t))).status,200);
+ const saved=(await pull()).find(t=>t.id==='lock_ce_1');assert.equal(saved.original_proof_criteria,ORIG);assert.equal(saved.ai_locked,true);
+ assert.equal(await f.storage.get('pro:criteria-edit:user_A:lock_ce_1'),undefined,'grant consumed');
+ // A second edit is compared against the ORIGINAL, not the latest text.
+ r=await edit('Photo of 4 handwritten pages with today\'s date.');assert.equal(r.body.grant.original_proof_criteria,ORIG);
+ assert.ok(prompts[1].includes(JSON.stringify(ORIG).slice(1,-1)));
+ // The original can never be rewritten, even with a grant in hand for other text.
+ const again=(await pull()).map(t=>t.id==='lock_ce_1'?{...CE.apply(t,r.body.grant),original_proof_criteria:'Nothing'}:t);
+ assert.equal((await push(again)).status,403);
+});
+test('criteria edit: weaker or different is refused with the reason unless a bypass window is already active',async()=>{
+ const {f,edit,set}=await criteriaFixture();
+ set({comparison:'weaker',comparison_reason:'Drops the date: you would no longer have to show today\'s date.'});
+ let r=await edit('Photo of 2 handwritten pages.');assert.equal(r.status,200);assert.equal(r.body.allowed,false);assert.equal(r.body.reason,'comparison');
+ assert.match(r.body.message,/weaker/);assert.match(r.body.message,/no longer have to show/);assert.match(r.body.message,/activate Emergency Bypass/);
+ assert.equal(r.body.grant,undefined);assert.equal(await f.storage.get('pro:criteria-edit:user_A:lock_ce_1'),undefined);
+ await f.storage.put('pro:emergency:user_A',{cycle_id:'x',uses_left:3,active_until_ms:Date.now()+10*60000,reset_at:Date.now()+86400000});
+ r=await edit('Photo of 2 handwritten pages.');assert.equal(r.body.allowed,true);assert.equal(r.body.override,true);
+ assert.equal((await f.storage.get('pro:emergency:user_A')).uses_left,3,'no extra use is charged');
+ // Bypass never overrides validation.
+ set({score:5,passed:false,critique:'Not verifiable',comparison:'same'});
+ r=await edit('Think about the essay.');assert.equal(r.body.allowed,false);assert.equal(r.body.reason,'validation');assert.match(r.body.message,/5\/10/);
+});
+test('criteria edit: input checks; the original text cannot be planted on any task',async()=>{
+ const {f,a,ORIG,edit,pull,push}=await criteriaFixture();
+ assert.equal((await edit(ORIG)).status,400,'unchanged');
+ assert.equal((await edit('Photo of page {num}')).status,400,'no variables');
+ assert.equal((await edit('x'.repeat(4001))).status,400);
+ assert.equal((await f.call('/criteria/edit',a.token,'POST',{task_id:'plain_ce',criteria:'Photo',provider:'gemini',model:'test'})).status,400,'only AI-locked tasks');
+ assert.equal((await f.call('/criteria/edit',a.token,'POST',{task_id:'missing_task',criteria:'Photo',provider:'gemini',model:'test'})).status,404);
+ const planted=(await pull()).map(t=>t.id==='plain_ce'?{...t,original_proof_criteria:'Easy'}:t);
+ assert.equal((await push(planted)).status,403,'an unlocked task cannot carry a planted original');
+ const fresh=[...(await pull()),{id:'new_lock',title:'New',status:'active',ai_locked:true,proof_criteria:'Hard',raw_proof_criteria:'Hard',original_proof_criteria:'Easy',due_date:'2099-01-01'}];
+ assert.equal((await push(fresh)).status,403,'a new lock cannot carry a planted original');
+});
+test('criteria edit: shared rules and output shape',async()=>{
+ const {hostedBucket}=await import('./worker.js');
+ assert.equal(hostedBucket('criteria-edit'),'validation','metered like validation');
+ const ok={score:8,passed:true,critique:'',suggested_rewrite:'',comparison:'same',comparison_reason:'Same evidence.'};
+ assert.equal(CE.valid(ok),true);for(const bad of [{comparison:'looser'},{passed:false},{score:11,passed:true},{comparison_reason:3}])assert.equal(CE.valid({...ok,...bad}),false);
+ assert.deepEqual(CE.decide(ok,false),{allowed:true,override:false});assert.equal(CE.decide({...ok,comparison:'different'},false).allowed,false);
+ assert.equal(CE.originalOf({proof_criteria:'B',original_proof_criteria:'A'}),'A');assert.equal(CE.originalOf({proof_criteria:' B '}),'B');
+ assert.throws(()=>CE.check({ai_locked:true,status:'active',recurrence_series_id:'s1',proof_criteria:'A'},'B'),/Recurrence/);
+ assert.throws(()=>CE.check({ai_locked:true,status:'completed',proof_criteria:'A'},'B'),/unfinished/);
+});

@@ -2,6 +2,8 @@ import { UniverseRules } from './uni/universe-rules.js';
 import './pro/smart-study.js';
 import './pro/early-bonus.js';
 import './pro/status-count.js';
+import './pro/study-manage.js';
+import './pro/criteria-edit.js';
 import './pro/study-plan.js';
 // ============================================================================
 // Taskitator Consolidated Cloudflare Worker & Security Engine (worker.js)
@@ -740,7 +742,7 @@ export class AccountDeletion {
                     else if (job.stage==='vault') next=await this.page(job,'vault:'+await sha256(job.userId)+':');
                     else if (job.stage==='vault-stages') next=await this.page(job,'vault-stage:'+await sha256(job.userId)+':');
                     else if (job.stage==='hosted') next=await this.page(job,'pro:',(value,key)=>
-                        ['pro:usage:','pro:spend:','pro:op:','pro:study-validation:','pro:study-grant:'].some(prefix=>key.startsWith(prefix+job.userId+':')) ||
+                        ['pro:usage:','pro:spend:','pro:op:','pro:study-validation:','pro:study-grant:','pro:study-delete:','pro:study-replan:','pro:criteria-edit:'].some(prefix=>key.startsWith(prefix+job.userId+':')) ||
                         key==='pro:user:username:'+job.userId || key==='pro:entitlement:'+job.userId ||
                         key==='pro:emergency:'+job.userId || key==='pro:preview:'+job.userId || key==='pro:quote-index:'+job.userId ||
                         (key.startsWith('pro:binding:') && value?.account_id===job.userId) ||
@@ -1044,7 +1046,7 @@ export function validatePayload(payload, {proofReview=false}={}){
         !payload.contents.length || payload.contents.length>100)throw new SecurityError(400,'Invalid AI conversation.');
     const allowed=new Set(['contents','systemInstruction','system_instruction','generationConfig','tools','toolConfig','tool_config','safetySettings','taskitatorFormat','taskitatorTask']);
     if(Object.keys(payload).some(key=>!allowed.has(key)))throw new SecurityError(400,'Unsupported AI request options.');
-    if(payload.taskitatorFormat && !['criteria','proof','batch-proof','notes'].includes(payload.taskitatorFormat))throw new SecurityError(400,'Unsupported AI output format.');
+    if(payload.taskitatorFormat && !['criteria','criteria-edit','proof','batch-proof','notes'].includes(payload.taskitatorFormat))throw new SecurityError(400,'Unsupported AI output format.');
     if(payload.taskitatorTask !== undefined && (!payload.taskitatorTask || typeof payload.taskitatorTask !== 'object' || Array.isArray(payload.taskitatorTask))) {
         throw new SecurityError(400,'Invalid taskitatorTask metadata.');
     }
@@ -1084,6 +1086,7 @@ const jsonSchema=properties=>({type:'object',properties,required:Object.keys(pro
 const OUTPUT_SCHEMAS={
     'batch-proof':{type:'array',items:jsonSchema({task_id:{type:'string'},status:{type:'string',enum:['eligible','rejected','partial','uncertain']},verdict:{type:'string',enum:['approved','rejected']},reason:{type:'string'}})},
     criteria:jsonSchema({score:{type:'integer'},passed:{type:'boolean'},critique:{type:'string'},suggested_rewrite:{type:'string'}}),
+    'criteria-edit':jsonSchema({score:{type:'integer'},passed:{type:'boolean'},critique:{type:'string'},suggested_rewrite:{type:'string'},comparison:{type:'string',enum:['same','stricter','weaker','different']},comparison_reason:{type:'string'}}),
     proof:jsonSchema({verdict:{type:'string',enum:['approved','rejected']},confidence:{type:'number'},critique:{type:'string'}}),
     notes:jsonSchema({notes:{type:'array',items:jsonSchema({id:{anyOf:[{type:'string'},{type:'number'}]},title:{type:'string'},clean_text:{type:'string'}})}})
 };
@@ -1184,6 +1187,7 @@ function validateOutput(data,format){
     let parsed;try{parsed=JSON.parse(parts.map(part=>part.text||'').join('').replace(/^```(?:json)?\s*|\s*```$/gi,''));}catch{throw new SecurityError(502,'AI returned invalid JSON. No approval was accepted.');}
     if(format==='batch-proof'){if(!Array.isArray(parsed)||!parsed.length||parsed.length>20)throw new SecurityError(502,'The provider returned invalid batch results. No task was confirmed.');return;}
     const valid=object(parsed) && (format==='proof'?['approved','rejected'].includes(parsed.verdict) && Number.isFinite(parsed.confidence) && parsed.confidence>=0 && parsed.confidence<=1 && typeof parsed.critique==='string':
+        format==='criteria-edit'?globalThis.TaskitatorCriteriaEdit.valid(parsed):
         format==='criteria'?Number.isInteger(parsed.score) && parsed.score>=1 && parsed.score<=10 && parsed.passed===(parsed.score>=7) && typeof parsed.critique==='string' && typeof parsed.suggested_rewrite==='string':
         Array.isArray(parsed.notes) && parsed.notes.every(note=>object(note) && ['string','number'].includes(typeof note.id) && typeof note.title==='string' && typeof note.clean_text==='string'));
     if(!valid)throw new SecurityError(502,'AI returned an invalid result. No approval was accepted.');
@@ -1254,7 +1258,7 @@ export const HOSTED_AI = Object.freeze({
     maxInput: 30_000, maxOutput: 4096
 });
 export const UNAVAILABLE = 'Service unavailable temporarily.';
-export const hostedBucket = format => format === 'criteria' ? 'validation' : 'copilot';
+export const hostedBucket = format => format === 'criteria' || format === 'criteria-edit' ? 'validation' : 'copilot';
 const hostedKey = (account, day, name) => `ai-hosted:${account}:${day}:${name}`;
 
 export class AIGateway {
@@ -1541,7 +1545,7 @@ export function checkTaskGraph(tasks) {
     for (const t of tasks) {
         if (typeof t.id !== 'string' || !t.id || t.id.length > 128) throw new HTTPError(400, 'Every task needs a short string ID.');
         if (byId.has(t.id)) throw new HTTPError(400, 'Tasks need distinct IDs.');
-        for (const f of ['title', 'raw_title', 'proof_criteria', 'raw_proof_criteria', 'description', 'notes']) {
+        for (const f of ['title', 'raw_title', 'proof_criteria', 'raw_proof_criteria', 'original_proof_criteria', 'description', 'notes']) {
             if (typeof t[f] === 'string' && t[f].length > MAX_TEXT_CHARS) throw new HTTPError(413, `Task ${f} is too long.`);
         }
         byId.set(t.id, t);
@@ -1797,7 +1801,7 @@ export class TaskitatorSync {
             after = [...entries.keys()].pop();
             if (entries.size < 1000) break;
         }
-        for (const prefix of ['action-proof:', 'verification-used:', 'deleted-identity:', 'deleted-legacy:', 'deletion-status:', 'phone:', 'sleep-delay:', 'pro:study-validation:', 'pro:study-grant:']) {
+        for (const prefix of ['action-proof:', 'verification-used:', 'deleted-identity:', 'deleted-legacy:', 'deletion-status:', 'phone:', 'sleep-delay:', 'pro:study-validation:', 'pro:study-grant:', 'pro:study-delete:', 'pro:study-replan:', 'pro:criteria-edit:']) {
             let cursor;
             while (true) {
                 const entries = await this.storage.list({prefix,limit:1000,...(cursor?{startAfter:cursor}:{})});
@@ -1971,8 +1975,10 @@ export class TaskitatorSync {
             const sleepRoute = path === '/sleep-lock';
             const breaksRoute = path === '/breaks';
             const studyRoute = path === '/study-plan';
+            const studyManage = path === '/study-plan/manage';
+            const criteriaEdit = path === '/criteria/edit';
             if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
-                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute && !sleepRoute && !breaksRoute && !studyRoute) {
+                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute && !sleepRoute && !breaksRoute && !studyManage && !studyRoute && !criteriaEdit) {
                 return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
             }
             await this.rateLimit(request);
@@ -2033,6 +2039,41 @@ export class TaskitatorSync {
                 }
                 if (connect) return await this.connectAccount(request, identity);
                 const account = await this.accountFor(identity);
+                if(criteriaEdit){
+                    // Phase 2.5: one AI request validates the new criteria and compares them with the original. The Worker decides.
+                    if(!account||method!=='POST')throw new HTTPError(403,'Use your connected account to edit criteria.');
+                    const b=await readJson(request,16384),C=globalThis.TaskitatorCriteriaEdit;
+                    if(typeof b.task_id!=='string'||!/^[A-Za-z0-9_.:-]{1,128}$/.test(b.task_id))throw new HTTPError(400,'Choose a valid task.');
+                    const load=async tx=>{const meta=await tx.get(accountKey(account.user));if(!meta||meta.deleting||meta.owner_id!==identity.userId)throw new HTTPError(403,'Account access denied.');return loadSnapshot(tx,account.user,meta);};
+                    const before=(await this.storage.transaction(load))?.tasks?.find(t=>t&&t.id===b.task_id);
+                    if(!before)throw new HTTPError(404,'This task is not in your synced tasks. Sync, then try again.');
+                    let proposed;try{proposed=C.check(before,b.criteria);}catch(e){throw new HTTPError(400,e.message);}
+                    const result=await this.ai.generate(identity,{provider:b.provider,model:b.model,key_version:b.key_version,payload:{taskitatorFormat:'criteria-edit',contents:[{role:'user',parts:[{text:C.prompt(before,proposed,b.lang==='ar'?'ar':'en')}]}],generationConfig:{temperature:0,responseMimeType:'application/json'}}});
+                    let r;try{r=JSON.parse(result.candidates[0].content.parts.map(p=>p.text||'').join('').replace(/```json|```/g,''));}catch{throw new HTTPError(502,'Criteria review returned an invalid answer.');}
+                    if(!C.valid(r))throw new HTTPError(502,'Criteria review returned an invalid answer.');
+                    return await this.storage.transaction(async tx=>{
+                        const task=(await load(tx))?.tasks?.find(t=>t&&t.id===b.task_id);
+                        if(!task||task.proof_criteria!==before.proof_criteria||C.originalOf(task)!==C.originalOf(before)||task.status!=='active')throw new HTTPError(409,'This task changed while it was being reviewed. Sync and try again.');
+                        const d=C.decide(r,await this.protection.bypass(tx,identity.userId));
+                        const out={score:r.score,passed:r.passed,critique:r.critique,suggested_rewrite:r.suggested_rewrite,comparison:r.comparison,comparison_reason:r.comparison_reason,allowed:d.allowed,override:!!d.override,reason:d.reason||null,message:d.message||null};
+                        if(d.allowed){const grant={proof_criteria:proposed,raw_proof_criteria:proposed,original_proof_criteria:C.originalOf(task)};await tx.put('pro:criteria-edit:'+identity.userId+':'+b.task_id,{...grant,expires:Date.now()+10*60000});out.grant=grant;}
+                        return json(out);
+                    });
+                }
+                if(studyManage){
+                    if(!account||method!=='POST')throw new HTTPError(403,'Use your connected account to manage a study plan.');
+                    const b=await readJson(request,32768);
+                    if(!['delete','replan'].includes(b.action)||typeof b.plan_id!=='string'||!/^[A-Za-z0-9_-]{8,80}$/.test(b.plan_id))throw new HTTPError(400,'Choose a valid study plan.');
+                    if(b.action==='replan'&&!await this.universe.entitlement(identity))throw new HTTPError(403,'Re-planning a study plan needs an active Taskitator Pro license. You can still view, finish and delete it.');
+                    return await this.storage.transaction(async tx=>{
+                        const meta=await tx.get(accountKey(account.user));if(!meta||meta.deleting||meta.owner_id!==identity.userId)throw new HTTPError(403,'Account access denied.');
+                        const snapshot=await loadSnapshot(tx,account.user,meta);
+                        try{
+                            if(b.action==='replan')return json(await this.protection.authorizeStudyReplan(tx,identity.userId,snapshot,b.plan_id,b.options||{},logicalDate(Date.now(),dayHour(snapshot?.settings))));
+                            return json(await this.protection.authorizeStudyDelete(tx,identity.userId,snapshot,b.plan_id));}
+                        catch(e){if(e&&e.status&&e.code)throw new HTTPError(e.status,e.message);throw e;}
+                    });
+                }
                 if(studyRoute){
                     if(!account||method!=='POST')throw new HTTPError(403,'Use your connected account to prepare a study plan.');
                     if(!await this.universe.entitlement(identity))throw new HTTPError(403,'Study recurrence is a Pro feature. Activate Pro to create a study plan.');
@@ -2051,6 +2092,9 @@ export class TaskitatorSync {
                     return await this.storage.transaction(async tx=>{
                         const meta=await tx.get(accountKey(account.user));if(!meta||meta.deleting||meta.owner_id!==identity.userId)throw new HTTPError(403,'Account access denied.');
                         const snapshot=await loadSnapshot(tx,account.user,meta);
+                        {const M=globalThis.TaskitatorStudyManage,list=M.prioritiesOf(snapshot?.settings),known=v=>!v||list.some(p=>p.id===v);
+                        if(!known(config.parent_priority)||!known(config.unit_priority))throw new HTTPError(400,'Choose one of your priorities.');
+                        if(M.rankOf(list,config.unit_priority)<M.rankOf(list,config.parent_priority))throw new HTTPError(400,'Units cannot have a higher priority than their parent task.');}
                         if(b.audit&&snapshot?.settings?.strict_criteria_validation!==false){const v=await tx.get('pro:study-validation:'+identity.userId+':'+b.validation_id);if(!v||v.signature!==signature||!v.passed||v.score<7||v.expires<=Date.now())throw new HTTPError(409,'Validate these reusable criteria at 7/10 or higher before confirming.');}
                         const hash=await sha256(JSON.stringify(tasks.slice().sort((a,b)=>a.id.localeCompare(b.id)))),key='pro:study-grant:'+identity.userId+':'+b.plan_id,old=await tx.get(key);if(old&&old.hash!==hash)throw new HTTPError(409,'This plan was already authorized with different content. Reopen a fresh preview.');
                         await tx.put(key,{hash,expires:Date.now()+7*86400000});return json({authorized:true});
@@ -2129,7 +2173,7 @@ export class TaskitatorSync {
             // Refresh Pro entitlement BEFORE the storage transaction (it may call Keyo). The transaction rechecks
             // the stored entitlement, so a change between this refresh and the commit is still caught.
             let dynamicRefreshError = null;
-            if (push && identity?.userId && (snapshot.tasks.some(t => t.dynamic_priority_target != null || t.early_date != null) ||
+            if (push && identity?.userId && (snapshot.tasks.some(t => t.dynamic_priority_target != null || t.early_date != null || t.study_plan_id) ||
                 snapshot.recurrence_state?.series?.some(s => s.nodes?.some(n => n.task?.dynamic_priority_target != null)))) {
                 try { await this.pro.licenses.resolve(identity.userId); } catch (e) { dynamicRefreshError = e; }
             }
@@ -2186,7 +2230,8 @@ export class TaskitatorSync {
                 if (push) {
                     const previous = await loadSnapshot(tx, user, meta);
                     const previousIds=new Set((previous?.tasks||[]).map(t=>t.id));
-                    const studyIds=new Set(snapshot.tasks.filter(t=>t.study_plan_id&&!previousIds.has(t.id)).map(t=>t.study_plan_id));
+                    const replanned=await this.protection.studyReplanGrants(tx,identity.userId,previous,snapshot);
+                    const studyIds=new Set(snapshot.tasks.filter(t=>t.study_plan_id&&!previousIds.has(t.id)&&!replanned.has(t.study_plan_id)).map(t=>t.study_plan_id));
                     if(studyIds.size){
                         if(!await this.universe.entitlement(identity))throw new HTTPError(403,'Active Pro is required to create a study plan.');
                         for(const id of studyIds){const grant=await tx.get('pro:study-grant:'+identity.userId+':'+id),group=snapshot.tasks.filter(t=>t.study_plan_id===id);if(!grant||grant.expires<=Date.now()||grant.hash!==await sha256(JSON.stringify(group.slice().sort((a,b)=>a.id.localeCompare(b.id)))))throw new HTTPError(403,'Confirm the study preview before syncing its tasks.');}
@@ -2210,6 +2255,10 @@ export class TaskitatorSync {
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
                     await this.protection.guardDynamic(tx,identity.userId,previous,snapshot,dynamicRefreshError);
                     await this.protection.guardEarly(tx,identity.userId,previous,snapshot,dynamicRefreshError);
+                    await this.protection.guardStudyEdit(tx,identity.userId,previous,snapshot,dynamicRefreshError);
+                    await this.protection.consumeStudyDeleteGrants(tx,identity.userId,previous,snapshot);
+                    await this.protection.consumeStudyReplanGrants(tx,identity.userId,previous,snapshot);
+                    await this.protection.consumeCriteriaEditGrants(tx,identity.userId,previous,snapshot);
                     // Phone-lock counting: loosening is refused while today's tasks are unfinished, unless Emergency Bypass is on (breaks do not lift it).
                     {const SC=globalThis.TaskitatorStatusCount,why=SC.loosened(previous,snapshot,logicalDate(Date.now(),dayHour(previous?.settings)));
                     if(why&&SC.pending(previous.tasks,logicalDate(Date.now(),dayHour(previous.settings)))&&!(await this.protection.bypass(tx,identity.userId)))throw new HTTPError(403,why);}

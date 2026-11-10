@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const read = f => fs.readFileSync(new URL(f, import.meta.url), 'utf8');
-const PAGES = ['index.html', 'components.html', 'settings.html', 'help.html', 'login.html', 'sleep.html'];
+const PAGES = ['index.html', 'components.html', 'settings.html', 'help.html', 'login.html', 'sleep.html', 'study-plans.html'];
 
 function boot(stored) {
     const store = new Map(stored ? [['taskitator_lang', JSON.stringify(stored)]] : []);

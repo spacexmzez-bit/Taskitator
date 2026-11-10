@@ -1441,6 +1441,48 @@ window.TaskitatorComponents = Object.freeze({
             }
         }
 
+        // Phase 2.5: edit an AI-locked task's criteria. One request: the Worker validates the new text and compares it with the
+        // ORIGINAL criteria. Same/stricter is approved; weaker/different needs an Emergency Bypass window already active; a failed
+        // validation is always refused. Approval goes into the open editor; Save applies it (the server approval lasts 10 minutes).
+        async function openCriteriaEdit(taskId){
+            const tr=(k,v)=>window.TaskitatorI18n?.t?window.TaskitatorI18n.t(k,v):k.replace(/\{(\w+)\}/g,(_,x)=>v?.[x]??'');
+            const C=window.TaskitatorCriteriaEdit,task=host.tasks.getAll().find(t=>t.id===taskId);if(!task||!C)return;
+            if(window.TaskitatorOffline?.active){window.TaskitatorNotify(tr('Editing locked criteria needs an internet connection.'));return;}
+            const node=(tag,text,p,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;p?.append(e);return e;};
+            const d=node('dialog',undefined,undefined,'study-dialog criteria-edit-dialog');node('h2',tr('Edit proof criteria'),d);
+            node('p',tr('Original criteria (the new text is compared with this):'),d,'study-hint');node('blockquote',C.originalOf(task),d,'criteria-edit-original');
+            node('p',tr('Same or stricter: approved for free. Weaker or different: rejected with the reason; to apply it anyway, activate Emergency Bypass from the bypass panel (1 use, 15 minutes), then submit again. The new criteria must also pass validation (7/10), even with a bypass.'),d,'study-hint');
+            const label=node('label',tr('New criteria'),d,'study-field'),area=node('textarea',undefined,label);area.rows=4;area.maxLength=4000;area.value=task.proof_criteria||'';
+            const out=node('div',undefined,d,'criteria-edit-result');out.setAttribute('role','status');
+            const row=node('div',undefined,d,'study-actions study-footer');
+            const submit=node('button',tr('Submit for review'),row,'icon-btn study-btn study-primary');submit.type='button';
+            const close=node('button',tr('Close'),row,'icon-btn study-btn');close.type='button';close.onclick=()=>d.close();
+            const VERDICT={same:'the same as',stricter:'stricter than',weaker:'weaker than',different:'different from'};
+            submit.onclick=async()=>{
+                out.replaceChildren();submit.disabled=true;
+                try{
+                    const text=C.check(task,area.value);
+                    if(window.SyncEngine?.isDirty?.()&&!await window.SyncEngine.forceImmediateSync?.())throw Error(tr('Sync your workspace first, then try again.'));
+                    const sel=window.TaskitatorEngine.AuditEngine.selection();
+                    const r=await window.TaskitatorAuth.api('/criteria/edit',{method:'POST',body:JSON.stringify({task_id:task.id,criteria:text,provider:sel.provider,model:sel.primary,key_version:sel.keyVersion,lang:document.documentElement.lang==='ar'?'ar':'en'})});
+                    node('p',tr('Validation: {score}/10.',{score:r.score})+' '+r.critique,out,'study-hint');
+                    if(r.passed)node('p',tr('Comparison: the new criteria are '+VERDICT[r.comparison]+' the original.')+' '+r.comparison_reason,out,'study-hint');
+                    if(!r.allowed){
+                        if(r.reason==='validation'){node('p',tr('Rejected: the new criteria need 7/10 or higher. Emergency Bypass cannot override this.'),out,'study-hint study-warn');if(r.suggested_rewrite)node('p',tr('Suggestion:')+' '+r.suggested_rewrite,out,'study-hint');}
+                        else node('p',tr('Rejected because the new criteria are weaker or different. To apply them anyway, activate Emergency Bypass from the bypass panel (1 use, 15 minutes), then submit again.'),out,'study-hint study-warn');
+                        return;
+                    }
+                    const live=host.tasks.getAll().find(t=>t.id===task.id);if(!live)throw Error(tr('This task is no longer open.'));
+                    Object.assign(live,C.apply(live,r.grant));
+                    const field=document.getElementById('editTaskCriteria');if(field&&activeDetailTaskId===task.id)field.value=r.grant.proof_criteria;
+                    node('p',r.override?tr('Approved with Emergency Bypass. Press Save in the task editor within 10 minutes to apply it.'):tr('Approved. Press Save in the task editor within 10 minutes to apply it.'),out,'study-hint');
+                    submit.hidden=true;
+                }catch(e){node('p',e.message,out,'study-hint study-warn');}
+                finally{submit.disabled=false;}
+            };
+            d.addEventListener('close',()=>d.remove());document.body.append(d);d.showModal();
+        }
+
         async function openTaskDetailModal(taskId, triggerRenderFn) {
             if(draft&&!liveHost.tasks.getAll().some(t=>t.id===taskId)){window.TaskitatorNotify('Save this draft before opening its new subtask.');return;}
             if(draft&&!discardDraft())return;
@@ -1657,6 +1699,10 @@ window.TaskitatorComponents = Object.freeze({
                 editTaskCriteria.disabled = cannotModifyLocked;
                 editTaskCriteria.value = task.raw_proof_criteria || task.proof_criteria || '';
             }
+            // Phase 2.5: locked criteria are edited through a server review (validation + comparison with the original).
+            {const btn=document.getElementById('editLockedCriteriaBtn');
+            if(btn){const show=isLocked&&task.status==='active'&&!task.recurrence_series_id&&new URLSearchParams(location.search).get('view')!=='universe';
+             btn.hidden=!show;btn.onclick=()=>openCriteriaEdit(task.id);}}
 
             if (deleteFromDetailBtn) {
                 const isDeleteBlocked = !isBypassActive && (isLocked || (isShielded && host.tasks.hasUncompletedDescendant(taskId)));

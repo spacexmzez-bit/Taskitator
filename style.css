@@ -1160,7 +1160,7 @@ body {
     width: 22px;
     height: 22px;
     border-radius: 6px;
-    border: 2px solid var(--border-color);
+    border: 2px solid var(--pc, var(--border-color));
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -1175,12 +1175,13 @@ body {
 }
 
 .check-square:hover {
-    border-color: var(--primary);
+    border-color: var(--pc, var(--primary));
 }
 
+/* Selection square follows the task's priority colour (--pc on the row). */
 .check-square.selected {
-    background: var(--primary);
-    border-color: var(--primary);
+    background: var(--pc, var(--primary));
+    border-color: var(--pc, var(--primary));
 }
 
 .task-subtree {
@@ -5655,3 +5656,9 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .status-count-note{display:block;margin-top:4px;padding-inline-start:28px;font-size:.75rem;color:var(--alert-orange)}
 .status-count-note[hidden]{display:none}
 #batchOpenStatusBtn[hidden]{display:none}
+
+/* Phase 2.5: locked criteria edit dialog */
+.criteria-edit-dialog { width: min(94vw, 560px); }
+.criteria-edit-original { margin: 6px 0 10px; padding: 10px 12px; border-inline-start: 3px solid var(--primary); background: rgba(59,130,246,.08); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .9rem; }
+.criteria-edit-dialog textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 10px; border-radius: 10px; background: var(--input-bg, #172a46); color: var(--text-color); border: 1px solid var(--border-color); }
+.criteria-edit-result { display: grid; gap: 4px; margin-top: 8px; }

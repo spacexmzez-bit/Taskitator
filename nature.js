@@ -74,6 +74,7 @@
         const p = location.pathname;
         if (p.endsWith('/settings.html')) return 'settings';
         if (p.endsWith('/sleep.html')) return 'sleep';
+        if (p.endsWith('/study-plans.html')) return 'general';
         if (p.endsWith('/help.html')) return 'help';
         if (p.endsWith('/login.html')) return 'login';
         if (p.endsWith('/components.html')) return /view=projects/.test(location.search) ? 'general' : 'help';

@@ -506,7 +506,9 @@ export class CreditLedger {
 
 const VERSION=3;
 const protectedTask=t=>Boolean(t.ai_locked || t.require_ai_proof);
+const C_ORIGINAL=t=>globalThis.TaskitatorCriteriaEdit.originalOf(t);
 const DYNAMIC_FIELD='dynamic_priority_target';
+const STUDY_EDIT_FIELDS=['title','raw_title','priority_id','ai_locked','proof_criteria','raw_proof_criteria','require_ai_proof'];
 // Tiers that unlock Dynamic Priority. Keyo has no tier hierarchy, so MAX is NOT assumed to include Pro.
 // Add 'max' here (and in components.js DYNAMIC_PRIORITY_TIERS) if you decide MAX should also unlock it.
 export const DYNAMIC_PRIORITY_TIERS=['pro'];
@@ -618,9 +620,25 @@ export class TaskProtection {
         const bypass=await this.bypass(tx,account);
         const map=new Map();
         for(const t of next.tasks){if(typeof t.id!=='string'||map.has(t.id))throw fail(400,'INVALID_TASKS','Tasks need distinct IDs.');map.set(t.id,t);}
+        const granted=await this.studyDeleteGrants(tx,account,previous,next);
+        const replanned=await this.studyReplanGrants(tx,account,previous,next);
         if(bypass)return;
+        // A re-plan grant pins the plan's whole task tree to what the Worker computed, so those tasks skip the usual rules.
+        // A task that left the tree but still exists elsewhere is checked normally.
+        const M=globalThis.TaskitatorStudyManage,replanOld=new Set(),replanNew=new Set();
+        for(const id of replanned){for(const k of M.planTree(previous.tasks,id))replanOld.add(k);for(const k of M.planTree(next.tasks,id))replanNew.add(k);}
+        // Criteria edits (Phase 2.5): a server grant lets exactly the approved text through. The original text can only be set by a grant.
+        const edits=await this.criteriaEditGrants(tx,account,previous,next),EDIT_FIELDS=['proof_criteria','raw_proof_criteria','original_proof_criteria'];
+        const prevById=new Map(previous.tasks.map(t=>[t.id,t]));
+        for(const t of next.tasks){
+            const old=prevById.get(t.id);
+            if((t.original_proof_criteria??null)!==(old?.original_proof_criteria??null)&&!edits.has(t.id))
+                throw fail(403,'REQUIREMENTS_LOCKED','The original proof criteria cannot be changed.');
+        }
         // One ID map per tree keeps ancestry checks linear (F01). Memoized shield lookup.
         const prevMap=new Map(previous.tasks.map(t=>[t.id,t]));
+        // A task removed together with a granted study plan (itself or under one of its tasks) skips the shield/proof removal rules.
+        const planGranted=task=>{const seen=new Set();for(let a=task;a&&!seen.has(a.id);a=prevMap.get(a.parent_id)){seen.add(a.id);if(a.study_plan_id&&granted.has(a.study_plan_id))return true;}return false;};
         const shieldMemo=new Map();
         const underShield=task=>{
             const path=[];let a=task,result=false;
@@ -660,6 +678,8 @@ export class TaskProtection {
         };
         for(const old of previous.tasks){
             const current=map.get(old.id);
+            if(!current&&granted.size&&planGranted(old))continue;
+            if(replanOld.has(old.id)&&(!current||replanNew.has(old.id)))continue;
             const shielded=underShield(old);
             // F02: unfinished required work under a shield cannot vanish or be trashed.
             if(shielded&&!old.is_bonus&&old.status!=='completed'&&old.status!=='trash'&&(!current||current.status==='trash'))
@@ -671,8 +691,10 @@ export class TaskProtection {
             if(old.smart_early_date&&current&&current.due_date!==old.due_date)throw fail(403,'SMART_DATE_LOCKED','Smart Study dates are fixed. An unfinished early opportunity expires automatically.');
             if(protectedTask(old)&&old.status!=='trash'){
                 if(!current || current.status!==old.status || !protectedTask(current))throw fail(403,'PROOF_REQUIRED','Protected task completion, removal or reopening requires server authorization or Emergency Bypass.');
-                const locked=['title','raw_title','due_date','proof_criteria','raw_proof_criteria','reference_id','reference_inline_data','ai_locked','require_ai_proof'];
+                const locked=['title','raw_title','due_date','proof_criteria','raw_proof_criteria','original_proof_criteria','reference_id','reference_inline_data','ai_locked','require_ai_proof'];
+                const edited=edits.has(old.id);
                 for(const field of locked){
+                    if(edited&&EDIT_FIELDS.includes(field))continue;
                     // Older versions kept references only on the device. Pin an existing reference once; then it is immutable.
                     if(field==='reference_inline_data'&&!old.reference_inline_data&&!old.reference_id&&current.reference_inline_data)continue;
                     if(JSON.stringify(stable(old[field]??null))!==JSON.stringify(stable(current[field]??null)))throw fail(403,'REQUIREMENTS_LOCKED','Protected requirements cannot change without Emergency Bypass.');
@@ -724,13 +746,111 @@ export class TaskProtection {
         }
     }
     // Early bonus (Pro): adding or changing an early_date needs verified Pro (fail closed). Clearing one never does.
+    // Cached, signed Pro entitlement (no network). Fails closed.
+    async proActive(tx,account){
+        const e=await tx.get('pro:entitlement:'+account);
+        return !(!e||e.status!=='active'||!DYNAMIC_PRIORITY_TIERS.includes(e.tier)||e.account_id!==account||e.keyo_version!==1||!e.signed_token||
+            !Number.isSafeInteger(e.valid_until)||e.valid_until<=Date.now()||(e.expires_at!==null&&(!Number.isSafeInteger(e.expires_at)||e.expires_at<=Date.now())));
+    }
     async guardEarly(tx,account,previous,next,refreshError=null){
         if(!globalThis.TaskitatorEarly.changed(previous,next).length)return;
         if(refreshError)throw refreshError;
-        const e=await tx.get('pro:entitlement:'+account);
-        if(!e||e.status!=='active'||!DYNAMIC_PRIORITY_TIERS.includes(e.tier)||e.account_id!==account||e.keyo_version!==1||!e.signed_token||
-            !Number.isSafeInteger(e.valid_until)||e.valid_until<=Date.now()||(e.expires_at!==null&&(!Number.isSafeInteger(e.expires_at)||e.expires_at<=Date.now())))
+        if(!await this.proActive(tx,account))
             throw fail(403,'PRO_REQUIRED','Early bonus is a Taskitator Pro feature. Existing early dates are kept, but adding or changing one needs an active Pro license.');
+    }
+    // Study plans (Phase 2.4a): editing a generated plan's names, priorities or audit criteria is Pro only.
+    // Viewing, completing, rescheduling and deleting stay available after Pro ends.
+    async guardStudyEdit(tx,account,previous,next,refreshError=null){
+        if(!previous)return;
+        const before=new Map(previous.tasks.map(t=>[t.id,t])),same=(a,b)=>JSON.stringify(stable(a??null))===JSON.stringify(stable(b??null));
+        const edited=next.tasks.some(t=>{const old=t.study_plan_id&&before.get(t.id);return old&&old.study_plan_id&&STUDY_EDIT_FIELDS.some(f=>!same(old[f],t[f]));});
+        if(!edited)return;
+        if(refreshError)throw refreshError;
+        if(!await this.proActive(tx,account))
+            throw fail(403,'PRO_REQUIRED','Editing a study plan needs an active Taskitator Pro license. You can still view it, finish its tasks and delete it.');
+    }
+    async emergencyState(tx,userId,snapshot,now){
+        const key='pro:emergency:'+userId;let s=await tx.get(key);
+        if(!s||s.reset_at<=now){
+            const end=Number(snapshot?.settings?.weekend_end??6),resetDay=Number.isInteger(end)&&end>=0&&end<=6?(end+1)%7:0;
+            const d=new Date(now+3*3600000);d.setUTCHours(0,0,0,0);let days=(resetDay-d.getUTCDay()+7)%7;if(!days)days=7;
+            s={cycle_id:'server-'+d.toISOString().slice(0,10),uses_left:4,active_until_ms:0,reset_at:d.getTime()+days*DAY-3*3600000};
+        }
+        return s;
+    }
+    // Deleting a plan: free when no task is AI-protected. Otherwise 2 Emergency Bypass uses in total (1 more if a window is already open),
+    // which also opens the normal 15-minute window. The grant lets the next sync remove exactly this plan's tasks.
+    async authorizeStudyDelete(tx,userId,snapshot,planId){
+        const group=(snapshot?.tasks||[]).filter(t=>t&&t.study_plan_id===planId);
+        if(!group.length)throw fail(404,'PLAN_NOT_SYNCED','This study plan is not in your synced tasks. Sync, then try again.');
+        const guarded=group.some(protectedTask);let bypass=null;
+        if(guarded){
+            const now=Date.now(),key='pro:emergency:'+userId,s=await this.emergencyState(tx,userId,snapshot,now),active=s.active_until_ms>now,need=active?1:2;
+            if(s.uses_left<need)throw fail(429,'BYPASS_EXHAUSTED','Deleting a plan with AI criteria needs '+need+' Emergency Bypass use'+(need>1?'s':'')+' and you have '+s.uses_left+' left this week.');
+            s.uses_left-=need;if(!active)s.active_until_ms=now+15*60000;await tx.put(key,s);
+            bypass={uses_left:s.uses_left,active_until:new Date(s.active_until_ms).toISOString(),charged:need};
+        }
+        await tx.put('pro:study-delete:'+userId+':'+planId,{expires:Date.now()+10*60000,guarded});
+        return {authorized:true,guarded,bypass};
+    }
+    // Plans whose delete grant is valid and whose tasks are ALL gone from the pushed snapshot.
+    async studyDeleteGrants(tx,account,previous,next){
+        if(!previous)return new Set();
+        const present=new Set(next.tasks.filter(t=>t&&t.study_plan_id).map(t=>t.study_plan_id)),granted=new Set();
+        for(const id of new Set(previous.tasks.filter(t=>t&&t.study_plan_id).map(t=>t.study_plan_id))){
+            if(present.has(id))continue;
+            const key='pro:study-delete:'+account+':'+id,g=await tx.get(key);
+            if(g&&g.expires>Date.now())granted.add(id);
+        }
+        return granted;
+    }
+    // guardSync runs more than once per push, so the single-use grant is spent only after every guard has passed.
+    async consumeStudyDeleteGrants(tx,account,previous,next){
+        for(const id of await this.studyDeleteGrants(tx,account,previous,next))await tx.delete('pro:study-delete:'+account+':'+id);
+    }
+    // Re-plan (Phase 2.4b, Pro). The Worker builds the new schedule from the stored tasks and decides what it loosens:
+    //  - an AI-protected unit moved later or removed needs an active Emergency Bypass window (no extra charge);
+    //  - a counting task due today moved off today or removed follows the phone-lock rule (bypass, or today already finished).
+    // The grant pins the plan's whole task tree to the computed result for the next sync.
+    async authorizeStudyReplan(tx,userId,snapshot,planId,options,today){
+        const M=globalThis.TaskitatorStudyManage,SC=globalThis.TaskitatorStatusCount,tasks=snapshot?.tasks||[];
+        if(!tasks.some(t=>t&&t.study_plan_id===planId))throw fail(404,'PLAN_NOT_SYNCED','This study plan is not in your synced tasks. Sync, then try again.');
+        let r;try{r=M.replan(tasks,planId,options);}catch(e){throw fail(400,'INVALID_REPLAN',e.message);}
+        if(options.start<today)throw fail(400,'INVALID_REPLAN','The new schedule cannot start before today.');
+        const impact=M.replanImpact(tasks,r.tasks,planId,today,snapshot.settings),bypass=await this.bypass(tx,userId);
+        if(impact.later.length&&!bypass)throw fail(403,'REQUIREMENTS_LOCKED','This re-plan moves '+impact.later.length+' AI-audited task(s) to a later date or removes them. Activate Emergency Bypass from the bypass panel, then re-plan again.');
+        if(impact.today.length&&SC.pending(tasks,today)&&!bypass)throw fail(403,'STATUS_LOCKED','This re-plan moves work due today to a later date. That is locked until all of today\'s tasks are finished or Emergency Bypass is on.');
+        const tree=M.planTree(r.tasks,planId),out=r.tasks.filter(t=>tree.has(t.id)).sort((a,b)=>a.id.localeCompare(b.id));
+        await tx.put('pro:study-replan:'+userId+':'+planId,{hash:await sha256(JSON.stringify(out)),expires:Date.now()+10*60000});
+        return {authorized:true,tasks:out,scheduled:r.scheduled,removed:r.removed,days:r.days,end:r.end,bypass_used:!!(impact.later.length||impact.today.length)};
+    }
+    async studyReplanGrants(tx,account,previous,next){
+        if(!previous)return new Set();
+        const M=globalThis.TaskitatorStudyManage,out=new Set();
+        for(const id of new Set(previous.tasks.filter(t=>t&&t.study_plan_id).map(t=>t.study_plan_id))){
+            const g=await tx.get('pro:study-replan:'+account+':'+id);if(!g||g.expires<=Date.now())continue;
+            const tree=M.planTree(next.tasks,id),mine=next.tasks.filter(t=>tree.has(t.id)).sort((a,b)=>a.id.localeCompare(b.id));
+            if(mine.length&&g.hash===await sha256(JSON.stringify(mine)))out.add(id);
+        }
+        return out;
+    }
+    // Criteria edit grants that match the pushed task exactly (all three fields). Only AI-protected, active tasks qualify.
+    async criteriaEditGrants(tx,account,previous,next){
+        const out=new Set();if(!previous)return out;
+        const prev=new Map(previous.tasks.map(t=>[t.id,t]));
+        for(const t of next.tasks){
+            const old=prev.get(t.id);if(!old||!protectedTask(old)||old.status!=='active')continue;
+            if(['proof_criteria','raw_proof_criteria','original_proof_criteria'].every(f=>(t[f]??null)===(old[f]??null)))continue;
+            const g=await tx.get('pro:criteria-edit:'+account+':'+t.id);
+            if(g&&g.expires>Date.now()&&t.proof_criteria===g.proof_criteria&&t.raw_proof_criteria===g.raw_proof_criteria&&t.original_proof_criteria===g.original_proof_criteria&&C_ORIGINAL(old)===g.original_proof_criteria)out.add(t.id);
+        }
+        return out;
+    }
+    async consumeCriteriaEditGrants(tx,account,previous,next){
+        for(const id of await this.criteriaEditGrants(tx,account,previous,next))await tx.delete('pro:criteria-edit:'+account+':'+id);
+    }
+    async consumeStudyReplanGrants(tx,account,previous,next){
+        for(const id of await this.studyReplanGrants(tx,account,previous,next))await tx.delete('pro:study-replan:'+account+':'+id);
     }
     async bypass(store,account){await liveAccount(store,account);const state=await store.get('pro:emergency:'+account);return !!state&&state.active_until_ms>Date.now();}
     async emergency(identity,activate=false){

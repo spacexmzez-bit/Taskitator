@@ -240,8 +240,8 @@ html[data-family="nature"][data-fx-off~="animals"] .check-circle .tk-animal { di
 html[data-family="nature"][data-fx-off~="animals"] .task-node.completed > .task-row .check-circle::after,
 html[data-family="nature"][data-fx-off~="animals"] .check-circle.is-completing::after { content: "✓"; font-size: 15px; font-weight: 800; color: var(--tk-bg1); }
 @keyframes tkPop { 40% { transform: scale(1.35) rotate(-10deg); } }
-html[data-family="nature"] .check-square { border-radius: 7px; border-color: var(--tk-badge); }
-html[data-family="nature"] .check-square.selected { background: var(--tk-accent); border-color: var(--tk-accent); color: var(--tk-bg1); }
+html[data-family="nature"] .check-square { border-radius: 7px; border-color: var(--pc, var(--tk-badge)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc, transparent) 35%, transparent); }
+html[data-family="nature"] .check-square.selected { background: var(--pc, var(--tk-accent)); border-color: var(--pc, var(--tk-accent)); color: var(--tk-bg1); }
 
 /* Badges: quiet outlined chips */
 html[data-family="nature"] :is(.ai-badge, .shield-badge, .bonus-badge, .subtasks-count-badge, .due-badge, .tag-chip, .project-badge-chip) {
