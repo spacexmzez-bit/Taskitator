@@ -81,7 +81,7 @@ for (const finished of [false, true]) for (const universe of [false, true]) for 
             const s = await f.status(await f.phone());
             // Sleep Lock is its own line now: it never changes device_unlocked.
             const expected = bypass ? true : universe ? false : finished;
-            assert.equal(s.device_unlocked, expected);
+            assert.equal(s.device_locked, !expected);
             assert.equal(s.sleep, bypass ? false : sleep, 'an active bypass frees Sleep Lock too');
             assert.equal(s.in_break, false);
             assert.equal(s.sleep_lock_active, sleep);
@@ -304,13 +304,13 @@ for (const kind of ['scheduled', 'flexible']) for (const universe of [false, tru
             const s = await f.status(await f.phone());
             assert.equal(s.in_break, true);
             assert.equal(s.break_system, kind);
-            assert.equal(s.device_unlocked, true, 'breaks override tasks and Universe locks');
+            assert.equal(s.device_locked, false, 'breaks override tasks and Universe locks');
             assert.equal(s.sleep, bypass ? false : sleep, 'breaks do not override Sleep Lock');
             assert.equal((await f.breaks()).body.allowance.used, before, 'status and bypass do not change break usage');
             at('2026-11-04T10:40:00+03:00');
             const later = await f.status(await f.phone());
             assert.equal(later.in_break, false);
-            assert.equal(later.device_unlocked, bypass && now() < Date.parse('2026-11-04T10:15:00+03:00'));
+            assert.equal(later.device_locked, !(bypass && now() < Date.parse('2026-11-04T10:15:00+03:00')));
         } finally { clock = null; }
     });
 }
@@ -611,7 +611,7 @@ test('offline at the deadline: the first later request and phone status see the 
         // No request at all on Nov 4 until the strict break starts.
         at('2026-11-04T13:05:00+03:00');
         const s = await f.status(phone);
-        assert.equal(s.in_break, true); assert.equal(s.break_system, 'scheduled'); assert.equal(s.device_unlocked, true);
+        assert.equal(s.in_break, true); assert.equal(s.break_system, 'scheduled'); assert.equal(s.device_locked, false);
         at('2026-11-04T13:40:00+03:00');
         assert.equal((await f.status(phone)).in_break, false);
         const first = await f.breaks({ action: 'flex_start', mode: 'until', operation_id: op() });
@@ -881,5 +881,74 @@ test('a reserved-only schedule is allowed; the phone sees in_break during a rese
         assert.equal(s.in_break, true);
         at('2026-11-04T13:41:00+03:00');
         assert.equal((await f.status(await f.phone())).in_break, false);
+    } finally { clock = null; }
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2.3: phone-lock counting modes (harsh / normal / limited)
+// ---------------------------------------------------------------------------
+const SC = globalThis.TaskitatorStatusCount;
+const tk = (id, extra = {}) => ({ id, title: id, status: 'active', due_date: 'today', ...extra });
+test('status modes: which tasks lock the phone', () => {
+    const day = '2026-11-04', tasks = [tk('a'), tk('b', { status_count: false }), tk('ai', { ai_locked: true, status_count: false })];
+    const locked = (list, mode) => SC.unfinished(list, { status_mode: mode }, day);
+    assert.equal(locked([tk('b', { status_count: false })], 'harsh'), true, 'harsh counts everything due today');
+    assert.equal(locked([tk('b', { status_count: false })], undefined), true, 'harsh is the default');
+    assert.equal(locked([tk('b', { status_count: false })], 'normal'), false, 'unchecked task does not count in normal');
+    assert.equal(locked([tk('a')], 'normal'), true, 'no flag means counted');
+    assert.equal(locked([tk('a')], 'limited'), false, 'limited ignores ordinary tasks');
+    for (const m of ['harsh', 'normal', 'limited']) assert.equal(locked([tasks[2]], m), true, 'AI-locked tasks count in ' + m);
+    assert.equal(locked([tk('x', { due_date: '2026-11-05' })], 'harsh'), false, 'future tasks never count');
+    assert.equal(locked(['bad'], 'limited'), true, 'corrupt entries still fail closed');
+});
+test('status modes: subtasks follow the parent unless set by hand', () => {
+    const tasks = [tk('root', { status_count: false }), tk('alpha', { parent_id: 'root' }), tk('A', { parent_id: 'alpha' }), tk('C', { parent_id: 'alpha', status_count: true }), tk('I', { parent_id: 'C' }), tk('II', { parent_id: 'C' })];
+    const by = SC.index ? SC.index(tasks) : new Map(tasks.map(t => [t.id, t]));
+    const eff = id => SC.effective(by, by.get(id));
+    assert.deepEqual(['root', 'alpha', 'A', 'C', 'I', 'II'].map(eff), [false, false, false, true, true, true]);
+    by.get('I').status_count = false;
+    assert.equal(eff('I'), false, 'a hand-set child keeps its own value'); assert.equal(eff('II'), true);
+    assert.equal(SC.set(tasks, ['alpha'], true), 1); assert.equal(eff('A'), true, 'untouched children follow the changed parent');
+});
+test('status modes: loosening detection', () => {
+    const day = '2026-11-04', rec = (mode, tasks) => ({ settings: { status_mode: mode }, tasks });
+    assert.match(SC.loosened(rec('harsh', [tk('a')]), rec('normal', [tk('a')]), day), /Loosening/);
+    assert.equal(SC.loosened(rec('limited', [tk('a')]), rec('harsh', [tk('a')]), day), null, 'tightening is free');
+    assert.match(SC.loosened(rec('normal', [tk('a')]), rec('normal', [tk('a', { status_count: false })]), day), /Unchecking/);
+    assert.equal(SC.loosened(rec('normal', [tk('a')]), rec('normal', [tk('a'), tk('n', { status_count: false })]), day), null, 'new unchecked task is allowed');
+    assert.equal(SC.loosened(rec('normal', [tk('f', { due_date: '2026-11-05' })]), rec('normal', [tk('f', { due_date: '2026-11-05', status_count: false })]), day), null, 'tomorrow\'s task is allowed');
+    assert.match(SC.loosened(rec('normal', [tk('p'), tk('c', { parent_id: 'p' })]), rec('normal', [tk('p', { status_count: false }), tk('c', { parent_id: 'p' })]), day), /Unchecking/, 'unchecking a parent loosens its children');
+});
+test('status modes: server refuses loosening while today is unfinished, allows it when done or on bypass', async () => {
+    at('2026-11-04T10:00:00+03:00');
+    try {
+        const f = await fixture(); await f.create();
+        assert.equal((await f.push({ tasks: [tk('due')], settings: { status_mode: 'harsh' } })).status, 200);
+        let r = await f.push({ tasks: [tk('due')], settings: { status_mode: 'normal' } });
+        assert.equal(r.status, 403); assert.match(JSON.stringify(r.body), /Loosening/);
+        r = await f.push({ tasks: [tk('due')], settings: { status_mode: 'harsh' } }); assert.equal(r.status, 200);
+        // Tightening is allowed while locked: harsh -> harsh with an added flag, and limited -> harsh below.
+        await f.storage.put('pro:emergency:user_A', { cycle_id: 'x', uses_left: 3, active_until_ms: now() + 10 * MIN, reset_at: now() + 86400000 });
+        r = await f.push({ tasks: [tk('due')], settings: { status_mode: 'limited' } }); assert.equal(r.status, 200, 'bypass allows loosening');
+        await f.storage.delete('pro:emergency:user_A');
+        r = await f.push({ tasks: [tk('due')], settings: { status_mode: 'harsh' } }); assert.equal(r.status, 200, 'tightening is always allowed');
+        r = await f.push({ tasks: [tk('due', { status: 'completed' })], settings: { status_mode: 'harsh' } }); assert.equal(r.status, 200);
+        r = await f.push({ tasks: [tk('due', { status: 'completed' })], settings: { status_mode: 'limited' } }); assert.equal(r.status, 200, 'allowed once today is finished');
+        // An active break does not unlock the settings.
+        r = await f.push({ tasks: [tk('due2')], settings: { status_mode: 'limited' } }); assert.equal(r.status, 200);
+    } finally { clock = null; }
+});
+test('status modes: /status honours the mode and keeps AI locks', async () => {
+    at('2026-11-04T10:00:00+03:00');
+    try {
+        const f = await fixture(); await f.create();
+        const token = await f.phone();
+        assert.equal((await f.push({ tasks: [tk('due')], settings: { status_mode: 'harsh' } })).status, 200);
+        assert.equal((await f.status(token)).device_locked, true);
+        await f.push({ tasks: [tk('due', { status: 'completed' })], settings: { status_mode: 'harsh' } });
+        await f.push({ tasks: [tk('due', { status: 'completed' }), tk('x')], settings: { status_mode: 'limited' } });
+        assert.equal((await f.status(token)).device_locked, false, 'limited: an ordinary task does not lock');
+        await f.push({ tasks: [tk('due', { status: 'completed' }), tk('x'), tk('ai', { ai_locked: true })], settings: { status_mode: 'limited' } });
+        assert.equal((await f.status(token)).device_locked, true, 'limited: an AI-locked task locks');
     } finally { clock = null; }
 });

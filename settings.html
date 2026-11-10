@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html lang="en" class="auth-pending">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-/g5fOOBVeP0mPh6EQTDzruBc+5FNksqqTCIm+RK7LJQ=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-X2g5AVe8+UiCl0EXRtxnRBINIc6U+Sif8Cl3h/q7qPw=' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
 <style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -294,6 +294,32 @@
                         <p class="setting-hint" id="strictCriteriaHint">AI rates how clear a task's completion criteria are before it can be locked. It needs 7/10 or higher.</p>
                     </div>
                     <input type="checkbox" id="strictCriteriaToggle" class="switch" role="switch" aria-describedby="strictCriteriaHint" checked>
+                </div>
+            </div>
+
+            <div class="settings-card" id="statusModeCard">
+                <div class="status-mode-head">
+                    <h4 class="card-title">Phone lock counting</h4>
+                    <button type="button" class="icon-btn break-help-btn" id="statusModeHelpBtn" aria-label="What each mode does" aria-expanded="false" aria-controls="statusModeHelp">!</button>
+                </div>
+                <div class="status-mode-help" id="statusModeHelp" hidden>
+                    <p><strong>Harsh:</strong> Every task due today counts toward locking the phone. Default.</p>
+                    <p><strong>Normal:</strong> Only tasks with "Count toward phone lock" checked count. New tasks start checked.</p>
+                    <p><strong>Limited:</strong> Only AI-locked tasks count toward locking the phone.</p>
+                    <p>AI-locked tasks always count. Loosening this setting or unchecking tasks is locked until all of today's tasks are finished or Emergency Bypass is on. Breaks don't unlock it. Tightening is always allowed.</p>
+                </div>
+                <div class="status-mode-group" role="radiogroup" aria-label="Phone lock counting">
+                    <label class="status-mode-opt"><input type="radio" name="statusMode" value="harsh"> Harsh</label>
+                    <label class="status-mode-opt"><input type="radio" name="statusMode" value="normal"> Normal</label>
+                    <label class="status-mode-opt"><input type="radio" name="statusMode" value="limited"> Limited</label>
+                </div>
+                <p class="status-mode-lock" id="statusModeLock" hidden>Loosening is locked until all of today's tasks are finished or Emergency Bypass is on.</p>
+                <div class="setting-row" id="statusBulkRow" hidden>
+                    <div class="setting-text">
+                        <label for="statusBulkToggle" class="setting-label">Allow changing many tasks at once</label>
+                        <p class="setting-hint" id="statusBulkHint">Adds a "Phone lock" option to the multiselect bar.</p>
+                    </div>
+                    <input type="checkbox" id="statusBulkToggle" class="switch" role="switch" aria-describedby="statusBulkHint">
                 </div>
             </div>
         </section>
@@ -728,6 +754,7 @@
 
     <script type="text/taskitator-script" src="pro.js"></script>
     <script type="text/taskitator-script" src="pro/study-plan.js"></script>
+    <script type="text/taskitator-script" src="pro/status-count.js"></script>
     <script type="text/taskitator-script" src="components.js"></script>
     <script type="text/taskitator-script" src="uni/focus-timer.js"></script>
     <script type="text/taskitator-script" src="macro-bridge.js"></script>
@@ -1320,6 +1347,50 @@ async function saveSettings(silent = false) {
     if (!silent) notify('Settings saved.', 'success');
     return true;
 }
+
+// ---- Phone lock counting (Harsh / Normal / Limited) ----
+(function statusModeSetting() {
+    const SC = () => window.TaskitatorStatusCount;
+    const radios = [...document.querySelectorAll('input[name="statusMode"]')];
+    const lockNote = document.getElementById('statusModeLock'), bulkRow = document.getElementById('statusBulkRow');
+    const bulkToggle = document.getElementById('statusBulkToggle'), helpBtn = document.getElementById('statusModeHelpBtn'), help = document.getElementById('statusModeHelp');
+    if (!radios.length || !SC()) return;
+    const read = () => { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch (e) { return {}; } };
+    const write = patch => {
+        const next = { ...read(), ...patch };
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+        window.dispatchEvent(new CustomEvent('taskitator-settings-changed'));
+        if (window.SyncEngine && typeof SyncEngine.markLocalModified === 'function') { SyncEngine.markLocalModified(); SyncEngine.scheduleAutoPush(); }
+    };
+    // Locked while any task due today is unfinished, unless Emergency Bypass is on. Breaks do not lift it.
+    function locked() {
+        if (window.TaskitatorEngine?.EmergencyManager?.isBypassActive?.()) return false;
+        let tasks = []; try { tasks = JSON.parse(localStorage.getItem('taskitator_tasks') || '[]'); } catch (e) {}
+        return SC().pending(tasks, getAppTodayStr());
+    }
+    function render() {
+        const s = read(), mode = SC().mode(s), isLocked = locked();
+        radios.forEach(r => { r.checked = r.value === mode; r.disabled = isLocked && SC().RANK[r.value] < SC().RANK[mode]; });
+        lockNote.hidden = !isLocked;
+        bulkRow.hidden = mode !== 'normal';
+        bulkToggle.checked = !!s.status_bulk;
+    }
+    radios.forEach(r => r.addEventListener('change', async () => {
+        const current = SC().mode(read()), next = r.value;
+        if (next === current) return;
+        if (SC().RANK[next] < SC().RANK[current] && locked()) { render(); notify('Loosening is locked until all of today\'s tasks are finished or Emergency Bypass is on.', 'error'); return; }
+        if (SC().RANK[next] > SC().RANK[current]) {
+            const ok = await ask({ title: 'Make the phone lock stricter?', message: 'Loosening it again stays locked until all of today\'s tasks are finished or Emergency Bypass is on.', tone: 'warning', confirmLabel: 'Make stricter' });
+            if (!ok) { render(); return; }
+        }
+        write({ status_mode: next });
+        render();
+    }));
+    bulkToggle.addEventListener('change', () => write({ status_bulk: bulkToggle.checked }));
+    helpBtn.addEventListener('click', () => { help.hidden = !help.hidden; helpBtn.setAttribute('aria-expanded', String(!help.hidden)); });
+    ['taskitator-settings-changed', 'focus', 'storage', 'taskitator-data-changed'].forEach(ev => window.addEventListener(ev, render));
+    render(); setTimeout(render, 1500);
+})();
 
 function updateEmergencyDisplay() {
     if (!window.TaskitatorEngine || !TaskitatorEngine.EmergencyManager) return;

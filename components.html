@@ -705,10 +705,10 @@
                 <caption>What the Bridge does</caption>
                 <thead><tr><th>Server response</th><th>App Blocker</th></tr></thead>
                 <tbody>
-                    <tr><td><code>device_unlocked = true</code></td><td>Off. Apps open normally.</td></tr>
-                    <tr><td><code>device_unlocked = false</code></td><td>On. Blocked apps return to the home screen.</td></tr>
+                    <tr><td><code>device_locked = false</code></td><td>Off. Apps open normally.</td></tr>
+                    <tr><td><code>device_locked = true</code></td><td>On. Blocked apps return to the home screen.</td></tr>
                     <tr><td><code>sleep = true</code></td><td>On (Sleep Lock). Overrides the line above.</td></tr>
-                    <tr><td><code>sleep = false</code></td><td>Follows <code>device_unlocked</code>.</td></tr>
+                    <tr><td><code>sleep = false</code></td><td>Follows <code>device_locked</code>.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -1094,7 +1094,7 @@
                         <p class="minor-desc">Check if the server explicitly confirmed the device is unlocked.</p>
                         <div class="guide-screenshot-container">
                             <img src="image/phase2/Ph2_S13.png" alt="Match Rule Configuration" class="guide-screenshot" loading="lazy">
-                            <span class="screenshot-caption">Ph2_S13: Set Contains device_unlocked = true</span>
+                            <span class="screenshot-caption">Ph2_S13: Set Contains device_locked = false</span>
                         </div>
                         <ul class="sub-checklist">
                             <li class="sub-item" id="item-sub-19">
@@ -1103,7 +1103,7 @@
                             </li>
                             <li class="sub-item" id="item-sub-20">
                                 <input type="checkbox" id="sub-20" data-static-action-53="">
-                                <label class="sub-label" for="sub-20"><span class="hash-tag">#20</span> Enter exact text: <code>device_unlocked = true</code> and tap OK.</label>
+                                <label class="sub-label" for="sub-20"><span class="hash-tag">#20</span> Enter exact text: <code>device_locked = false</code> and tap OK.</label>
                             </li>
                         </ul>
                     </div>
@@ -1295,6 +1295,7 @@
 <script type="text/taskitator-script" src="pro.js"></script>
     <script type="text/taskitator-script" src="pro/smart-study.js"></script>
     <script type="text/taskitator-script" src="pro/early-bonus.js"></script>
+    <script type="text/taskitator-script" src="pro/status-count.js"></script>
     <script type="text/taskitator-script" src="date-filter.js"></script>
     <script type="text/taskitator-script" src="pro/study-plan.js"></script>
     <script type="text/taskitator-script" src="task-drafts.js"></script>

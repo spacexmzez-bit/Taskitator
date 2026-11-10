@@ -167,7 +167,7 @@
             cancel.textContent = opts.cancelLabel || 'Cancel';
             const ok = document.createElement('button');
             ok.type = 'button';
-            ok.className = `icon-btn confirm-ok ${tone === 'danger' ? 'btn-danger' : 'btn-primary'}`;
+            ok.className = `icon-btn confirm-ok ${tone === 'danger' ? 'btn-danger' : tone === 'warning' ? 'btn-warning' : 'btn-primary'}`;
             ok.textContent = opts.confirmLabel || (tone === 'danger' ? 'Yes, continue' : 'Confirm');
             actions.append(cancel, ok);
             box.appendChild(actions);
@@ -1549,6 +1549,7 @@ window.TaskitatorComponents = Object.freeze({
             if (editBonusTaskCheckbox) {
                 editBonusTaskCheckbox.checked = editModalIsBonus;
             }
+            window.TaskitatorStatusCountUI?.setup('edit', task, null);
 
             dpSetup('edit',{target:task.dynamic_priority_target||null,locked:(Boolean(task.ai_locked||task.require_ai_proof||task.strict_prerequisites))&&!isBypassActive});
 
@@ -1708,6 +1709,7 @@ window.TaskitatorComponents = Object.freeze({
             window.TaskitatorRecurrenceUI?.resetCreate();
             const pIdField = document.getElementById('creationParentId');
             if (pIdField) pIdField.value = parentId || '';
+            window.TaskitatorStatusCountUI?.setup('create', null, parentId || null);
 
             const modalTitle = document.getElementById('addTaskModalTitle');
             if (modalTitle) modalTitle.textContent = titleLabel;
@@ -2738,6 +2740,7 @@ window.TaskitatorComponents = Object.freeze({
                         created_at: new Date().toISOString(),
                         completed_at: null
                     };
+                    {const sc = window.TaskitatorStatusCountUI?.value('create'); if (sc !== undefined) newTask.status_count = sc;}
 
                     if (dpValue('create')) {
                         const dpEnt = await dpEntitlement();
@@ -3022,6 +3025,7 @@ window.TaskitatorComponents = Object.freeze({
                     }
                     
                     task.strict_prerequisites = willBeStrict;
+                    {const sc = window.TaskitatorStatusCountUI?.value('edit'); if (sc !== undefined) task.status_count = sc;}
                     await window.TaskitatorRecurrenceUI?.applyEdit(task);
                     if(removeEditReference){if(task.ai_locked&&!isBypassActive){window.TaskitatorNotify('Emergency Bypass is required to remove this reference.');return;}await window.ExemplarStore?.deleteExemplar(task.id);delete task.reference_inline_data;delete task.reference_id;}
 
@@ -3752,3 +3756,41 @@ window.TaskitatorComponents = Object.freeze({
 });
 
 // <<< MODULE_END: components.js >>>
+
+// <<< MODULE_START: status-count-ui.js >>>
+// Phase 2.3: "Count toward phone lock" checkbox (Normal mode only). A task stores status_count only when the user sets it
+// differently from what it inherits, so untouched subtasks keep following their parent.
+(function () {
+    'use strict';
+    const SC = () => window.TaskitatorStatusCount;
+    const settings = () => { try { return JSON.parse(localStorage.getItem('taskitator_settings') || '{}') || {}; } catch (e) { return {}; } };
+    const tasks = () => { try { return JSON.parse(localStorage.getItem('taskitator_tasks') || '[]') || []; } catch (e) { return []; } };
+    const normal = () => !!SC() && SC().mode(settings()) === 'normal';
+    const by = () => new Map(tasks().filter(t => t && typeof t === 'object').map(t => [t.id, t]));
+    const today = () => window.TaskitatorRecurrence.today(Date.now(), Number(settings().day_start_hour) || 0);
+    function locked() {
+        if (window.TaskitatorEngine?.EmergencyManager?.isBypassActive?.()) return false;
+        return SC().pending(tasks(), today());
+    }
+    function box(prefix) { return { group: document.getElementById(prefix + 'StatusCountGroup'), input: document.getElementById(prefix + 'StatusCount'), note: document.getElementById(prefix + 'StatusCountNote') }; }
+    function setup(prefix, task, parentId) {
+        const { group, input, note } = box(prefix);
+        if (!group || !input) return;
+        group.hidden = !normal();
+        if (group.hidden) return;
+        const map = by(), base = task ? task : (parentId ? map.get(parentId) : null);
+        const inherited = base ? SC().effective(map, base) : true;
+        input.checked = inherited; input.dataset.initial = String(inherited);
+        const stuck = !!task && inherited && locked() && SC().dueNow(map, task, today()) && task.status === 'active';
+        input.disabled = stuck;
+        if (note) { note.hidden = !stuck; }
+    }
+    // undefined = leave the task alone (follows its parent).
+    function value(prefix) {
+        const { group, input } = box(prefix);
+        if (!group || group.hidden || !input || input.disabled) return undefined;
+        return String(input.checked) === input.dataset.initial ? undefined : input.checked;
+    }
+    window.TaskitatorStatusCountUI = { setup, value, normal };
+})();
+// <<< MODULE_END: status-count-ui.js >>>

@@ -444,6 +444,7 @@
         <button type="button" class="icon-btn" id="batchOpenPriorityBtn" style="padding: 5px 10px; font-size: 0.8rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-goal"></use></svg> Priority</button>
         <button type="button" class="icon-btn" id="batchOpenDueDateBtn" style="padding: 5px 10px; font-size: 0.8rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Due</button>
         <button type="button" class="icon-btn" id="batchOpenBonusBtn" style="padding: 5px 10px; font-size: 0.8rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus</button>
+        <button type="button" class="icon-btn" id="batchOpenStatusBtn" style="padding: 5px 10px; font-size: 0.8rem;" hidden><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg> Phone lock</button>
         <button type="button" class="icon-btn" id="batchDeleteBtn" style="padding: 5px 10px; font-size: 0.8rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-trash"></use></svg> Delete</button>
         <button type="button" class="icon-btn" id="batchApplyDeleteBtn" style="padding: 5px 10px; font-size: 0.8rem; color: var(--danger); border-color: rgba(239,68,68,0.4);" disabled>Apply · delete 0</button>
         <button type="button" class="icon-btn" id="batchCancelBtn" style="color: var(--danger); border-color: rgba(239,68,68,0.4); padding: 5px 10px; font-size: 0.8rem;">✕</button>
@@ -503,6 +504,21 @@
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
             <button type="button" class="icon-btn" id="closeBatchDueDateBtn">Cancel</button>
             <button type="button" class="icon-btn btn-primary" id="applyBatchDueDateBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Apply to Selected</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Batch phone-lock counting -->
+<div class="modal-overlay" id="batchStatusModal">
+    <div class="modal-box" style="max-width: 400px;">
+        <h3 style="margin-top: 0; color: var(--primary);">Count toward phone lock</h3>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
+            Choose whether the selected tasks (and subtasks you haven't set yourself) count toward locking the phone. Unchecking today's tasks is skipped while locked.
+        </p>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; flex-wrap: wrap;">
+            <button type="button" class="icon-btn" id="closeBatchStatusBtn">Cancel</button>
+            <button type="button" class="icon-btn" id="applyBatchStatusOffBtn">Don't count</button>
+            <button type="button" class="icon-btn btn-primary" id="applyBatchStatusOnBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 700;">Count</button>
         </div>
     </div>
 </div>
@@ -943,6 +959,14 @@
                 </small>
             </div>
 
+            <div class="form-group" id="createStatusCountGroup" hidden>
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="createStatusCount" checked>
+                    <span>Count toward phone lock</span>
+                </label>
+                <small id="createStatusCountNote" class="status-count-note" hidden>Locked until all of today's tasks are finished or Emergency Bypass is on.</small>
+            </div>
+
             <!-- Bonus Subtask Toggle (Creation) -->
             <div class="form-group" id="bonusTaskContainer">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -1137,6 +1161,14 @@
             <input type="date" id="editTaskDueDate">
             <small id="editTaskEarlyNote" class="early-edit-note" hidden></small>
         </div>
+
+            <div class="form-group" id="editStatusCountGroup" hidden>
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="editStatusCount" checked>
+                    <span>Count toward phone lock</span>
+                </label>
+                <small id="editStatusCountNote" class="status-count-note" hidden>Locked until all of today's tasks are finished or Emergency Bypass is on.</small>
+            </div>
 
         <!-- Independent Subtask Shield in Details -->
         <div class="form-group" id="editPrerequisiteBoxContainer">
@@ -1366,6 +1398,7 @@
 <script type="text/taskitator-script" src="pro.js"></script>
     <script type="text/taskitator-script" src="pro/smart-study.js"></script>
     <script type="text/taskitator-script" src="pro/early-bonus.js"></script>
+    <script type="text/taskitator-script" src="pro/status-count.js"></script>
     <script type="text/taskitator-script" src="date-filter.js"></script>
     <script type="text/taskitator-script" src="pro/study-plan.js"></script>
     <script type="text/taskitator-script" src="task-drafts.js"></script>

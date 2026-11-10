@@ -2108,6 +2108,7 @@ window.TaskitatorApp = (() => {
         const review = document.getElementById('batchReviewSelectedBtn');
         if (review) review.disabled = false;
         refreshSelectAllLabel();
+        {const sb = document.getElementById('batchOpenStatusBtn'); if (sb) { let st = {}; try { st = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch (e) {} sb.hidden = !(window.TaskitatorStatusCount && window.TaskitatorStatusCount.mode(st) === 'normal' && st.status_bulk === true); }}
         const resize=()=>document.documentElement.style.setProperty('--batch-clearance',bar.classList.contains('open')?(Math.ceil(bar.getBoundingClientRect().height)+32)+'px':'0px');
         if(!bar._sizeObserver&&typeof ResizeObserver!=='undefined'){bar._sizeObserver=new ResizeObserver(resize);bar._sizeObserver.observe(bar);window.addEventListener('resize',resize);}
         requestAnimationFrame(resize);
@@ -3756,6 +3757,33 @@ window.TaskitatorApp = (() => {
         };
         document.getElementById('applyBatchBonusBtn')?.addEventListener('click', () => applyBatchBonus(true));
         document.getElementById('applyBatchUnbonusBtn')?.addEventListener('click', () => applyBatchBonus(false));
+
+        // Batch phone-lock counting (Normal mode, and only when allowed in Settings). Same lock rule as the Worker.
+        const batchStatusModal = document.getElementById('batchStatusModal');
+        document.getElementById('batchOpenStatusBtn')?.addEventListener('click', () => {
+            if (selectedTaskIds.size === 0) { window.TaskitatorNotify('Please select at least one task first.'); return; }
+            batchStatusModal?.classList.add('open');
+        });
+        document.getElementById('closeBatchStatusBtn')?.addEventListener('click', () => batchStatusModal?.classList.remove('open'));
+        const applyBatchStatus = (count) => {
+            const SC = window.TaskitatorStatusCount, byId = new Map(tasks.map(t => [t.id, t]));
+            const locked = !isBypassActiveSafe() && SC.pending(tasks, getAppTodayStr());
+            let changed = 0, skipped = 0;
+            selectedTaskIds.forEach(id => {
+                const t = byId.get(id);
+                if (!t || t.status !== 'active') { skipped++; return; }
+                if (SC.effective(byId, t) === count) return;
+                if (!count && locked && SC.dueNow(byId, t, getAppTodayStr())) { skipped++; return; }
+                t.status_count = count; changed++;
+            });
+            if (changed) saveStorageAndPush();
+            batchStatusModal?.classList.remove('open');
+            clearSelectionAfterAction();
+            renderUnifiedView();
+            window.TaskitatorNotify(`${changed} task(s) updated.` + (skipped ? ` ${skipped} skipped (locked until today's tasks are finished or Emergency Bypass is on).` : ''));
+        };
+        document.getElementById('applyBatchStatusOnBtn')?.addEventListener('click', () => applyBatchStatus(true));
+        document.getElementById('applyBatchStatusOffBtn')?.addEventListener('click', () => applyBatchStatus(false));
 
         // Bulk Reschedule Gate Logic
         const rescheduleModal = document.getElementById('bulkRescheduleModal');

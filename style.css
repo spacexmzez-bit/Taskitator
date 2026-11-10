@@ -5636,3 +5636,22 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .study-rate input:focus{outline:none;border-color:var(--primary)}
 .subtask-head-tools{flex:1 1 100%;justify-content:space-between}
 .subtask-head-tools .subtask-add-btn{margin-inline-start:auto}
+
+/* Phase 2.3: alert-orange confirmation and phone-lock settings */
+:root{--alert-orange:#f59e0b}
+.confirm-warning{border-color:rgba(245,158,11,.6)}
+.confirm-warning .confirm-sheet-title{color:var(--alert-orange)}
+.icon-btn.btn-warning{background:var(--alert-orange);border-color:var(--alert-orange);color:#1f1300}
+.status-mode-group{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px}
+.status-mode-opt{display:flex;align-items:center;justify-content:center;min-height:40px;padding:6px 8px;border:1.5px solid var(--border-color);border-radius:8px;font-size:.85rem;cursor:pointer;text-align:center}
+.status-mode-opt input{position:absolute;opacity:0;pointer-events:none}
+.status-mode-opt:has(input:checked){border-color:var(--primary);background:var(--card-subtle);font-weight:600}
+.status-mode-opt:has(input:disabled){opacity:.45;cursor:not-allowed}
+.status-mode-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.status-mode-lock{margin:8px 0 0;font-size:.8rem;color:var(--alert-orange)}
+.status-mode-lock[hidden],.status-mode-help[hidden],#statusBulkRow[hidden]{display:none}
+.status-mode-help{margin-top:8px;padding:10px 12px;border-radius:8px;border:1px solid var(--border-color);font-size:.8rem;line-height:1.5}
+.status-mode-help p{margin:0 0 6px}.status-mode-help p:last-child{margin:0}
+.status-count-note{display:block;margin-top:4px;padding-inline-start:28px;font-size:.75rem;color:var(--alert-orange)}
+.status-count-note[hidden]{display:none}
+#batchOpenStatusBtn[hidden]{display:none}

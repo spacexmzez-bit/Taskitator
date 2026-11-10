@@ -1,6 +1,7 @@
 import { UniverseRules } from './uni/universe-rules.js';
 import './pro/smart-study.js';
 import './pro/early-bonus.js';
+import './pro/status-count.js';
 import './pro/study-plan.js';
 // ============================================================================
 // Taskitator Consolidated Cloudflare Worker & Security Engine (worker.js)
@@ -1440,34 +1441,21 @@ export function evaluateStatus(record, now = Date.now()) {
     }
     const hour = dayHour(record.settings);
     const today = logicalDate(now, hour);
-    const byId = new Map(record.tasks.filter(object).map(task => [task.id, task]));
-    function effectiveDue(task) {
-        const visited = new Set();
-        while (task) {
-            if (visited.has(task)) return ''; // Broken trees retain the existing blocking fallback.
-            visited.add(task);
-            const due = typeof task.due_date === 'string' ? task.due_date.trim().toLowerCase() : '';
-            if (due) return due;
-            task = byId.get(task.parent_id);
-        }
-        return '';
-    }
-    const unfinished = record.tasks.some(task => {
-        if (!object(task)) return true; // Corrupt entries must not silently unlock.
-        if (task.status !== 'active') return false;
-        const due = effectiveDue(task);
-        // Undated subtasks inherit the nearest dated ancestor. Standalone undated
-        // tasks retain their existing behavior; explicit subtask dates take priority.
-        return !due || due === 'today' || (validDate(due) && due <= today);
-    });
+    // Which tasks count depends on the status mode (harsh / normal / limited); see pro/status-count.js.
+    const unfinished = globalThis.TaskitatorStatusCount.unfinished(record.tasks, record.settings, today);
     const inBreak = globalThis.TaskitatorBreaks.active(record.today_breaks,record.settings||{},now);
     return { status: 'ok', device_unlocked: !unfinished || inBreak,
         finished: !unfinished, in_break: inBreak };
 }
+// Public /status shape: `device_locked` replaces the internal `device_unlocked` (only anything but a clear unlock reads as locked).
+export function publicStatus(state) {
+    const { device_unlocked, ...rest } = state;
+    return { status: rest.status, device_locked: device_unlocked !== true, ...rest };
+}
 // Plain-text status for MacroDroid. Match the FULL line with a "contains" rule (for example
-// `device_unlocked = true` or `sleep = true`), never a bare `true`, which both lines contain.
+// `device_locked = true` or `sleep = true`), never a bare `true`, which both lines contain.
 export function statusText(state) {
-    return `device_unlocked = ${state.device_unlocked === true}\nsleep = ${state.sleep === true}`;
+    return `device_locked = ${state.device_locked !== false}\nsleep = ${state.sleep === true}`;
 }
 export function sleepWindow(schedule, now = Date.now()) {
     const valid=t=>typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
@@ -2001,8 +1989,8 @@ export class TaskitatorSync {
                 const access = await this.storage.get('phone:' + tokenDigest);
                 if (access?.scope === 'deleted-unlock' && access.expires > Date.now()) {
                     return url.searchParams.get('format') === 'text'
-                        ? new Response(statusText({device_unlocked:true,sleep:false}), {headers:{...CORS,'Content-Type':'text/plain; charset=utf-8'}})
-                        : json({status:'ok',device_unlocked:true,sleep:false,finished:true,in_break:false,account_deleted:true,
+                        ? new Response(statusText({device_locked:false,sleep:false}), {headers:{...CORS,'Content-Type':'text/plain; charset=utf-8'}})
+                        : json({status:'ok',device_locked:false,sleep:false,finished:true,in_break:false,account_deleted:true,
                             recovery_until:access.expires});
                 }
                 if (!access || access.scope !== 'status') throw new HTTPError(401, 'Phone access was revoked or is invalid.');
@@ -2185,8 +2173,8 @@ export class TaskitatorSync {
                     if(identity && await this.protection.bypass(tx,identity.userId)) { state.device_unlocked=true;state.sleep=false;state.emergency_bypass=true; }
                     else if(!identity) { const owner=meta.owner_id; if(owner && await this.protection.bypass(tx,owner)){state.device_unlocked=true;state.sleep=false;state.emergency_bypass=true;} }
                     return url.searchParams.get('format') === 'text'
-                        ? new Response(statusText(state), { headers: { ...CORS, 'Content-Type': 'text/plain; charset=utf-8' } })
-                        : json(state);
+                        ? new Response(statusText(publicStatus(state)), { headers: { ...CORS, 'Content-Type': 'text/plain; charset=utf-8' } })
+                        : json(publicStatus(state));
                 }
                 if (push && meta.last_write?.mutation_id === body.mutation_id &&
                     meta.last_write.hash === snapshotHash && meta.last_write.base_version === body.base_version) {
@@ -2222,6 +2210,9 @@ export class TaskitatorSync {
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
                     await this.protection.guardDynamic(tx,identity.userId,previous,snapshot,dynamicRefreshError);
                     await this.protection.guardEarly(tx,identity.userId,previous,snapshot,dynamicRefreshError);
+                    // Phone-lock counting: loosening is refused while today's tasks are unfinished, unless Emergency Bypass is on (breaks do not lift it).
+                    {const SC=globalThis.TaskitatorStatusCount,why=SC.loosened(previous,snapshot,logicalDate(Date.now(),dayHour(previous?.settings)));
+                    if(why&&SC.pending(previous.tasks,logicalDate(Date.now(),dayHour(previous.settings)))&&!(await this.protection.bypass(tx,identity.userId)))throw new HTTPError(403,why);}
                     globalThis.TaskitatorEarly.apply(snapshot);
                     globalThis.TaskitatorSmartStudy.apply(snapshot,previous);
                     // Breaks are changed only through /breaks. Sync keeps the stored copy, so a stale or

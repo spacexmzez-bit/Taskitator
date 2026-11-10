@@ -85,7 +85,7 @@ test('bridge macro makes one correct final blocking decision for every task/slee
     };
     for (const unlocked of [true, false]) for (const sleep of [true, false]) {
         const expected = unlocked && !sleep ? 1 : -1;
-        assert.equal(run(`device_unlocked = ${unlocked}\nsleep = ${sleep}`), expected, `unlocked=${unlocked} sleep=${sleep}`);
+        assert.equal(run(`device_locked = ${!unlocked}\nsleep = ${sleep}`), expected, `unlocked=${unlocked} sleep=${sleep}`);
     }
     assert.equal(run(''), -1, 'an empty/failed response blocks');
     const vars = macro.localVariables.find(v => v.m_name === 'http_response');
