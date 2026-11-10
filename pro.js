@@ -2730,7 +2730,7 @@ window.TaskitatorEngine = TaskitatorEngine;
         card.replaceChildren();
         if (pro) {
             card.href = 'settings.html#ai';
-            card.append(el('strong', '\u25C6 Taskitator Pro'));
+            {const t = el('strong'); if (window.TaskitatorIcons) t.insertAdjacentHTML('afterbegin', window.TaskitatorIcons.icon('star') + ' '); t.append(document.createTextNode('Taskitator Pro')); card.append(t);}
             card.append(el('span', state.until === null ? 'Lifetime license' : 'Valid through ' + (window.TaskitatorI18n?.date(state.until) ?? new Date(state.until).toLocaleDateString())));
             const c = state.credits;
             if (c && c.daily_limit > 0) {
@@ -2741,7 +2741,7 @@ window.TaskitatorEngine = TaskitatorEngine;
             }
         } else {
             card.href = 'components.html?view=compare';
-            card.append(el('strong', '\u25C7 Upgrade to Pro'));
+            {const t = el('strong'); if (window.TaskitatorIcons) t.insertAdjacentHTML('afterbegin', window.TaskitatorIcons.icon('star') + ' '); t.append(document.createTextNode('Upgrade to Pro')); card.append(t);}
             card.append(el('span', 'Batch reviews and more AI credits.'));
         }
     }

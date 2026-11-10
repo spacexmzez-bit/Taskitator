@@ -22,7 +22,7 @@
             'lock': 'nt-e-lock', 'unlock': 'nt-x-unlock', 'shield': 'nt-e-shield', 'bonus': 'nt-e-star', 'star': 'nt-e-star',
             'warning': 'nt-e-warning', 'calendar': 'nt-e-calendar', 'robot': 'nt-x-copilot-head', 'copilot-body': 'nt-x-copilot-body', 'ai': 'nt-e-owl', 'owl': 'nt-e-owl',
             'siren': 'nt-e-siren', 'bolt': 'nt-e-bolt', 'bulb': 'nt-e-bulb', 'test': 'nt-e-tube', 'clip': 'nt-e-clip',
-            'camera': 'nt-e-camera', 'receipt': 'nt-e-receipt', 'notes': 'nt-e-receipt', 'book': 'nt-e-book', 'key': 'nt-e-key',
+            'camera': 'nt-e-camera', 'receipt': 'nt-e-receipt', 'notes': 'nt-e-receipt', 'book': 'nt-e-book', 'study': 'nt-e-bulb', 'recurring': 'nt-e-leaves', 'key': 'nt-e-key',
             'tag': 'nt-e-tag', 'person': 'nt-e-person', 'phone': 'nt-e-phone', 'inbox': 'nt-e-inbox', 'mail': 'nt-e-mailbox',
             'briefcase': 'nt-e-briefcase', 'folder': 'nt-e-briefcase', 'sliders': 'nt-e-sliders', 'settings': 'nt-e-sliders',
             'moon': 'nt-e-moon', 'planet': 'nt-e-planet', 'mountain': 'nt-e-mountain', 'goal': 'nt-e-mountain', 'pine': 'nt-e-pine',
