@@ -1170,7 +1170,7 @@ test('session changes during a save or refresh cannot paint the previous account
     assert.notEqual(f.button.textContent,'@OldAccount');
 });
 
-test('service worker refreshes Pro scripts and styles before using cached copies',async()=>{
+test('service worker serves cached Pro scripts and styles at once and refreshes them in the background',async()=>{
     const handlers=new Map(),calls=[],pending=[];
     const cache={async match(){calls.push('cache-match');return new Response('cached-ui')},async put(){calls.push('cache-put')}};
     const self={location:{origin:'https://taskitator.test'},addEventListener(name,fn){handlers.set(name,fn)}};
@@ -1181,10 +1181,11 @@ test('service worker refreshes Pro scripts and styles before using cached copies
     for(const path of ['/pro/pro-ui.js','/style.css','/pro/profile-ui.js']){
         let response;
         handlers.get('fetch')({request:new Request('https://taskitator.test'+path),respondWith(value){response=value},waitUntil(value){pending.push(value)}});
-        assert.equal(await (await response).text(),'fresh-ui');
+        assert.equal(await (await response).text(),'cached-ui');
     }
-    await Promise.all(pending);assert.equal(calls.includes('cache-match'),false);
+    await Promise.all(pending);
     assert.equal(calls.filter(call=>call==='fetch:no-cache').length,3);
+    assert.equal(calls.filter(call=>call==='cache-put').length,3);
     // An actual network failure can fall back only to this release's cache.
     context.fetch=async()=>{throw new Error('offline')};let response;
     handlers.get('fetch')({request:new Request('https://taskitator.test/pro/pro-ui.js'),respondWith(value){response=value},waitUntil(){}});
@@ -1569,7 +1570,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-phase2-v13'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-phase2-v14'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);
@@ -2210,4 +2211,22 @@ test('break panel text follows the daily maximum and shows the strict gap as a c
     assert.match(tour,/lower this maximum in \*\*Settings → Day & week\*\*/);
     assert.match(tour,/same time must pass before the next one/);
     assert.match(tour,/during an emergency bypass/);
+});
+test('service worker serves cached page shells at once and refreshes them in the background',async()=>{
+    const handlers=new Map(),calls=[],pending=[];
+    const cache={async match(){calls.push('match');return new Response('cached-page')},async put(){calls.push('put')}};
+    const self={location:{origin:'https://taskitator.test'},addEventListener(name,fn){handlers.set(name,fn)}};
+    const context=vm.createContext({self,URL,Request,Response,caches:{async open(){return cache},async match(){return null}},fetch:async()=>{calls.push('fetch');return new Response('fresh-page')}});
+    vm.runInContext(readConsolidatedSource('sw.js'),context);
+    let response;const request={url:'https://taskitator.test/settings.html',method:'GET',mode:'navigate',headers:new Headers()};
+    handlers.get('fetch')({request,respondWith(v){response=v},waitUntil(v){pending.push(v)}});
+    assert.equal(await (await response).text(),'cached-page');
+    await Promise.all(pending);assert.deepEqual(calls.filter(c=>c!=='match'),['fetch','put']);
+});
+test('auth bootstrap downloads gated scripts in parallel but keeps execution order around inline scripts',()=>{
+    const boot=readConsolidatedSource('auth-bootstrap.js');
+    assert.match(boot,/rel = 'preload'; hint\.as = 'script'/);
+    assert.ok(boot.indexOf("rel = 'preload'; hint.as = 'script'")>boot.indexOf('if (publicComponentView)'));
+    assert.match(boot,/script\.async = false;\s*batch\.push/);
+    assert.match(boot,/else \{ await flush\(\); script\.textContent/);
 });

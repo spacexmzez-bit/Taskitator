@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-phase2-v13';
+const CACHE_NAME = 'taskitator-phase2-v14';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -119,17 +119,20 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Refresh UI code before use, including Pro scripts and stylesheets.
+    // UI code: serve the cached copy at once and refresh it in the background
+    // (stale-while-revalidate). A release bumps CACHE_NAME, which installs a fresh
+    // worker that re-downloads every file; core.js reloads the page onto it.
     if (/\.(?:js|css)$/.test(url.pathname)) {
         event.respondWith((async () => {
             const cache = await caches.open(CACHE_NAME);
-            try {
-                const response = await fetch(request, { cache: 'no-cache' });
-                if (response.ok) event.waitUntil(cache.put(cacheKey, response.clone()));
+            const cached = await cache.match(cacheKey);
+            const refresh = fetch(request, { cache: 'no-cache' }).then(response => {
+                if (response.ok) return cache.put(cacheKey, response.clone()).then(() => response);
                 return response;
-            } catch {
-                return (await cache.match(cacheKey)) || new Response('App file unavailable. Reconnect and reload.', {status:503});
-            }
+            });
+            if (cached) { event.waitUntil(refresh.catch(() => {})); return cached; }
+            try { return await refresh; }
+            catch { return new Response('App file unavailable. Reconnect and reload.', {status:503}); }
         })());
         return;
     }
@@ -152,17 +155,19 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Network-first for top-level HTML navigation requests to prevent stale shells
+    // Page shells: same stale-while-revalidate as UI code, so switching pages does
+    // not wait on the network. Uncached pages (or non-200 answers) go to the network.
     if (request.mode === 'navigate') {
-        event.respondWith(
-            fetch(request).then((response) => {
-                if (response && response.status === 200) {
-                    const responseClone = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => cache.put(cacheKey, responseClone));
-                }
+        event.respondWith((async () => {
+            const cache = await caches.open(CACHE_NAME);
+            const cached = await cache.match(cacheKey);
+            const refresh = fetch(request).then(response => {
+                if (response && response.status === 200 && !response.redirected) return cache.put(cacheKey, response.clone()).then(() => response);
                 return response;
-            }).catch(() => caches.match(cacheKey))
-        );
+            });
+            if (cached) { event.waitUntil(refresh.catch(() => {})); return cached; }
+            try { return await refresh; } catch { return (await caches.match(cacheKey)) || Response.error(); }
+        })());
         return;
     }
 

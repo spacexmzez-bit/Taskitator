@@ -455,8 +455,13 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             }
             const domain = atob(config.publishableKey.split('_')[2]).replace(/\$$/, '');
             if (!/^[a-zA-Z0-9.-]+$/.test(domain) || !domain.includes('.')) throw new Error('The Clerk publishable key is invalid.');
+            const clerkJs = 'https://' + domain + '/npm/@clerk/clerk-js@6/dist/clerk.browser.js';
+            // Fetch both Clerk bundles at once; they still run one after the other.
+            const hint = document.createElement('link');
+            hint.rel = 'preload'; hint.as = 'script'; hint.href = clerkJs; hint.crossOrigin = 'anonymous';
+            document.head.append(hint);
             await loadScript('https://' + domain + '/npm/@clerk/ui@1/dist/ui.browser.js');
-            await loadScript('https://' + domain + '/npm/@clerk/clerk-js@6/dist/clerk.browser.js',
+            await loadScript(clerkJs,
                 { 'data-clerk-publishable-key': config.publishableKey });
             // Arabic UI: the Clerk widget gets its own Arabic text (display only; sign-in works the same).
             let localization;
@@ -545,6 +550,31 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
 // a change on one side wins, identical changes agree, and only a field changed differently
 // on both sides, or a delete against an edit, is a conflict the user decides on this device.
 // Conflicts are recomputed from the three copies on every sync; none are stored.
+// Revert only server-rejected tasks to their cloud copy (pure; used by SyncEngine.revertRejected).
+const TaskitatorRevert = {
+    apply(localTasks, remoteTasks, rejected) {
+        const ids = new Set();
+        for (const r of rejected || []) { if (r && r.id != null) ids.add(r.id); for (const x of r?.related || []) ids.add(x); }
+        const remote = new Map(remoteTasks.map(t => [t.id, t]));
+        const changed = [], out = [];
+        const seen = new Set();
+        for (const t of localTasks) {
+            if (!ids.has(t.id)) { out.push(t); continue; }
+            seen.add(t.id);
+            const r = remote.get(t.id);
+            if (r) out.push(JSON.parse(JSON.stringify(r)));
+            changed.push({ id: t.id, title: String((r || t).title ?? t.id) });
+        }
+        // Rejected because it was removed locally: restore it from the cloud.
+        for (const id of ids) if (!seen.has(id) && remote.has(id)) {
+            out.push(JSON.parse(JSON.stringify(remote.get(id))));
+            changed.push({ id, title: String(remote.get(id).title ?? id) });
+        }
+        return { tasks: out, changed };
+    }
+};
+if (typeof window !== 'undefined') window.TaskitatorRevert = TaskitatorRevert;
+
 (function () {
     'use strict';
     const DB_NAME = 'taskitator-merge', STORE = 'base';
@@ -591,6 +621,7 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             }
             const cid = `${scope}:${id}:${key}`;
             add({ id: cid, kind: 'field', scope, itemId: id, field: key, mine: clone(l), theirs: clone(r),
+                guarded: scope === 'tasks' && Boolean(remote.ai_locked || remote.require_ai_proof),
                 label: String(local.title ?? remote.title ?? base?.title ?? id) });
             const pick = choice(cid) === 'theirs' ? r : l;
             if (pick !== undefined) out[key] = clone(pick);
@@ -612,6 +643,7 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             if (same(survivor, b)) continue; // deleted on one side, untouched on the other
             const cid = `${scope}:${id}:deleted`;
             add({ id: cid, kind: 'delete', scope, itemId: id, field: null, deletedOn: deletedHere ? 'device' : 'cloud',
+                guarded: scope === 'tasks' && Boolean((r || b)?.ai_locked || (r || b)?.require_ai_proof),
                 mine: deletedHere ? undefined : clone(l), theirs: deletedHere ? clone(r) : undefined,
                 label: String(survivor.title ?? b.title ?? id) });
             // "mine" = this device's version of the item (deleted, or edited); "theirs" = the cloud's.
@@ -767,6 +799,10 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
                 const card = el('div', undefined, 'border:1px solid #444;border-radius:8px;padding:10px;margin:10px 0;');
                 card.dataset.conflictId = c.id;
                 card.append(el('strong', d.title), el('div', d.line, 'font-size:.8rem;opacity:.75;margin-bottom:6px'));
+                if (c.guarded) {
+                    card.dataset.guarded = 'true';
+                    card.append(el('div', '🔒 AI-protected task. If "This device" breaks its protection (for example a later date), the cloud value is kept for this item only; your other choices still apply.', 'font-size:.75rem;color:#f5c26b;margin-bottom:6px'));
+                }
                 const row = el('div', undefined, 'display:flex;gap:8px;flex-wrap:wrap');
                 const buttons = {};
                 for (const [side, heading, text] of [['mine', 'This device', d.mine], ['theirs', 'Cloud', d.theirs]]) {
@@ -1076,7 +1112,7 @@ const SyncEngine = {
                 this.rememberRemoteVersion(remote.version);
                 base = String(remote.version);
             }
-            const { today_breaks: ignoredBreaks, ...currentExtras } = extraData;
+            const { today_breaks: ignoredBreaks, __revertedOnce: ignoredFlag, ...currentExtras } = extraData;
             const payload = this.getPayload(false, currentExtras);
             payload.base_version = Number(base);
             payload.mutation_id = revision;
@@ -1091,6 +1127,10 @@ const SyncEngine = {
             const data = await res.json();
             if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
             if (res.status === 409) return this.resolveConflict(data, this.mergeInFlight ? this.mergeAttempt : 0);
+            if(res.status===403 && Array.isArray(data.rejected) && data.rejected.length && !extraData.__revertedOnce){
+                const reverted = await this.revertRejected(data.rejected, config, sessionId, revision);
+                if (reverted) return this.performPush(force, { ...extraData, __revertedOnce: true });
+            }
             if(res.status===403 && ['PROOF_REQUIRED','REQUIREMENTS_LOCKED','SHIELD_REQUIRED'].includes(data.code))
                 return this.reportConflict({...data,remote_version:payload.base_version,error:data.error+' Keep a backup of local changes, then use the cloud copy and submit proof, or activate Emergency Bypass for the intended change.'});
             if (!res.ok || data.success !== true || data.version !== payload.base_version + 1) {
@@ -1485,6 +1525,33 @@ const SyncEngine = {
             return { success: false, error: err.message };
         } finally {
             if (top) this.mergeInFlight = false;
+        }
+    },
+
+    // The server refused only some protected items. Put just those (and the ancestors that moved them)
+    // back to the cloud copy; every other local edit and merge choice stays and is pushed again.
+    async revertRejected(rejected, config, sessionId, revision) {
+        try {
+            const remote = await this.readCloud(config);
+            if (!this.sessionMatches(config, sessionId) || remote.empty || !Array.isArray(remote.tasks)) return false;
+            if (revision !== localStorage.getItem(this.STORAGE_KEY_REVISION)) return false;
+            const tasks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_TASKS) || '[]');
+            const result = TaskitatorRevert.apply(tasks, remote.tasks, rejected);
+            if (!result.changed.length) return false;
+            localStorage.setItem(this.STORAGE_KEY_TASKS, JSON.stringify(result.tasks));
+            localStorage.setItem(this.STORAGE_KEY_REVISION, crypto.randomUUID());
+            localStorage.setItem(this.STORAGE_KEY_DIRTY, 'true');
+            this.hasUnsavedChanges = true;
+            const detail = { reverted: result.changed, reasons: rejected.map(r => r.message) };
+            this.notify('reverted', detail);
+            window.dispatchEvent(new CustomEvent('taskitator-reverted', { detail }));
+            window.dispatchEvent(new CustomEvent('taskitator-merged', { detail: { conflicts: 0, reverted: result.changed.length } }));
+            const names = result.changed.map(t => `"${t.title}"`).join(', ');
+            const msg = `Kept the cloud version of ${names}: ${[...new Set(detail.reasons)].join(' ')} All your other changes were kept.`;
+            if (typeof window.showToast === 'function') window.showToast(msg); else this.notify('error', msg);
+            return true;
+        } catch (err) {
+            return false;
         }
     },
 
@@ -2136,6 +2203,12 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
             status.remove();
             return;
         }
+        // Download gated app files while sign-in runs; they still execute only after it.
+        for (const original of document.querySelectorAll('script[type="text/taskitator-script"][src]')) {
+            const hint = document.createElement('link');
+            hint.rel = 'preload'; hint.as = 'script'; hint.href = original.getAttribute('src');
+            document.head.append(hint);
+        }
         try { await TaskitatorAuth.init(); }
         catch (error) {
             const offline = window.TaskitatorOffline;
@@ -2153,17 +2226,23 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
             location.replace('login.html'); return;
         }
         // Keep the original classic-script order and global bindings intact.
+        // Consecutive external files are inserted together with async=false: the browser
+        // downloads them in parallel but still executes them in document order. An inline
+        // script waits for every external file before it.
         const scripts = [...document.querySelectorAll('script[type="text/taskitator-script"]')];
+        let batch = [];
+        const flush = async () => { await Promise.all(batch); batch = []; };
         for (const original of scripts) {
             const script = document.createElement('script');
             if (original.getAttribute('src')) {
                 script.src = original.getAttribute('src'); script.async = false;
-                await new Promise((resolve, reject) => {
+                batch.push(new Promise((resolve, reject) => {
                     script.onload = resolve; script.onerror = () => reject(new Error('An app file could not be loaded. Reload after checking your upload.'));
-                    document.body.append(script);
-                });
-            } else { script.textContent = original.textContent; document.body.append(script); }
+                }));
+                document.body.append(script);
+            } else { await flush(); script.textContent = original.textContent; document.body.append(script); }
         }
+        await flush();
         // Initialize existing page controls after asynchronous authentication.
         if (TaskitatorAuth.account && !TaskitatorAuth.deletion && window.TaskitatorVault && !window.TaskitatorOffline?.active) { await window.TaskitatorVault.initialize(); }
         window.dispatchEvent(new Event('taskitator-auth-ready'));

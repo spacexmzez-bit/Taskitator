@@ -676,7 +676,10 @@ export class TaskProtection {
             }
             return true;
         };
+        // Every protected item is checked, so the client can revert just the rejected ones (not the whole copy).
+        const rejected=[];
         for(const old of previous.tasks){
+          try{
             const current=map.get(old.id);
             if(!current&&granted.size&&planGranted(old))continue;
             if(replanOld.has(old.id)&&(!current||replanNew.has(old.id)))continue;
@@ -684,8 +687,13 @@ export class TaskProtection {
             // F02: unfinished required work under a shield cannot vanish or be trashed.
             if(shielded&&!old.is_bonus&&old.status!=='completed'&&old.status!=='trash'&&(!current||current.status==='trash'))
                 throw fail(403,'SHIELD_REQUIRED','Unfinished required work under a shield cannot be removed without Emergency Bypass.');
-            if(protectedTask(old)&&old.status==='active'&&current&&weakerDue(effectiveDue(old,prevMap),effectiveDue(current,map)))
-                throw fail(403,'REQUIREMENTS_LOCKED','A protected task cannot be moved to a later date, directly or through its parent, without Emergency Bypass.');
+            if(protectedTask(old)&&old.status==='active'&&current&&weakerDue(effectiveDue(old,prevMap),effectiveDue(current,map))){
+                // The later date may come from an ancestor: report every ancestor whose due date changed too.
+                const related=[];
+                for(let t=map.get(current.parent_id),n=0;t&&n<50;t=map.get(t.parent_id),n++)
+                    if((prevMap.get(t.id)?.due_date??null)!==(t.due_date??null))related.push(t.id);
+                throw Object.assign(fail(403,'REQUIREMENTS_LOCKED','A protected task cannot be moved to a later date, directly or through its parent, without Emergency Bypass.'),{related});
+            }
             if(shielded&&current&&!old.is_bonus&&current.is_bonus)throw fail(403,'SHIELD_REQUIRED','Required work protected by a shield cannot become bonus work.');
             if(shielded&&current&&old.parent_id!==current.parent_id)throw fail(403,'SHIELD_REQUIRED','Shielded subtasks must remain with their parent.');
             if(old.smart_early_date&&current&&current.due_date!==old.due_date)throw fail(403,'SMART_DATE_LOCKED','Smart Study dates are fixed. An unfinished early opportunity expires automatically.');
@@ -706,7 +714,12 @@ export class TaskProtection {
                 if(!current||!current.strict_prerequisites)throw fail(403,'SHIELD_REQUIRED','The task shield requires Emergency Bypass to remove.');
                 if(old.status==='active'&&current.status==='completed'&&branch(next.tasks,current.id).some(c=>c.id!==current.id&&!c.is_bonus&&c.status!=='completed'))throw fail(403,'CHILDREN_REQUIRED','Complete required subtasks first.');
             }
+          }catch(e){
+            if(e&&e.status===403&&typeof e.code==='string'){rejected.push({id:old.id,code:e.code,message:e.message,related:e.related||[]});continue;}
+            throw e;
+          }
         }
+        if(rejected.length)throw Object.assign(fail(403,rejected[0].code,rejected[0].message),{rejected});
     }
     // Dynamic Priority (Pro). Only dynamic_priority_target (a priority id, or null/absent when off) is stored;
     // the effective priority is derived and never written, so completions, AI audits, recurrence and Smart Study

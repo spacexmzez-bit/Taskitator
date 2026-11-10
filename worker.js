@@ -2278,7 +2278,7 @@ export class TaskitatorSync {
                 throw new HTTPError(405, 'Method not allowed.');
             });
         } catch (err) {
-            return json({ code:err.code, error: (err instanceof HTTPError || err instanceof SecurityError || (Number.isInteger(err.status) && typeof err.code==='string')) ? err.message : 'Cloud storage request failed. Retry with the same operation ID.' },
+            return json({ code:err.code, ...(Array.isArray(err.rejected)?{rejected:err.rejected.map(r=>({id:r.id,code:r.code,message:r.message,related:r.related}))}:{}), error: (err instanceof HTTPError || err instanceof SecurityError || (Number.isInteger(err.status) && typeof err.code==='string')) ? err.message : 'Cloud storage request failed. Retry with the same operation ID.' },
                 (err instanceof HTTPError || err instanceof SecurityError || (Number.isInteger(err.status) && typeof err.code==='string')) ? err.status : 503);
         }
     }
