@@ -203,7 +203,16 @@ function card(plan, parent) {
     for (const [key, text] of [['info', tr('Task info')], ['ai', tr('AI criteria')], ['sched', tr('Scheduling')]]) {
         const b = el('button', text, tabs, 'tk-tab'); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(d.tab === key));
         ui.dots[key] = el('span', undefined, b, 'tk-tab-dot'); ui.dots[key].hidden = true;
-        b.addEventListener('click', () => { d.tab = key; render(); });
+        b.addEventListener('click', () => {
+            const panel = c.querySelector('.plan-panel');
+            clearTimeout(d.tabTransition);
+            if (panel) panel.classList.remove('study-panel-leaving');
+            if (d.tab === key) return;
+            const apply = () => { if (!c.isConnected) return; d.tab = key; render(); };
+            if (!panel || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { apply(); return; }
+            panel.classList.add('study-panel-leaving');
+            d.tabTransition = setTimeout(apply, 140);
+        });
     }
     const panel = el('div', undefined, c, 'plan-panel');
     if (d.tab === 'info') infoTab(plan, d, panel, list, edit);

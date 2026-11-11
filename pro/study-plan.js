@@ -111,7 +111,17 @@
   // Tabs: Task info, AI criteria, Scheduling (Phase 2.6)
   const tabBar=node('div',undefined,d,'tk-tabs'),panels={},tabButtons={};tabBar.setAttribute('role','tablist');
   for(const [key,text]of [['info','Task info'],['ai','AI criteria'],['sched','Scheduling']]){const b=node('button',text,tabBar,'tk-tab');b.type='button';b.setAttribute('role','tab');b.onclick=()=>showTab(key);tabButtons[key]=b;panels[key]=node('div',undefined,d,'study-panel');}
-  function showTab(k){for(const [key,p]of Object.entries(panels)){p.hidden=key!==k;tabButtons[key].setAttribute('aria-selected',String(key===k));}}
+  let activeTab=null,tabTimer=null;
+  function showTab(k){
+    clearTimeout(tabTimer);
+    const old=panels[activeTab];
+    if(old)old.classList.remove('study-panel-leaving');
+    if(activeTab===k)return;
+    const apply=()=>{for(const [key,p]of Object.entries(panels)){p.hidden=key!==k;tabButtons[key].setAttribute('aria-selected',String(key===k));}activeTab=k;};
+    if(!old||window.matchMedia('(prefers-reduced-motion: reduce)').matches){apply();return;}
+    old.classList.add('study-panel-leaving');
+    tabTimer=setTimeout(()=>{old.classList.remove('study-panel-leaving');apply();},140);
+  }
   // -- Task info --
   const info=panels.info,title=field('Title',initial.title||'','text',info);
   const grid=node('div',undefined,info,'ss-grid');grid.style.marginTop='12px';
