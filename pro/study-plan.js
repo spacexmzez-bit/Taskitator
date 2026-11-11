@@ -188,6 +188,16 @@
    else{ok=true;msg='Review the schedule, then create the plan.';}
    status.textContent=msg;if(confirmBtn)confirmBtn.disabled=!ok||used;
   }
+  // Drafts (Phase 2.8): a restored draft fills the form; the preview comes back only if the units still match.
+  let draftId=initial.draft?.id||null;
+  if(initial.draft){
+   const dr=initial.draft;title.value=dr.info.title||'';unit.value=dr.info.unit||unit.value;if(dr.info.total)total.value=dr.info.total;desc.value=dr.info.description||'';
+   for(const [sel,v]of [[parentPrio,dr.info.parent],[unitPrio,dr.info.unitP]])if(Array.from(sel.options||sel.children||[]).some(o=>o.value===v))sel.value=v;
+   audit.checked=dr.ai.enabled;aiBody.hidden=!audit.checked;criteria.value=dr.ai.criteria||'';exclude.value=dr.ai.exclude||'';
+   const r=sched.restore(dr.schedule);
+   var draftMsg=dr.schedule.sched&&!r.preview?'Draft restored. Preview the schedule again.':'Draft restored. Nothing is created until you confirm.';
+  }
+  async function confirmAsk(message){return window.TaskitatorConfirm?await window.TaskitatorConfirm({title:'Save draft?',message,confirmLabel:'Save draft'}):confirm(message);}
   showTab('info');
   const actions=node('div',undefined,d,'study-actions study-footer');
   const planId=crypto.randomUUID(),created=new Date().toISOString();
@@ -197,9 +207,29 @@
    if(!await window.SyncEngine.forceImmediateSync())throw Error('Sync your workspace successfully before creating the plan.');if(actor!==window.Clerk?.session?.id)throw Error('Account changed. Reopen the preview.');const before=localStorage.getItem('taskitator_tasks');
    if(!d.open)throw Error('Preview closed. Nothing was created.');const tasks=build(frozen,planId,created,audit.checked,criteria.value);await window.TaskitatorAuth.api('/study-plan',{method:'POST',body:JSON.stringify(payload)});
    if(!d.open||actor!==window.Clerk?.session?.id||before!==localStorage.getItem('taskitator_tasks'))throw Error('Your workspace changed. Review and confirm again.');
-   const current=JSON.parse(before||'[]');if(current.some(t=>t.study_plan_id===planId)){used=true;d.close();return;}localStorage.setItem('taskitator_tasks',JSON.stringify([...current,...tasks]));used=true;confirmBtn.disabled=true;window.TaskitatorApp.loadStorage();window.TaskitatorApp.saveStorageAndPush();window.TaskitatorApp.renderUnifiedView();if(!await window.SyncEngine.forceImmediateSync()){status.textContent='Created locally; sync is pending. Use Sync Now before editing the new tasks.';return;}d.close();
-  },'icon-btn study-btn study-primary');confirmBtn.disabled=true;
+   const current=JSON.parse(before||'[]');if(current.some(t=>t.study_plan_id===planId)){used=true;d.close();return;}localStorage.setItem('taskitator_tasks',JSON.stringify([...current,...tasks]));used=true;confirmBtn.disabled=true;if(draftId)window.TaskitatorDrafts?.removeStudy(draftId);window.TaskitatorApp.loadStorage();window.TaskitatorApp.saveStorageAndPush();window.TaskitatorApp.renderUnifiedView();if(!await window.SyncEngine.forceImmediateSync()){status.textContent='Created locally; sync is pending. Use Sync Now before editing the new tasks.';return;}d.close();
+  },'icon-btn study-btn study-primary');confirmBtn.disabled=true;if(initial.draft){refresh();const why=status.textContent;status.textContent=draftMsg+(confirmBtn.disabled&&!/^Preview/.test(why)?' '+why:'');}
+  button('Save draft',actions,async()=>{
+   if(!window.TaskitatorDrafts)throw Error('Drafts are unavailable. Reload Taskitator.');
+   if(!await confirmAsk('Keep this study plan in Drafts? Nothing is created. Find it in the Drafts tab of the Study plans page.'+(draftId?' This replaces the draft you restored.':'')))return;
+   draftId=window.TaskitatorDrafts.saveStudy({kind:'create',title:title.value,info:{title:title.value,unit:unit.value,total:total.value,parent:parentPrio.value,unitP:unitPrio.value,description:desc.value},
+    ai:{enabled:audit.checked,criteria:criteria.value,exclude:exclude.value},schedule:sched.snapshot()},draftId);
+   status.textContent='Draft saved. Find it in the Drafts tab of the Study plans page.';
+  });
   button('Cancel',actions,()=>d.close());d.addEventListener('close',()=>{d.remove();if(opened===d)opened=null;window.dispatchEvent(new Event('taskitator-study-closed'));});document.body.append(d);d.showModal();return {status:'confirmation_required',message:'Study preview opened. No tasks exist until the user confirms. Audit controls are manual only.'};
  }
+ // Restoring a new-plan draft from the Study plans page lands here as index.html?study_draft=<id>.
+ (function openDraftFromUrl(){
+  let id;try{id=new URLSearchParams(location.search).get('study_draft');}catch{return;}
+  if(!id||/study-plans\.html$/.test(location.pathname))return;
+  let tries=0;const tick=async()=>{
+   if(!(window.TaskitatorApp&&window.TaskitatorPro&&window.Clerk?.session&&window.TaskitatorDrafts&&window.TaskitatorStudySchedule)){if(++tries<60)setTimeout(tick,500);return;}
+   try{history.replaceState(null,'',location.pathname+location.hash);}catch{}
+   const dr=window.TaskitatorDrafts.getStudy(id);
+   if(!dr||dr.kind!=='create'){window.TaskitatorNotify?.('This study plan draft no longer exists.');return;}
+   const r=await open({draft:{...dr,id}});if(r?.status==='pro_required')window.TaskitatorNotify?.(r.message);
+  };
+  setTimeout(tick,0);
+ })();
  root.TaskitatorStudy={open,async propose(args){if(!args?.title||!Number.isInteger(args.total)||!Number.isInteger(args.days))return {status:'needs_input',message:'Ask the user for the missing title, total units, and study days. Never invent these.'};const allowed=['title','unit','plural','total','days','first','start','weekdays'];if(Object.keys(args).some(k=>!allowed.includes(k)))return {status:'error',message:'Copilot cannot supply audit settings, criteria, confirmation or skipped units.'};return open(args);}};
 })(typeof window==='undefined'?globalThis:window);

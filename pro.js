@@ -2426,7 +2426,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                     ${Number(summary.estimatedCredits) > 2 ? `
                     <div class="pro-quote-policy-brief" role="note">
                         <strong>Tip to reduce review cost</strong>
-                        Use batch review when tasks share the same proof. Trim extra pages or combine related photos onto fewer readable pages. Try smaller images and check the new estimate before starting.
+                        Use batch review when tasks share the same proof. Trim extra pages or combine related photos onto fewer readable pages. Try smaller images, use a smaller reference exemplar (it is sent with every review), and check the new estimate before starting.
                     </div>` : ''}
                     <details class="pro-quote-details" id="proQuoteDetailsToggle">
                         <summary id="proQuoteDetailsSummary">View details</summary>

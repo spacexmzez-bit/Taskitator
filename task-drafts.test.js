@@ -87,3 +87,21 @@ test('corrupt settings storage does not break drafts', () => {
     const id = D.saveCreate({ title: 'Recovered' });
     assert.equal(D.getCreate(id).title, 'Recovered');
 });
+
+test('study plan drafts: own keys, one edit draft per plan, at most 10, bounded fields', () => {
+    reset();
+    const a = D.saveStudy({ kind: 'create', info: { title: 'Bio' }, schedule: { sched: [{ date: '2026-11-12', count: 2 }], units_key: [2, 1, 2, 3] } });
+    assert.ok(settings()['study_draft:' + a]);
+    assert.equal(D.listCreate().length, 0); assert.equal(D.count(), 0, 'not counted in the normal drafts badge');
+    D.saveStudy({ kind: 'edit', plan_id: 'p1', info: { title: 'Old' } });
+    D.saveStudy({ kind: 'edit', plan_id: 'p1', info: { title: 'New' } });
+    assert.equal(D.listStudy().length, 2); assert.equal(D.getStudy('edit_p1').info.title, 'New');
+    const bad = D.getStudy(a); assert.equal(bad.schedule.sched.length, 1);
+    const b = D.saveStudy({ kind: 'create', schedule: { sched: [{ date: 'x', count: 2 }], units_key: [1, 1, 1, 1] } });
+    assert.equal(D.getStudy(b).schedule.sched, null, 'invalid rows are dropped');
+    for (let i = 0; i < 7; i++) D.saveStudy({ kind: 'create' });
+    assert.equal(D.listStudy().length, 10);
+    assert.throws(() => D.saveStudy({ kind: 'create' }), /10 study plan drafts/);
+    assert.throws(() => D.saveStudy({ kind: 'edit' }), /Missing study plan/);
+    assert.equal(D.removeStudy('edit_p1'), true); assert.equal(D.listStudy().length, 9);
+});

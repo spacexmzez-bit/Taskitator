@@ -5694,6 +5694,7 @@ html .sidebar-drawer > * { flex-shrink: 0; }
 .ss-balance{margin:10px 0;padding:9px 11px;border-radius:10px;border:1px solid;font-size:.85rem;line-height:1.5}
 .ss-balance.is-ok{border-color:#16a34a;color:#4ade80;background:rgba(22,163,74,.1)}
 .ss-balance.is-off{border-color:var(--alert-orange,#f59e0b);color:var(--alert-orange,#f59e0b);background:rgba(245,158,11,.1)}
+.ss-auto-btn{display:block;margin-top:8px;padding:6px 12px;border-radius:8px;border:1px solid currentColor;background:transparent;color:inherit;font:inherit;font-size:.82rem;font-weight:700;cursor:pointer}.ss-auto-btn:disabled{opacity:.45;cursor:default}
 .ss-cal-nav{display:flex;align-items:center;justify-content:space-between;margin:10px 0 6px}
 .ss-cal-arrow{width:36px;height:36px;border-radius:10px;border:1px solid var(--border-color);background:transparent;color:inherit;font-size:1.1rem;cursor:pointer}
 .ss-cal .calendar-cell{min-height:44px;padding:5px 1px;font-family:inherit}.ss-cal .calendar-cell.is-off{opacity:.35}

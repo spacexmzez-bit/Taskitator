@@ -21,9 +21,23 @@ const monthName=d=>root.TaskitatorI18n?.date?root.TaskitatorI18n.date(d,{month:'
      chip(number, date) -> {text, cls}        optional
      notes(state) -> [{text, warn}]           optional, shown under the balance
      disabled() -> bool, onChange() } */
+// sched: [{date,count}], total: units that must be placed. Returns {sched} or {error}. Pure, so it can be tested on its own.
+function redistributeCounts(sched,total,edited,today){
+ const rows=sched.map(x=>({date:x.date,count:x.count})).sort((a,b)=>a.date.localeCompare(b.date)),skip=edited instanceof Set?edited:new Set(edited||[]);
+ let bal=rows.reduce((a,x)=>a+x.count,0)-total;
+ if(bal===0)return {sched:rows};
+ const eligible=()=>rows.filter(x=>x.date>=today&&!skip.has(x.date)&&(bal<0||x.count>0));
+ if(!eligible().length)return {error:tr('Auto redistribute needs at least one date you have not edited by hand. Edit the dates yourself or generate a new preview.')};
+ while(bal!==0){
+  const list=eligible();
+  if(!list.length)return {error:tr('Not enough units on the dates you have not edited to remove the surplus. Remove the rest by hand.')};
+  for(const x of list){if(bal===0)break;if(bal>0){x.count--;bal--;}else{x.count++;bal++;}}
+ }
+ return {sched:rows.filter(x=>x.count>0)};
+}
 function mount(parent,ctx){
  const st={start:ctx.start,mode:'cal',days:Math.max(1,Number(ctx.days)||4),per:Number(ctx.per)||2,rates:{},weekdays:new Set(ctx.weekdays||[]),startUnit:ctx.startUnit??'',skipText:'',
-  sched:null,units:null,previewed:false,edited:new Set(),view:'cal',month:null,sel:null,touched:false,error:''};
+  sched:null,units:null,previewed:false,edited:new Set(),view:'cal',month:null,sel:null,touched:false,error:'',redistError:''};
  const box=el('div',undefined,parent,'ss');
  if(ctx.note)el('p',ctx.note,box,'ss-hint');
  const controls=el('div',undefined,box,'ss-controls'),previewBox=el('div',undefined,box,'ss-preview');previewBox.hidden=true;
@@ -72,7 +86,7 @@ function mount(parent,ctx){
    const units=ctx.units({startUnit:st.startUnit===''?null:Number(st.startUnit),skipText:st.skipText});
    if(!units.length)throw Error(tr('No unfinished units are left to schedule.'));
    const r=root.TaskitatorStudyCore.schedule(units.length,{mode:st.mode==='per'?'perDay':'days',days:Number(st.days),per:Number(st.per),rates:st.rates,weekdays:[...st.weekdays].sort(),start:st.start});
-   st.sched=r.dates.map((date,i)=>({date,count:r.counts[i]}));st.units=units;st.edited=new Set();st.previewed=true;st.touched=true;st.view='cal';st.sel=null;st.month=r.dates[0].slice(0,7);
+   st.sched=r.dates.map((date,i)=>({date,count:r.counts[i]}));st.units=units;st.edited=new Set();st.redistError='';st.previewed=true;st.touched=true;st.view='cal';st.sel=null;st.month=r.dates[0].slice(0,7);
   }catch(e){buttonError.textContent=e.message;return;}
   paintButton();renderPreview();ctx.onChange?.();
  }
@@ -80,19 +94,46 @@ function mount(parent,ctx){
  // ---- preview ----
  const sorted=()=>st.sched.filter(x=>x.count>0).sort((a,b)=>a.date.localeCompare(b.date));
  const balance=()=>st.sched.reduce((a,x)=>a+x.count,0)-st.units.length;
- function setCount(date,count){
+ // Auto redistribute: settle the balance one unit at a time across the dates the person has not edited, from the first
+ // date (never before today) to the last, then round again. Surplus removes a unit; missing adds one.
+ // Dates edited by hand are never touched. The result is a new preview to review; nothing is saved.
+ function redistribute(){
+  st.redistError='';
+  const r=redistributeCounts(st.sched,st.units.length,st.edited,ctx.today);
+  if(r.error)st.redistError=r.error;else{st.sched=r.sched;st.previewed=true;st.touched=true;}
+  renderPreview();ctx.onChange?.();
+ }
+ function setCount(date,count){st.redistError='';
   const row=st.sched.find(x=>x.date===date);
   if(row)row.count=Math.max(0,count);else if(count>0)st.sched.push({date,count});
   st.sched=st.sched.filter(x=>x.count>0).sort((a,b)=>a.date.localeCompare(b.date));st.edited.add(date);
   renderPreview();ctx.onChange?.();
  }
+ // Rebuilding the preview must not move the page: keep the window and every scrolling ancestor where they were,
+ // hold the old height while the new content is built, and give focus back to the button that was pressed.
  function renderPreview(){
+  const doc=document,win=doc.defaultView||root,x=win.scrollX||0,y=win.scrollY||0,scrollers=[];
+  for(let n=previewBox.parentElement;n&&n!==doc.body&&n!==doc.documentElement;n=n.parentElement)if(n.scrollHeight>n.clientHeight)scrollers.push([n,n.scrollTop]);
+  const active=doc.activeElement,key=active&&typeof previewBox.contains==='function'&&previewBox.contains(active)&&active.getAttribute?active.getAttribute('data-ss-key'):null,h=previewBox.offsetHeight;
+  if(h)previewBox.style.minHeight=h+'px';
+  try{drawPreview();}finally{
+   previewBox.style.minHeight='';
+   for(const [n,t]of scrollers)n.scrollTop=t;
+   if((win.scrollY||0)!==y&&typeof win.scrollTo==='function')win.scrollTo(x,y);
+   if(key){const f=[...previewBox.querySelectorAll('[data-ss-key]')].find(e=>e.getAttribute('data-ss-key')===key);if(f&&!f.disabled)f.focus({preventScroll:true});}
+  }
+ }
+ function drawPreview(){
   previewBox.replaceChildren();previewBox.hidden=!st.sched;if(!st.sched)return;
   const views=el('div',undefined,previewBox,'ss-seg');
   for(const [value,text]of [['cal',tr('Calendar')],['list',tr('List')]]){const b=el('button',text,views,'ss-seg-btn'+(st.view===value?' is-active':''));b.type='button';b.setAttribute('aria-pressed',String(st.view===value));b.addEventListener('click',()=>{st.view=value;renderPreview();});}
   const bal=balance(),banner=el('div',undefined,previewBox,'ss-balance '+(bal===0?'is-ok':'is-off'));banner.setAttribute('role','status');
   if(bal===0)banner.textContent=tr('All {n} units are placed.',{n:st.units.length})+' ✓';
-  else{el('b',bal>0?tr('Surplus: {n}',{n:bal}):tr('Missing: {n}',{n:-bal}),banner);el('span',' '+(bal>0?tr('Remove {n} unit(s) from other dates.',{n:bal}):tr('Add {n} unit(s) to any date.',{n:-bal}))+' '+tr('The plan cannot be saved until this is 0.'),banner);}
+  else{el('b',bal>0?tr('Surplus: {n}',{n:bal}):tr('Missing: {n}',{n:-bal}),banner);el('span',' '+(bal>0?tr('Remove {n} unit(s) from other dates.',{n:bal}):tr('Add {n} unit(s) to any date.',{n:-bal}))+' '+tr('The plan cannot be saved until this is 0.'),banner);
+   const auto=el('button',tr('Auto redistribute'),banner,'ss-auto-btn');auto.type='button';auto.setAttribute('data-ss-key','auto');
+   auto.title=bal>0?tr('Remove one unit from each date you have not edited, first to last, until the surplus is settled.'):tr('Add one unit to each date you have not edited, first to last, until nothing is missing.');
+   auto.addEventListener('click',redistribute);}
+  if(st.redistError){const e=el('p',st.redistError,previewBox,'ss-note ss-warn');e.setAttribute('role','alert');}
   for(const n of ctx.notes?.(api.state())||[])el('p',n.text,previewBox,'ss-note'+(n.warn?' ss-warn':''));
   const assigned=new Map();{let i=0;for(const {date,count}of sorted()){assigned.set(date,st.units.slice(i,i+count));i+=count;}}
   if(st.view==='list'){
@@ -121,7 +162,7 @@ function mount(parent,ctx){
    if(count)el('span',undefined,dots,st.edited.has(date)?'ss-dot-edit':'cal-dot-solid');
    if(count)el('small',String(count),cell,'ss-cell-count');
    cell.disabled=past&&!fx.length;
-   cell.addEventListener('click',()=>{st.sel=date;renderPreview();});
+   cell.setAttribute('data-ss-key','cell-'+date);cell.addEventListener('click',()=>{st.sel=date;renderPreview();});
   }
   const legend=el('div',undefined,previewBox,'ss-legend');
   for(const [cls,text]of [['cal-dot-solid',tr('Plan tasks')],['ss-dot-done',tr('Finished')],['ss-dot-edit',tr('Edited by you')]]){const s=el('span',undefined,legend);el('i',undefined,s,cls);el('span',text,s);}
@@ -140,11 +181,11 @@ function mount(parent,ctx){
    const c=el('div',undefined,d,'ss-chips');for(const n of nums){const info=ctx.chip?.(n,date)||{text:ctx.label()+'.'+n};el('span',info.text,c,'ss-chip'+(info.cls?' '+info.cls:''));}
   }else el('p',tr('No new tasks on this date.'),d,'ss-hint');
   const step=el('div',undefined,d,'ss-step');el('span',tr('Units on this date'),step,'ss-hint');
-  const minus=el('button','−',step,'ss-step-btn');minus.type='button';minus.setAttribute('aria-label',tr('Remove one unit'));minus.disabled=!nums.length;minus.addEventListener('click',()=>setCount(date,nums.length-1));
+  const minus=el('button','−',step,'ss-step-btn');minus.type='button';minus.setAttribute('data-ss-key','minus');minus.setAttribute('aria-label',tr('Remove one unit'));minus.disabled=!nums.length;minus.addEventListener('click',()=>setCount(date,nums.length-1));
   el('b',String(nums.length),step);
-  const plus=el('button','+',step,'ss-step-btn');plus.type='button';plus.setAttribute('aria-label',tr('Add one unit'));plus.addEventListener('click',()=>setCount(date,nums.length+1));
+  const plus=el('button','+',step,'ss-step-btn');plus.type='button';plus.setAttribute('data-ss-key','plus');plus.setAttribute('aria-label',tr('Add one unit'));plus.addEventListener('click',()=>setCount(date,nums.length+1));
   el('p',tr('Changing a date does not move other dates. It creates a surplus or a missing amount that you settle yourself.'),d,'ss-hint');
-  if(nums.length){const rm=el('button',tr('Remove this date'),d,'ss-remove');rm.type='button';rm.addEventListener('click',()=>setCount(date,0));}
+  if(nums.length){const rm=el('button',tr('Remove this date'),d,'ss-remove');rm.type='button';rm.setAttribute('data-ss-key','remove');rm.addEventListener('click',()=>setCount(date,0));}
  }
  function setDisabled(flag){
   if(flag){for(const e of box.querySelectorAll('input,button,select,textarea'))e.disabled=true;return;}
@@ -160,6 +201,33 @@ function mount(parent,ctx){
     options:{start:sched[0]?.date||st.start,mode:st.mode,days:Number(st.days),per:Number(st.per),rates:{...st.rates},weekdays:[...st.weekdays].sort(),startUnit:st.startUnit===''?null:Number(st.startUnit),skipText:st.skipText}};
   },
   rerender(){renderPreview();paintButton();},
+  // Drafts: everything typed in this tab, plus the preview's date counts. Restoring recomputes the units; if they no
+  // longer match what the preview was built for, the preview is dropped and has to be generated again.
+  snapshot(){
+   const units=st.units||[];
+   return {start:st.start,mode:st.mode,days:String(st.days),per:String(st.per),rates:{...st.rates},weekdays:[...st.weekdays].sort(),startUnit:String(st.startUnit??''),skipText:st.skipText,
+    previewed:st.previewed,sched:st.sched?sorted().map(x=>({date:x.date,count:x.count})):null,edited:[...st.edited],units_key:st.units?[units.length,units[0]??null,units.at(-1)??null,units.reduce((a,b)=>a+b,0)]:null};
+  },
+  restore(snap){
+   if(!snap||typeof snap!=='object')return {preview:false};
+   st.start=typeof snap.start==='string'&&snap.start>=ctx.today?snap.start:ctx.today;st.mode=snap.mode==='per'?'per':'cal';st.days=snap.days??st.days;st.per=snap.per??st.per;
+   st.rates={};for(const [k,v]of Object.entries(snap.rates||{}))if(/^[0-6]$/.test(k)&&Number.isFinite(Number(v)))st.rates[k]=Number(v);
+   st.weekdays=new Set((snap.weekdays||[]).filter(n=>Number.isInteger(n)&&n>=0&&n<=6));st.startUnit=snap.startUnit??'';st.skipText=String(snap.skipText||'');st.touched=true;st.redistError='';
+   startInput.value=st.start;daysInput.value=st.days;perInput.value=st.per;fromA.value=fromB.value=st.startUnit;skipInput.value=st.skipText;
+   wdBoxes.forEach((c,i)=>c.checked=st.weekdays.has(i));rateInputs.forEach((e,i)=>e.value=st.rates[i]??'');
+   st.sched=null;st.units=null;st.previewed=false;st.edited=new Set();st.sel=null;let preview=false;
+   if(Array.isArray(snap.sched)&&snap.sched.length&&Array.isArray(snap.units_key)){
+    try{
+     const units=ctx.units({startUnit:st.startUnit===''?null:Number(st.startUnit),skipText:st.skipText}),key=[units.length,units[0]??null,units.at(-1)??null,units.reduce((a,b)=>a+b,0)];
+     const rows=snap.sched.filter(x=>x&&typeof x.date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(x.date)&&Number.isInteger(x.count)&&x.count>0);
+     if(JSON.stringify(key)===JSON.stringify(snap.units_key)&&rows.length&&rows.every(x=>x.date>=ctx.today)){
+      st.sched=rows.sort((a,b)=>a.date.localeCompare(b.date));st.units=units;st.previewed=snap.previewed===true;st.edited=new Set((snap.edited||[]).filter(d=>typeof d==='string'));st.month=st.sched[0].date.slice(0,7);st.view='cal';preview=true;
+     }
+    }catch(e){}
+   }
+   buttonError.textContent='';paintMode();syncRates();renderPreview();paintButton();ctx.onChange?.();
+   return {preview};
+  },
   // Something outside this tab (for example the total number of units) changed: the preview no longer matches.
   invalidate(){if(!st.sched)return;st.previewed=false;paintButton();renderPreview();ctx.onChange?.();},
   disable(){setDisabled(off());paintButton();renderPreview();},
@@ -172,5 +240,5 @@ function mount(parent,ctx){
  paintMode();syncRates();paintButton();setDisabled(off());
  return api;
 }
-root.TaskitatorStudySchedule={mount};
+root.TaskitatorStudySchedule={mount,redistributeCounts};
 })(typeof window==='undefined'?globalThis:window);

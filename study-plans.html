@@ -59,6 +59,10 @@
 .plan-confirm::backdrop{background:rgba(0,0,0,.65)}.plan-confirm h3{margin:0 0 8px}.plan-confirm ul{margin:0;padding-inline-start:18px;line-height:1.6;font-size:.88rem}
 .plan-confirm-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
 .plan-ai-grid{margin-top:10px}
+.plans-header .plans-bypass{margin-inline-start:auto}.plans-bypass.is-active{border-color:#16a34a;color:#4ade80}
+.plans-pagetabs{margin:4px 0 12px}#plansDraftsView[hidden],#plansListView[hidden]{display:none}
+.plan-draft-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid var(--border-color,#344b7e);background:var(--card-bg,#081226);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.plan-draft-row .plan-draft-info{flex:1;min-width:0}.plan-draft-row strong{overflow-wrap:anywhere}.plan-draft-row .icon-btn{width:auto;padding:6px 12px}
 @media(max-width:480px){.plan-row{grid-template-columns:1fr}.plans-wrap{padding:10px}.plan-card{padding:12px}}
 </style><link rel="icon" type="image/svg+xml" href="image/nature_sprites/favicon.svg">
 <link rel="stylesheet" href="palettes.css">
@@ -90,20 +94,25 @@
     </nav>
 </aside>
 <main class="plans-wrap">
-<header class="plans-header"><button type="button" class="icon-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-menu"></use></svg></button><h1><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</h1></header>
+<header class="plans-header"><button type="button" class="icon-btn" id="openDrawerBtn" title="Menu" aria-label="Open Navigation Drawer"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-menu"></use></svg></button><h1><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</h1><button type="button" class="emergency-icon-btn plans-bypass" id="plansBypassBtn" title="Emergency Bypass" aria-label="Emergency Bypass"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-emergency"></use></svg><span class="wide-label" id="plansBypassLabel">Emergency bypass</span></button></header>
 <p class="plans-note">See the plans created by study recurrence, change their names and priorities, add AI criteria, or delete them.</p>
 <p id="plansNotice" class="plans-notice" hidden></p>
+<div class="tk-tabs plans-pagetabs" role="tablist"><button type="button" class="tk-tab" role="tab" id="plansTabPlans" aria-selected="true">Plans</button><button type="button" class="tk-tab" role="tab" id="plansTabDrafts" aria-selected="false">Drafts <span id="plansDraftCount"></span></button></div>
+<section id="plansDraftsView" hidden><p class="plans-note">Unfinished study plans: new plans from the study recurrence dialog and unsaved edits of existing plans. Nothing here is created or applied until you restore it and save. Up to 10 drafts.</p><div id="plansDraftList"></div></section>
+<section id="plansListView">
 <div id="plansCurrent"></div>
 <h2 id="plansPreviousTitle" class="plans-section" hidden>Previous plans</h2>
 <div id="plansPrevious"></div>
 <p id="plansEmpty" class="plans-note plans-empty" hidden>No study plans yet. Create one from a study recurrence on the Tasks page.</p>
+</section>
 <p id="plansStatus" role="status" aria-live="polite"></p>
 </main>
-<div class="plan-savebar" id="planSaveBar" hidden><span class="plan-savebar-msg" id="planSaveMsg" role="status"></span><button type="button" class="icon-btn" id="planDiscard">Discard</button><button type="button" class="icon-btn plan-save" id="planSave">Save changes</button></div>
+<div class="plan-savebar" id="planSaveBar" hidden><span class="plan-savebar-msg" id="planSaveMsg" role="status"></span><button type="button" class="icon-btn" id="planDiscard">Discard</button><button type="button" class="icon-btn" id="planSaveDraft">Save draft</button><button type="button" class="icon-btn plan-save" id="planSave">Save changes</button></div>
 <dialog id="planConfirm" class="plan-confirm"><h3 id="planConfirmTitle"></h3><div id="planConfirmBody"></div><div class="plan-confirm-actions"><button type="button" class="icon-btn" id="planConfirmNo">Cancel</button><button type="button" class="icon-btn plan-save" id="planConfirmYes">Confirm</button></div></dialog>
 <script type="text/taskitator-script" src="pro.js"></script>
 <script type="text/taskitator-script" src="pro/study-plan.js"></script>
 <script type="text/taskitator-script" src="pro/study-schedule.js"></script>
 <script type="text/taskitator-script" src="pro/study-manage.js"></script>
+<script type="text/taskitator-script" src="task-drafts.js"></script>
 <script type="text/taskitator-script" src="study-plans.js"></script>
 <script defer src="core.js"></script></body></html>

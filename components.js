@@ -1875,9 +1875,11 @@ window.TaskitatorComponents = Object.freeze({
                 subtasks
             };
         }
-        function saveCreateDraft() {
+        const confirmDraft = (title, message, confirmLabel) => window.TaskitatorConfirm({ title, message, confirmLabel });
+        async function saveCreateDraft() {
             const api = draftsApi();
             if (!api) { window.TaskitatorNotify('Drafts are unavailable. Reload Taskitator.'); return; }
+            if (!(await confirmDraft('Save draft?', 'Keep this form in Drafts. Nothing is created or locked.' + (activeCreateDraftId ? ' This replaces the draft you opened.' : ''), 'Save draft'))) return;
             try { activeCreateDraftId = api.saveCreate(collectCreateDraft(), activeCreateDraftId); }
             catch (err) { window.TaskitatorNotify(err.message); return; }
             document.getElementById('addTaskModal')?.classList.remove('open');
@@ -1938,8 +1940,9 @@ window.TaskitatorComponents = Object.freeze({
                 criteria: fieldValue('editTaskCriteria').trim(), dynamic_priority_target: dpValue('edit')
             };
         }
-        function saveEditDraft() {
+        async function saveEditDraft() {
             if (!activeDetailTaskId) return;
+            if (!(await confirmDraft('Save draft?', 'Keep these edits in Drafts. The task itself is unchanged until you press Save Changes. This replaces any earlier draft of this task.', 'Save draft'))) return;
             try { draftsApi().saveEdit(activeDetailTaskId, collectEditDraft()); }
             catch (err) { window.TaskitatorNotify(err.message); return; }
             window.TaskitatorNotify('Draft saved. The task itself is unchanged until you press Save Changes.');
@@ -1947,9 +1950,10 @@ window.TaskitatorComponents = Object.freeze({
             refreshDraftBadges();
         }
         // Only controls the user is currently allowed to change are filled, so a draft can never bypass a lock or shield.
-        function applyEditDraft(taskId) {
+        async function applyEditDraft(taskId) {
             const d = draftsApi()?.getEdit(taskId);
             if (!d) return;
+            if (!(await confirmDraft('Restore draft?', 'The form is filled with the draft\'s edits. Anything you typed here and did not save is replaced.', 'Restore'))) return;
             const writable = id => { const e = document.getElementById(id); return e && !e.disabled && e.contentEditable !== 'false'; };
             if (writable('editTaskTitle')) setField('editTaskTitle', d.title);
             if (writable('editTaskDesc')) setField('editTaskDesc', d.description);
@@ -2022,7 +2026,7 @@ window.TaskitatorComponents = Object.freeze({
                 r.append(info, open, del); box.appendChild(r);
             };
             const creates = api.listCreate(), edits = api.listEdits();
-            for (const d of creates) row(d.title, 'New task · saved ' + (window.TaskitatorI18n?.dateTime(d.saved_at) ?? new Date(d.saved_at).toLocaleString()), () => openCreateFromDraft(d.id), () => api.removeCreate(d.id));
+            for (const d of creates) row(d.title, 'New task · saved ' + (window.TaskitatorI18n?.dateTime(d.saved_at) ?? new Date(d.saved_at).toLocaleString()), async () => { if (await confirmDraft('Restore draft?', 'The new-task form opens with this draft filled in. Nothing is created until you save it.', 'Restore')) openCreateFromDraft(d.id); }, () => api.removeCreate(d.id));
             for (const d of edits) {
                 const task = host.tasks.getAll().find(t => t.id === d.task_id);
                 row(task ? task.title : d.title, 'Edit of an existing task · saved ' + (window.TaskitatorI18n?.dateTime(d.saved_at) ?? new Date(d.saved_at).toLocaleString()), () => openTaskDetailModal(d.task_id), () => api.removeEdit(d.task_id));
@@ -3224,7 +3228,7 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
-            // Validate Criteria (Pre-flight) Engine with >= 9/10 Saved Criteria Gate
+            // Validate Criteria (Pre-flight) Engine with >= 8/10 Saved Criteria Gate
             async function runCriteriaValidation(criteriaText, taskTitle, exemplarFile, feedbackEl, btnEl, isEditMode) {
                 if (!criteriaText) {
                     if (feedbackEl) {
@@ -3289,11 +3293,11 @@ window.TaskitatorComponents = Object.freeze({
                         feedbackEl.className = 'criteria-feedback-box pass';
                         let html = `<strong>✓ Verified (${TaskitatorSafety.escapeHtml(res.score)}/10)</strong>: ${TaskitatorSafety.escapeHtml(res.critique)}`;
 
-                        // Strict Score >= 9 gate for saving criteria
-                        if (res.score >= 9) {
+                        // Strict Score >= 8 gate for saving criteria
+                        if (res.score >= 8) {
                             html += `
                                 <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: space-between;">
-                                    <span style="font-size: 0.75rem; color: #86efac; font-weight: 600;">Eligible to save (&ge; 9/10)</span>
+                                    <span style="font-size: 0.75rem; color: #86efac; font-weight: 600;">Eligible to save (&ge; 8/10)</span>
                                     <button type="button" class="icon-btn save-as-criteria-btn btn-primary" style="background: var(--primary); color: #fff; font-size: 0.75rem; padding: 4px 10px; font-weight: 700; border: none;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-save"></use></svg> Save Criteria</button>
                                 </div>
                                 <div class="save-criteria-inline-prompt" style="display: none; margin-top: 8px;">
@@ -3308,7 +3312,7 @@ window.TaskitatorComponents = Object.freeze({
                         } else {
                             html += `
                                 <div style="margin-top: 6px; font-size: 0.72rem; color: var(--text-muted);">
-                                    ℹ️ Score must be 9/10 or higher to save to your personal Saved Criteria.
+                                    ℹ️ Score must be 8/10 or higher to save to your personal Saved Criteria.
                                 </div>
                             `;
                         }
@@ -3613,7 +3617,7 @@ window.TaskitatorComponents = Object.freeze({
                     container.innerHTML = `
                         <div style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 24px 0;">
                             No saved criteria yet.<br>
-                            Validate criteria with a score of <strong>9/10 or higher</strong> to save your own reusable versions.
+                            Validate criteria with a score of <strong>8/10 or higher</strong> to save your own reusable versions.
                         </div>
                     `;
                     return;

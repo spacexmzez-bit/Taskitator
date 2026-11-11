@@ -3,6 +3,8 @@
 // no AI is used). Each draft is its own settings key so drafts from different devices never conflict.
 //   task_draft:<id>       a new task that has not been published yet
 //   edit_draft:<taskId>   unsaved edits for an existing task (the live task is unchanged until Save Changes)
+//   study_draft:<id>      an unfinished study plan: a new plan (create) or unsaved edits of one plan (edit). Shown only
+//                         in the Drafts tab of the Study plans page, never in the normal drafts list.
 (function (root) {
     'use strict';
     const SETTINGS_KEY = 'taskitator_settings';
@@ -10,6 +12,8 @@
     const EDIT_PREFIX = 'edit_draft:';
     const MAX_CREATE_DRAFTS = 50;
     const MAX_SUBTASKS = 100;
+    const STUDY_PREFIX = 'study_draft:';
+    const MAX_STUDY_DRAFTS = 10;
     const text = (v, n) => typeof v === 'string' ? v.slice(0, n) : '';
     const list = (v, n, m) => Array.isArray(v) ? v.filter(x => typeof x === 'string').slice(0, m).map(x => x.slice(0, n)) : [];
     const flag = v => v === true;
@@ -118,5 +122,61 @@
     }
     const count = () => listCreate().length + listEdits().length;
 
-    root.TaskitatorDrafts = { listCreate, getCreate, saveCreate, removeCreate, getEdit, saveEdit, removeEdit, listEdits, pruneEdits, count, cleanCreate, cleanEdit, MAX_CREATE_DRAFTS };
+    // ---- study plan drafts ----
+    const date = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
+    const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi ? v : null;
+    function cleanSchedule(input) {
+        const d = input && typeof input === 'object' ? input : {};
+        const rates = {};
+        for (const [k, v] of Object.entries(d.rates && typeof d.rates === 'object' ? d.rates : {})) if (/^[0-6]$/.test(k) && int(Number(v), 1, 1000) !== null) rates[k] = Number(v);
+        const sched = Array.isArray(d.sched) ? d.sched.slice(0, 366).filter(x => x && date(x.date) && int(x.count, 1, 1000) !== null).map(x => ({ date: x.date, count: x.count })) : null;
+        const key = Array.isArray(d.units_key) && d.units_key.length === 4 && d.units_key.every(v => v === null || Number.isSafeInteger(v)) ? d.units_key.slice() : null;
+        return {
+            start: date(d.start), mode: d.mode === 'per' ? 'per' : 'cal', days: text(String(d.days ?? ''), 6), per: text(String(d.per ?? ''), 6), rates,
+            weekdays: Array.isArray(d.weekdays) ? [...new Set(d.weekdays.filter(n => int(n, 0, 6) !== null))].sort() : [],
+            startUnit: text(String(d.startUnit ?? ''), 6), skipText: text(d.skipText, 500), previewed: flag(d.previewed),
+            sched: sched && sched.length && key ? sched : null, units_key: sched && sched.length && key ? key : null,
+            edited: Array.isArray(d.edited) ? d.edited.filter(date).slice(0, 366) : []
+        };
+    }
+    function cleanStudy(input) {
+        const d = input && typeof input === 'object' ? input : {};
+        const kind = d.kind === 'edit' ? 'edit' : 'create';
+        const info = d.info && typeof d.info === 'object' ? d.info : {}, ai = d.ai && typeof d.ai === 'object' ? d.ai : {};
+        return {
+            kind, plan_id: kind === 'edit' ? text(d.plan_id, 160) : '', title: text(d.title, 160),
+            info: { title: text(info.title, 160), unit: text(info.unit, 40), total: text(String(info.total ?? ''), 6), parent: text(info.parent, 100), unitP: text(info.unitP, 100), description: text(info.description, 5000) },
+            ai: { enabled: flag(ai.enabled), criteria: text(ai.criteria, 4000), exclude: text(ai.exclude, 500) },
+            schedule: cleanSchedule(d.schedule)
+        };
+    }
+    function listStudy() {
+        const s = readSettings();
+        return Object.keys(s).filter(k => k.startsWith(STUDY_PREFIX) && s[k] && typeof s[k] === 'object')
+            .map(k => ({ id: k.slice(STUDY_PREFIX.length), saved_at: Number(s[k].saved_at) || 0, ...cleanStudy(s[k].fields) }))
+            .sort((a, b) => b.saved_at - a.saved_at);
+    }
+    function getStudy(id) { return listStudy().find(d => d.id === id) || null; }
+    // Edits of one plan share one draft (saving again replaces it); every new plan gets its own.
+    function saveStudy(fields, id) {
+        const clean = cleanStudy(fields);
+        if (clean.kind === 'edit' && !clean.plan_id) throw new Error('Missing study plan.');
+        const s = readSettings();
+        const draftId = clean.kind === 'edit' ? 'edit_' + clean.plan_id : (id || 's_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6));
+        if (!(STUDY_PREFIX + draftId in s) && Object.keys(s).filter(k => k.startsWith(STUDY_PREFIX)).length >= MAX_STUDY_DRAFTS)
+            throw new Error('You have ' + MAX_STUDY_DRAFTS + ' study plan drafts. Delete one before saving another.');
+        s[STUDY_PREFIX + draftId] = { saved_at: Date.now(), fields: clean };
+        writeSettings(s);
+        return draftId;
+    }
+    function removeStudy(id) {
+        const s = readSettings();
+        if (!(STUDY_PREFIX + id in s)) return false;
+        delete s[STUDY_PREFIX + id];
+        writeSettings(s);
+        return true;
+    }
+
+    root.TaskitatorDrafts = { listCreate, getCreate, saveCreate, removeCreate, getEdit, saveEdit, removeEdit, listEdits, pruneEdits, count, cleanCreate, cleanEdit, MAX_CREATE_DRAFTS,
+        listStudy, getStudy, saveStudy, removeStudy, cleanStudy, MAX_STUDY_DRAFTS };
 })(typeof window !== 'undefined' ? window : globalThis);

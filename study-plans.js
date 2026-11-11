@@ -1,4 +1,4 @@
-/* Study plans page (Phase 2.4a, redesigned in 2.6). Lists the plans made by study recurrence and edits them through TaskitatorStudyManage.
+/* Study plans page (Phase 2.4a, redesigned in 2.6; drafts tab and Emergency Bypass button in 2.8). Lists the plans made by study recurrence and edits them through TaskitatorStudyManage.
    One open plan, three tabs (Task info, AI criteria, Scheduling) and one save bar. Saving is sequential, not atomic:
    task info and criteria are pushed first, then the schedule is re-planned by the Worker.
    Rules enforced by the Worker, mirrored here: editing needs Pro; deleting needs a server grant; plans with AI criteria cost
@@ -11,8 +11,9 @@ const $ = id => document.getElementById(id);
 const tr = (key, vars) => (window.TaskitatorI18n?.t ? window.TaskitatorI18n.t(key, vars) : key.replace(/\{(\w+)\}/g, (_, k) => vars?.[k] ?? ''));
 const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; } catch (e) { return fallback; } };
 function el(tag, text, parent, cls) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; if (parent) parent.append(e); return e; }
-let tasks = [], state = { series: [], history: [] }, settings = {}, pro = null, bypass = { active: false, uses: null }, busy = false, checking = false;
-let current = null;
+let tasks = [], state = { series: [], history: [] }, settings = {}, pro = null, bypass = { active: false, until: 0, uses: null }, busy = false, checking = false;
+let current = null, pageTab = 'plans';
+const Drafts = () => window.TaskitatorDrafts;
 const drafts = new Map(), validated = new Map();
 const status = text => { $('plansStatus').textContent = text || ''; };
 const syncing = () => window.SyncEngine && typeof SyncEngine.isConfigured === 'function' && SyncEngine.isConfigured();
@@ -20,7 +21,7 @@ const syncing = () => window.SyncEngine && typeof SyncEngine.isConfigured === 'f
 function load() { tasks = read(TASKS, []); state = read(STATE, { series: [], history: [] }); settings = read(SETTINGS, {}); }
 async function access() {
     try { pro = (await TaskitatorAuth.api('/pro/status')).isPro === true; } catch (e) { pro = null; }
-    try { const e = await TaskitatorAuth.api('/emergency'); bypass = { active: !!e.active_until && Date.parse(e.active_until) > Date.now(), uses: Number.isFinite(e.uses_left) ? e.uses_left : null }; } catch (e) { /* keep last known */ }
+    try { const e = await TaskitatorAuth.api('/emergency'); bypass = { active: !!e.active_until && Date.parse(e.active_until) > Date.now(), until: e.active_until ? Date.parse(e.active_until) : 0, uses: Number.isFinite(e.uses_left) ? e.uses_left : null }; } catch (e) { /* keep last known */ }
 }
 const canEdit = () => pro === true;
 const planOf = id => M.plans(tasks).find(p => p.id === id);
@@ -128,7 +129,7 @@ function mountSchedule(plan, d) {
             const p = P(), dr = drafts.get(id), a = p && dr && analysis(p, dr), out = [];
             if (!a) return out;
             if (a.error) return [{ text: a.error, warn: true }];
-            if (a.impact.later.length) out.push({ warn: !bypass.active, text: bypass.active ? tr('{n} AI-audited unit(s) move later or are removed. Emergency Bypass is active, so this is allowed (no extra use).', { n: a.impact.later.length }) : tr('{n} AI-audited unit(s) move later or are removed. Activate Emergency Bypass from the bypass panel first (1 use, 15 minutes), then come back.', { n: a.impact.later.length }) });
+            if (a.impact.later.length) out.push({ warn: !bypass.active, text: bypass.active ? tr('{n} AI-audited unit(s) move later or are removed. Emergency Bypass is active, so this is allowed (no extra use).', { n: a.impact.later.length }) : tr('{n} AI-audited unit(s) move later or are removed. Activate it with the Emergency Bypass button at the top of this page (1 use, 15 minutes).', { n: a.impact.later.length }) });
             if (a.impact.today.length && todayPending()) out.push({ warn: !bypass.active, text: bypass.active ? tr('Work due today moves off today. Emergency Bypass is active, so this is allowed.') : tr('Work due today moves off today. That is locked until all of today\'s tasks are finished or Emergency Bypass is on.') });
             return out;
         },
@@ -169,6 +170,7 @@ function chrome() {
     for (const [k, dot] of Object.entries(ui.dots)) dot.hidden = !info.dirty[k];
     bar.hidden = false; $('planSaveMsg').textContent = info.msg;
     $('planDiscard').disabled = busy || !info.dirty.info && !info.dirty.ai && !info.dirty.sched;
+    $('planSaveDraft').disabled = busy || !Drafts() || !info.dirty.info && !info.dirty.ai && !info.dirty.sched;
     const save = $('planSave'); save.textContent = info.apply ? tr('Apply re-plan') : tr('Save changes');
     save.classList.toggle('is-apply', info.apply && info.ok); save.disabled = busy || checking || !info.ok;
 }
@@ -218,7 +220,7 @@ function infoTab(plan, d, panel, list, edit) {
     const make = (label, key) => { const s = field(label, grid, undefined, 'select'); if (d.info[key] === MIXED) el('option', tr('Mixed'), s).value = MIXED; for (const [v, t] of choices) el('option', t, s).value = v; s.value = d.info[key]; s.addEventListener('change', () => { d.info[key] = s.value; chrome(); }); return s; };
     make(tr('Parent task priority'), 'parent'); make(tr('Unit priority'), 'unitP');
     el('p', tr('Units cannot be more important than their parent. Finished tasks keep their priority.'), fs, 'plan-hint');
-    if (plan.audited && plan.unit) el('p', bypass.active ? tr('Emergency Bypass is active, so audited units can be renamed.') : tr('This plan has AI-audited units. Renaming them needs Emergency Bypass: activate it from the bypass panel, then come back.'), fs, 'plan-hint warn');
+    if (plan.audited && plan.unit) el('p', bypass.active ? tr('Emergency Bypass is active, so audited units can be renamed.') : tr('This plan has AI-audited units. Renaming them needs Emergency Bypass: use the Emergency Bypass button at the top of this page.'), fs, 'plan-hint warn');
     // Deleting stays outside the save bar and outside Pro.
     const del = el('div', undefined, panel, 'plan-delbox');
     const b = el('button', tr('Delete plan'), del, 'icon-btn plan-delete'); b.type = 'button'; b.disabled = busy; b.addEventListener('click', () => removePlan(plan));
@@ -306,7 +308,7 @@ async function save() {
         }, () => tr('Saved.'));
         if (!ok) return;
         const fresh = planOf(plan.id); if (fresh) { d.info = infoOf(fresh); d.ai = { criteria: '', exclude: '' }; }
-        if (!info.dirty.sched) { drafts.delete(plan.id); render(); return; }
+        if (!info.dirty.sched) { drafts.delete(plan.id); Drafts()?.removeStudy('edit_' + plan.id); render(); return; }
     }
     if (info.dirty.sched) { const fresh = planOf(plan.id); if (fresh) await applyReplan(fresh, d); }
 }
@@ -324,7 +326,7 @@ async function applyReplan(plan, d) {
     } catch (e) { d.rev = null; status(e.message); busy = false; await access(); render(); return; }
     busy = false;
     const ok = await commit(() => { const ids = M.planTree(tasks, plan.id); return { tasks: [...tasks.filter(t => !ids.has(t.id)), ...answer.tasks], answer }; }, () => tr('Re-planned: {n} units over {d} study days.', { n: answer.scheduled, d: answer.days }));
-    if (ok) { drafts.delete(plan.id); render(); }
+    if (ok) { drafts.delete(plan.id); Drafts()?.removeStudy('edit_' + plan.id); render(); }
 }
 
 async function removePlan(plan) {
@@ -359,7 +361,84 @@ function render() {
     const note = $('plansNotice');
     note.hidden = canEdit() || !plans.length;
     note.textContent = pro === null ? tr('Could not confirm your Pro license, so editing is off. You can still view and delete plans.') : tr('Editing study plans needs an active Pro license. You can still view, finish and delete plans. Resubscribing restores editing.');
-    if (!current) $('planSaveBar').hidden = true;
+    if (!current || pageTab !== 'plans') $('planSaveBar').hidden = true;
+    $('plansListView').hidden = pageTab !== 'plans'; $('plansDraftsView').hidden = pageTab !== 'drafts';
+    $('plansTabPlans').setAttribute('aria-selected', String(pageTab === 'plans')); $('plansTabDrafts').setAttribute('aria-selected', String(pageTab === 'drafts'));
+    const list = Drafts()?.listStudy() || []; $('plansDraftCount').textContent = list.length ? '(' + list.length + ')' : '';
+    if (pageTab === 'drafts') renderDrafts(list);
+    paintBypass();
+}
+
+// ---- Emergency Bypass: the same backend and rules as the Tasks page ----
+let bypassTimer = null;
+function paintBypass() {
+    const btn = $('plansBypassBtn'), label = $('plansBypassLabel'); if (!btn) return;
+    const until = bypass.until || 0, left = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+    btn.classList.toggle('is-active', left > 0);
+    if (left > 0) {
+        label.textContent = tr('Bypass active') + ' · ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+        if (!bypassTimer) bypassTimer = setInterval(() => { if (Date.now() >= (bypass.until || 0)) { clearInterval(bypassTimer); bypassTimer = null; bypass.active = false; render(); } else paintBypass(); }, 1000);
+    } else label.textContent = tr('Emergency bypass');
+}
+async function openBypass() {
+    if (busy) return;
+    try { await window.TaskitatorPro.emergencyStatus(); await access(); } catch (e) { status(e.message); return; }
+    if (bypass.active) { status(tr('Emergency bypass is already active.')); return; }
+    if (bypass.uses !== null && bypass.uses <= 0) { status(tr('All 4 emergency bypass uses for this week have been exhausted.')); return; }
+    const lines = [tr('This uses 1 of your 4 weekly bypasses.'), tr('For 15 minutes, you can edit or delete protected tasks and change their criteria.'),
+        tr('Your four weekly uses reset at 00:00 on the day after your configured weekend.')];
+    if (bypass.uses !== null) lines.push(tr('Uses remaining this week: {n}/4', { n: bypass.uses }));
+    if (!await ask(tr('Activate Emergency Bypass?'), lines, tr('Activate 15m'))) return;
+    busy = true; render();
+    try {
+        const res = await window.TaskitatorEngine.EmergencyManager.activateBypass();
+        if (!res?.success) throw Error(res?.error || tr('Could not activate Emergency Bypass. Try again.'));
+        status(tr('Emergency Bypass is active for 15 minutes.'));
+    } catch (e) { status(e.message); }
+    finally { await access(); busy = false; render(); }
+}
+
+// ---- study plan drafts (their own tab; never shown in the normal drafts list) ----
+const draftTime = t => window.TaskitatorI18n?.dateTime ? window.TaskitatorI18n.dateTime(t) : new Date(t).toLocaleString();
+function renderDrafts(list) {
+    const box = $('plansDraftList'); box.replaceChildren();
+    if (!Drafts()) { el('p', tr('Drafts are unavailable. Reload Taskitator.'), box, 'plans-note'); return; }
+    if (!list.length) { el('p', tr('No study plan drafts. Use Save draft while creating or editing a plan.'), box, 'plans-note'); return; }
+    for (const d of list) {
+        const row = el('div', undefined, box, 'plan-draft-row'), info = el('div', undefined, row, 'plan-draft-info');
+        const plan = d.kind === 'edit' ? planOf(d.plan_id) : null;
+        el('strong', (d.kind === 'edit' ? plan?.base || d.title : d.info.title) || tr('(untitled)'), info);
+        el('div', (d.kind === 'edit' ? (plan ? tr('Edit of an existing plan') : tr('Edit of a plan that no longer exists')) : tr('New plan')) + ' · ' + tr('saved {time}', { time: draftTime(d.saved_at) }), info, 'plan-meta');
+        const restore = el('button', tr('Restore'), row, 'icon-btn'); restore.type = 'button'; restore.disabled = busy || (d.kind === 'edit' && !plan);
+        restore.addEventListener('click', () => restoreDraft(d.id));
+        const del = el('button', tr('Delete'), row, 'icon-btn plan-delete'); del.type = 'button'; del.disabled = busy;
+        del.addEventListener('click', async () => { if (await ask(tr('Delete this draft?'), [tr('This cannot be undone.')], tr('Delete'))) { Drafts().removeStudy(d.id); render(); } });
+    }
+}
+async function saveDraft() {
+    const plan = current && planOf(current); if (!plan || busy || !Drafts()) return;
+    const d = draftFor(plan);
+    if (!await ask(tr('Save draft?'), [tr('Your unsaved changes to this plan are kept in Drafts. The plan itself is unchanged until you save it.'), tr('This replaces any earlier draft of this plan.')], tr('Save draft'))) return;
+    try {
+        Drafts().saveStudy({ kind: 'edit', plan_id: plan.id, title: plan.base, info: d.info, ai: d.ai, schedule: d.sched.snapshot() });
+        status(tr('Draft saved. Find it in the Drafts tab.'));
+    } catch (e) { status(e.message); }
+    render();
+}
+async function restoreDraft(id) {
+    const d = Drafts()?.getStudy(id); if (!d) { status(tr('This draft no longer exists.')); render(); return; }
+    if (!await ask(tr('Restore draft?'), d.kind === 'edit'
+        ? [tr('The plan editor opens with the draft\'s changes. Anything you typed in that plan and did not save is replaced.'), tr('Nothing is applied until you save.')]
+        : [tr('The study recurrence dialog opens on the Tasks page with the draft filled in.'), tr('Nothing is created until you confirm there.')], tr('Restore'))) return;
+    if (d.kind === 'create') { location.href = 'index.html?study_draft=' + encodeURIComponent(id); return; }
+    const plan = planOf(d.plan_id); if (!plan) { status(tr('This plan no longer exists. Delete the draft.')); render(); return; }
+    drafts.delete(plan.id); current = plan.id; pageTab = 'plans'; render();
+    const draft = draftFor(plan);
+    draft.info = { ...infoOf(plan), ...Object.fromEntries(Object.entries(d.info).filter(([k]) => ['title', 'unit', 'parent', 'unitP'].includes(k))) };
+    draft.ai = { criteria: d.ai.criteria, exclude: d.ai.exclude };
+    const r = draft.sched.restore(d.schedule);
+    render();
+    status(d.schedule.sched && !r.preview ? tr('Draft restored. The plan changed since the draft was saved, so preview the schedule again.') : tr('Draft restored. Review it, then save.'));
 }
 let started = false;
 async function start() {
@@ -371,6 +450,11 @@ async function start() {
     }
     $('planSave').addEventListener('click', () => save());
     $('planDiscard').addEventListener('click', () => { if (current) { drafts.delete(current); render(); status(''); } });
+    $('planSaveDraft').addEventListener('click', () => saveDraft());
+    $('plansBypassBtn').addEventListener('click', () => openBypass());
+    $('plansTabPlans').addEventListener('click', () => { pageTab = 'plans'; render(); });
+    $('plansTabDrafts').addEventListener('click', () => { pageTab = 'drafts'; render(); });
+    window.addEventListener('taskitator-drafts-changed', () => { if (!busy) render(); });
     load(); render(); await access(); render();
 }
 const refresh = () => { if (!busy && !anyDirty()) { load(); access().then(render); } };

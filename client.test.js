@@ -360,7 +360,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v16'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v17'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -974,4 +974,52 @@ test('Sleep Lock page: gear panel holds Firm mode and the Today override; Settin
  assert.match(sleep,/<use href="#ic-nav-settings"><\/use><\/svg><\/button><\/header>/);
  assert.match(sleep,/firm:firm\.checked,today:todayOn\.checked/);
  assert.match(settings,/id="sleepLockInfo"[\s\S]*href="sleep\.html"[\s\S]*gear icon/);
+});
+
+// ---- Phase 2.8: study plan editing ----
+test('Auto redistribute: surplus removes and missing adds one per untouched date, first to last, in rounds',()=>{
+ const f=studyUI(),R=f.window.TaskitatorStudySchedule.redistributeCounts;
+ const s=[{date:'2026-10-27',count:3},{date:'2026-10-28',count:3},{date:'2026-10-29',count:3},{date:'2026-10-30',count:3}];
+ assert.deepEqual(R(s,10,new Set(['2026-10-28']),'2026-10-27').sched.map(x=>x.count),[2,3,2,3],'surplus 2: the first two untouched dates lose one');
+ assert.deepEqual(R(s,16,new Set(),'2026-10-27').sched.map(x=>x.count),[4,4,4,4],'missing 4: one each');
+ assert.deepEqual(R(s,19,new Set(['2026-10-30']),'2026-10-27').sched.map(x=>x.count),[6,5,5,3],'missing 7 rounds again over the untouched dates');
+ assert.deepEqual(R(s,4,new Set(),'2026-10-27').sched.map(x=>x.count),[1,1,1,1],'surplus 8 goes round twice');
+ assert.equal(JSON.stringify(R(s,12,new Set(),'2026-10-28').sched),JSON.stringify(s),'balanced: nothing changes');
+ assert.deepEqual(R(s,13,new Set(),'2026-10-29').sched.map(x=>x.count),[3,3,4,3],'never touches dates before today');
+ assert.match(R(s,10,new Set(s.map(x=>x.date)),'2026-10-27').error,/at least one date you have not edited/);
+ assert.match(R([{date:'2026-10-27',count:1},{date:'2026-10-28',count:5}],1,new Set(['2026-10-28']),'2026-10-27').error,/Not enough units/);
+});
+test('Auto redistribute button settles the balance in the preview without marking dates as edited',async()=>{
+ const f=studyUI();await f.window.TaskitatorStudy.open({title:'Math',unit:'Lesson',plural:'Lessons',total:10,days:5});
+ f.button('Preview new schedule').handlers.click.forEach(fn=>fn());
+ const cell=()=>f.body.querySelectorAll('button').find(b=>/ss-cell/.test(b.className)&&b.querySelectorAll('small').length);
+ cell().handlers.click.forEach(fn=>fn());f.button('+').handlers.click.forEach(fn=>fn());f.button('+').handlers.click.forEach(fn=>fn());
+ assert.equal(f.button('Create plan').disabled,true);assert.match(f.body.textContent,/Surplus: 2/);
+ f.button('Auto redistribute').handlers.click.forEach(fn=>fn());
+ assert.equal(f.button('Create plan').disabled,false,'balanced after redistributing');assert.equal(f.button('Auto redistribute'),undefined,'button only shows while unbalanced');
+});
+test('Study plan drafts: a restored create draft refills the form and the preview',async()=>{
+ const f=studyUI();f.window.localStorage=f.storage;vm.runInContext(fs.readFileSync(new URL('task-drafts.js',root),'utf8'),vm.createContext(f.window));
+ const D=f.window.TaskitatorDrafts;
+ const a=studyUI();a.window.TaskitatorDrafts=D;await a.window.TaskitatorStudy.open({title:'Math',unit:'Lesson',plural:'Lessons',total:10,days:5});
+ a.button('Preview new schedule').handlers.click.forEach(fn=>fn());
+ await a.button('Save draft').onclick();const list=D.listStudy();assert.equal(list.length,1);assert.equal(list[0].kind,'create');assert.equal(list[0].info.title,'Math');assert.ok(list[0].schedule.sched.length);
+ assert.equal(D.listCreate().length,0,'study drafts never show in the normal drafts list');
+ const b=studyUI();b.window.TaskitatorDrafts=D;await b.window.TaskitatorStudy.open({draft:{...list[0]}});
+ assert.equal(b.button('Create plan').disabled,false,'the balanced preview comes back');assert.match(b.body.textContent,/Draft restored/);
+ const changed=structuredClone(list[0]);changed.info.total='12';const c=studyUI();await c.window.TaskitatorStudy.open({draft:changed});
+ assert.equal(c.button('Create plan').disabled,true);assert.match(c.body.textContent,/Preview the schedule again/,'units changed: the preview is dropped');
+});
+test('Study plans page: drafts tab, save-draft button and Emergency Bypass button',()=>{
+ const html=fs.readFileSync(new URL('study-plans.html',root),'utf8'),js=fs.readFileSync(new URL('study-plans.js',root),'utf8');
+ for(const id of ['plansTabPlans','plansTabDrafts','plansDraftsView','plansDraftList','planSaveDraft','plansBypassBtn'])assert.ok(html.includes(`id="${id}"`),id);
+ assert.ok(html.indexOf('task-drafts.js')<html.indexOf('src="study-plans.js"'));
+ assert.match(js,/EmergencyManager\.activateBypass\(\)/);assert.match(js,/removeStudy\('edit_' \+ plan\.id\)/);
+ assert.match(js,/ask\(tr\('Save draft\?'\)/);assert.match(js,/ask\(tr\('Restore draft\?'\)/);
+});
+test('Task drafts ask for confirmation before saving or restoring',()=>{
+ const c=fs.readFileSync(new URL('components.js',root),'utf8');
+ assert.match(c,/async function saveCreateDraft\(\)[\s\S]{0,400}confirmDraft\('Save draft\?'/);
+ assert.match(c,/async function saveEditDraft\(\)[\s\S]{0,300}confirmDraft\('Save draft\?'/);
+ assert.match(c,/async function applyEditDraft\(taskId\)[\s\S]{0,300}confirmDraft\('Restore draft\?'/);
 });
