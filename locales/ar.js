@@ -2907,6 +2907,8 @@
         "Move overdue to today?": "نقل المتأخر إلى اليوم؟",
         "Move": "نقل",
         "Reschedule": "إعادة الجدولة",
+        "Study recurrence": "تكرار الدراسة",
+        "New study plan": "خطة دراسة جديدة",
         "Return to previous page": "العودة إلى الصفحة السابقة"
     });
     if (typeof module === 'object' && module.exports) module.exports = build();

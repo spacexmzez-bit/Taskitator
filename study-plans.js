@@ -102,9 +102,9 @@ const todayPending = () => { try { return window.TaskitatorStatusCount?.pending 
 function mountSchedule(plan, d) {
     const id = plan.id, P = () => planOf(id);
     d.host = el('div', undefined, undefined, 'plan-sched');
-    const open = M.openUnits(plan);
+    const open = M.openUnits(plan), cur = M.currentSchedule(plan, localToday(), S.defaultDays(settings));
     d.sched = window.TaskitatorStudySchedule.mount(d.host, {
-        today: localToday(), start: localToday(), weekdays: S.defaultDays(settings), startUnit: '', startUnitHint: open[0],
+        today: localToday(), start: cur.start, weekdays: cur.weekdays, mode: cur.mode, per: cur.per, rates: cur.rates, startUnit: '', startUnitHint: open[0],
         days: Math.min(open.length, Math.max(1, plan.parents.filter(p => p.status === 'active').length)),
         note: tr('{done} of {total} units done. Only the {n} unfinished units move; finished units and past days stay as they are.', { done: plan.done, total: plan.total, n: open.length }),
         label: () => P()?.unit || tr('Unit'),
@@ -529,6 +529,7 @@ async function start() {
 }
 const refresh = () => { if (!busy && !anyDirty()) { load(); access().then(render); } };
 window.addEventListener('focus', refresh);
+$('plansAddBtn')?.addEventListener('click', () => { location.href = 'index.html?study_new=1'; });
 window.addEventListener('storage', () => { if (!busy && !anyDirty()) { load(); render(); } });
 document.addEventListener('DOMContentLoaded', start);
 if (document.readyState !== 'loading') start();

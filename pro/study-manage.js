@@ -363,5 +363,27 @@ const planUnits=(tasks,id)=>{
  return out;
 };
 
-root.TaskitatorStudyManage={auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
+// The plan's current schedule, read back from its upcoming days, so editing starts from what the plan does now and not from defaults.
+// Weekdays are the weekdays those days fall on (all seven = every day). Units per day and per-weekday amounts are read from the
+// days before the last one (the last day holds the remainder); when they follow no pattern the editor opens in "number of study days" mode.
+function currentSchedule(plan,today,fallbackWeekdays=[]){
+ const size=new Map();for(const u of plan.units)size.set(u.parent_id,(size.get(u.parent_id)||0)+1);
+ let days=plan.parents.filter(p=>size.get(p.id)&&p.due_date>=today&&p.status==='active');
+ if(!days.length)days=plan.parents.filter(p=>size.get(p.id)&&p.due_date>=today);
+ days.sort((a,b)=>a.due_date.localeCompare(b.due_date));
+ const out={start:plan.start&&plan.start>today?plan.start:today,weekdays:fallbackWeekdays,mode:'cal',per:2,rates:{}};
+ if(!days.length)return out;
+ const wd=d=>new Date(d+'T00:00:00Z').getUTCDay(),set=[...new Set(days.map(p=>wd(p.due_date)))].sort();
+ out.weekdays=set.length>=7?[]:set;
+ const body=days.length>1?days.slice(0,-1):days,by=new Map();
+ for(const p of body){const k=wd(p.due_date);if(!by.has(k))by.set(k,[]);by.get(k).push(size.get(p.id));}
+ if([...by.values()].some(list=>new Set(list).size>1))return out;
+ const freq=new Map();for(const list of by.values())freq.set(list[0],(freq.get(list[0])||0)+list.length);
+ const per=[...freq].sort((a,b)=>b[1]-a[1]||a[0]-b[0])[0][0];
+ out.mode='per';out.per=per;
+ for(const [k,list]of by)if(list[0]!==per)out.rates[k]=list[0];
+ return out;
+}
+
+root.TaskitatorStudyManage={currentSchedule,auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
 })(typeof window==='undefined'?globalThis:window);

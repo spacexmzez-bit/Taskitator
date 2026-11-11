@@ -13,7 +13,7 @@ const shortDate=iso=>root.TaskitatorI18n?.date?root.TaskitatorI18n.date(iso+'T12
 const monthName=d=>root.TaskitatorI18n?.date?root.TaskitatorI18n.date(d,{month:'long',year:'numeric',timeZone:'UTC'}):d.toLocaleDateString(undefined,{month:'long',year:'numeric',timeZone:'UTC'});
 
 /* ctx: {
-     today: 'YYYY-MM-DD', start: initial starting date, weekdays: [..], startUnit: initial 'Start from unit' value, startUnitHint: placeholder,
+     today: 'YYYY-MM-DD', start: initial starting date, weekdays: [..], mode: 'cal'|'per', per, days, rates: {weekday: amount} (the plan's current settings when editing), startUnit: initial 'Start from unit' value, startUnitHint: placeholder,
      units({startUnit, skipText}) -> number[]  (throws a readable Error)
      label() -> unit name for chips,
      fixed() -> Map date -> [{text, done}]   read-only items of this plan that are not part of the preview
@@ -36,7 +36,8 @@ function redistributeCounts(sched,total,edited,today){
  return {sched:rows.filter(x=>x.count>0)};
 }
 function mount(parent,ctx){
- const st={start:ctx.start,mode:'cal',days:Math.max(1,Number(ctx.days)||4),per:Number(ctx.per)||2,rates:{},weekdays:new Set(ctx.weekdays||[]),startUnit:ctx.startUnit??'',skipText:'',
+ const startRates=()=>{const r={};for(const [k,v]of Object.entries(ctx.rates||{}))if(/^[0-6]$/.test(k)&&Number.isSafeInteger(Number(v))&&Number(v)>0)r[k]=Number(v);return r;};
+ const st={start:ctx.start,mode:ctx.mode==='per'?'per':'cal',days:Math.max(1,Number(ctx.days)||4),per:Number(ctx.per)||2,rates:startRates(),weekdays:new Set(ctx.weekdays||[]),startUnit:ctx.startUnit??'',skipText:'',
   sched:null,units:null,previewed:false,edited:new Set(),view:'cal',month:null,sel:null,touched:false,error:'',redistError:''};
  const box=el('div',undefined,parent,'ss');
  if(ctx.note)el('p',ctx.note,box,'ss-hint');
@@ -232,11 +233,12 @@ function mount(parent,ctx){
   invalidate(){if(!st.sched)return;st.previewed=false;paintButton();renderPreview();ctx.onChange?.();},
   disable(){setDisabled(off());paintButton();renderPreview();},
   reset(){
-   st.sched=null;st.units=null;st.previewed=false;st.touched=false;st.edited=new Set();st.sel=null;st.start=ctx.start;st.mode='cal';st.rates={};st.skipText='';st.startUnit=ctx.startUnit??'';st.weekdays=new Set(ctx.weekdays||[]);
-   startInput.value=st.start;skipInput.value='';fromA.value=fromB.value=st.startUnit;rateInputs.forEach(e=>e.value='');wdBoxes.forEach((c,i)=>c.checked=st.weekdays.has(i));
+   st.sched=null;st.units=null;st.previewed=false;st.touched=false;st.edited=new Set();st.sel=null;st.start=ctx.start;st.mode=ctx.mode==='per'?'per':'cal';st.rates=startRates();st.days=Math.max(1,Number(ctx.days)||4);st.per=Number(ctx.per)||2;st.skipText='';st.startUnit=ctx.startUnit??'';st.weekdays=new Set(ctx.weekdays||[]);
+   startInput.value=st.start;skipInput.value='';fromA.value=fromB.value=st.startUnit;daysInput.value=st.days;perInput.value=st.per;rateInputs.forEach((e,i)=>e.value=st.rates[i]??'');rateBox.open=Object.keys(st.rates).length>0;wdBoxes.forEach((c,i)=>c.checked=st.weekdays.has(i));
    buttonError.textContent='';paintMode();syncRates();renderPreview();paintButton();
   }
  };
+ rateInputs.forEach((e,i)=>e.value=st.rates[i]??'');rateBox.open=Object.keys(st.rates).length>0;
  paintMode();syncRates();paintButton();setDisabled(off());
  return api;
 }

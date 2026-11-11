@@ -51,3 +51,17 @@ test('soft reschedule: move overdue to today stacks only the overdue units; soft
  assert.match(M.softCheck(plan(),short,'plan_soft_unit',TODAY,'spread'),/lost units/);
  const gone=r.tasks.filter(t=>!t.id.endsWith('_unit_3'));assert.match(M.softCheck(plan(),gone,'plan_soft_unit',TODAY,'today'),/unit list changed/);
 });
+
+test('editing starts from the plan\'s current settings: weekdays, units per day and per-weekday amounts',()=>{
+ // Sun-Thu study days, 3 a day except Tuesdays (2), last day holds the remainder.
+ const c={title:'Bio',unit:'L',plural:'Ls',total:14,days:5,first:1,start:'2026-11-08',weekdays:[0,1,2,3,4],counts:[3,3,2,3,3],dates:['2026-11-08','2026-11-09','2026-11-10','2026-11-11','2026-11-12']};
+ const t=C.build({...c,counts:[3,3,2,3,3]},'plan_cur_set',CREATED,false,'');
+ const cur=M.currentSchedule(M.plans(t)[0],'2026-11-08',[5,6]);
+ assert.deepEqual(cur.weekdays,[0,1,2,3,4]);assert.equal(cur.mode,'per');assert.equal(cur.per,3);assert.deepEqual(cur.rates,{2:2});assert.equal(cur.start,'2026-11-08');
+ // A plan with no pattern opens by number of days; every-day plans have no weekday filter; finished weeks fall back.
+ const odd=C.build({...c,total:7,days:4,counts:[1,2,3,1],weekdays:[],dates:['2026-11-08','2026-11-09','2026-11-15','2026-11-16']},'plan_cur_odd',CREATED,false,'');
+ assert.equal(M.currentSchedule(M.plans(odd)[0],'2026-11-08',[5,6]).mode,'cal');
+ const daily=C.build({...c,weekdays:[],counts:[2,2,2,2,2],total:10,dates:['2026-11-08','2026-11-09','2026-11-10','2026-11-11','2026-11-12']},'plan_cur_day',CREATED,false,'');
+ assert.equal(M.currentSchedule(M.plans(daily)[0],'2026-11-08',[5,6]).mode,'per');
+ assert.deepEqual(M.currentSchedule(M.plans(t)[0],'2027-01-01',[5,6]).weekdays,[5,6],'nothing upcoming: use the defaults');
+});

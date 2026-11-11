@@ -360,7 +360,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v19'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v20'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -1025,6 +1025,14 @@ test('Study plans page: soft reschedule dialog, Pro gate and free Move overdue t
  assert.doesNotMatch(js.slice(js.indexOf('async function moveToToday'),js.indexOf('async function removePlan')),/pro !== true/,'moving to today is free');
  const ar=fs.readFileSync(new URL('locales/ar.js',root),'utf8');
  for(const k of ['Soft reschedule','Move overdue to today','Spread over'])assert.ok(ar.includes(`"${k}"`),k);
+});
+test('Study plans: + button opens the create dialog; Pro pill on Study recurrence; editor starts from current settings',()=>{
+ const html=fs.readFileSync(new URL('study-plans.html',root),'utf8'),js=fs.readFileSync(new URL('study-plans.js',root),'utf8');
+ assert.ok(html.includes('id="plansAddBtn"'));assert.match(js,/study_new=1/);
+ assert.match(fs.readFileSync(new URL('pro/study-plan.js',root),'utf8'),/get\('study_new'\)==='1'/);
+ const c=fs.readFileSync(new URL('components.js',root),'utf8');
+ assert.equal((c.match(/proButton\('Study recurrence'/g)||[]).length,2);assert.match(c,/function proButton[\s\S]{0,200}pro-feature-pill/);
+ assert.match(js,/M\.currentSchedule\(plan, localToday\(\)/);assert.match(js,/mode: cur\.mode, per: cur\.per, rates: cur\.rates/);
 });
 test('Task drafts ask for confirmation before saving or restoring',()=>{
  const c=fs.readFileSync(new URL('components.js',root),'utf8');

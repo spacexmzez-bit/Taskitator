@@ -218,13 +218,14 @@
   });
   button('Cancel',actions,()=>d.close());d.addEventListener('close',()=>{d.remove();if(opened===d)opened=null;window.dispatchEvent(new Event('taskitator-study-closed'));});document.body.append(d);d.showModal();return {status:'confirmation_required',message:'Study preview opened. No tasks exist until the user confirms. Audit controls are manual only.'};
  }
- // Restoring a new-plan draft from the Study plans page lands here as index.html?study_draft=<id>.
+ // Restoring a new-plan draft from the Study plans page lands here as index.html?study_draft=<id>; the + button there uses ?study_new=1.
  (function openDraftFromUrl(){
-  let id;try{id=new URLSearchParams(location.search).get('study_draft');}catch{return;}
-  if(!id||/study-plans\.html$/.test(location.pathname))return;
+  let id,fresh=false;try{const q=new URLSearchParams(location.search);id=q.get('study_draft');fresh=q.get('study_new')==='1';}catch{return;}
+  if((!id&&!fresh)||/study-plans\.html$/.test(location.pathname))return;
   let tries=0;const tick=async()=>{
    if(!(window.TaskitatorApp&&window.TaskitatorPro&&window.Clerk?.session&&window.TaskitatorDrafts&&window.TaskitatorStudySchedule)){if(++tries<60)setTimeout(tick,500);return;}
    try{history.replaceState(null,'',location.pathname+location.hash);}catch{}
+   if(fresh){const r=await open({});if(r?.status==='pro_required')window.TaskitatorNotify?.(r.message);return;}
    const dr=window.TaskitatorDrafts.getStudy(id);
    if(!dr||dr.kind!=='create'){window.TaskitatorNotify?.('This study plan draft no longer exists.');return;}
    const r=await open({draft:{...dr,id}});if(r?.status==='pro_required')window.TaskitatorNotify?.(r.message);
