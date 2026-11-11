@@ -367,7 +367,7 @@
                 <span class="dump-active-dot" id="dumpActiveIndicator"></span>
             </button>
             
-            <button type="button" class="sync-dot-button" id="syncStatusButton" aria-label="Sync status: Local only. Open sync details" aria-haspopup="dialog" aria-controls="syncInfoModal"><span class="sync-dot local-only" id="syncStatusDot" aria-hidden="true"></span></button>
+            <button type="button" class="sync-dot-button" id="syncStatusButton" aria-label="Sync status: Local only. Open sync details" aria-haspopup="dialog" aria-controls="syncInfoModal"><span class="sync-dot local-only" id="syncStatusDot" aria-hidden="true"></span><span class="sync-countdown" id="syncCountdown" aria-hidden="true"></span></button>
             
             <button class="emergency-icon-btn" id="emergencyTriggerBtn" title="Emergency Bypass" aria-label="Emergency Bypass">
                 <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-emergency"></use></svg><span class="wide-label">Emergency bypass</span>
@@ -656,7 +656,7 @@
 </div>
 
 <!-- Filter Popover Drawer Modal -->
-<div class="modal-overlay" id="filterModal">
+<div class="modal-overlay" id="filterModal" data-sync-ignore>
     <div class="modal-box" style="max-width: 400px; border: 1.5px solid var(--primary);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
             <h3 style="margin: 0; color: var(--primary);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-search"></use></svg> Filter Workspace</h3>
@@ -748,7 +748,7 @@
 </div>
 
 <!-- Modal: How breaks work (opened by the ? buttons in the Daily Breaks dialog) -->
-<div class="modal-overlay" id="breakHelpModal">
+<div class="modal-overlay" id="breakHelpModal" data-sync-ignore>
     <div class="modal-box break-help-box" role="dialog" aria-modal="true" aria-labelledby="breakHelpTitle" tabindex="-1">
         <div class="break-modal-head">
             <h3 id="breakHelpTitle" class="break-modal-title"></h3>
@@ -823,7 +823,7 @@
 </div>
 
 <!-- Modal: Sync Status Guide -->
-<div class="modal-overlay" id="syncInfoModal">
+<div class="modal-overlay" id="syncInfoModal" data-sync-ignore>
     <div class="modal-box">
         <h3 style="margin-top: 0; color: var(--primary);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-earth"></use></svg> Sync Status Guide</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
@@ -847,7 +847,7 @@
             <span class="sync-dot pending" style="cursor: default;"></span>
             <div style="font-size: 0.85rem;">
                 <strong style="color: #facc15;">Yellow: Not Synced</strong>
-                <div style="color: var(--text-muted); font-size: 0.8rem;">Saved changes are waiting to sync. Use Sync Now to send them immediately.</div>
+                <div style="color: var(--text-muted); font-size: 0.8rem;">Saved changes are waiting to sync. They sync automatically 15 seconds after you close the last editing panel, and the countdown shows under the dot (e.g. 15s). Opening another panel pauses it. Your changes stay saved on this device until they sync. Use Sync Now to send them immediately.</div>
             </div>
         </div>
         <div class="sync-legend-item">

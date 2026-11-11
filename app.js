@@ -1625,7 +1625,26 @@ window.TaskitatorApp = (() => {
         if (button) { button.title = dot.title + ' · Open sync details'; button.setAttribute('aria-label', dot.title + '. Open sync details'); }
     }
 
+    // Auto-sync countdown under the dot: digits + "s" only, hidden when idle.
+    let countdownTimer = null;
+    function renderSyncCountdown() {
+        const label = document.getElementById('syncCountdown');
+        if (!label) return;
+        const deadline = window.SyncEngine?.autoSyncDeadline?.();
+        const left = deadline ? Math.ceil((deadline - Date.now()) / 1000) : 0;
+        if (left > 0) {
+            label.textContent = `${left}s`;
+            if (!countdownTimer) countdownTimer = setInterval(renderSyncCountdown, 250);
+        } else {
+            label.textContent = '';
+            if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+        }
+    }
+    window.addEventListener('taskitator-autosync-countdown', renderSyncCountdown);
+    window.addEventListener('storage', renderSyncCountdown);
+
     function initSyncIndicator() {
+        renderSyncCountdown();
         let settings = {};
         try {
             settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');

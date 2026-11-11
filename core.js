@@ -871,7 +871,7 @@ const SyncEngine = {
     STORAGE_KEY_ROTATION: 'taskitator_pending_rotation',
     STORAGE_KEY_AUTO_DEADLINE: 'taskitator_auto_sync_deadline',
     STORAGE_KEY_PENDING_DOWNLOAD: 'taskitator_pending_sync_download',
-    AUTO_WINDOW_MS: 120000,
+    AUTO_WINDOW_MS: 15000,
     refreshGuards: [],
     ACCOUNT_KEYS: [
         'taskitator_settings', 'taskitator_tasks', 'taskitator_projects',
@@ -885,6 +885,7 @@ const SyncEngine = {
     sessionId: null,
     pushQueue: Promise.resolve(),
     debounceTimer: null,
+    panelWasOpen: false,
     hasUnsavedChanges: false,
     listeners: [],
 
@@ -1201,17 +1202,53 @@ const SyncEngine = {
         this.armAutoSync();
     },
 
+    // Auto-sync runs AUTO_WINDOW_MS after the last saved edit, once every
+    // editing/creating panel is closed. Opening a panel holds the countdown;
+    // closing the last one restarts it from the full window.
+    editingPanelOpen() {
+        if (typeof document === 'undefined' || !document.querySelector) return false;
+        return !!document.querySelector('.modal-overlay.open:not([data-sync-ignore])');
+    },
+
     startAutoWindow() {
         if (!this.isConfigured()) return;
-        if (localStorage.getItem(this.STORAGE_KEY_AUTO_DEADLINE) === null) {
-            localStorage.setItem(this.STORAGE_KEY_AUTO_DEADLINE, String(Date.now() + this.AUTO_WINDOW_MS));
-        }
+        if (this.editingPanelOpen()) { this.holdAutoWindow(); return; }
+        localStorage.setItem(this.STORAGE_KEY_AUTO_DEADLINE, String(Date.now() + this.AUTO_WINDOW_MS));
         this.armAutoSync();
+    },
+
+    holdAutoWindow() {
+        if (this.debounceTimer) clearTimeout(this.debounceTimer);
+        this.debounceTimer = null;
+        if (localStorage.getItem(this.STORAGE_KEY_AUTO_DEADLINE) !== null) {
+            localStorage.removeItem(this.STORAGE_KEY_AUTO_DEADLINE);
+            this.announceCountdown();
+        }
+    },
+
+    panelsChanged() {
+        const open = this.editingPanelOpen();
+        if (open === this.panelWasOpen) return;
+        this.panelWasOpen = open;
+        if (!this.isConfigured()) return;
+        if (open) this.holdAutoWindow();
+        else if (this.isDirty()) this.startAutoWindow();
+    },
+
+    autoSyncDeadline() {
+        const deadline = Number(localStorage.getItem(this.STORAGE_KEY_AUTO_DEADLINE));
+        return Number.isFinite(deadline) && deadline > 0 ? deadline : null;
+    },
+
+    announceCountdown() {
+        if (typeof window !== 'undefined' && typeof CustomEvent === 'function')
+            window.dispatchEvent(new CustomEvent('taskitator-autosync-countdown'));
     },
 
     armAutoSync() {
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
         this.debounceTimer = null;
+        this.announceCountdown();
         const raw = localStorage.getItem(this.STORAGE_KEY_AUTO_DEADLINE);
         if (raw === null || !this.isConfigured() || this.needsInitialPull()) return;
         const deadline = Number(raw);
@@ -1232,6 +1269,7 @@ const SyncEngine = {
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
         this.debounceTimer = null;
         localStorage.removeItem(this.STORAGE_KEY_AUTO_DEADLINE);
+        this.announceCountdown();
     },
 
     async runAutoSync(deadline) {
@@ -1242,7 +1280,7 @@ const SyncEngine = {
             // Offline: keep the batch queued. Reconnecting re-arms it.
             if (window.TaskitatorOffline?.active) return;
             // Consume this batch once. Failed attempts wait for manual sync or a
-            // new saved edit, rather than retrying every two minutes forever.
+            // new saved edit, rather than retrying on a loop.
             this.cancelAutoWindow();
             if (this.isDirty()) return this.syncNow({ origin: 'auto' });
         };
@@ -1698,6 +1736,13 @@ const resumePendingWork = () => {
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') resumePendingWork();
 });
+// Hold auto-sync while any editing/creating panel is open; restart the
+// countdown when the last one closes.
+if (typeof MutationObserver === 'function' && typeof document !== 'undefined') {
+    const watchPanels = () => new MutationObserver(() => SyncEngine.panelsChanged())
+        .observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
+    if (document.body) watchPanels(); else document.addEventListener('DOMContentLoaded', watchPanels, { once: true });
+}
 window.addEventListener('focus', resumePendingWork);
 window.addEventListener('online', resumePendingWork);
 window.addEventListener('taskitator-refresh-safe', () => SyncEngine.maybeRefreshPage());
@@ -2120,7 +2165,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-phase2-v14');
+                    resolve(event.data?.version === 'taskitator-phase2-v15');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });

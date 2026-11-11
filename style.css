@@ -1311,7 +1311,10 @@ body {
 }
 
 /* A compact dot with a phone-sized touch target. */
-.sync-dot-button { width:32px; height:44px; padding:0; border:0; background:transparent; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; cursor:pointer; }
+.sync-dot-button { width:32px; height:44px; padding:0; border:0; background:transparent; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; cursor:pointer; position:relative; }
+/* Auto-sync countdown sits below the dot; absolutely positioned so it never resizes the dot or header. */
+.sync-countdown { position:absolute; top:calc(50% + 7px); left:50%; transform:translateX(-50%); font-size:9px; line-height:1; font-variant-numeric:tabular-nums; color:var(--text-muted); white-space:nowrap; pointer-events:none; direction:ltr; }
+.sync-countdown:empty { display:none; }
 .sync-dot-button:focus-visible { outline:2px solid var(--primary); outline-offset:1px; border-radius:8px; }
 /* Sync Dot Indicator */
 .sync-dot {

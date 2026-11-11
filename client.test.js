@@ -360,7 +360,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v14'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v15'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -935,4 +935,35 @@ test('Pro hosted AI: no saved key is needed, the hosted note shows and no fallba
     hosted=false;await vault.refresh();
     assert.equal(vault.available,false,'personal-key mode without a key still needs one');assert.equal(node('vaultHostedNote').hidden,true);
     assert.equal(vault.selection().fallback,'gemini-3.1-flash-lite');
+});
+
+function countdownEngine(){
+ const f=client();let panel=false;f.context.document.querySelector=sel=>panel&&sel.includes('.modal-overlay.open')?{}:null;
+ vm.runInContext(readConsolidatedSource('sync-engine.js'),f.context);const s=f.window.SyncEngine;
+ s.isConfigured=()=>true;s.needsInitialPull=()=>false;s.getConfig=()=>({username:'rd'});s.sessionMatches=()=>true;
+ return {f,s,setPanel:v=>{panel=v;s.panelsChanged();}};
+}
+test('auto-sync fires 15s after the last edit when no panel is open',()=>{
+ const {f,s}=countdownEngine();assert.equal(s.AUTO_WINDOW_MS,15000);
+ const t0=Date.now();s.markLocalModified();const d=s.autoSyncDeadline();
+ assert.ok(d>=t0+15000&&d<=Date.now()+15000);s.cancelAutoWindow();
+});
+test('opening an editing panel holds the countdown; closing the last one restarts the full 15s',async()=>{
+ const {s,setPanel}=countdownEngine();
+ s.markLocalModified();assert.ok(s.autoSyncDeadline());
+ setPanel(true);assert.equal(s.autoSyncDeadline(),null);assert.equal(s.debounceTimer,null);
+ s.markLocalModified();assert.equal(s.autoSyncDeadline(),null,'edits saved while a panel is open stay held');
+ await new Promise(r=>setTimeout(r,20));const before=Date.now();setPanel(false);
+ assert.ok(s.autoSyncDeadline()>=before+15000,'closing restarts from a full window');
+ assert.equal(s.isDirty(),true,'changes stay saved locally while held');s.cancelAutoWindow();
+});
+test('closing a panel with nothing unsaved does not start a countdown',()=>{
+ const {s,setPanel}=countdownEngine();s.isDirty=()=>false;setPanel(true);setPanel(false);assert.equal(s.autoSyncDeadline(),null);
+});
+test('sync countdown label sits under the dot, digits + s only, and ignores read-only panels',()=>{
+ const html=fs.readFileSync(new URL('index.html',root),'utf8'),css=fs.readFileSync(new URL('style.css',root),'utf8'),app=fs.readFileSync(new URL('app.js',root),'utf8');
+ assert.match(html,/id="syncStatusDot"[^>]*><\/span><span class="sync-countdown" id="syncCountdown"/);
+ for(const m of ['syncInfoModal','filterModal','breakHelpModal'])assert.match(html,new RegExp(`id="${m}" data-sync-ignore`));
+ assert.match(css,/\.sync-countdown \{ position:absolute; top:calc\(50% \+ 7px\)/);
+ assert.match(app,/label\.textContent = `\$\{left\}s`;/);
 });
