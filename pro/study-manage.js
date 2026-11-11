@@ -236,5 +236,132 @@ function replanImpact(before,after,id,today,settings){
  return {later,today:dueToday};
 }
 
-root.TaskitatorStudyManage={auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
+
+// ---- Soft reschedule (Phase 2.9) ----
+// Spread (Pro): the overdue units are handed out one at a time, in rounds, to the chosen plan dates from today on.
+//   Every chosen date keeps the units it had and only gains. The remaining units are then laid out again in unit-number order,
+//   so the plan stays consecutive (Wed L.1-4, Thu L.5-7, Sun L.8-10). A unit keeps its title, criteria and shield; only its day changes.
+// Today (free): every overdue unit moves to today's day. Nothing else changes.
+// Only existing plan dates are used, so the end of the plan never moves later.
+function softOptions(o){
+ if(!o||typeof o!=='object')throw Error('Choose how to reschedule.');
+ const rev=String(o.rev||'');if(!/^[a-z0-9]{4,16}$/.test(rev))throw Error('Invalid reschedule identifier.');
+ const mode=o.mode==='today'?'today':o.mode==='spread'?'spread':null;if(!mode)throw Error('Choose how to reschedule.');
+ if(mode==='today')return {rev,mode,scope:null,until:null,dates:null};
+ const scope=['max','until','dates'].includes(o.scope)?o.scope:null;if(!scope)throw Error('Choose Max, a period or specific dates.');
+ if(scope==='until'&&!dateOK(o.until))throw Error('Choose a valid end date.');
+ let dates=null;
+ if(scope==='dates'){dates=[...new Set(o.dates)];if(!Array.isArray(o.dates)||!dates.length||dates.length>365||dates.some(d=>!dateOK(d)))throw Error('Choose valid dates.');dates.sort();}
+ return {rev,mode,scope,until:scope==='until'?o.until:null,dates};
+}
+// Unfinished units whose day has passed.
+function softOverdue(tasks,id,today){
+ const plan=forPlan(tasks,id),by=new Map(tasks.map(t=>[t.id,t]));
+ return plan.units.filter(u=>u.status==='active').filter(u=>{const d=dueOf(by,u);return dateOK(d)&&d<today;});
+}
+// Plan days that are today or later and carry units: date -> day parent.
+function softDays(plan,today){
+ const withUnits=new Set(plan.units.map(u=>u.parent_id)),out=new Map();
+ for(const p of plan.parents.slice().sort((a,b)=>String(a.id).localeCompare(String(b.id))))if(withUnits.has(p.id)&&dateOK(p.due_date)&&p.due_date>=today&&!out.has(p.due_date))out.set(p.due_date,p);
+ return out;
+}
+function softReschedule(tasks,id,options,today){
+ const o=softOptions(options);if(!dateOK(today))throw Error('Invalid date.');
+ const plan=forPlan(tasks,id);
+ if(plan.units.some(u=>u.status==='active'&&Object.keys(u).some(k=>k.startsWith('smart_'))))throw Error('This plan uses Smart Study early dates, which are fixed. It cannot be rescheduled.');
+ const by=new Map(tasks.map(t=>[t.id,t])),due=t=>dueOf(by,t),overdue=softOverdue(tasks,id,today),days=softDays(plan,today),dates=[...days.keys()].sort();
+ if(!overdue.length)throw Error('Nothing is overdue in this plan.');
+ const placed=new Map();let counts=null;
+ if(o.mode==='today'){
+  for(const u of overdue)placed.set(u.id,today);
+ }else{
+  if(!dates.length)throw Error('No plan days are left. Use Move overdue to today.');
+  let chosen;
+  if(o.scope==='max')chosen=dates;
+  else if(o.scope==='until')chosen=dates.filter(d=>d<=o.until);
+  else{if(o.dates.some(d=>!days.has(d)))throw Error('Choose days that belong to this plan.');chosen=o.dates.slice().sort();}
+  if(!chosen.length)throw Error('No plan day falls in that period.');
+  if(days.has(today)&&!chosen.includes(today))throw Error('Today is a study day in this plan, so it has to be included.');
+  const base=new Map(dates.map(d=>[d,0])),future=plan.units.filter(u=>u.status==='active'&&base.has(due(u)));
+  for(const u of future)base.set(due(u),base.get(due(u))+1);
+  const gain=new Map(chosen.map(d=>[d,0]));
+  for(let k=0;k<overdue.length;k++){const d=chosen[k%chosen.length];gain.set(d,gain.get(d)+1);}
+  counts=dates.map(d=>({date:d,before:base.get(d),count:base.get(d)+(gain.get(d)||0)}));
+  const all=[...overdue,...future].sort((a,b)=>(unitNumber(a)??Infinity)-(unitNumber(b)??Infinity)||String(due(a)).localeCompare(String(due(b)))||String(a.id).localeCompare(String(b.id)));
+  let at=0;for(const c of counts){for(const u of all.slice(at,at+c.count))placed.set(u.id,c.date);at+=c.count;}
+ }
+ // Build the new tree. A day that ends up with nothing to hold is removed (same rule as a re-plan).
+ const byParent=new Map();for(const t of tasks)if(t.parent_id){if(!byParent.has(t.parent_id))byParent.set(t.parent_id,[]);byParent.get(t.parent_id).push(t);}
+ const target=new Map(),fresh=[];
+ const dayFor=date=>{
+  const have=days.get(date);if(have)return have.id;
+  if(target.has('new:'+date))return target.get('new:'+date);
+  return null;
+ };
+ const moveSet=new Set();
+ for(const [uid,date]of placed){
+  const u=by.get(uid);let pid=dayFor(date);
+  if(!pid){pid='study_'+id+'_'+o.rev+'_day_'+fresh.length;target.set('new:'+date,pid);fresh.push({date,id:pid,units:[]});}
+  const same=u.parent_id===pid&&(u.due_date||'')===date;
+  if(!same)moveSet.add(uid);
+  target.set(uid,pid);
+ }
+ const leaving=new Set([...moveSet].filter(uid=>by.get(uid).parent_id!==target.get(uid)));
+ const stays=p=>p.status!=='active'||(byParent.get(p.id)||[]).some(c=>!leaving.has(c.id))||[...placed.keys()].some(uid=>target.get(uid)===p.id);
+ const doomed=new Set(plan.parents.filter(p=>!stays(p)).map(p=>p.id));
+ const kept=plan.parents.filter(p=>!doomed.has(p.id)),template=plan.parents.slice().sort((a,b)=>String(a.due_date).localeCompare(String(b.due_date)))[0];
+ const base=plan.base||(plan.parents.length?'':'Study plan');
+ let next=1;for(const p of kept){const m=/^(.*) (\d+)$/.exec(p.raw_title||p.title||'');if(m&&m[1]===base)next=Math.max(next,Number(m[2])+1);}
+ if(!base)next=kept.length+1;
+ const plural=plan.plural||((plan.unit||'unit')+'s'),extra=userPart(template?.description);
+ const prio=plan.parentPriority===undefined?template?.priority_id:plan.parentPriority;
+ const nowIn=new Map();// parent id -> unit numbers after the change
+ const unitIds=new Set(plan.units.map(u=>u.id));
+ for(const u of plan.units){const pid=target.has(u.id)?target.get(u.id):u.parent_id;if(!nowIn.has(pid))nowIn.set(pid,[]);const n=unitNumber(u);if(n!==null)nowIn.get(pid).push(n);}
+ const out=[],parentIds=new Set(plan.parents.map(p=>p.id));
+ for(const t of tasks){
+  if(doomed.has(t.id))continue;
+  if(unitIds.has(t.id)&&moveSet.has(t.id)){const date=placed.get(t.id),u={...t,parent_id:target.get(t.id),due_date:date};if(typeof u.early_date==='string'&&u.early_date>=date)delete u.early_date;out.push(u);continue;}
+  if(parentIds.has(t.id)&&String(t.description||'').startsWith('Covers ')){
+   const nums=(nowIn.get(t.id)||[]).sort((a,b)=>a-b);
+   if(nums.length){const d=coverageLine(plural,nums)+userPart(t.description);if(d!==t.description){out.push({...t,description:d});continue;}}
+  }
+  out.push(t);
+ }
+ fresh.forEach((f,i)=>{
+  const title=(base||'Study plan')+' '+(next+i),nums=(nowIn.get(f.id)||[]).sort((a,b)=>a-b);
+  out.push({study_plan_id:id,status:'active',project_id:template?.project_id||'inbox',tags:[...(template?.tags||[])],is_bonus:false,created_at:template?.created_at||null,completed_at:null,due_date:f.date,
+   id:f.id,parent_id:null,title,raw_title:title,description:coverageLine(plural,nums)+extra,ai_locked:false,proof_criteria:'',raw_proof_criteria:'',strict_prerequisites:true,
+   ...(prio?{priority_id:prio}:{}),...(typeof template?.status_count==='boolean'?{status_count:template.status_count}:{})});
+ });
+ const locked=[...moveSet].filter(uid=>isAudited(by.get(uid))||by.get(uid).strict_prerequisites);
+ return {tasks:out,mode:o.mode,overdue:overdue.length,moved:moveSet.size,counts,locked,end:dates.at(-1)||null};
+}
+// Independent count-based check of a soft reschedule result. The Worker runs it on its own output before it grants anything.
+function softCheck(before,after,id,today,mode){
+ const b=planUnits(before,id),a=planUnits(after,id);
+ if(b.size!==a.size||[...b.keys()].some(k=>!a.has(k)))return 'The unit list changed.';
+ const FREE=new Set(['parent_id','due_date','early_date']);
+ for(const [k,u]of b){
+  const n=a.get(k),keys=new Set([...Object.keys(u),...Object.keys(n)]);
+  for(const f of keys)if(!FREE.has(f)&&JSON.stringify(u[f]??null)!==JSON.stringify(n[f]??null))return 'A unit changed beyond its day.';
+  if(u.status!=='active'&&(u.parent_id!==n.parent_id||(u.due_date||'')!==(n.due_date||'')))return 'A finished unit moved.';
+ }
+ const bm=new Map(before.map(t=>[t.id,t])),am=new Map(after.map(t=>[t.id,t])),cnt=(m,units)=>{const c=new Map();for(const u of units.values()){if(u.status!=='active')continue;const d=dueOf(m,u);c.set(d,(c.get(d)||0)+1);}return c;};
+ const cb=cnt(bm,b),ca=cnt(am,a);
+ for(const d of ca.keys())if(dateOK(d)&&d<today)return 'An unfinished unit is still on a past day.';
+ const total=m=>[...m.values()].reduce((x,y)=>x+y,0);
+ if(total(cb)!==total(ca))return 'Counts do not add up.';
+ if(mode==='spread')for(const [d,n]of cb)if(dateOK(d)&&d>=today&&(ca.get(d)||0)<n)return 'A day lost units.';
+ const endBefore=Math.max(...[...b.values()].map(u=>Date.parse(dueOf(bm,u)+'T00:00:00Z')).filter(Number.isFinite)),endAfter=Math.max(...[...a.values()].map(u=>Date.parse(dueOf(am,u)+'T00:00:00Z')).filter(Number.isFinite));
+ if(mode==='spread'&&endAfter>endBefore)return 'The plan end moved later.';
+ return null;
+}
+const planUnits=(tasks,id)=>{
+ const parents=new Set(tasks.filter(t=>t&&t.study_plan_id===id&&!t.parent_id&&t.status!=='trash').map(t=>t.id)),out=new Map();
+ for(const t of tasks)if(t&&t.parent_id&&parents.has(t.parent_id)&&t.status!=='trash')out.set(t.id,t);
+ return out;
+};
+
+root.TaskitatorStudyManage={auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
 })(typeof window==='undefined'?globalThis:window);

@@ -2437,3 +2437,77 @@ test('Sleep Lock: rejects malformed firm and today values',async()=>{
  const {f,n,time}=sleepFixture(),a=await create(f),b={enabled:true,bedtime:time(n+240),wake_time:time(n+720),revision:0};
  for(const bad of [{firm:'yes'},{today:'x'},{today:{bedtime:'25:00',wake_time:'07:00'}},{today:{bedtime:'22:00',wake_time:'22:00'}},{today:{bedtime:'22:00',wake_time:'07:00',day:'2020-01-01'}}])assert.equal((await f.call('/sleep-lock',a.token,'POST',{...b,...bad})).status,400,JSON.stringify(bad));
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2.9: soft reschedule (Pro spread, free "move overdue to today")
+// ---------------------------------------------------------------------------
+const lateConfig={...studyConfig,start:dayOf(-2),weekdays:[]};
+const layout=tasks=>{const by=new Map(tasks.map(t=>[t.id,t])),o={};for(const t of tasks)if(t.parent_id){const d=by.get(t.parent_id).due_date;(o[d]??=[]).push(SM.unitNumber(t));}for(const k of Object.keys(o))o[k].sort((x,y)=>x-y);return o;};
+test('soft reschedule: Pro spreads only the overdue units; days only gain; the result syncs once and uses the day',async()=>{
+ const {f,a,push,pull}=await plannedFixture('plan_soft_spread',{config:lateConfig});
+ const call=options=>f.call('/study-plan/manage',a.token,'POST',{action:'soften',plan_id:'plan_soft_spread',options});
+ let r=await call({rev:'ssss1',mode:'spread',scope:'max'});assert.equal(r.status,200,JSON.stringify(r.body));
+ assert.deepEqual(layout(r.body.tasks),{[dayOf(0)]:[1,2,3,4],[dayOf(1)]:[5,6,7],[dayOf(2)]:[8,9,10]});assert.equal(r.body.overdue,4);
+ // A refused or abandoned sync does not cost the day.
+ r=await call({rev:'ssss2',mode:'spread',scope:'until',until:dayOf(1)});assert.equal(r.status,200,JSON.stringify(r.body));
+ assert.deepEqual(layout(r.body.tasks),{[dayOf(0)]:[1,2,3,4],[dayOf(1)]:[5,6,7,8],[dayOf(2)]:[9,10]});
+ const local=await pull();
+ assert.deepEqual(SM.softReschedule(local,'plan_soft_spread',{rev:'ssss2',mode:'spread',scope:'until',until:dayOf(1)},dayOf(0)).tasks.filter(t=>SM.planTree(merge(local,'plan_soft_spread',r.body.tasks),'plan_soft_spread').has(t.id)).sort((x,y)=>x.id.localeCompare(y.id)),r.body.tasks,'browser and Worker agree');
+ assert.equal((await push(merge(local,'plan_soft_spread',r.body.tasks))).status,200);
+ const after=await pull();assert.deepEqual(layout(after),{[dayOf(0)]:[1,2,3,4],[dayOf(1)]:[5,6,7,8],[dayOf(2)]:[9,10]});
+ assert.equal(after.filter(t=>!t.parent_id).length,3,'the two past days are gone');
+ assert.equal(await f.storage.get('pro:study-replan:user_A:plan_soft_spread'),undefined,'single-use grant');
+ assert.equal((await f.storage.get('pro:study-soft:user_A:plan_soft_spread')).day,dayOf(0));
+ assert.equal((await call({rev:'ssss3',mode:'spread',scope:'max'})).status,400,'nothing is overdue any more');
+});
+test('soft reschedule: once a day per plan, Pro only, plan days only, today stays included',async()=>{
+ const {f,a,push,pull}=await plannedFixture('plan_soft_rules',{config:lateConfig});
+ const call=options=>f.call('/study-plan/manage',a.token,'POST',{action:'soften',plan_id:'plan_soft_rules',options});
+ assert.equal((await call({rev:'rrrr1',mode:'spread',scope:'dates',dates:[dayOf(1),dayOf(2)]})).status,400,'today is a study day, so it must be in');
+ assert.equal((await call({rev:'rrrr2',mode:'spread',scope:'dates',dates:[dayOf(0),dayOf(40)]})).status,400,'only days that belong to the plan');
+ assert.equal((await call({rev:'rrrr3',mode:'spread',scope:'until',until:dayOf(-1)})).status,400);
+ assert.equal((await call({rev:'rrrr4',mode:'nope'})).status,400);
+ let r=await call({rev:'rrrr5',mode:'spread',scope:'dates',dates:[dayOf(0),dayOf(2)]});assert.equal(r.status,200,JSON.stringify(r.body));
+ assert.deepEqual(layout(r.body.tasks),{[dayOf(0)]:[1,2,3,4],[dayOf(1)]:[5,6],[dayOf(2)]:[7,8,9,10]});
+ assert.equal((await push(merge(await pull(),'plan_soft_rules',r.body.tasks))).status,200);
+ await f.storage.put('pro:study-soft:user_A:plan_soft_rules',{day:dayOf(0),locked:[],expires:Date.now()+1e6});
+ // Make something overdue again by moving the clock back one day on the mark only.
+ await f.storage.delete('pro:entitlement:user_A');
+ r=await call({rev:'rrrr6',mode:'spread',scope:'max'});assert.equal(r.status,403);assert.match(JSON.stringify(r.body),/Pro/);
+});
+test('soft reschedule: AI-audited and shielded units can be spread; only their day changes',async()=>{
+ const {f,a,push,pull}=await plannedFixture('plan_soft_ai',{audit:true,config:lateConfig});
+ const before=await pull(),r=await f.call('/study-plan/manage',a.token,'POST',{action:'soften',plan_id:'plan_soft_ai',options:{rev:'aaaa1',mode:'spread',scope:'max'}});
+ assert.equal(r.status,200,JSON.stringify(r.body));assert.ok(r.body.locked_moved>=4);assert.equal(await f.storage.get('pro:emergency:user_A'),undefined,'no bypass use');
+ assert.equal((await push(merge(before,'plan_soft_ai',r.body.tasks))).status,200);
+ const after=await pull(),was=new Map(before.map(t=>[t.id,t]));
+ for(const u of after.filter(t=>t.parent_id)){const o=was.get(u.id);for(const k of ['title','raw_title','proof_criteria','raw_proof_criteria','original_proof_criteria','ai_locked','strict_prerequisites','status'])assert.equal(JSON.stringify(u[k]??null),JSON.stringify(o[k]??null),k);}
+ assert.ok(after.filter(t=>t.parent_id).every(u=>u.ai_locked));assert.ok(after.filter(t=>!t.parent_id).every(p=>p.strict_prerequisites));
+ const mark=await f.storage.get('pro:study-soft:user_A:plan_soft_ai');assert.ok(mark.locked.length>=4,'moved locked units are logged');
+});
+test('soft reschedule: move overdue to today is free; audited units need Emergency Bypass; tampering is refused',async()=>{
+ const free=await plannedFixture('plan_soft_today',{config:lateConfig});
+ await free.f.storage.delete('pro:entitlement:user_A');
+ const call=(o,id='plan_soft_today',f=free.f,a=free.a)=>f.call('/study-plan/manage',a.token,'POST',{action:'soften',plan_id:id,options:o});
+ let r=await call({rev:'tttt1',mode:'today'});assert.equal(r.status,200,JSON.stringify(r.body));assert.deepEqual(layout(r.body.tasks),{[dayOf(0)]:[1,2,3,4,5,6],[dayOf(1)]:[7,8],[dayOf(2)]:[9,10]});
+ const local=await free.pull();
+ const tampered=structuredClone(merge(local,'plan_soft_today',r.body.tasks));tampered.find(t=>t.parent_id&&t.due_date===dayOf(2)).due_date=dayOf(90);
+ assert.equal((await free.push(tampered)).status,403,'one unit pushed further than approved');
+ assert.equal((await free.push(merge(local,'plan_soft_today',r.body.tasks))).status,200);
+ assert.equal(await free.f.storage.get('pro:study-soft:user_A:plan_soft_today'),undefined,'moving to today does not use the daily spread');
+ const ai=await plannedFixture('plan_soft_aitd',{audit:true,config:lateConfig});
+ r=await call({rev:'tttt2',mode:'today'},'plan_soft_aitd',ai.f,ai.a);assert.equal(r.status,403);assert.match(JSON.stringify(r.body),/Emergency Bypass/);
+ await ai.f.storage.put('pro:emergency:user_A',{cycle_id:'x',uses_left:4,active_until_ms:Date.now()+10*60000,reset_at:Date.now()+86400000});
+ r=await call({rev:'tttt3',mode:'today'},'plan_soft_aitd',ai.f,ai.a);assert.equal(r.status,200,JSON.stringify(r.body));
+ assert.equal((await ai.push(merge(await ai.pull(),'plan_soft_aitd',r.body.tasks))).status,200);
+});
+test('soft reschedule: when today is not a study day nothing lands on today unless the user stacks it',async()=>{
+ const cfg={...studyConfig,start:dayOf(-3),weekdays:[],counts:[2,2,2,2,2],dates:[dayOf(-3),dayOf(-2),dayOf(-1),dayOf(1),dayOf(3)]};
+ const {f,a,push,pull}=await plannedFixture('plan_soft_off',{config:cfg});
+ const call=o=>f.call('/study-plan/manage',a.token,'POST',{action:'soften',plan_id:'plan_soft_off',options:o});
+ let r=await call({rev:'oooo1',mode:'spread',scope:'max'});assert.equal(r.status,200,JSON.stringify(r.body));
+ assert.equal(layout(r.body.tasks)[dayOf(0)],undefined,'nothing on today');assert.deepEqual(layout(r.body.tasks),{[dayOf(1)]:[1,2,3,4,5],[dayOf(3)]:[6,7,8,9,10]});
+ r=await call({rev:'oooo2',mode:'today'});assert.equal(r.status,200,JSON.stringify(r.body));
+ assert.equal(layout(r.body.tasks)[dayOf(0)].length,6,'stacked on a new day for today');
+ assert.equal((await push(merge(await pull(),'plan_soft_off',r.body.tasks))).status,200,'the new day parent syncs with the grant');
+});

@@ -360,7 +360,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v18'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v19'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -1016,6 +1016,15 @@ test('Study plans page: drafts tab, save-draft button and Emergency Bypass butto
  assert.ok(html.indexOf('task-drafts.js')<html.indexOf('src="study-plans.js"'));
  assert.match(js,/EmergencyManager\.activateBypass\(\)/);assert.match(js,/removeStudy\('edit_' \+ plan\.id\)/);
  assert.match(js,/ask\(tr\('Save draft\?'\)/);assert.match(js,/ask\(tr\('Restore draft\?'\)/);
+});
+test('Study plans page: soft reschedule dialog, Pro gate and free Move overdue to today',()=>{
+ const html=fs.readFileSync(new URL('study-plans.html',root),'utf8'),js=fs.readFileSync(new URL('study-plans.js',root),'utf8');
+ for(const id of ['planSoft','planSoftBody','planSoftYes','planSoftNo'])assert.ok(html.includes(`id="${id}"`),id);
+ assert.match(js,/action: 'soften'/);assert.match(js,/mode: 'today'/);assert.match(js,/M\.softOverdue/);
+ assert.match(js,/if \(pro !== true\) \{ status\(/,'spreading is Pro only on the page');
+ assert.doesNotMatch(js.slice(js.indexOf('async function moveToToday'),js.indexOf('async function removePlan')),/pro !== true/,'moving to today is free');
+ const ar=fs.readFileSync(new URL('locales/ar.js',root),'utf8');
+ for(const k of ['Soft reschedule','Move overdue to today','Spread over'])assert.ok(ar.includes(`"${k}"`),k);
 });
 test('Task drafts ask for confirmation before saving or restoring',()=>{
  const c=fs.readFileSync(new URL('components.js',root),'utf8');

@@ -837,6 +837,27 @@ export class TaskProtection {
         await tx.put('pro:study-replan:'+userId+':'+planId,{hash:await sha256(JSON.stringify(out)),expires:Date.now()+10*60000});
         return {authorized:true,tasks:out,scheduled:r.scheduled,removed:r.removed,days:r.days,end:r.end,bypass_used:!!(impact.later.length||impact.today.length)};
     }
+    // Soft reschedule (Phase 2.9). 'spread' (Pro, once per day per plan) hands the overdue units to the chosen plan days; 'today' (free) stacks them on today.
+    // The Worker builds the result itself and re-checks it by counts. AI-audited and shielded units may move in a spread: only their day changes,
+    // and the ids are written to the day mark. Moving audited units to today still needs an active Emergency Bypass window, as a manual move does.
+    // The grant is the same one a re-plan uses: it pins the plan's task tree to the computed result for the next sync.
+    async authorizeStudySoft(tx,userId,snapshot,planId,options,today){
+        const M=globalThis.TaskitatorStudyManage,tasks=snapshot?.tasks||[];
+        if(!tasks.some(t=>t&&t.study_plan_id===planId))throw fail(404,'PLAN_NOT_SYNCED','This study plan is not in your synced tasks. Sync, then try again.');
+        let r;try{r=M.softReschedule(tasks,planId,options,today);}catch(e){throw fail(400,'INVALID_RESCHEDULE',e.message);}
+        const bad=M.softCheck(tasks,r.tasks,planId,today,r.mode);if(bad)throw fail(409,'INVALID_RESCHEDULE','This reschedule was refused: '+bad);
+        const markKey='pro:study-soft:'+userId+':'+planId;
+        if(r.mode==='spread'){
+            const mark=await tx.get(markKey);
+            if(mark&&mark.day===today)throw fail(429,'SOFT_LIMIT','Soft reschedule can be used once a day for each plan. Use Move overdue to today or edit days by hand.');
+        }else if(r.locked.length&&!await this.bypass(tx,userId)){
+            const by=new Map(tasks.map(t=>[t.id,t]));
+            if(r.locked.some(id=>M.isAudited(by.get(id))))throw fail(403,'REQUIREMENTS_LOCKED','Some overdue units are AI-audited. Moving them to today needs Emergency Bypass: activate it from the bypass panel, then try again.');
+        }
+        const tree=M.planTree(r.tasks,planId),out=r.tasks.filter(t=>tree.has(t.id)).sort((a,b)=>a.id.localeCompare(b.id));
+        await tx.put('pro:study-replan:'+userId+':'+planId,{hash:await sha256(JSON.stringify(out)),expires:Date.now()+10*60000,soft:r.mode==='spread',day:today,locked:r.locked.slice(0,500)});
+        return {authorized:true,tasks:out,mode:r.mode,overdue:r.overdue,moved:r.moved,counts:r.counts,locked_moved:r.locked.length,end:r.end};
+    }
     async studyReplanGrants(tx,account,previous,next){
         if(!previous)return new Set();
         const M=globalThis.TaskitatorStudyManage,out=new Set();
@@ -863,7 +884,12 @@ export class TaskProtection {
         for(const id of await this.criteriaEditGrants(tx,account,previous,next))await tx.delete('pro:criteria-edit:'+account+':'+id);
     }
     async consumeStudyReplanGrants(tx,account,previous,next){
-        for(const id of await this.studyReplanGrants(tx,account,previous,next))await tx.delete('pro:study-replan:'+account+':'+id);
+        for(const id of await this.studyReplanGrants(tx,account,previous,next)){
+            const key='pro:study-replan:'+account+':'+id,g=await tx.get(key);
+            // A soft-reschedule day is used up only when the result is really saved, so a refused sync does not cost the day.
+            if(g&&g.soft)await tx.put('pro:study-soft:'+account+':'+id,{day:g.day,locked:g.locked||[],at:Date.now(),expires:Date.now()+3*86400000});
+            await tx.delete(key);
+        }
     }
     async bypass(store,account){await liveAccount(store,account);const state=await store.get('pro:emergency:'+account);return !!state&&state.active_until_ms>Date.now();}
     async emergency(identity,activate=false){

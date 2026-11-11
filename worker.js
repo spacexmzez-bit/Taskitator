@@ -742,7 +742,7 @@ export class AccountDeletion {
                     else if (job.stage==='vault') next=await this.page(job,'vault:'+await sha256(job.userId)+':');
                     else if (job.stage==='vault-stages') next=await this.page(job,'vault-stage:'+await sha256(job.userId)+':');
                     else if (job.stage==='hosted') next=await this.page(job,'pro:',(value,key)=>
-                        ['pro:usage:','pro:spend:','pro:op:','pro:study-validation:','pro:study-grant:','pro:study-delete:','pro:study-replan:','pro:criteria-edit:'].some(prefix=>key.startsWith(prefix+job.userId+':')) ||
+                        ['pro:usage:','pro:spend:','pro:op:','pro:study-validation:','pro:study-grant:','pro:study-delete:','pro:study-replan:','pro:study-soft:','pro:criteria-edit:'].some(prefix=>key.startsWith(prefix+job.userId+':')) ||
                         key==='pro:user:username:'+job.userId || key==='pro:entitlement:'+job.userId ||
                         key==='pro:emergency:'+job.userId || key==='pro:preview:'+job.userId || key==='pro:quote-index:'+job.userId ||
                         (key.startsWith('pro:binding:') && value?.account_id===job.userId) ||
@@ -1816,7 +1816,7 @@ export class TaskitatorSync {
             after = [...entries.keys()].pop();
             if (entries.size < 1000) break;
         }
-        for (const prefix of ['action-proof:', 'verification-used:', 'deleted-identity:', 'deleted-legacy:', 'deletion-status:', 'phone:', 'sleep-delay:', 'pro:study-validation:', 'pro:study-grant:', 'pro:study-delete:', 'pro:study-replan:', 'pro:criteria-edit:']) {
+        for (const prefix of ['action-proof:', 'verification-used:', 'deleted-identity:', 'deleted-legacy:', 'deletion-status:', 'phone:', 'sleep-delay:', 'pro:study-validation:', 'pro:study-grant:', 'pro:study-delete:', 'pro:study-replan:', 'pro:study-soft:', 'pro:criteria-edit:']) {
             let cursor;
             while (true) {
                 const entries = await this.storage.list({prefix,limit:1000,...(cursor?{startAfter:cursor}:{})});
@@ -2078,12 +2078,14 @@ export class TaskitatorSync {
                 if(studyManage){
                     if(!account||method!=='POST')throw new HTTPError(403,'Use your connected account to manage a study plan.');
                     const b=await readJson(request,32768);
-                    if(!['delete','replan'].includes(b.action)||typeof b.plan_id!=='string'||!/^[A-Za-z0-9_-]{8,80}$/.test(b.plan_id))throw new HTTPError(400,'Choose a valid study plan.');
+                    if(!['delete','replan','soften'].includes(b.action)||typeof b.plan_id!=='string'||!/^[A-Za-z0-9_-]{8,80}$/.test(b.plan_id))throw new HTTPError(400,'Choose a valid study plan.');
                     if(b.action==='replan'&&!await this.universe.entitlement(identity))throw new HTTPError(403,'Re-planning a study plan needs an active Taskitator Pro license. You can still view, finish and delete it.');
+                    if(b.action==='soften'&&b.options?.mode!=='today'&&!await this.universe.entitlement(identity))throw new HTTPError(403,'Soft reschedule needs an active Taskitator Pro license. You can still use Move overdue to today or edit the days by hand.');
                     return await this.storage.transaction(async tx=>{
                         const meta=await tx.get(accountKey(account.user));if(!meta||meta.deleting||meta.owner_id!==identity.userId)throw new HTTPError(403,'Account access denied.');
                         const snapshot=await loadSnapshot(tx,account.user,meta);
                         try{
+                            if(b.action==='soften')return json(await this.protection.authorizeStudySoft(tx,identity.userId,snapshot,b.plan_id,b.options||{},logicalDate(Date.now(),dayHour(snapshot?.settings))));
                             if(b.action==='replan')return json(await this.protection.authorizeStudyReplan(tx,identity.userId,snapshot,b.plan_id,b.options||{},logicalDate(Date.now(),dayHour(snapshot?.settings))));
                             return json(await this.protection.authorizeStudyDelete(tx,identity.userId,snapshot,b.plan_id));}
                         catch(e){if(e&&e.status&&e.code)throw new HTTPError(e.status,e.message);throw e;}

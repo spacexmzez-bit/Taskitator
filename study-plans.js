@@ -188,6 +188,14 @@ function card(plan, parent) {
     const actions = el('div', undefined, c, 'plan-actions');
     const toggle = el('button', isOpen ? tr('Close') : tr('Edit'), actions, 'icon-btn'); toggle.type = 'button'; toggle.disabled = busy;
     toggle.addEventListener('click', () => { current = isOpen ? null : plan.id; render(); });
+    const late = lateCount(plan);
+    if (late) {
+        const soft = el('button', pro === true ? tr('Soft reschedule') : tr('Soft reschedule (Pro)'), actions, 'icon-btn'); soft.type = 'button'; soft.disabled = busy; soft.dataset.act = 'soft';
+        soft.addEventListener('click', () => openSoft(plan));
+        const mv = el('button', tr('Move overdue to today'), actions, 'icon-btn'); mv.type = 'button'; mv.disabled = busy; mv.dataset.act = 'today';
+        mv.addEventListener('click', () => moveToToday(plan));
+        el('p', tr('{n} overdue unit(s). Soft reschedule spreads them over the coming study days; Move overdue to today stacks them on today.', { n: late }), c, 'plan-hint');
+    }
     if (!isOpen) return;
     const d = draftFor(plan), edit = canEdit() && !busy;
     if (!canEdit()) el('p', pro === null ? tr('Could not confirm your Pro license, so editing is off. You can still delete this plan.') : tr('Editing study plans needs an active Pro license. You can still view, finish and delete this plan.'), c, 'plan-hint warn');
@@ -327,6 +335,68 @@ async function applyReplan(plan, d) {
     busy = false;
     const ok = await commit(() => { const ids = M.planTree(tasks, plan.id); return { tasks: [...tasks.filter(t => !ids.has(t.id)), ...answer.tasks], answer }; }, () => tr('Re-planned: {n} units over {d} study days.', { n: answer.scheduled, d: answer.days }));
     if (ok) { drafts.delete(plan.id); Drafts()?.removeStudy('edit_' + plan.id); render(); }
+}
+
+// ---- soft reschedule (Phase 2.9) ----
+const lateCount = plan => { try { return plan.finished ? 0 : M.softOverdue(tasks, plan.id, localToday()).length; } catch (e) { return 0; } };
+const rangeText = nums => {
+    const out = []; let i = 0;
+    while (i < nums.length) { let j = i; while (j + 1 < nums.length && nums[j + 1] === nums[j] + 1) j++; out.push(j > i ? nums[i] + '–' + nums[j] : String(nums[i])); i = j + 1; }
+    return out.join(', ');
+};
+function softPreview(plan, o) {
+    const r = M.softReschedule(tasks, plan.id, { rev: 'preview', ...o }, localToday()), by = new Map(r.tasks.map(t => [t.id, t])), rows = new Map();
+    for (const t of r.tasks) if (t.parent_id && t.study_plan_id === plan.id && t.status === 'active') { const d = by.get(t.parent_id)?.due_date; if (!rows.has(d)) rows.set(d, []); rows.get(d).push(M.unitNumber(t)); }
+    return { r, rows: [...rows].sort((a, b) => a[0].localeCompare(b[0])).map(([d, n]) => [d, n.sort((a, b) => a - b)]) };
+}
+async function sendSoft(plan, options) {
+    if (!syncing()) throw Error(tr('Connect your account to reschedule a study plan.'));
+    if (SyncEngine.isDirty?.()) { const sent = await SyncEngine.syncNow({ origin: 'manual' }); if (sent && sent.success === false) throw Error(sent.error || tr('Sync first, then try again.')); }
+    const answer = await TaskitatorAuth.api('/study-plan/manage', { method: 'POST', body: JSON.stringify({ action: 'soften', plan_id: plan.id, options }) });
+    return commit(() => { const ids = M.planTree(tasks, plan.id); return { tasks: [...tasks.filter(t => !ids.has(t.id)), ...answer.tasks], answer }; },
+        r => options.mode === 'today' ? tr('Moved {n} overdue unit(s) to today.', { n: r.answer.moved }) : tr('Rescheduled: {n} overdue unit(s) spread over the coming study days.', { n: r.answer.overdue }));
+}
+function openSoft(plan) {
+    if (busy) return;
+    if (pro !== true) { status(pro === null ? tr('Could not confirm your Pro license.') : tr('Soft reschedule needs an active Pro license. Use Move overdue to today, or move the days by hand.')); return; }
+    const dlg = $('planSoft'), body = $('planSoftBody'), today = localToday(), days = [...M.softDays(plan, today).keys()].sort();
+    body.replaceChildren();
+    if (!days.length) { status(tr('No study days are left in this plan. Use Move overdue to today.')); return; }
+    const late = lateCount(plan), st = { scope: 'max', until: days[0], dates: new Set(days.includes(today) ? [today] : []) };
+    el('p', tr('{n} overdue unit(s) are handed out one at a time over the days you choose, starting from today. Every day keeps what it has and only gains.', { n: late }), body, 'plan-hint');
+    const scope = field(tr('Spread over'), body, undefined, 'select');
+    for (const [v, t] of [['max', tr('Max: all remaining study days')], ['until', tr('Until a date')], ['dates', tr('Specific days')]]) el('option', t, scope).value = v;
+    const until = field(tr('Last day'), body, undefined, 'select'); for (const d of days) el('option', fmtDate(d), until).value = d;
+    const pick = el('div', undefined, body, 'plan-chips');
+    const out = el('div', undefined, body, 'plan-days'), msg = el('p', '', body, 'plan-hint warn'), yes = $('planSoftYes');
+    const options = () => st.scope === 'max' ? { mode: 'spread', scope: 'max' } : st.scope === 'until' ? { mode: 'spread', scope: 'until', until: st.until } : { mode: 'spread', scope: 'dates', dates: [...st.dates].sort() };
+    const paint = () => {
+        until.parentElement.hidden = st.scope !== 'until'; pick.hidden = st.scope !== 'dates';
+        pick.replaceChildren();
+        for (const d of days) { const b = el('button', fmtDate(d), pick, 'plan-chip' + (st.dates.has(d) ? ' lock' : '')); b.type = 'button'; b.disabled = d === today; b.addEventListener('click', () => { st.dates.has(d) ? st.dates.delete(d) : st.dates.add(d); paint(); }); }
+        out.replaceChildren(); msg.textContent = ''; yes.disabled = true;
+        try {
+            const { r, rows } = softPreview(plan, options());
+            const before = new Map(r.counts.map(c => [c.date, c.before]));
+            for (const [d, nums] of rows) { const row = el('div', undefined, out, 'plan-day-row'); el('strong', fmtDate(d), row); el('span', (plan.unit || tr('Unit')) + ' ' + rangeText(nums), row, 'plan-day-units'); el('span', (before.has(d) ? before.get(d) + ' → ' : '') + nums.length, row); }
+            const locked = r.locked.length;
+            msg.textContent = (locked ? tr('{n} AI-audited or shielded unit(s) change day. Their criteria and shield stay.', { n: locked }) + ' ' : '') + tr('Once a day for each plan.');
+            msg.className = 'plan-hint'; yes.disabled = false;
+        } catch (e) { msg.textContent = e.message; msg.className = 'plan-hint warn'; }
+    };
+    scope.addEventListener('change', () => { st.scope = scope.value; paint(); }); until.addEventListener('change', () => { st.until = until.value; paint(); });
+    paint();
+    $('planSoftYes').onclick = async () => { const o = { rev: newRev(), ...options() }; dlg.close(); try { await sendSoft(plan, o); } catch (e) { status(e.message); await access(); render(); } };
+    $('planSoftNo').onclick = () => dlg.close();
+    dlg.showModal();
+}
+async function moveToToday(plan) {
+    if (busy) return;
+    const late = lateCount(plan), audited = M.softOverdue(tasks, plan.id, localToday()).filter(M.isAudited).length;
+    if (audited && !bypass.active) { status(tr('{n} overdue unit(s) are AI-audited. Moving them to today needs Emergency Bypass: use the Emergency Bypass button at the top of this page.', { n: audited })); return; }
+    const lines = [tr('Move {n} overdue unit(s) to today.', { n: late }), tr('Nothing else in the plan changes.')];
+    if (!await ask(tr('Move overdue to today?'), lines, tr('Move'))) return;
+    try { await sendSoft(plan, { rev: newRev(), mode: 'today' }); } catch (e) { status(e.message); await access(); render(); }
 }
 
 async function removePlan(plan) {

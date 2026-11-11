@@ -58,7 +58,7 @@
 .plan-confirm{max-width:400px;width:calc(100% - 32px);border:1px solid var(--border-color,#344b7e);border-radius:14px;background:var(--card-bg,#081226);color:var(--text-color,#fff);padding:16px}
 .plan-confirm::backdrop{background:rgba(0,0,0,.65)}.plan-confirm h3{margin:0 0 8px}.plan-confirm ul{margin:0;padding-inline-start:18px;line-height:1.6;font-size:.88rem}
 .plan-confirm-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
-.plan-ai-grid{margin-top:10px}
+.plan-ai-grid{margin-top:10px}.plan-chips[hidden],.plan-field[hidden]{display:none}.plan-soft{max-width:460px;max-height:86vh;overflow:auto}.plan-soft .plan-days{max-height:240px}
 .plans-header .plans-bypass{margin-inline-start:auto}.plans-bypass.is-active{border-color:#16a34a;color:#4ade80}
 .plans-pagetabs{margin:4px 0 12px}#plansDraftsView[hidden],#plansListView[hidden]{display:none}
 .plan-draft-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid var(--border-color,#344b7e);background:var(--card-bg,#081226);border-radius:12px;padding:10px 12px;margin-bottom:8px}
@@ -109,6 +109,7 @@
 </main>
 <div class="plan-savebar" id="planSaveBar" hidden><span class="plan-savebar-msg" id="planSaveMsg" role="status"></span><button type="button" class="icon-btn" id="planDiscard">Discard</button><button type="button" class="icon-btn" id="planSaveDraft">Save draft</button><button type="button" class="icon-btn plan-save" id="planSave">Save changes</button></div>
 <dialog id="planConfirm" class="plan-confirm"><h3 id="planConfirmTitle"></h3><div id="planConfirmBody"></div><div class="plan-confirm-actions"><button type="button" class="icon-btn" id="planConfirmNo">Cancel</button><button type="button" class="icon-btn plan-save" id="planConfirmYes">Confirm</button></div></dialog>
+<dialog id="planSoft" class="plan-confirm plan-soft"><h3>Soft reschedule</h3><div id="planSoftBody"></div><div class="plan-confirm-actions"><button type="button" class="icon-btn" id="planSoftNo">Cancel</button><button type="button" class="icon-btn plan-save" id="planSoftYes">Reschedule</button></div></dialog>
 <script type="text/taskitator-script" src="pro.js"></script>
 <script type="text/taskitator-script" src="pro/study-plan.js"></script>
 <script type="text/taskitator-script" src="pro/study-schedule.js"></script>
