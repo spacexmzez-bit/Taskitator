@@ -360,7 +360,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v15'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v16'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -966,4 +966,12 @@ test('sync countdown label sits under the dot, digits + s only, and ignores read
  for(const m of ['syncInfoModal','filterModal','breakHelpModal'])assert.match(html,new RegExp(`id="${m}" data-sync-ignore`));
  assert.match(css,/\.sync-countdown \{ position:absolute; top:calc\(50% \+ 7px\)/);
  assert.match(app,/label\.textContent = `\$\{left\}s`;/);
+});
+
+test('Sleep Lock page: gear panel holds Firm mode and the Today override; Settings points to it',()=>{
+ const sleep=fs.readFileSync(new URL('sleep.html',root),'utf8'),settings=fs.readFileSync(new URL('settings.html',root),'utf8');
+ for(const id of ['sleepSettingsBtn','sleepSettingsPanel','firmMode','todayOn','todayBed','todayWake','delaySection'])assert.ok(sleep.includes(`id="${id}"`),id);
+ assert.match(sleep,/<use href="#ic-nav-settings"><\/use><\/svg><\/button><\/header>/);
+ assert.match(sleep,/firm:firm\.checked,today:todayOn\.checked/);
+ assert.match(settings,/id="sleepLockInfo"[\s\S]*href="sleep\.html"[\s\S]*gear icon/);
 });

@@ -2383,3 +2383,57 @@ test('study plan creation with explicit dates and excluded units: the Worker bui
  assert.equal(units.length,10);assert.deepEqual(tasks.filter(t=>!t.parent_id).map(t=>t.due_date).sort(),dates);
  assert.deepEqual(units.filter(u=>!u.ai_locked).map(u=>u.raw_title).sort(),['Lesson.{num==2}','Lesson.{num==9}']);
 });
+
+import { sleepLockingPeriod } from './worker.js';
+test('Sleep Lock "today" override changes one night only and reverts to the default',()=>{
+ const s={enabled:true,bedtime:'23:00',wake_time:'07:00',today:{day:'2026-10-25',bedtime:'22:00',wake_time:'07:00'}};
+ assert.equal(sleepLockActive(s,Date.parse('2026-10-25T19:30:00Z')),true,'Sunday 22:30 Riyadh is inside the 22:00 override');
+ assert.equal(sleepLockActive(s,Date.parse('2026-10-26T19:30:00Z')),false,'Monday 22:30 reverts to the 23:00 default');
+ assert.equal(sleepLockActive(s,Date.parse('2026-10-26T20:00:00Z')),true);
+ assert.equal(sleepWindow(s,Date.parse('2026-10-26T01:00:00Z')).day,'2026-10-25','after midnight the override night is still the active one');
+ assert.equal(sleepLockingPeriod(s,Date.parse('2026-10-25T16:59:00Z')).locked,false);
+ assert.equal(sleepLockingPeriod(s,Date.parse('2026-10-25T17:00:00Z')).locked,true,'locking period opens 2 hours before the (overridden) bedtime');
+ assert.equal(sleepLockingPeriod({...s,today:null},Date.parse('2026-10-25T17:30:00Z')).locked,false,'without the override the default 23:00 lock opens at 21:00');
+});
+function sleepFixture(){
+ const f=fixture(),date=new Date(Date.now()+3*3600000),n=date.getUTCHours()*60+date.getUTCMinutes(),time=m=>String(Math.floor(((m%1440)+1440)%1440/60)).padStart(2,'0')+':'+String(((m%60)+60)%60).padStart(2,'0');
+ return {f,n,time};
+}
+test('Firm mode: nothing is restricted when it is off',async()=>{
+ const {f,n,time}=sleepFixture(),a=await create(f);let rev=0;
+ const save=async(o)=>{const r=await f.call('/sleep-lock',a.token,'POST',{enabled:true,bedtime:time(n+60),wake_time:time(n+480),revision:rev,...o});if(r.status===200)rev=r.body.schedule.revision;return r.status;};
+ assert.equal(await save({}),200);assert.equal(await save({bedtime:time(n+90)}),200,'later bedtime is free in normal mode');
+ assert.equal(await save({enabled:false}),200);
+});
+test('Firm mode: inside the locking period only earlier times are free; the rest needs Emergency Bypass',async()=>{
+ const {f,n,time}=sleepFixture(),a=await create(f);let rev=0;
+ const base={enabled:true,bedtime:time(n+60),wake_time:time(n+480)};
+ const save=async(o)=>{const r=await f.call('/sleep-lock',a.token,'POST',{...base,revision:rev,...o});if(r.status===200){rev=r.body.schedule.revision;Object.assign(base,{enabled:r.body.schedule.enabled,bedtime:r.body.schedule.bedtime,wake_time:r.body.schedule.wake_time});}return r.status;};
+ assert.equal(await save({firm:true}),200,'turning Firm mode on is always free');
+ const get=(await f.call('/sleep-lock',a.token)).body;assert.equal(get.schedule.firm,true);assert.equal(get.locking.locked,true);
+ assert.equal(await save({bedtime:time(n+90)}),403,'later bedtime');
+ assert.equal(await save({wake_time:time(n+540)}),403,'later wake-up');
+ assert.equal(await save({enabled:false}),403,'disabling');
+ assert.equal(await save({firm:false}),403,'turning Firm mode off');
+ assert.equal(await save({today:{bedtime:time(n+90),wake_time:time(n+480)}}),403,'a later bedtime for today only');
+ assert.equal((await f.call('/sleep-lock',a.token,'POST',{action:'delay',minutes:30,revision:rev})).status,403,'delay is not offered');
+ assert.equal(await save({bedtime:time(n+30)}),200,'earlier bedtime is free');
+ assert.equal(await save({wake_time:time(n+420)}),200,'earlier wake-up is free');
+ assert.equal(await save({today:{bedtime:time(n+20),wake_time:time(n+400)}}),200,'an earlier time for today only is free');
+ const t=(await f.call('/sleep-lock',a.token)).body.schedule;assert.equal(t.bedtime,time(n+30),'the default is untouched by the today override');assert.equal(t.today.bedtime,time(n+20));
+ await f.call('/emergency',a.token,'POST',{});
+ assert.equal(await save({bedtime:time(n+200)}),200,'Emergency Bypass allows the restricted change');
+});
+test('Firm mode: before the locking period, edits and delays are free',async()=>{
+ const {f,n,time}=sleepFixture(),a=await create(f);let rev=0;
+ const base={enabled:true,bedtime:time(n+240),wake_time:time(n+720)};
+ const save=async(o)=>{const r=await f.call('/sleep-lock',a.token,'POST',{...base,revision:rev,...o});if(r.status===200){rev=r.body.schedule.revision;Object.assign(base,{bedtime:r.body.schedule.bedtime,wake_time:r.body.schedule.wake_time});}return r.status;};
+ assert.equal(await save({firm:true}),200);assert.equal((await f.call('/sleep-lock',a.token)).body.locking.locked,false);
+ assert.equal(await save({bedtime:time(n+300)}),200,'later bedtime is free more than 2h ahead');
+ assert.equal((await f.call('/sleep-lock',a.token,'POST',{action:'delay',minutes:30,revision:rev})).status,200,'delay still works when planned ahead');
+ assert.equal(await save({firm:false}),200);
+});
+test('Sleep Lock: rejects malformed firm and today values',async()=>{
+ const {f,n,time}=sleepFixture(),a=await create(f),b={enabled:true,bedtime:time(n+240),wake_time:time(n+720),revision:0};
+ for(const bad of [{firm:'yes'},{today:'x'},{today:{bedtime:'25:00',wake_time:'07:00'}},{today:{bedtime:'22:00',wake_time:'22:00'}},{today:{bedtime:'22:00',wake_time:'07:00',day:'2020-01-01'}}])assert.equal((await f.call('/sleep-lock',a.token,'POST',{...b,...bad})).status,400,JSON.stringify(bad));
+});

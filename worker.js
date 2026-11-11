@@ -1461,14 +1461,29 @@ export function publicStatus(state) {
 export function statusText(state) {
     return `device_locked = ${state.device_locked !== false}\nsleep = ${state.sleep === true}`;
 }
+const SLEEP_TIME = t => typeof t === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
+export const SLEEP_LOCK_LEAD_MS = 2 * 3600000;
+// Times for one night: the "today" override when it was set for that night, else the default.
+function sleepTimesFor(schedule, day) {
+    const t = schedule?.today;
+    if (t && t.day === day && SLEEP_TIME(t.bedtime) && SLEEP_TIME(t.wake_time) && t.bedtime !== t.wake_time) return t;
+    return schedule;
+}
 export function sleepWindow(schedule, now = Date.now()) {
-    const valid=t=>typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
-    if(!schedule?.enabled||!valid(schedule.bedtime)||!valid(schedule.wake_time)||schedule.bedtime===schedule.wake_time)return null;
-    const minutes=t=>Number(t.slice(0,2))*60+Number(t.slice(3)),start=minutes(schedule.bedtime),end=minutes(schedule.wake_time);
-    const dayMs=86400000,local=now+3*3600000,current=new Date(local).getUTCHours()*60+new Date(local).getUTCMinutes();let day=Math.floor(local/dayMs)*dayMs;
-    if(start>end&&current<end)day-=dayMs;
-    if(start<end&&current>=end)day+=dayMs;
-    return {day:new Date(day).toISOString().slice(0,10),start:day-3*3600000+start*60000,end:day-3*3600000+end*60000+(start>end?dayMs:0)};
+    if(!schedule?.enabled||!SLEEP_TIME(schedule.bedtime)||!SLEEP_TIME(schedule.wake_time)||schedule.bedtime===schedule.wake_time)return null;
+    const minutes=t=>Number(t.slice(0,2))*60+Number(t.slice(3)),dayMs=86400000,today=Math.floor((now+3*3600000)/dayMs)*dayMs;
+    // The current or next night, keyed by the date its bedtime starts. An overnight night still counts until wake-up.
+    for(const day of [today-dayMs,today,today+dayMs]){
+        const key=new Date(day).toISOString().slice(0,10),t=sleepTimesFor(schedule,key),start=minutes(t.bedtime),end=minutes(t.wake_time);
+        const w={day:key,start:day-3*3600000+start*60000,end:day-3*3600000+end*60000+(start>end?dayMs:0)};
+        if(w.end>now)return w;
+    }
+    return null;
+}
+// Firm mode: from 2 hours before tonight's bedtime until wake-up, restricted changes need an Emergency Bypass.
+export function sleepLockingPeriod(schedule, now = Date.now()) {
+    const w=sleepWindow(schedule,now);if(!w)return null;
+    const from=w.start-SLEEP_LOCK_LEAD_MS;return {from,until:w.end,window:w,locked:now>=from};
 }
 export function sleepLockActive(schedule, now = Date.now(), delay = null) {
     const w=sleepWindow(schedule,now);if(!w)return false;
@@ -2104,8 +2119,8 @@ export class TaskitatorSync {
                     if(!account)throw new HTTPError(403,'Connect your Taskitator account first.');
                     if(!['GET','POST'].includes(method))throw new HTTPError(405,'Method not allowed.');
                     const key='sleep-lock:'+identity.userId;
-                    const defaults={enabled:false,bedtime:'23:00',wake_time:'07:00',timezone:'Asia/Riyadh',revision:0};
-                    if(method==='GET'){const schedule=await this.storage.get(key)||defaults,w=sleepWindow(schedule);return json({schedule,delay:w?await this.storage.get('sleep-delay:'+identity.userId+':'+w.day)||null:null});}
+                    const defaults={enabled:false,bedtime:'23:00',wake_time:'07:00',timezone:'Asia/Riyadh',revision:0,firm:false,today:null};
+                    if(method==='GET'){const schedule=await this.storage.get(key)||defaults,w=sleepWindow(schedule),lp=sleepLockingPeriod(schedule);return json({schedule:{...schedule,today:schedule.today&&w&&schedule.today.day===w.day?schedule.today:null},delay:w?await this.storage.get('sleep-delay:'+identity.userId+':'+w.day)||null:null,now:Date.now(),locking:lp?{from:lp.from,until:lp.until,locked:lp.locked}:null});}
                     const b=await readJson(request,2048),valid=t=>typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
                     if(b.action==='delay'){
                         if(Object.keys(b).some(k=>!['action','minutes','revision'].includes(k))||![30,60].includes(b.minutes)||!Number.isSafeInteger(b.revision))throw new HTTPError(400,'Choose a 30- or 60-minute delay.');
@@ -2116,16 +2131,31 @@ export class TaskitatorSync {
                             const now=Date.now(),w=sleepWindow(schedule,now);if(!w)throw new HTTPError(409,'Enable and save your sleep schedule first.');
                             const delayKey='sleep-delay:'+identity.userId+':'+w.day,old=await tx.get(delayKey);
                             if(old)throw new HTTPError(409,'Sleep has already been delayed for this night.');
+                            // Firm mode: delaying is only for planning ahead. Inside the locking period it needs an Emergency Bypass.
+                            if(schedule.firm===true&&now>=w.start-SLEEP_LOCK_LEAD_MS&&!(await this.protection.bypass(tx,identity.userId)))throw new HTTPError(403,'Firm mode: delaying sleep is not available in the 2 hours before bedtime or once sleep has started. Use Emergency Bypass if you really need it.');
                             const until=w.start+b.minutes*60000;if(until<=now||until>=w.end)throw new HTTPError(409,'That delay would already have ended or reach your wake-up time.');
                             const delay={day:w.day,minutes:b.minutes,sleep_at:until,wake_at:w.end,expires:w.end+172800000};await tx.put(delayKey,delay);return json({schedule,delay});
                         });
                     }
-                    if(Object.keys(b).some(k=>!['enabled','bedtime','wake_time','revision'].includes(k))||typeof b.enabled!=='boolean'||!valid(b.bedtime)||!valid(b.wake_time)||b.bedtime===b.wake_time||!Number.isSafeInteger(b.revision)||b.revision<0)throw new HTTPError(400,'Choose different bedtime and wake-up times, and refresh before saving.');
+                    if(Object.keys(b).some(k=>!['enabled','bedtime','wake_time','revision','firm','today'].includes(k))||typeof b.enabled!=='boolean'||!valid(b.bedtime)||!valid(b.wake_time)||b.bedtime===b.wake_time||!Number.isSafeInteger(b.revision)||b.revision<0)throw new HTTPError(400,'Choose different bedtime and wake-up times, and refresh before saving.');
+                    if(b.firm!==undefined&&typeof b.firm!=='boolean')throw new HTTPError(400,'Firm mode must be on or off.');
+                    if(b.today!==undefined&&b.today!==null&&(typeof b.today!=='object'||Array.isArray(b.today)||Object.keys(b.today).some(k=>!['bedtime','wake_time'].includes(k))||!valid(b.today.bedtime)||!valid(b.today.wake_time)||b.today.bedtime===b.today.wake_time))throw new HTTPError(400,'Choose different bedtime and wake-up times for today.');
                     return await this.storage.transaction(async tx=>{
                         const meta=await tx.get(accountKey(account.user));if(!meta||meta.deleting||meta.owner_id!==identity.userId)throw new HTTPError(403,'Account access denied.');
                         const old=await tx.get(key)||defaults;if(old.revision!==b.revision)throw new HTTPError(409,'Sleep schedule changed on another device. Reload it before saving.');
                         if(old.revision>=Number.MAX_SAFE_INTEGER)throw new HTTPError(409,'Sleep schedule revision limit reached.');
-                        const schedule={enabled:b.enabled,bedtime:b.bedtime,wake_time:b.wake_time,timezone:'Asia/Riyadh',revision:old.revision+1};await tx.put(key,schedule);return json({schedule});
+                        const now=Date.now(),oldLock=sleepLockingPeriod(old,now),dayMs=86400000,yesterday=new Date(Math.floor((now+3*3600000)/dayMs)*dayMs-dayMs).toISOString().slice(0,10);
+                        // "Today" is the current or next night; it expires by itself once that night is over.
+                        const night=(oldLock?.window||sleepWindow({...old,enabled:true,bedtime:b.bedtime,wake_time:b.wake_time,today:null},now))?.day;
+                        let today=b.today===undefined?(old.today&&old.today.day>=yesterday?old.today:null):b.today===null?null:{day:night,bedtime:b.today.bedtime,wake_time:b.today.wake_time};
+                        const schedule={enabled:b.enabled,bedtime:b.bedtime,wake_time:b.wake_time,timezone:'Asia/Riyadh',revision:old.revision+1,firm:b.firm===undefined?old.firm===true:b.firm,today};
+                        // Firm mode restricts only what weakens tonight's lock, and only from 2 hours before bedtime until wake-up.
+                        // Earlier bedtime or wake-up is always free; later needs an Emergency Bypass.
+                        if(old.firm===true&&old.enabled&&oldLock?.locked){
+                            const next=sleepWindow(schedule,now),weakens=!schedule.enabled||schedule.firm!==true||!next||next.start>oldLock.window.start||next.end>oldLock.window.end;
+                            if(weakens&&!(await this.protection.bypass(tx,identity.userId)))throw new HTTPError(403,'Firm mode: from 2 hours before bedtime until wake-up you can only make sleep earlier. Turning Sleep Lock or Firm mode off, or moving bedtime or wake-up later, needs an Emergency Bypass.');
+                        }
+                        await tx.put(key,schedule);return json({schedule});
                     });
                 }
                 if (breaksRoute) {
