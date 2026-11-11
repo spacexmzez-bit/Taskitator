@@ -5718,3 +5718,28 @@ html .sidebar-drawer > * { flex-shrink: 0; }
 .tk-tab .tk-tab-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--alert-orange,#f59e0b);margin-inline-start:5px}
 .ss-grid .study-field{margin:0}.study-panel{margin-top:4px}
 .tk-tab-dot[hidden]{display:none}
+
+
+/* Motion for study plan creation and editing */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes study-panel-enter {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .study-dialog[open], .study-dialog .study-panel:not([hidden]),
+  .plans-wrap .plan-panel:not([hidden]),
+  .plans-wrap #plansDraftsView:not([hidden]) {
+    animation: study-panel-enter 180ms ease-out both;
+  }
+  :is(.study-dialog, .plans-wrap) :is(.tk-tab, .study-seg-btn, .ss-seg-btn, .plan-seg-btn, .icon-btn, .ss-preview-btn, .ss-auto-btn, .ss-cal-arrow) {
+    transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 120ms ease;
+  }
+  :is(.study-dialog, .plans-wrap) :is(.tk-tab, .study-seg-btn, .ss-seg-btn, .plan-seg-btn, .icon-btn, .ss-preview-btn, .ss-auto-btn, .ss-cal-arrow):not(:disabled):active {
+    transform: scale(.97);
+  }
+  @media (hover: hover) {
+    :is(.study-dialog, .plans-wrap) :is(.study-seg-btn, .ss-seg-btn, .plan-seg-btn, .icon-btn, .ss-preview-btn, .ss-auto-btn, .ss-cal-arrow):not(:disabled):hover {
+      transform: translateY(-1px);
+    }
+  }
+}
