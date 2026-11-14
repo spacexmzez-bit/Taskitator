@@ -426,6 +426,88 @@ function bonusSlide(tasks,id,today){
  const last=days.at(-1)?.due_date||null;
  return {tasks:next,moved:moved.length,dropped:gone.size,missed:missed.length,end:last};
 }
+// ---- add / remove bonus units (Phase 3.3) ----
+// Free for everyone and never needs Emergency Bypass: only optional, unfinished bonus units are created or removed.
+// add: new bonus units continue the plan's numbering and are spread over the study days from today on, one more place at the end of
+//   each chosen day. Required places and finished units never move; units after a new bonus shift later by position only.
+// remove: the plan gives up its highest-numbered unfinished units and as many bonus places (taken from the latest days that have one), like a
+//   slid bonus does. Required places and finished units never change; numbering stays continuous.
+const BONUS_EDIT_MAX=500,PLAN_UNITS_MAX=2000;
+const bonusCount=n=>{const v=Number(n);if(!Number.isInteger(v)||v<1||v>BONUS_EDIT_MAX)throw Error('Enter a whole number from 1 to '+BONUS_EDIT_MAX+'.');return v;};
+const futureDays=(plan,today)=>plan.parents.filter(p=>dateOK(p.due_date)&&p.due_date>=today).sort((a,b)=>a.due_date.localeCompare(b.due_date)||String(a.id).localeCompare(String(b.id)));
+const smartLocked=plan=>plan.units.some(u=>u.status==='active'&&Object.keys(u).some(k=>k.startsWith('smart_')));
+function bonusAdd(tasks,id,today,count,now=new Date().toISOString()){
+ const n=bonusCount(count);if(!dateOK(today))throw Error('Invalid date.');
+ const plan=forPlan(tasks,id);
+ if(smartLocked(plan))throw Error('This plan uses Smart Study early dates, which are fixed.');
+ const days=futureDays(plan,today);if(!days.length)throw Error('No study days are left to add bonus units to.');
+ if(plan.units.length+n>PLAN_UNITS_MAX)throw Error('A plan can hold at most '+PLAN_UNITS_MAX+' units.');
+ const numbered=plan.units.filter(u=>unitNumber(u)!==null);if(!numbered.length)throw Error('This plan has no numbered units to continue from.');
+ const byNum=(a,b)=>unitNumber(b)-unitNumber(a);
+ // New bonus units follow the plan's audit setup: audited when any unit of the plan is.
+ const template=[...numbered].filter(u=>u.ai_locked&&u.raw_proof_criteria).sort(byNum)[0]||[...numbered].sort(byNum)[0];
+ const unit=(/^(.*)\.\{num==\d+\}$/.exec(template.raw_title||'')||[])[1];if(!unit)throw Error('Unit names could not be read from this plan.');
+ const audited=Boolean(template.ai_locked&&template.raw_proof_criteria),taken=new Set(tasks.map(t=>t&&t.id));
+ let next=Math.max(...numbered.map(unitNumber));const fresh=[];
+ while(fresh.length<n){
+  next++;const uid='study_'+id+'_unit_'+next;if(taken.has(uid))continue;
+  fresh.push({study_plan_id:id,status:'active',project_id:template.project_id||'inbox',tags:[...(template.tags||[])],is_bonus:true,created_at:now,completed_at:null,
+   id:uid,parent_id:null,title:unit+'.'+next,raw_title:unit+'.{num=='+next+'}',description:'',ai_locked:audited,
+   proof_criteria:audited?template.raw_proof_criteria.replace(/\{num\}/g,String(next)):'',raw_proof_criteria:audited?template.raw_proof_criteria:'',strict_prerequisites:false,
+   ...(template.priority_id?{priority_id:template.priority_id}:{})});
+ }
+ const dayOfParent=new Map(days.map(d=>[d.id,d])),extra=days.map((_,i)=>Math.floor(n/days.length)+(i<n%days.length?1:0));
+ const slots=days.map((d,i)=>{
+  const here=plan.units.filter(u=>u.status==='active'&&u.parent_id===d.id);
+  return {day:d,required:here.filter(u=>!u.is_bonus).length,bonus:here.filter(u=>u.is_bonus).length+extra[i]};
+ });
+ const banks=[...fresh,...plan.units.filter(u=>u.status==='active'&&dayOfParent.has(u.parent_id))]
+  .sort((a,b)=>(unitNumber(a)??Infinity)-(unitNumber(b)??Infinity)||String(a.id).localeCompare(String(b.id)));
+ const place=new Map();let at=0;
+ for(const s of slots){
+  const take=banks.slice(at,at+s.required+s.bonus);at+=s.required+s.bonus;
+  take.forEach((u,i)=>place.set(u.id,{parent_id:s.day.id,due_date:s.day.due_date,is_bonus:i>=s.required}));
+ }
+ if(at<banks.length)throw Error('The new bonus units do not fit the remaining study days.');
+ const out=[];
+ for(const t of tasks){const p=place.get(t.id);out.push(p&&(t.parent_id!==p.parent_id||(t.due_date||'')!==p.due_date||Boolean(t.is_bonus)!==p.is_bonus)?{...t,...p}:t);}
+ for(const f of fresh)out.push({...f,...place.get(f.id)});
+ return {tasks:refreshCoverage(plan,out,new Set()),added:fresh.length,first:fresh[0].id};
+}
+function bonusRemove(tasks,id,today,count){
+ const n=bonusCount(count);if(!dateOK(today))throw Error('Invalid date.');
+ const plan=forPlan(tasks,id);
+ if(smartLocked(plan))throw Error('This plan uses Smart Study early dates, which are fixed.');
+ const open=plan.units.filter(u=>u.status==='active'&&u.is_bonus);
+ if(!open.length)throw Error('This plan has no unfinished bonus units.');
+ if(n>open.length)throw Error('The plan has only '+open.length+' unfinished bonus unit'+(open.length===1?'':'s')+'.');
+ const byNum=(a,b)=>(unitNumber(a)??Infinity)-(unitNumber(b)??Infinity)||String(a.id).localeCompare(String(b.id));
+ const days=bonusDays(plan,today);
+ if(!days.length){ // no day left to reshape: drop the highest-numbered unfinished bonus units where they stand
+  const gone=new Set([...open].sort(byNum).slice(-n).map(u=>u.id));
+  return {tasks:refreshCoverage(plan,tasks.filter(t=>!gone.has(t.id)),gone),removed:gone.size};
+ }
+ if(bonusMissed(tasks,id,today).length)throw Error('A missed bonus unit is waiting to move to the next day. Try again in a moment.');
+ const dayOfParent=new Map(days.map(d=>[d.id,d])),slots=days.map(d=>{
+  const here=plan.units.filter(u=>u.status==='active'&&u.parent_id===d.id);
+  return {day:d,required:here.filter(u=>!u.is_bonus).length,bonus:here.filter(u=>u.is_bonus).length};
+ });
+ let left=n;for(let i=slots.length-1;i>=0&&left>0;i--){const take=Math.min(left,slots[i].bonus);slots[i].bonus-=take;left-=take;}
+ if(left)throw Error('The plan has only '+(n-left)+' unfinished bonus place'+(n-left===1?'':'s')+' left from today.');
+ const banks=plan.units.filter(u=>u.status==='active'&&dayOfParent.has(u.parent_id)).sort(byNum);
+ const gone=new Set(banks.slice(banks.length-n).map(u=>u.id)),keep=banks.filter(u=>!gone.has(u.id)),place=new Map();let at=0;
+ for(const s of slots){
+  const take=keep.slice(at,at+s.required+s.bonus);at+=s.required+s.bonus;
+  take.forEach((u,i)=>place.set(u.id,{parent_id:s.day.id,due_date:s.day.due_date,is_bonus:i>=s.required}));
+ }
+ const out=[];
+ for(const t of tasks){
+  if(gone.has(t.id))continue;
+  const p=place.get(t.id);
+  out.push(p&&(t.parent_id!==p.parent_id||(t.due_date||'')!==p.due_date||Boolean(t.is_bonus)!==p.is_bonus)?{...t,...p}:t);
+ }
+ return {tasks:refreshCoverage(plan,out,gone),removed:gone.size};
+}
 function bonusConvert(tasks,id){
  const plan=forPlan(tasks,id),open=plan.units.filter(u=>u.status==='active'&&u.is_bonus);
  if(!open.length)throw Error('This plan has no unfinished bonus units.');
@@ -441,16 +523,22 @@ function bonusFinish(tasks,id){
  return {tasks:refreshCoverage(plan,tasks.filter(t=>!gone.has(t.id)),gone),removed:gone.size};
 }
 // The Worker re-checks what it computed. Only day, parent and bonus flag may change; finished units never move.
-function bonusCheck(before,after,id,op,today){
+function bonusCheck(before,after,id,op,today,count=0){
  const b=planUnits(before,id),a=planUnits(after,id),FREE=new Set(['parent_id','due_date','is_bonus']);
  for(const [k,u]of b){
   const n=a.get(k);
-  if(!n){if(u.status==='completed')return 'A finished unit was removed.';if(!u.is_bonus&&op!=='slide')return 'A required unit was removed.';continue;}
+  if(!n){if(u.status==='completed')return 'A finished unit was removed.';if(!u.is_bonus&&op!=='slide'&&op!=='remove')return 'A required unit was removed.';if(op==='add')return 'A unit was removed.';continue;}
   if(op==='finish'&&u.parent_id!==n.parent_id)return 'A unit moved.';
   for(const f of new Set([...Object.keys(u),...Object.keys(n)]))if(!FREE.has(f)&&JSON.stringify(u[f]??null)!==JSON.stringify(n[f]??null))return 'A unit changed beyond its day.';
   if(u.status!=='active'&&(u.parent_id!==n.parent_id||Boolean(u.is_bonus)!==Boolean(n.is_bonus)||(u.due_date||'')!==(n.due_date||'')))return 'A finished unit moved.';
  }
- for(const k of a.keys())if(!b.has(k))return 'A unit was added.';
+ const added=[...a.keys()].filter(k=>!b.has(k));
+ if(op!=='add'&&added.length)return 'A unit was added.';
+ if(op==='remove'){
+  const lost=[...b.keys()].filter(k=>!a.has(k));
+  if(lost.length!==count)return 'The number of units removed does not match.';
+  if(lost.some(k=>b.get(k).status!=='active'))return 'Only unfinished units can be removed.';
+ }
  const bm=new Map(before.map(t=>[t.id,t])),am=new Map(after.map(t=>[t.id,t]));
  if(op==='slide'){
   const lost=[...b.keys()].filter(k=>!a.has(k)).length,missed=[...b.values()].filter(u=>u.status==='active'&&u.is_bonus&&dateOK(dayDate(bm,u))&&dayDate(bm,u)<today).length;
@@ -458,6 +546,30 @@ function bonusCheck(before,after,id,op,today){
   for(const u of a.values())if(u.status==='active'){const d=dayDate(am,u),old=b.get(u.id);if(dateOK(d)&&d<today&&(!old||old.parent_id!==u.parent_id))return 'A unit moved onto a past day.';}
   const count=(m,units,flag)=>{const c=new Map();for(const u of units.values())if(u.status==='active'&&dateOK(dayDate(m,u))&&dayDate(m,u)>=today&&Boolean(u.is_bonus)===flag){const d=dayDate(m,u);c.set(d,(c.get(d)||0)+1);}return c;};
   for(const flag of [false,true]){const x=count(bm,b,flag),y=count(am,a,flag);for(const d of new Set([...x.keys(),...y.keys()]))if((x.get(d)||0)!==(y.get(d)||0))return 'The places per day changed.';}
+ }
+ if(op==='add'){
+  if(added.length!==count)return 'The number of units added does not match.';
+  const planId=id,pm=new Map();
+  for(const k of added){const u=a.get(k),d=dayDate(am,u);
+   if(u.study_plan_id!==planId||u.status!=='active'||u.completed_at)return 'An added unit is not an open unit of this plan.';
+   if(!dateOK(d)||d<today)return 'A unit was added to a past day.';}
+  const cnt=(m,units,flag)=>{const c=new Map();for(const u of units.values())if(u.status==='active'&&dateOK(dayDate(m,u))&&dayDate(m,u)>=today&&Boolean(u.is_bonus)===flag){const d=dayDate(m,u);c.set(d,(c.get(d)||0)+1);}return c;};
+  const rx=cnt(bm,b,false),ry=cnt(am,a,false);
+  for(const d of new Set([...rx.keys(),...ry.keys()]))if((rx.get(d)||0)!==(ry.get(d)||0))return 'The required places per day changed.';
+  const bx=cnt(bm,b,true),by=cnt(am,a,true);let gain=0;
+  for(const d of new Set([...bx.keys(),...by.keys()])){const diff=(by.get(d)||0)-(bx.get(d)||0);if(diff<0)return 'A bonus place was lost.';gain+=diff;}
+  if(gain!==count)return 'The bonus places do not match the units added.';
+  for(const u of a.values())if(u.status==='active'){const d=dayDate(am,u),old=b.get(u.id);if(dateOK(d)&&d<today&&old&&old.parent_id!==u.parent_id)return 'A unit moved onto a past day.';}
+ }
+ if(op==='remove'){
+  const cnt=(m,units,flag)=>{const c=new Map();for(const u of units.values())if(u.status==='active'&&dateOK(dayDate(m,u))&&dayDate(m,u)>=today&&Boolean(u.is_bonus)===flag){const d=dayDate(m,u);c.set(d,(c.get(d)||0)+1);}return c;};
+  const rx=cnt(bm,b,false),ry=cnt(am,a,false);
+  for(const d of new Set([...rx.keys(),...ry.keys()]))if((rx.get(d)||0)!==(ry.get(d)||0))return 'The required places per day changed.';
+  const bx=cnt(bm,b,true),by=cnt(am,a,true);let loss=0;
+  for(const d of new Set([...bx.keys(),...by.keys()])){const diff=(bx.get(d)||0)-(by.get(d)||0);if(diff<0)return 'A bonus place was added.';loss+=diff;}
+  const pastBonus=[...b.values()].some(u=>u.status==='active'&&u.is_bonus&&dateOK(dayDate(bm,u))&&dayDate(bm,u)<today);
+  if(!pastBonus&&loss!==count)return 'The bonus places do not match the units removed.';
+  for(const u of a.values())if(u.status==='active'){const d=dayDate(am,u),old=b.get(u.id);if(dateOK(d)&&d<today&&old&&old.parent_id!==u.parent_id)return 'A unit moved onto a past day.';}
  }
  if(op==='finish'&&[...a.values()].some(u=>u.status==='active'&&u.is_bonus))return 'Bonus units are still open.';
  return null;
@@ -485,5 +597,5 @@ function currentSchedule(plan,today,fallbackWeekdays=[]){
  return out;
 }
 
-root.TaskitatorStudyManage={currentSchedule,auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,bonusMissed,bonusWaiting,bonusSlide,bonusConvert,bonusFinish,bonusCheck,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
+root.TaskitatorStudyManage={currentSchedule,auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,bonusAdd,bonusRemove,bonusMissed,bonusWaiting,bonusSlide,bonusConvert,bonusFinish,bonusCheck,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
 })(typeof window==='undefined'?globalThis:window);

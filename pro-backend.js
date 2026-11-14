@@ -858,18 +858,20 @@ export class TaskProtection {
         await tx.put('pro:study-replan:'+userId+':'+planId,{hash:await sha256(JSON.stringify(out)),expires:Date.now()+10*60000,soft:r.mode==='spread',day:today,locked:r.locked.slice(0,500)});
         return {authorized:true,tasks:out,mode:r.mode,overdue:r.overdue,moved:r.moved,counts:r.counts,locked_moved:r.locked.length,end:r.end};
     }
-    // Bonus units (Phase 3.2). 'slide' moves bonus units that were not finished on a past day to the next day (the plan gives up one unit at the end for each),
+    // Bonus units (Phase 3.2, add/remove 3.3). 'add' and 'remove' create or delete optional bonus units on request: no Pro, no Emergency Bypass, and
+    // nothing to finish first, because only unfinished bonus work changes. 'slide' moves bonus units that were not finished on a past day to the next day (the plan gives up one unit at the end for each),
     // 'finish' completes a plan whose required units are done by removing the unfinished bonus units. Free for everyone: a plan keeps working after Pro ends.
     // The Worker computes the result itself and re-checks it; the grant pins the plan's task tree to it for the next sync, like a re-plan.
     async authorizeStudyBonus(tx,userId,snapshot,planId,options,today){
         const M=globalThis.TaskitatorStudyManage,tasks=snapshot?.tasks||[],op=options?.op;
-        if(!['slide','finish'].includes(op))throw fail(400,'INVALID_BONUS','Choose what to do with the bonus units.');
+        if(!['slide','finish','add','remove'].includes(op))throw fail(400,'INVALID_BONUS','Choose what to do with the bonus units.');
+        const count=op==='add'||op==='remove'?Number(options?.count):0;
         if(!tasks.some(t=>t&&t.study_plan_id===planId))throw fail(404,'PLAN_NOT_SYNCED','This study plan is not in your synced tasks. Sync, then try again.');
-        let r;try{r=op==='slide'?M.bonusSlide(tasks,planId,today):M.bonusFinish(tasks,planId);}catch(e){throw fail(400,'INVALID_BONUS',e.message);}
-        const bad=M.bonusCheck(tasks,r.tasks,planId,op,today);if(bad)throw fail(409,'INVALID_BONUS','This change was refused: '+bad);
+        let r;try{r=op==='slide'?M.bonusSlide(tasks,planId,today):op==='add'?M.bonusAdd(tasks,planId,today,count):op==='remove'?M.bonusRemove(tasks,planId,today,count):M.bonusFinish(tasks,planId);}catch(e){throw fail(400,'INVALID_BONUS',e.message);}
+        const bad=M.bonusCheck(tasks,r.tasks,planId,op,today,r.added??r.removed??0);if(bad)throw fail(409,'INVALID_BONUS','This change was refused: '+bad);
         const tree=M.planTree(r.tasks,planId),out=r.tasks.filter(t=>tree.has(t.id)).sort((a,b)=>a.id.localeCompare(b.id));
         await tx.put('pro:study-replan:'+userId+':'+planId,{hash:await sha256(JSON.stringify(out)),expires:Date.now()+10*60000});
-        return {authorized:true,tasks:out,op,moved:r.moved??0,dropped:r.dropped??0,missed:r.missed??0,removed:r.removed??0};
+        return {authorized:true,tasks:out,op,moved:r.moved??0,dropped:r.dropped??0,missed:r.missed??0,removed:r.removed??0,added:r.added??0};
     }
     async studyReplanGrants(tx,account,previous,next){
         if(!previous)return new Set();

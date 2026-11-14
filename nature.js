@@ -198,6 +198,24 @@
         if (!c) return;
         requestAnimationFrame(() => c.classList.remove('in', 'plain'));
     }
+    // Moving to another shell view (or Today <-> General) through a link: clouds close, the hash changes, clouds open.
+    let switching = false;
+    function shellSwitch(a, url) {
+        const shell = window.TaskitatorShell;
+        if (!shell || !url.hash || switching || !allowed('clouds')) return false;
+        const clean = h => { try { return decodeURIComponent(h.replace(/^#/, '')).toLowerCase(); } catch { return h.replace(/^#/, '').toLowerCase(); } };
+        const toKey = clean(url.hash), to = shell.routeOf(toKey), from = shell.current();
+        const tasks = k => k === 'general' ? 'general' : 'today';
+        const changed = to.view !== from || (to.view === 'tasks' && tasks(toKey) !== tasks(shell.key()));
+        if (!changed) return false;
+        switching = true;
+        cloudsIn().then(async () => {
+            location.hash = url.hash;
+            await wait(110);
+            cloudsOut();
+        }).finally(() => { switching = false; setTimeout(cloudsOut, 3000); });
+        return true;
+    }
     function interceptLinks() {
         document.addEventListener('click', e => {
             if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !active()) return;
@@ -205,7 +223,11 @@
             if (!a || a.target || a.hasAttribute('download') || a.dataset.noClouds !== undefined) return;
             const url = new URL(a.href, location.href);
             if (url.origin !== location.origin || !/\.html$|\/$/.test(url.pathname)) return;
-            if (url.pathname === location.pathname && url.search === location.search) return;  // in-page hash routes stay instant
+            if (url.pathname === location.pathname && url.search === location.search) {
+                // Phase 3.3: switching between the views inside the app shell parts the clouds too. Anchors within one view stay instant.
+                if (shellSwitch(a, url)) e.preventDefault();
+                return;
+            }
             if (/view=universe/.test(url.search) || !allowed('clouds')) return;
             e.preventDefault();
             try { sessionStorage.setItem(CLOUD_FLAG, '1'); } catch {}

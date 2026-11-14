@@ -203,6 +203,7 @@ function card(plan, parent) {
         conv.addEventListener('click', () => convertBonus(plan));
         el('p', tr('All required units are done. The plan stays open until you complete it, finish the {n} bonus unit(s), or convert them to required.', { n: plan.bonusLeft }), c, 'plan-hint');
     }
+    bonusBlock(plan, c);
     const late = lateCount(plan);
     if (late) {
         const soft = el('button', pro === true ? tr('Soft reschedule') : tr('Soft reschedule (Pro)'), actions, 'icon-btn'); soft.type = 'button'; soft.disabled = busy; soft.dataset.act = 'soft';
@@ -426,13 +427,46 @@ async function moveToToday(plan) {
     try { await sendSoft(plan, { rev: newRev(), mode: 'today' }); } catch (e) { status(e.message); await access(); render(); }
 }
 
-// ---- bonus units (Phase 3.2) ----
+// ---- bonus units (Phase 3.2; add and remove 3.3) ----
+// Optional work, so adding or removing it is free and never asks for Emergency Bypass or finished tasks.
+const bonusAmount = new Map();
+function bonusBlock(plan, parent) {
+    const box = el('div', undefined, parent, 'plan-bonus');
+    el('strong', tr('Bonus units'), box);
+    const hasDays = plan.parents.some(p => p.due_date >= localToday());
+    const amount = el('input', undefined, box, 'plan-bonus-count'); amount.type = 'number'; amount.min = '1'; amount.max = '500'; amount.inputMode = 'numeric';
+    amount.value = bonusAmount.get(plan.id) || '1'; amount.setAttribute('aria-label', tr('Number of bonus units'));
+    amount.addEventListener('input', () => bonusAmount.set(plan.id, amount.value));
+    const num = () => Number(amount.value);
+    const add = el('button', tr('Add'), box, 'icon-btn'); add.type = 'button'; add.dataset.act = 'bonus-add'; add.disabled = busy || !hasDays;
+    add.addEventListener('click', () => addBonus(plan, num()));
+    const rem = el('button', tr('Remove'), box, 'icon-btn'); rem.type = 'button'; rem.dataset.act = 'bonus-remove'; rem.disabled = busy || !plan.bonusLeft;
+    rem.addEventListener('click', () => removeBonus(plan, num()));
+    const all = el('button', tr('Remove all'), box, 'icon-btn'); all.type = 'button'; all.dataset.act = 'bonus-remove-all'; all.disabled = busy || !plan.bonusLeft;
+    all.addEventListener('click', () => removeBonus(plan, plan.bonusLeft));
+    el('p', tr('Optional extra units at the end of each remaining day. Unfinished ones can be added or removed any time; finished units never change.'), box, 'plan-hint');
+}
+async function addBonus(plan, n) {
+    if (busy) return;
+    if (!Number.isInteger(n) || n < 1 || n > 500) { status(tr('Enter a whole number from 1 to 500.')); return; }
+    try { await sendBonus(plan, { op: 'add', count: n }); } catch (e) { status(e.message); await access(); render(); }
+}
+async function removeBonus(plan, n) {
+    if (busy) return;
+    if (!Number.isInteger(n) || n < 1 || n > 500) { status(tr('Enter a whole number from 1 to 500.')); return; }
+    if (n > plan.bonusLeft) { status(tr('The plan has only {n} unfinished bonus unit(s).', { n: plan.bonusLeft })); return; }
+    if (!await ask(tr('Remove bonus units?'), [tr('The {n} highest-numbered unfinished unit(s) are removed, along with {n} bonus place(s) at the end of the latest days.', { n }), tr('Required places and finished units do not change.')], tr('Remove'))) return;
+    try { await sendBonus(plan, { op: 'remove', count: n }); } catch (e) { status(e.message); await access(); render(); }
+}
 async function sendBonus(plan, options) {
     if (!syncing()) throw Error(tr('Connect your account to change a study plan with bonus units.'));
     if (SyncEngine.isDirty?.()) { const sent = await SyncEngine.syncNow({ origin: 'manual' }); if (sent && sent.success === false) throw Error(sent.error || tr('Sync first, then try again.')); }
     const answer = await TaskitatorAuth.api('/study-plan/manage', { method: 'POST', body: JSON.stringify({ action: 'bonus', plan_id: plan.id, options }) });
     return commit(() => { const ids = M.planTree(tasks, plan.id); return { tasks: [...tasks.filter(t => !ids.has(t.id)), ...answer.tasks], answer }; },
-        r => options.op === 'finish' ? tr('Plan completed. {n} unfinished bonus unit(s) removed.', { n: r.answer.removed }) : tr('{n} bonus unit(s) moved to the next day.', { n: r.answer.missed }));
+        r => options.op === 'finish' ? tr('Plan completed. {n} unfinished bonus unit(s) removed.', { n: r.answer.removed })
+            : options.op === 'add' ? tr('{n} bonus unit(s) added.', { n: r.answer.added })
+            : options.op === 'remove' ? tr('{n} bonus unit(s) removed.', { n: r.answer.removed })
+            : tr('{n} bonus unit(s) moved to the next day.', { n: r.answer.missed }));
 }
 async function finishBonus(plan) {
     if (busy) return;
