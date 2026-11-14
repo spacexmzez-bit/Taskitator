@@ -173,9 +173,9 @@
             li.appendChild(row);
 
             const kids = visibleChildrenMap.get(task.id) || [];
-            if (kids.length > 0) {
+            if (kids.length > 0 && !collapsed.has(task.id)) {
                 const subUl = document.createElement('ul');
-                subUl.className = 'task-subtree' + (collapsed.has(task.id) ? ' collapsed' : '');
+                subUl.className = 'task-subtree';
                 kids.forEach(k => subUl.appendChild(buildNode(k, depth + 1, visited)));
                 li.appendChild(subUl);
             }
