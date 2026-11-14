@@ -392,6 +392,9 @@ export async function clerkAPI(env, path) {
     try { return await res.json(); }
     catch { throw new SecurityError(503, 'Authentication service returned an invalid response.'); }
 }
+// Android app packages allowed as a Clerk authorized party (bare package, or the SDK's callback URLs).
+export const NATIVE_PACKAGES = ['com.mazendev.taskitator', 'com.aistudio.taskitator.mvptsk'];
+export const NATIVE_PARTIES = NATIVE_PACKAGES.flatMap(name => [name, 'clerk://' + name + '.callback', 'clerk://' + name + '.oauth']);
 export async function verifySession(request, env, token) {
     if (!env.CLERK_JWT_KEY || !env.CLERK_ISSUER || !env.CLERK_SECRET_KEY) {
         throw new SecurityError(503, 'Authentication setup is incomplete.');
@@ -422,9 +425,7 @@ export async function verifySession(request, env, token) {
     // device attestation: the signed JWT and live Clerk session remain mandatory.
     const nativeParty = origin === null && (
         claims.azp == null ||
-        claims.azp === 'com.mazendev.taskitator' ||
-        claims.azp === 'clerk://com.mazendev.taskitator.callback' ||
-        claims.azp === 'clerk://com.mazendev.taskitator.oauth'
+        NATIVE_PARTIES.includes(claims.azp)
     );
     if (!valid || claims.iss !== env.CLERK_ISSUER.replace(/\/$/, '') ||
         !Number.isFinite(claims.exp) || claims.exp <= now ||
@@ -440,8 +441,10 @@ export async function verifySession(request, env, token) {
     if (session.status !== 'active' || session.user_id !== claims.sub) {
         throw new SecurityError(401, 'Session is no longer active. Sign in again.');
     }
+    // `native` is true only for app tokens: no Origin header and no website authorized party.
     return { userId: claims.sub, sessionId: claims.sid, factorAge: claims.fva,
-        reverificationId: claims.taskitator_reverification_id, actor: claims.act };
+        reverificationId: claims.taskitator_reverification_id, actor: claims.act,
+        native: nativeParty && !webParty, sessionCreatedAt: session.created_at };
 }
 export async function verifiedEmail(env, userId) {
     const user = await clerkAPI(env, 'users/' + encodeURIComponent(userId));
@@ -512,9 +515,15 @@ export class ActionVerification {
         if (identity.actor) throw new SecurityError(403, 'Impersonated sessions cannot authorize sensitive actions.');
         if (!(await this.service.accountFor(identity))) throw new SecurityError(403,'Connect your Taskitator account before verification.');
         await this.service.rateBucket('verify-user:'+identity.userId, 8);
-        if (!['password','google'].includes(method)) throw new SecurityError(400, 'Choose password or Google verification.');
+        if (!['password','google','signin'].includes(method)) throw new SecurityError(400, 'Choose password or Google verification.');
         const origin = request.headers.get('Origin');
-        if (!allowedOrigins(this.env).includes(origin)) throw new SecurityError(403, 'Open verification from the Taskitator website.');
+        // App only, step 1 of 2: the app starts the attempt with its current session. The attempt is
+        // completed by signin() with a NEW session created after this moment, which proves the
+        // credentials were entered again for this deletion. Not offered to browsers.
+        const freshSignIn = method === 'signin';
+        if (freshSignIn) {
+            if (!identity.native || origin !== null || action !== 'delete-account') throw new SecurityError(403, 'This verification is only available in the Taskitator app.');
+        } else if (!allowedOrigins(this.env).includes(origin)) throw new SecurityError(403, 'Open verification from the Taskitator website.');
         const id = randomSecret(), record = { version:VERIFICATION_VERSION, userId:identity.userId, sessionId:identity.sessionId,
             action, method, status:'pending', created:Date.now(), expires:Date.now()+VERIFICATION_MS,
             baseline:identity.reverificationId || null, origin };
@@ -548,6 +557,28 @@ export class ActionVerification {
         await this.storage.put('action-proof:'+await sha256(id), record);
         await this.service.ensureAlarm();
         return { verification_id:id, expires_at:record.expires, ...(authorizationUrl ? {authorization_url:authorizationUrl} : {}) };
+    }
+    // Step 2 of the app flow. The caller must hold a different, newer session of the same user than
+    // the one that started the attempt. The proof then moves to the new session, so only that session can delete.
+    async signin(request, id, identity, action = 'delete-account') {
+        if (!identity.native || request.headers.get('Origin') !== null) throw new SecurityError(403, 'This verification is only available in the Taskitator app.');
+        if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id) || action !== 'delete-account') throw new SecurityError(403, 'Start verification again.');
+        if (identity.actor) throw new SecurityError(403, 'Impersonated sessions cannot authorize sensitive actions.');
+        const key = 'action-proof:'+await sha256(id);
+        await this.storage.transaction(async tx => {
+            const record = await tx.get(key), now = Date.now();
+            if (!record || record.version !== VERIFICATION_VERSION || record.method !== 'signin' || record.action !== 'delete-account' ||
+                record.status !== 'pending' || record.expires <= now || record.userId !== identity.userId) {
+                throw new SecurityError(403, 'Verification expired or was already used. Start again.');
+            }
+            if (identity.sessionId === record.sessionId || !Number.isSafeInteger(identity.sessionCreatedAt) ||
+                identity.sessionCreatedAt <= record.created || identity.sessionCreatedAt > now + 5000) {
+                throw new SecurityError(403, 'Sign in again to confirm this deletion.');
+            }
+            record.status = 'verified'; record.sessionId = identity.sessionId; record.verified = now;
+            await tx.put(key, record);
+        });
+        return { verified:true };
     }
     async password(id, identity, action = 'delete-account') {
         const record = await this.get(id, identity, action);
@@ -642,8 +673,10 @@ export class AccountDeletion {
     async accept(request, identity, body) {
         if (this.env.ACCOUNT_DELETION_ENABLED !== 'true') throw new SecurityError(503,'Account deletion needs one-time setup. Follow PHASE-1-SETUP.txt.');
         if (identity.actor) throw new SecurityError(403,'Impersonated sessions cannot delete accounts.');
-        if (body.blocker_disabled !== true || body.phrase !== 'Macrodroid disabled') {
-            throw new SecurityError(400,'Disable blocking on every device, check the confirmation, and type Macrodroid disabled exactly.');
+        // The app has its own blocker and its own confirmation phrase.
+        const phrase = identity.native ? 'Delete my account' : 'Macrodroid disabled';
+        if (body.blocker_disabled !== true || body.phrase !== phrase) {
+            throw new SecurityError(400,'Disable blocking on every device, check the confirmation, and type '+phrase+' exactly.');
         }
         if (!secretPattern.test(body.receipt || '')) throw new SecurityError(400,'A deletion receipt is required.');
         const previous=await this.marker(identity);
@@ -1980,6 +2013,7 @@ export class TaskitatorSync {
             const phoneAdmin = ['GET', 'POST', 'DELETE'].includes(method) && path === '/auth/phone';
             const proofStart = method === 'POST' && path === '/auth/verification/start';
             const proofPassword = method === 'POST' && path === '/auth/verification/password';
+            const proofSignin = method === 'POST' && path === '/auth/verification/signin';
             const proofStatus = method === 'POST' && path === '/auth/verification/status';
             const deletion = method === 'DELETE' && path === '/auth/account';
             const deletionStatus = method === 'POST' && path === '/auth/deletion/status';
@@ -1993,7 +2027,7 @@ export class TaskitatorSync {
             const studyManage = path === '/study-plan/manage';
             const criteriaEdit = path === '/criteria/edit';
             if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
-                !proofStart && !proofPassword && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute && !sleepRoute && !breaksRoute && !studyManage && !studyRoute && !criteriaEdit) {
+                !proofStart && !proofPassword && !proofSignin && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute && !sleepRoute && !breaksRoute && !studyManage && !studyRoute && !criteriaEdit) {
                 return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
             }
             await this.rateLimit(request);
@@ -2042,6 +2076,10 @@ export class TaskitatorSync {
                 if (proofStart) {
                     const body=await readJson(request,8192);
                     return json(await this.verification.start(request,identity,body.method,body.action,body.stage_id,body.provider));
+                }
+                if (proofSignin) {
+                    const body=await readJson(request,8192);
+                    return json(await this.verification.signin(request,body.verification_id,identity,body.action));
                 }
                 if (proofPassword) {
                     const body=await readJson(request,8192);
