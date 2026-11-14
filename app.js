@@ -3506,6 +3506,9 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     function updateEmergencyUI() {
         const banner = document.getElementById('activeEmergencyBanner');
+        // Viper icon: awake while the bypass window is open, asleep otherwise.
+        const viperUse = document.querySelector('#emergencyTriggerBtn use');
+        if (viperUse) viperUse.setAttribute('href', isBypassActiveSafe() ? '#ic-emergency-active' : '#ic-emergency');
         if (isBypassActiveSafe()) {
             if (banner) banner.style.display = 'flex';
             clearInterval(emergencyTimerInterval);

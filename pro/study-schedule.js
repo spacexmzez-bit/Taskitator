@@ -136,11 +136,11 @@ function mount(parent,ctx){
    auto.addEventListener('click',redistribute);}
   if(st.redistError){const e=el('p',st.redistError,previewBox,'ss-note ss-warn');e.setAttribute('role','alert');}
   for(const n of ctx.notes?.(api.state())||[])el('p',n.text,previewBox,'ss-note'+(n.warn?' ss-warn':''));
-  const assigned=new Map();{let i=0;for(const {date,count}of sorted()){assigned.set(date,st.units.slice(i,i+count));i+=count;}}
+  let assigned=new Map();if(ctx.assign)assigned=ctx.assign(sorted());else{let i=0;for(const {date,count}of sorted()){assigned.set(date,st.units.slice(i,i+count));i+=count;}}
   if(st.view==='list'){
    const list=el('div',undefined,previewBox,'ss-list');
    if(!assigned.size)el('p',tr('Nothing is scheduled.'),list,'ss-hint');
-   for(const [date,nums]of assigned){const r=el('div',undefined,list,'ss-row'+(st.edited.has(date)?' is-edited':''));el('strong',shortDate(date),r);el('span',nums.map(n=>ctx.label()+'.'+n).join(', '),r,'ss-row-units');}
+   for(const [date,nums]of assigned){const r=el('div',undefined,list,'ss-row'+(st.edited.has(date)?' is-edited':''));el('strong',shortDate(date),r);el('span',nums.map(n=>ctx.chip?.(n,date)?.text||ctx.label()+'.'+n).join(', '),r,'ss-row-units');}
   }else{calendar(assigned);detail(assigned);}
   if(off())for(const e of previewBox.querySelectorAll('input,button,select,textarea'))e.disabled=true;
  }

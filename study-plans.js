@@ -190,11 +190,19 @@ function card(plan, parent) {
     const badges = el('div', undefined, top, 'plan-badges');
     el('span', plan.finished ? tr('Finished') : tr('In progress'), badges, 'plan-badge');
     if (plan.audited) el('span', tr('AI audited: {n}', { n: plan.audited }), badges, 'plan-badge ai');
+    if (plan.bonus) el('span', tr('Bonus: {done} of {n}', { done: plan.bonusDone, n: plan.bonus }), badges, 'plan-badge');
     el('p', tr('{done} of {total} done', { done: plan.done, total: plan.total }) + ' · ' + tr('{n} study days', { n: plan.days }) + (plan.start ? ' · ' + fmtDate(plan.start) + ' – ' + fmtDate(plan.end) : ''), c, 'plan-meta');
     const bar = el('div', undefined, c, 'plan-bar'); el('span', undefined, bar).style.width = (plan.total ? Math.round(plan.done / plan.total * 100) : 0) + '%';
     const actions = el('div', undefined, c, 'plan-actions');
     const toggle = el('button', isOpen ? tr('Close') : tr('Edit'), actions, 'icon-btn'); toggle.type = 'button'; toggle.disabled = busy;
     toggle.addEventListener('click', () => { current = isOpen ? null : plan.id; render(); });
+    if (plan.ready) {
+        const fin = el('button', tr('Complete'), actions, 'icon-btn'); fin.type = 'button'; fin.disabled = busy; fin.dataset.act = 'bonus-finish';
+        fin.addEventListener('click', () => finishBonus(plan));
+        const conv = el('button', tr('Convert bonus to required'), actions, 'icon-btn'); conv.type = 'button'; conv.disabled = busy; conv.dataset.act = 'bonus-convert';
+        conv.addEventListener('click', () => convertBonus(plan));
+        el('p', tr('All required units are done. The plan stays open until you complete it, finish the {n} bonus unit(s), or convert them to required.', { n: plan.bonusLeft }), c, 'plan-hint');
+    }
     const late = lateCount(plan);
     if (late) {
         const soft = el('button', pro === true ? tr('Soft reschedule') : tr('Soft reschedule (Pro)'), actions, 'icon-btn'); soft.type = 'button'; soft.disabled = busy; soft.dataset.act = 'soft';
@@ -204,6 +212,7 @@ function card(plan, parent) {
         el('p', tr('{n} overdue unit(s). Soft reschedule spreads them over the coming study days; Move overdue to today stacks them on today.', { n: late }), c, 'plan-hint');
     }
     if (!isOpen) return;
+    if (plan.bonusLeft) el('p', tr('Re-planning is off while the plan has unfinished bonus units. Complete the plan or convert the bonus units to required first.'), c, 'plan-hint warn');
     const d = draftFor(plan), edit = canEdit() && !busy;
     if (!canEdit()) el('p', pro === null ? tr('Could not confirm your Pro license, so editing is off. You can still delete this plan.') : tr('Editing study plans needs an active Pro license. You can still view, finish and delete this plan.'), c, 'plan-hint warn');
     const tabs = el('div', undefined, c, 'tk-tabs'); tabs.setAttribute('role', 'tablist'); ui = { dots: {} };
@@ -417,6 +426,56 @@ async function moveToToday(plan) {
     try { await sendSoft(plan, { rev: newRev(), mode: 'today' }); } catch (e) { status(e.message); await access(); render(); }
 }
 
+// ---- bonus units (Phase 3.2) ----
+async function sendBonus(plan, options) {
+    if (!syncing()) throw Error(tr('Connect your account to change a study plan with bonus units.'));
+    if (SyncEngine.isDirty?.()) { const sent = await SyncEngine.syncNow({ origin: 'manual' }); if (sent && sent.success === false) throw Error(sent.error || tr('Sync first, then try again.')); }
+    const answer = await TaskitatorAuth.api('/study-plan/manage', { method: 'POST', body: JSON.stringify({ action: 'bonus', plan_id: plan.id, options }) });
+    return commit(() => { const ids = M.planTree(tasks, plan.id); return { tasks: [...tasks.filter(t => !ids.has(t.id)), ...answer.tasks], answer }; },
+        r => options.op === 'finish' ? tr('Plan completed. {n} unfinished bonus unit(s) removed.', { n: r.answer.removed }) : tr('{n} bonus unit(s) moved to the next day.', { n: r.answer.missed }));
+}
+async function finishBonus(plan) {
+    if (busy) return;
+    if (!await ask(tr('Complete this plan?'), [tr('Every required unit is done. The {n} unfinished bonus unit(s) are removed.', { n: plan.bonusLeft }), tr('This cannot be undone.')], tr('Complete'))) return;
+    try { await sendBonus(plan, { op: 'finish' }); } catch (e) { status(e.message); await access(); render(); }
+}
+async function convertBonus(plan) {
+    if (busy) return;
+    if (!await ask(tr('Convert bonus to required?'), [tr('The {n} unfinished bonus unit(s) become required, with their AI audits.', { n: plan.bonusLeft }), tr('This cannot be undone.')], tr('Convert'))) return;
+    await commit(() => { const r = M.bonusConvert(tasks, plan.id); return { tasks: r.tasks, converted: r.converted }; }, r => tr('{n} bonus unit(s) are now required.', { n: r.converted }));
+}
+// A bonus unit not finished by the end of its day slides to the next day. Runs quietly when the app opens, regains focus or the day changes.
+let sweeping = false; const sweepFailed = new Map();
+async function sweepBonus() {
+    if (sweeping || busy || !syncing() || !M.bonusWaiting) return;
+    if (started && anyDirty()) return;
+    sweeping = true;
+    try {
+        load();
+        const today = localToday();
+        for (const plan of M.plans(tasks)) {
+            if (!M.bonusWaiting(tasks, plan.id, today) || Date.now() - (sweepFailed.get(plan.id) || 0) < 600000) continue;
+            const before = localStorage.getItem(TASKS);
+            try {
+                if (SyncEngine.isDirty?.()) { const sent = await SyncEngine.syncNow({ origin: 'manual' }); if (sent && sent.success === false) throw Error('sync'); }
+                load();
+                const answer = await TaskitatorAuth.api('/study-plan/manage', { method: 'POST', body: JSON.stringify({ action: 'bonus', plan_id: plan.id, options: { op: 'slide' } }) });
+                const ids = M.planTree(tasks, plan.id), saved = JSON.stringify([...tasks.filter(t => !ids.has(t.id)), ...answer.tasks]);
+                localStorage.setItem(TASKS, saved);
+                SyncEngine.markLocalModified?.();
+                const sent = await SyncEngine.syncNow({ origin: 'manual' });
+                if (sent && sent.success === false && !['offline', 'unconfigured', 'session_changed'].includes(sent.reason)) {
+                    if (localStorage.getItem(TASKS) === saved && before !== null) localStorage.setItem(TASKS, before);
+                    throw Error(sent.error || 'rejected');
+                }
+                window.dispatchEvent(new CustomEvent('taskitator-tasks-updated'));
+                window.TaskitatorNotify?.(tr('{n} bonus unit(s) moved to the next day.', { n: answer.missed }), 'info');
+                load();
+            } catch (e) { sweepFailed.set(plan.id, Date.now()); }
+        }
+    } finally { sweeping = false; if (visible && !busy && !anyDirty()) { load(); render(); } }
+}
+
 async function removePlan(plan) {
     if (busy) return;
     const guarded = plan.audited > 0;
@@ -547,7 +606,9 @@ async function start() {
     load(); render(); await access(); render();
 }
 const refresh = () => { if (!busy && !anyDirty()) { load(); access().then(render); } };
-window.addEventListener('focus', () => { if (visible) refresh(); });
+window.addEventListener('focus', () => { if (visible) refresh(); sweepBonus(); });
+window.addEventListener('taskitator-page-load-synced', () => setTimeout(sweepBonus, 600));
+setTimeout(sweepBonus, 4000); setInterval(sweepBonus, 300000);
 $('plansAddBtn')?.addEventListener('click', () => openCreate({}));
 window.addEventListener('storage', () => { if (visible && !busy && !anyDirty()) { load(); render(); } });
 // A plan created (or a draft used) from the dialog shows up here at once.
@@ -555,7 +616,7 @@ window.addEventListener('taskitator-study-closed', () => { if (started && !busy 
 // Shell view (Phase 3.0): starts the first time the view opens; later visits reload the plans unless something is being edited.
 // Unsaved edits stay in memory while you visit other views.
 window.TaskitatorStudyPlansView = Object.freeze({
-    show() { visible = true; if (!started) start(); else refresh(); },
+    show() { visible = true; if (!started) start(); else refresh(); sweepBonus(); },
     hide() { visible = false; },
     dirty: () => anyDirty()
 });

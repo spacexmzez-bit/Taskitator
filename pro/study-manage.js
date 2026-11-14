@@ -23,12 +23,13 @@ function plans(tasks){
   const dm=parents.map(p=>/^Covers (.*?) \d/.exec(p.description||'')).find(Boolean);
   const unit=um?um[1]:'',plural=dm?dm[1]:'';
   const dates=parents.map(p=>p.due_date).filter(Boolean).sort();
-  const done=units.filter(u=>u.status==='completed').length;
+  // Bonus units are optional work: progress counts the required units, bonus units are counted on their own.
+  const required=units.filter(u=>!u.is_bonus),extra=units.filter(u=>u.is_bonus),done=required.filter(u=>u.status==='completed').length,bonusLeft=extra.filter(u=>u.status==='active').length;
   const same=values=>new Set(values).size===1?values[0]??null:undefined;
-  return {id,base,custom:custom.length,unit,plural,total:units.length,done,remaining:units.length-done,days:parents.length,
+  return {id,base,custom:custom.length,unit,plural,total:required.length,done,remaining:required.length-done,bonus:extra.length,bonusDone:extra.filter(u=>u.status==='completed').length,bonusLeft,ready:required.length>0&&done===required.length&&bonusLeft>0,days:parents.length,
    start:dates[0]||null,end:dates.at(-1)||null,audited:units.filter(isAudited).length,
    parentPriority:same(parents.map(p=>p.priority_id||null)),unitPriority:same(units.map(u=>u.priority_id||null)),
-   finished:units.length>0&&done===units.length,parents,units,group};
+   finished:units.length>0&&units.every(u=>u.status==='completed'),parents,units,group};
  }).sort((a,b)=>(b.end||'').localeCompare(a.end||''));
 }
 const copy=tasks=>tasks.map(t=>({...t}));
@@ -177,6 +178,7 @@ function adjustCounts(counts,index,delta){
 function replan(tasks,id,options){
  const o=replanOptions(options),plan=forPlan(tasks,id);
  if(plan.units.some(u=>u.status==='active'&&Object.keys(u).some(k=>k.startsWith('smart_'))))throw Error('This plan uses Smart Study early dates, which are fixed. It cannot be re-planned.');
+ if(plan.units.some(u=>u.status==='active'&&u.is_bonus))throw Error('This plan has bonus units. Complete the plan or convert its bonus units to required before re-planning it.');
  const {keep,drop}=replanUnits(plan,o);
  if(!keep.length)throw Error('No unfinished units are left to schedule. Delete the plan instead.');
  const counts=replanCounts(keep.length,o),dates=replanDates(counts.length,o);
@@ -257,7 +259,7 @@ function softOptions(o){
 // Unfinished units whose day has passed.
 function softOverdue(tasks,id,today){
  const plan=forPlan(tasks,id),by=new Map(tasks.map(t=>[t.id,t]));
- return plan.units.filter(u=>u.status==='active').filter(u=>{const d=dueOf(by,u);return dateOK(d)&&d<today;});
+ return plan.units.filter(u=>u.status==='active'&&!u.is_bonus).filter(u=>{const d=dueOf(by,u);return dateOK(d)&&d<today;});
 }
 // Plan days that are today or later and carry units: date -> day parent.
 function softDays(plan,today){
@@ -363,6 +365,104 @@ const planUnits=(tasks,id)=>{
  return out;
 };
 
+
+// ---- Bonus units (Phase 3.2) ----
+// A plan can carry bonus units: the last unit(s) of each day, flagged is_bonus. They are optional, so they never count as overdue.
+// slide: at the end of a day an unfinished bonus unit moves to the first upcoming day and the units after it shift up by one place, so the plan
+//   keeps its number of required places per day. The end date never moves, so the plan gives up one unit (the highest number) for each bonus slid.
+// finish: once every required unit is done, the plan can be completed; the unfinished bonus units are removed.
+// convert: the unfinished bonus units become required for good.
+const dayDate=(by,u)=>by.get(u.parent_id)?.due_date;
+function bonusMissed(tasks,id,today){
+ const plan=forPlan(tasks,id),by=new Map(tasks.map(t=>[t.id,t]));
+ return plan.units.filter(u=>u.status==='active'&&u.is_bonus&&dateOK(dayDate(by,u))&&dayDate(by,u)<today);
+}
+// Day parents (today or later) that hold unfinished units, in date order.
+function bonusDays(plan,today){
+ const open=new Map();for(const u of plan.units)if(u.status==='active')open.set(u.parent_id,(open.get(u.parent_id)||0)+1);
+ return plan.parents.filter(p=>open.has(p.id)&&dateOK(p.due_date)&&p.due_date>=today).sort((a,b)=>a.due_date.localeCompare(b.due_date)||String(a.id).localeCompare(String(b.id)));
+}
+// True when bonus units are waiting to slide: a missed one and a day to slide it to.
+function bonusWaiting(tasks,id,today){
+ try{const plan=forPlan(tasks,id);return bonusMissed(tasks,id,today).length>0&&bonusDays(plan,today).length>0&&!plan.units.some(u=>u.status==='active'&&Object.keys(u).some(k=>k.startsWith('smart_')));}catch(e){return false;}
+}
+function refreshCoverage(plan,out,gone){
+ const plural=plan.plural||((plan.unit||'unit')+'s'),by=new Map(out.map(t=>[t.id,t])),nums=new Map();
+ for(const t of out)if(t.parent_id&&by.has(t.parent_id)&&t.study_plan_id===plan.id&&!gone.has(t.id)){const n=unitNumber(t);if(n!==null){if(!nums.has(t.parent_id))nums.set(t.parent_id,[]);nums.get(t.parent_id).push(n);}}
+ return out.map(t=>{
+  if(!plan.parents.some(p=>p.id===t.id)||!String(t.description||'').startsWith('Covers '))return t;
+  const list=(nums.get(t.id)||[]).sort((a,b)=>a-b);if(!list.length)return t;
+  const d=coverageLine(plural,list)+userPart(t.description);return d===t.description?t:{...t,description:d};
+ });
+}
+function bonusSlide(tasks,id,today){
+ if(!dateOK(today))throw Error('Invalid date.');
+ const plan=forPlan(tasks,id);
+ if(plan.units.some(u=>u.status==='active'&&Object.keys(u).some(k=>k.startsWith('smart_'))))throw Error('This plan uses Smart Study early dates, which are fixed.');
+ const missed=bonusMissed(tasks,id,today);
+ if(!missed.length)throw Error('No bonus unit is waiting to move.');
+ const days=bonusDays(plan,today);
+ if(!days.length)throw Error('No study days are left to move the bonus unit to.');
+ const dayOfParent=new Map(days.map(d=>[d.id,d])),slots=days.map(d=>{
+  const here=plan.units.filter(u=>u.status==='active'&&u.parent_id===d.id);
+  return {day:d,required:here.filter(u=>!u.is_bonus).length,bonus:here.filter(u=>u.is_bonus).length};
+ });
+ const banks=[...missed,...plan.units.filter(u=>u.status==='active'&&dayOfParent.has(u.parent_id))]
+  .sort((a,b)=>(unitNumber(a)??Infinity)-(unitNumber(b)??Infinity)||String(a.id).localeCompare(String(b.id)));
+ const place=new Map();let at=0;
+ for(const s of slots){
+  const take=banks.slice(at,at+s.required+s.bonus);at+=s.required+s.bonus;
+  take.forEach((u,i)=>place.set(u.id,{parent_id:s.day.id,due_date:s.day.due_date,is_bonus:i>=s.required}));
+ }
+ const gone=new Set(banks.slice(at).map(u=>u.id)),moved=[];
+ const out=[];
+ for(const t of tasks){
+  if(gone.has(t.id))continue;
+  const p=place.get(t.id);
+  if(p&&(t.parent_id!==p.parent_id||(t.due_date||'')!==p.due_date||Boolean(t.is_bonus)!==p.is_bonus)){moved.push(t.id);out.push({...t,...p});}
+  else out.push(t);
+ }
+ const next=refreshCoverage(plan,out,gone);
+ const last=days.at(-1)?.due_date||null;
+ return {tasks:next,moved:moved.length,dropped:gone.size,missed:missed.length,end:last};
+}
+function bonusConvert(tasks,id){
+ const plan=forPlan(tasks,id),open=plan.units.filter(u=>u.status==='active'&&u.is_bonus);
+ if(!open.length)throw Error('This plan has no unfinished bonus units.');
+ const ids=new Set(open.map(u=>u.id));
+ return {tasks:tasks.map(t=>ids.has(t.id)?{...t,is_bonus:false}:t),converted:ids.size};
+}
+function bonusFinish(tasks,id){
+ const plan=forPlan(tasks,id);
+ if(plan.units.some(u=>u.status==='active'&&!u.is_bonus))throw Error('Finish the required units first.');
+ const open=plan.units.filter(u=>u.status==='active'&&u.is_bonus);
+ if(!open.length)throw Error('This plan has no unfinished bonus units.');
+ const gone=new Set(open.map(u=>u.id));
+ return {tasks:refreshCoverage(plan,tasks.filter(t=>!gone.has(t.id)),gone),removed:gone.size};
+}
+// The Worker re-checks what it computed. Only day, parent and bonus flag may change; finished units never move.
+function bonusCheck(before,after,id,op,today){
+ const b=planUnits(before,id),a=planUnits(after,id),FREE=new Set(['parent_id','due_date','is_bonus']);
+ for(const [k,u]of b){
+  const n=a.get(k);
+  if(!n){if(u.status==='completed')return 'A finished unit was removed.';if(!u.is_bonus&&op!=='slide')return 'A required unit was removed.';continue;}
+  if(op==='finish'&&u.parent_id!==n.parent_id)return 'A unit moved.';
+  for(const f of new Set([...Object.keys(u),...Object.keys(n)]))if(!FREE.has(f)&&JSON.stringify(u[f]??null)!==JSON.stringify(n[f]??null))return 'A unit changed beyond its day.';
+  if(u.status!=='active'&&(u.parent_id!==n.parent_id||Boolean(u.is_bonus)!==Boolean(n.is_bonus)||(u.due_date||'')!==(n.due_date||'')))return 'A finished unit moved.';
+ }
+ for(const k of a.keys())if(!b.has(k))return 'A unit was added.';
+ const bm=new Map(before.map(t=>[t.id,t])),am=new Map(after.map(t=>[t.id,t]));
+ if(op==='slide'){
+  const lost=[...b.keys()].filter(k=>!a.has(k)).length,missed=[...b.values()].filter(u=>u.status==='active'&&u.is_bonus&&dateOK(dayDate(bm,u))&&dayDate(bm,u)<today).length;
+  if(lost!==missed)return 'The number of units dropped does not match the bonus units moved.';
+  for(const u of a.values())if(u.status==='active'){const d=dayDate(am,u),old=b.get(u.id);if(dateOK(d)&&d<today&&(!old||old.parent_id!==u.parent_id))return 'A unit moved onto a past day.';}
+  const count=(m,units,flag)=>{const c=new Map();for(const u of units.values())if(u.status==='active'&&dateOK(dayDate(m,u))&&dayDate(m,u)>=today&&Boolean(u.is_bonus)===flag){const d=dayDate(m,u);c.set(d,(c.get(d)||0)+1);}return c;};
+  for(const flag of [false,true]){const x=count(bm,b,flag),y=count(am,a,flag);for(const d of new Set([...x.keys(),...y.keys()]))if((x.get(d)||0)!==(y.get(d)||0))return 'The places per day changed.';}
+ }
+ if(op==='finish'&&[...a.values()].some(u=>u.status==='active'&&u.is_bonus))return 'Bonus units are still open.';
+ return null;
+}
+
 // The plan's current schedule, read back from its upcoming days, so editing starts from what the plan does now and not from defaults.
 // Weekdays are the weekdays those days fall on (all seven = every day). Units per day and per-weekday amounts are read from the
 // days before the last one (the last day holds the remainder); when they follow no pattern the editor opens in "number of study days" mode.
@@ -385,5 +485,5 @@ function currentSchedule(plan,today,fallbackWeekdays=[]){
  return out;
 }
 
-root.TaskitatorStudyManage={currentSchedule,auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
+root.TaskitatorStudyManage={currentSchedule,auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,bonusMissed,bonusWaiting,bonusSlide,bonusConvert,bonusFinish,bonusCheck,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
 })(typeof window==='undefined'?globalThis:window);

@@ -11,8 +11,8 @@
     const MAPS = {
         nature: {
             // shell
-            'menu': 'nt-i-earth', 'completed': 'nt-i-leaf', 'breaks': 'nt-i-tent', 'scratchpad': 'nt-i-ff0',
-            'scratchpad-lit': 'nt-i-ff1', 'emergency': 'nt-i-flame', 'copilot': 'nt-x-copilot-head', 'sparkle': 'nt-x-sparkle',
+            'menu': 'nt-i-earth', 'completed': 'nt-i-clover', 'breaks': 'nt-i-tent', 'scratchpad': 'nt-i-ff0',
+            'scratchpad-lit': 'nt-i-ff1', 'emergency': 'nt-i-viper-asleep', 'emergency-active': 'nt-i-viper-awake', 'copilot': 'nt-x-copilot-head', 'sparkle': 'nt-x-sparkle',
             'add': 'nt-x-plus', 'leaf': 'nt-leaf',
             // navigation
             'nav-today': 'nt-e-pine', 'nav-general': 'nt-e-palm', 'nav-calendar': 'nt-e-calendar', 'nav-projects': 'nt-e-briefcase',
