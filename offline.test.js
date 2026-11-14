@@ -269,7 +269,7 @@ test('offline banner is small, dismissible and gates AI actions in source', asyn
 
 test('Pro activation, phone token and Sleep Lock setup need a connection or a MacroDroid token', () => {
     const pro = fs.readFileSync(new URL('pro.js', root), 'utf8');
-    const sleep = fs.readFileSync(new URL('sleep.html', root), 'utf8');
+    const sleep = fs.readFileSync(new URL('index.html', root), 'utf8') + fs.readFileSync(new URL('sleep.js', root), 'utf8');
     assert.match(core, /'#pro-activate-btn', '#generatePhoneTokenBtn', '#revokePhoneTokenBtn'/);
     assert.match(pro, /Activating Pro needs an internet connection/);
     assert.match(sleep, /id="macroNeeded"[^>]*hidden/);

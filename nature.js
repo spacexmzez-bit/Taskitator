@@ -78,7 +78,14 @@
         if (p.endsWith('/help.html')) return 'help';
         if (p.endsWith('/login.html')) return 'login';
         if (p.endsWith('/components.html')) return /view=projects/.test(location.search) ? 'general' : 'help';
-        return /^#general/.test(location.hash) ? 'general' : 'today';
+        // index.html shell views (Phase 3.0)
+        const shell = window.TaskitatorShell;
+        const h = shell?.key() ?? location.hash.slice(1).toLowerCase();
+        const view = shell?.routeOf(h).view ?? h;
+        if (view === 'sleep') return 'sleep';
+        if (view === 'study-plans' || view === 'projects' || h === 'general') return 'general';
+        if (['help', 'calendar', 'stats', 'trash', 'blocker-guide'].includes(view) || h.startsWith('help-')) return 'help';
+        return 'today';
     }
     let sceneName = null;
     function scene(name) {
@@ -254,6 +261,7 @@
         addEventListener('scroll', onScroll, { passive: true });
         addEventListener('resize', onScroll);
         addEventListener('hashchange', () => scene(pageScene()));
+        addEventListener('taskitator-view-changed', () => scene(pageScene()));
         addEventListener('taskitator-task-created', () => setTimeout(() => bird(false), 350));
         addEventListener('taskitator-appearance', () => parallax());
         // Back/forward cache: never restore a page still covered by clouds.

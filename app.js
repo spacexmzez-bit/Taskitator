@@ -67,9 +67,11 @@ window.TaskitatorAgent = (() => {
     function getPageContext() {
         const path = (window.location?.pathname || '').toLowerCase();
         const search = String(window.location?.search || '');
-        const hash = String(window.location?.hash || '').replace(/^#/, '').toLowerCase();
+        const shell = window.TaskitatorShell;
+        const hash = shell?.key() ?? String(window.location?.hash || '').replace(/^#/, '').toLowerCase();
         const viewMatch = search.match(/[?&]view=([^&#]+)/i);
-        const view = (viewMatch ? decodeURIComponent(viewMatch[1]).toLowerCase() : '') || hash;
+        let view = hash;
+        if (viewMatch) try { view = decodeURIComponent(viewMatch[1]).toLowerCase() || hash; } catch (_) {}
         if (path.endsWith('components.html')) {
             if (view === 'stats') return 'stats';
             if (view === 'trash') return 'trash';
@@ -80,6 +82,14 @@ window.TaskitatorAgent = (() => {
             if (view === 'compare') return 'compare';
             return 'projects';
         }
+        // Phase 3.0 shell views of index.html (#calendar, #stats, ...): read-only for Ari, like the old components.html views.
+        const shellViews = { stats: 'stats', trash: 'trash', 'blocker-guide': 'blocker_guide', guide: 'blocker_guide', projects: 'projects', calendar: 'calendar', 'study-plans': 'study_plans', sleep: 'sleep', help: 'help' };
+        if (shell) {
+            const route = shell.routeOf(hash);
+            return route.view === 'tasks' ? (hash === 'general' ? 'general' : 'today') : shellViews[route.view];
+        }
+        if (!path.endsWith('settings.html') && Object.prototype.hasOwnProperty.call(shellViews, view)) return shellViews[view];
+        if (!path.endsWith('settings.html') && view.startsWith('help-')) return 'help';
         if (path.endsWith('general.html') || view === 'general') return 'general';
         if (path.endsWith('stats.html')) return 'stats';
         if (path.endsWith('settings.html')) return 'settings';
@@ -176,7 +186,7 @@ window.TaskitatorAgent = (() => {
             );
         } else {
             contextDirectives += (
-                `CURRENT PAGE: ${page} view (components.html?view=${page}).\n` +
+                `CURRENT PAGE: ${page} view.\n` +
                 "ROLE: Workspace Navigation & Feature Guide.\n" +
                 "CRITICAL RESTRICTION: You DO NOT have task manipulation tools on this page. If the user asks to create, edit, or trash tasks, instruct them to switch to Today or General Tasks first."
             );
@@ -555,7 +565,8 @@ window.TaskitatorAgent = (() => {
 
             // Audit F14: the tool list sent to the model is an instruction, not a boundary. Enforce it locally.
             const allowedNames = new Set(activeTools.flatMap(t => (t.functionDeclarations || t.function_declarations || []).map(d => d.name)));
-            const allowedTool = call => typeof call?.name === 'string' && allowedNames.has(call.name) &&
+            const allowedTool = call => ['today', 'general'].includes(getPageContext()) &&
+                typeof call?.name === 'string' && allowedNames.has(call.name) &&
                 (call.args == null || (typeof call.args === 'object' && !Array.isArray(call.args)));
 
             for (let loop = 0; loop < 4; loop++) {
@@ -857,6 +868,7 @@ ${formattedInput}`;
     }
 
     window.addEventListener('taskitator-synced', refreshSystemNames);
+    window.addEventListener('taskitator-view-changed', refreshSystemNames);
     window.addEventListener('taskitator-settings-changed',refreshSystemNames);
     window.addEventListener('storage',e=>{if(e.key==='taskitator_settings')refreshSystemNames();});
     window.addEventListener('taskitator-ai-provider-changed',resetConversation);
@@ -3422,8 +3434,12 @@ window.TaskitatorApp = (() => {
     // Today <-> General: clouds sweep in, the list swaps underneath, clouds part (Nature theme only; instant otherwise).
     let routedOnce = false;
     let routing = false;
-    const hashView = () => (window.location.hash.replace('#', '').toLowerCase() === 'general' ? 'general' : 'today');
+    const taskHash = () => window.TaskitatorShell?.key() ?? window.location.hash.slice(1).toLowerCase();
+    const hashView = () => taskHash() === 'general' ? 'general' : 'today';
+    // Hashes of the other shell views (#calendar, #study-plans, ...) belong to shell-router.js, not to the task list.
+    const isTaskHash = () => (window.TaskitatorShell?.routeOf(taskHash()).view ?? 'tasks') === 'tasks';
     async function handleHashRouting() {
+        if (routedOnce && !isTaskHash()) return;
         const next = hashView();
         const nature = window.TaskitatorNature;
         if (!routedOnce || routing || next === currentView || !nature?.cloudsIn) {
@@ -3434,7 +3450,7 @@ window.TaskitatorApp = (() => {
         routing = true;
         let covered = false;
         try { covered = await nature.cloudsIn(); } catch (_) { covered = false; }
-        try { setView(hashView()); } finally { routing = false; if (covered) nature.cloudsOut(); }
+        try { if (isTaskHash()) setView(hashView()); } finally { routing = false; if (covered) nature.cloudsOut(); }
     }
 
     // =========================================================================
@@ -4768,7 +4784,7 @@ if ('serviceWorker' in navigator) {
     // 6. View Scoping (#today visibility check)
     // =========================================================================
     function checkViewVisibility() {
-        const hash = window.location.hash.replace('#', '').toLowerCase();
+        const hash = window.TaskitatorShell?.key() ?? window.location.hash.slice(1).toLowerCase();
         // Today view active on empty hash or #today
         if (hash === '' || hash === 'today') {
             dom.fab.classList.remove('hidden');

@@ -1,4 +1,4 @@
-/* Study plans page (Phase 2.4a, redesigned in 2.6; drafts tab and Emergency Bypass button in 2.8). Lists the plans made by study recurrence and edits them through TaskitatorStudyManage.
+/* Study plans view (Phase 2.4a, redesigned in 2.6; drafts tab and Emergency Bypass button in 2.8; a view of the index.html shell since 3.0). Lists the plans made by study recurrence and edits them through TaskitatorStudyManage.
    One open plan, three tabs (Task info, AI criteria, Scheduling) and one save bar. Saving is sequential, not atomic:
    task info and criteria are pushed first, then the schedule is re-planned by the Worker.
    Rules enforced by the Worker, mirrored here: editing needs Pro; deleting needs a server grant; plans with AI criteria cost
@@ -33,18 +33,25 @@ function localToday() {
 // Save, push now, and put everything back if the server refuses (offline keeps the change and syncs later). Returns true when saved.
 async function commit(change, done) {
     if (busy) return false;
+    load();
     busy = true; render();
     const before = { tasks: localStorage.getItem(TASKS), state: localStorage.getItem(STATE) };
     let ok = false;
     try {
         const result = change();
-        localStorage.setItem(TASKS, JSON.stringify(result.tasks));
-        if (result.state) localStorage.setItem(STATE, JSON.stringify(result.state));
+        const savedTasks = JSON.stringify(result.tasks);
+        const savedState = result.state && JSON.stringify(result.state);
+        localStorage.setItem(TASKS, savedTasks);
+        if (savedState) localStorage.setItem(STATE, savedState);
         if (window.SyncEngine && SyncEngine.markLocalModified) SyncEngine.markLocalModified();
         if (syncing()) {
             const sent = await SyncEngine.syncNow({ origin: 'manual' });
             if (sent && sent.success === false && !['offline', 'unconfigured', 'session_changed'].includes(sent.reason)) {
-                for (const [key, value] of [[TASKS, before.tasks], [STATE, before.state]]) { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); }
+                for (const [key, saved, value] of [[TASKS, savedTasks, before.tasks], [STATE, savedState, before.state]]) {
+                    if (!saved || localStorage.getItem(key) !== saved) continue;
+                    if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value);
+                }
+                window.dispatchEvent(new CustomEvent('taskitator-tasks-updated'));
                 throw Error(sent.error || sent.message || 'The server did not accept this change. Nothing was changed.');
             }
         }
@@ -314,13 +321,15 @@ async function save() {
     if (info.dirty.info || info.dirty.ai) {
         const ok = await commit(() => {
             let t = tasks;
+            const latest = planOf(plan.id);
+            if (!latest) throw Error(tr('This plan no longer exists. Delete the draft.'));
             if (info.dirty.info) {
                 const o = origInfo(plan);
                 if (plan.base && d.info.title !== o.title) t = M.renamePlan(t, plan.id, d.info.title).tasks;
                 if (plan.unit && d.info.unit !== o.unit) t = M.renameUnit(t, plan.id, d.info.unit, d.info.unit.trim() + 's', { bypass: bypass.active }).tasks;
                 if (d.info.parent !== o.parent || d.info.unitP !== o.unitP) t = M.setPriorities(t, plan.id, { parent: d.info.parent || null, unit: d.info.unitP || null }, settings).tasks;
             }
-            if (info.dirty.ai) t = M.addCriteria(t, plan.id, d.ai.criteria, M.auditTargets(plan, d.ai.exclude).numbers).tasks;
+            if (info.dirty.ai) t = M.addCriteria(t, plan.id, d.ai.criteria, M.auditTargets(latest, d.ai.exclude).numbers).tasks;
             return { tasks: t };
         }, () => tr('Saved.'));
         if (!ok) return;
@@ -508,8 +517,8 @@ async function restoreDraft(id) {
     const d = Drafts()?.getStudy(id); if (!d) { status(tr('This draft no longer exists.')); render(); return; }
     if (!await ask(tr('Restore draft?'), d.kind === 'edit'
         ? [tr('The plan editor opens with the draft\'s changes. Anything you typed in that plan and did not save is replaced.'), tr('Nothing is applied until you save.')]
-        : [tr('The study recurrence dialog opens on the Tasks page with the draft filled in.'), tr('Nothing is created until you confirm there.')], tr('Restore'))) return;
-    if (d.kind === 'create') { location.href = 'index.html?study_draft=' + encodeURIComponent(id); return; }
+        : [tr('The study recurrence dialog opens with the draft filled in.'), tr('Nothing is created until you confirm there.')], tr('Restore'))) return;
+    if (d.kind === 'create') { await openCreate({ draft: { ...d, id } }); return; }
     const plan = planOf(d.plan_id); if (!plan) { status(tr('This plan no longer exists. Delete the draft.')); render(); return; }
     drafts.delete(plan.id); current = plan.id; pageTab = 'plans'; render();
     const draft = draftFor(plan);
@@ -519,14 +528,15 @@ async function restoreDraft(id) {
     render();
     status(d.schedule.sched && !r.preview ? tr('Draft restored. The plan changed since the draft was saved, so preview the schedule again.') : tr('Draft restored. Review it, then save.'));
 }
-let started = false;
+// Phase 3.0: the create dialog opens here, in the shell, instead of sending you to the Tasks page.
+async function openCreate(initial) {
+    if (!window.TaskitatorStudy?.open) { status(tr('Reload Taskitator to load Study recurrence.')); return; }
+    const r = await window.TaskitatorStudy.open(initial || {});
+    if (r?.status === 'pro_required' || r?.status === 'unavailable') status(r.message);
+}
+let started = false, visible = false;
 async function start() {
     if (started) return; started = true;
-    const drawer = $('sidebarDrawer'), backdrop = $('drawerBackdrop'), openBtn = $('openDrawerBtn');
-    if (openBtn && drawer && backdrop) {
-        openBtn.addEventListener('click', () => { drawer.classList.add('open'); backdrop.classList.add('open'); });
-        backdrop.addEventListener('click', () => { drawer.classList.remove('open'); backdrop.classList.remove('open'); });
-    }
     $('planSave').addEventListener('click', () => save());
     $('planDiscard').addEventListener('click', () => { if (current) { drafts.delete(current); render(); status(''); } });
     $('planSaveDraft').addEventListener('click', () => saveDraft());
@@ -537,9 +547,16 @@ async function start() {
     load(); render(); await access(); render();
 }
 const refresh = () => { if (!busy && !anyDirty()) { load(); access().then(render); } };
-window.addEventListener('focus', refresh);
-$('plansAddBtn')?.addEventListener('click', () => { location.href = 'index.html?study_new=1'; });
-window.addEventListener('storage', () => { if (!busy && !anyDirty()) { load(); render(); } });
-document.addEventListener('DOMContentLoaded', start);
-if (document.readyState !== 'loading') start();
+window.addEventListener('focus', () => { if (visible) refresh(); });
+$('plansAddBtn')?.addEventListener('click', () => openCreate({}));
+window.addEventListener('storage', () => { if (visible && !busy && !anyDirty()) { load(); render(); } });
+// A plan created (or a draft used) from the dialog shows up here at once.
+window.addEventListener('taskitator-study-closed', () => { if (started && !busy && !anyDirty()) { load(); render(); } });
+// Shell view (Phase 3.0): starts the first time the view opens; later visits reload the plans unless something is being edited.
+// Unsaved edits stay in memory while you visit other views.
+window.TaskitatorStudyPlansView = Object.freeze({
+    show() { visible = true; if (!started) start(); else refresh(); },
+    hide() { visible = false; },
+    dirty: () => anyDirty()
+});
 })();

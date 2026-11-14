@@ -28,7 +28,7 @@ function readConsolidatedSource(name) {
         return fs.readFileSync(directPath, 'utf8');
     }
     if (clean === 'stats.html') {
-        const compHtml = fs.readFileSync(new URL('components.html', TEST_ROOT), 'utf8');
+        const compHtml = fs.readFileSync(new URL('views/stats.js', TEST_ROOT), 'utf8');
         const m = compHtml.match(/\/\/ <<< MODULE_START: stats\.html >>>([\s\S]*?)\/\/ <<< MODULE_END: stats\.html >>>/);
         if (m) {
             const inner = m[1].trim().replace(/^\(\(\) => \{/, '').replace(/\}\)\(\);$/, '');
@@ -36,14 +36,15 @@ function readConsolidatedSource(name) {
         }
     }
     if (clean === 'pro/compare.html') {
-        const compHtml = fs.readFileSync(new URL('components.html', TEST_ROOT), 'utf8');
+        const compHtml = fs.readFileSync(new URL('legal.html', TEST_ROOT), 'utf8');
         const m = compHtml.match(/<!-- <<< MODULE_START: pro\/compare\.html >>> -->([\s\S]*?)<!-- <<< MODULE_END: pro\/compare\.html >>> -->/);
         if (m) return m[1].trim();
     }
     if (clean === 'blocker-guide.html') {
-        return fs.readFileSync(new URL('components.html', TEST_ROOT), 'utf8');
+        // Phase 3.0: the guide is a view of the index.html shell; its script is views/blocker-guide.js.
+        return fs.readFileSync(new URL('index.html', TEST_ROOT), 'utf8') + '\n<script type="text/taskitator-script">' + fs.readFileSync(new URL('views/blocker-guide.js', TEST_ROOT), 'utf8') + '</script>';
     }
-    for (const bundle of ['core.js', 'pro.js', 'components.js', 'app.js', 'components.html']) {
+    for (const bundle of ['core.js', 'pro.js', 'components.js', 'app.js', 'components.html', 'views/projects.js', 'views/calendar.js', 'views/stats.js', 'views/trash.js', 'views/blocker-guide.js']) {
         const bundleText = fs.readFileSync(new URL(bundle, TEST_ROOT), 'utf8');
         const escaped = clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regex = new RegExp(`\\/\\/ <<< MODULE_START: ${escaped} >>>([\\s\\S]*?)\\/\\/ <<< MODULE_END: ${escaped} >>>`);
@@ -1524,7 +1525,7 @@ test("Free-versus-Pro comparison page covers limits, dynamic charges, ×2 exempl
     assert.doesNotMatch(compareHtml, /\$\d|\bUSD\b|\bSAR\b|per month|\/month|pricing/i, "Comparison page must not display a price");
 
     const proUi = readConsolidatedSource("pro/pro-ui.js");
-    assert.match(proUi, /href="components\.html\?view=compare"[^>]*>Compare Free and Pro/);
+    assert.match(proUi, /href="legal\.html\?view=compare"[^>]*>Compare Free and Pro/);
 });
 
 test("Account-deletion status route on settings.html?view=deletion-status activates status panel without self-redirecting", async () => {
@@ -1565,12 +1566,20 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
         assert.equal(f.window.TaskitatorAgent.getPageContext(), expectedCtx);
         await f.window.TaskitatorAgent.sendMessage("Check context");
         assert.equal(lastPayload.tools, undefined, "Mutation tools must be disabled on components.html" + search);
+    }    // Phase 3.0: the same views live in the index.html shell as #hash routes; Ari stays read-only there too.
+    for (const [hash, expectedCtx] of [["#stats", "stats"], ["#trash", "trash"], ["#blocker-guide", "blocker_guide"], ["#projects", "projects"], ["#calendar", "calendar"], ["#study-plans", "study_plans"], ["#sleep", "sleep"], ["#help", "help"], ["#help-p-study", "help"]]) {
+        f.window.location = { pathname: "/index.html", search: "", hash };
+        assert.equal(f.window.TaskitatorAgent.getPageContext(), expectedCtx, hash);
+        await f.window.TaskitatorAgent.sendMessage("Check context");
+        assert.equal(lastPayload.tools, undefined, "Mutation tools must be disabled on index.html" + hash);
     }
+    for (const hash of ["", "#today"]) { f.window.location = { pathname: "/index.html", search: "", hash }; assert.equal(f.window.TaskitatorAgent.getPageContext(), "today"); }
+    f.window.location = { pathname: "/index.html", search: "", hash: "#general" }; assert.equal(f.window.TaskitatorAgent.getPageContext(), "general");
 });
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-phase2-v23'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-phase3-v25'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);

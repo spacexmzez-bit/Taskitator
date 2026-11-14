@@ -95,6 +95,7 @@
         "See the plans created by study recurrence, change their names and priorities, add AI criteria, or delete them.": "اطّلع على الخطط التي أنشأها التكرار الدراسي، وعدّل أسماءها وأولوياتها، وأضف معايير الذكاء الاصطناعي، أو احذفها.",
         "Previous plans": "الخطط السابقة",
         "No study plans yet. Create one from a study recurrence on the Tasks page.": "لا توجد خطط دراسة بعد. أنشئ واحدة من التكرار الدراسي في صفحة المهام.",
+        "No study plans yet. Use the New study plan button to create one.": "لا توجد خطط دراسة بعد. استخدم زر خطة دراسة جديدة لإنشاء خطة.",
         "Saved.": "تم الحفظ.",
         "Mixed": "مختلطة",
         "No priority": "بلا أولوية",
@@ -2909,6 +2910,16 @@
         "Reschedule": "إعادة الجدولة",
         "Study recurrence": "تكرار الدراسة",
         "New study plan": "خطة دراسة جديدة",
+        "Projects — Taskitator": "المشاريع — Taskitator",
+        "Calendar — Taskitator": "التقويم — Taskitator",
+        "Stats — Taskitator": "الإحصائيات — Taskitator",
+        "Trash — Taskitator": "المحذوفات — Taskitator",
+        "Phone blocker guide — Taskitator": "دليل حاجب الهاتف — Taskitator",
+        "Study plans — Taskitator": "خطط الدراسة — Taskitator",
+        "Help — Taskitator": "المساعدة — Taskitator",
+        "Privacy Policy & Terms — Taskitator": "سياسة الخصوصية والشروط — Taskitator",
+        "Compare Free & Pro — Taskitator": "مقارنة المجاني وبرو — Taskitator",
+        "Universe — Taskitator": "يونيفيرس — Taskitator",
         "Return to previous page": "العودة إلى الصفحة السابقة"
     });
     if (typeof module === 'object' && module.exports) module.exports = build();

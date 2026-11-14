@@ -48,7 +48,7 @@ test('shipped templates are valid and wired together', () => {
 
 test('settings, guide and service worker are wired', () => {
     const settings = fs.readFileSync('settings.html', 'utf8');
-    const guide = fs.readFileSync('components.html', 'utf8');
+    const guide = fs.readFileSync('index.html', 'utf8'); // the phone blocker guide is a view of the index.html shell (Phase 3.0)
     const sw = fs.readFileSync('sw.js', 'utf8');
     assert.match(settings, /src="macro-bridge\.js"/);
     assert.match(settings, /setBridgeToken\(data\.token\)/);

@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const read = f => fs.readFileSync(new URL(f, import.meta.url), 'utf8');
-const PAGES = ['index.html', 'components.html', 'settings.html', 'help.html', 'login.html', 'sleep.html', 'study-plans.html'];
+// Phase 3.0: Help, Sleep Lock and Study plans are views of index.html (their old files only redirect); legal.html is the public legal page.
+const PAGES = ['index.html', 'components.html', 'settings.html', 'login.html', 'legal.html'];
 
 function boot(stored) {
     const store = new Map(stored ? [['taskitator_lang', JSON.stringify(stored)]] : []);
@@ -206,7 +207,7 @@ test('user content containers are never translated', () => {
     for (const sel of ['.task-title', '.tag-chip', '.chat-bubble', '.completed-item-title', '.dump-note-body', '.trash-title', '.uni-comment', '[translate="no"]', '[contenteditable]'])
         assert.ok(src.includes("'" + sel + "'"), 'USER selector list covers ' + sel);
     assert.match(read('pro.js'), /if \(!\(project\.id === 'inbox' && project\.name === 'Inbox'\)\) name\.setAttribute\('translate', 'no'\)/);
-    const comp = read('components.html');
+    const comp = read('legal.html');
     assert.match(comp, /id="legalPrivacySection" translate="no" lang="en"/, 'Privacy Policy stays English (binding text)');
     assert.match(comp, /id="legalTermsSection" translate="no" lang="en"/, 'Terms stay English (binding text)');
 });
@@ -219,6 +220,6 @@ test('Clerk sign-in widget gets Arabic text only when the UI is Arabic', () => {
 });
 
 test('Help stays English and left-to-right until it is translated', () => {
-    const help = read('help.html');
-    assert.match(help, /<main class="hp" translate="no" lang="en" dir="ltr">/);
+    const help = read('index.html');
+    assert.match(help, /<div class="hp" translate="no" lang="en" dir="ltr">/);
 });

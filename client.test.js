@@ -15,7 +15,7 @@ function readConsolidatedSource(name) {
         return fs.readFileSync(directPath, 'utf8');
     }
     if (clean === 'stats.html') {
-        const compHtml = fs.readFileSync(new URL('components.html', TEST_ROOT), 'utf8');
+        const compHtml = fs.readFileSync(new URL('views/stats.js', TEST_ROOT), 'utf8');
         const m = compHtml.match(/\/\/ <<< MODULE_START: stats\.html >>>([\s\S]*?)\/\/ <<< MODULE_END: stats\.html >>>/);
         if (m) {
             const inner = m[1].trim().replace(/^\(\(\) => \{/, '').replace(/\}\)\(\);$/, '');
@@ -23,14 +23,15 @@ function readConsolidatedSource(name) {
         }
     }
     if (clean === 'pro/compare.html') {
-        const compHtml = fs.readFileSync(new URL('components.html', TEST_ROOT), 'utf8');
+        const compHtml = fs.readFileSync(new URL('legal.html', TEST_ROOT), 'utf8');
         const m = compHtml.match(/<!-- <<< MODULE_START: pro\/compare\.html >>> -->([\s\S]*?)<!-- <<< MODULE_END: pro\/compare\.html >>> -->/);
         if (m) return m[1].trim();
     }
     if (clean === 'blocker-guide.html') {
-        return fs.readFileSync(new URL('components.html', TEST_ROOT), 'utf8');
+        // Phase 3.0: the guide is a view of the index.html shell; its script is views/blocker-guide.js.
+        return fs.readFileSync(new URL('index.html', TEST_ROOT), 'utf8') + '\n<script type="text/taskitator-script">' + fs.readFileSync(new URL('views/blocker-guide.js', TEST_ROOT), 'utf8') + '</script>';
     }
-    for (const bundle of ['core.js', 'pro.js', 'components.js', 'app.js', 'components.html']) {
+    for (const bundle of ['core.js', 'pro.js', 'components.js', 'app.js', 'components.html', 'views/projects.js', 'views/calendar.js', 'views/stats.js', 'views/trash.js', 'views/blocker-guide.js']) {
         const bundleText = fs.readFileSync(new URL(bundle, TEST_ROOT), 'utf8');
         const escaped = clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regex = new RegExp(`\\/\\/ <<< MODULE_START: ${escaped} >>>([\\s\\S]*?)\\/\\/ <<< MODULE_END: ${escaped} >>>`);
@@ -347,7 +348,7 @@ test('HTML inline scripts have matching CSP hashes and no inline event handlers 
             const hash="'sha256-"+createHash('sha256').update(match[2]).digest('base64')+"'";
             assert.ok(csp.includes(hash),filename+' CSP does not match inline code');
         }
-        if (['account-deletion.html','help.html','welcome.html','privacy.html','terms.html','PHASE-1-SETUP.html','PHASE-2-SETUP.html','PHASE-3-SETUP.html'].includes(filename)) {
+        if (['account-deletion.html','help.html','sleep.html','study-plans.html','legal.html','welcome.html','privacy.html','terms.html','PHASE-1-SETUP.html','PHASE-2-SETUP.html','PHASE-3-SETUP.html'].includes(filename)) {
             assert.equal(/<script\b[^>]*\bsrc=["']auth-bootstrap\.js["']/.test(html),false);
         } else assert.ok(html.includes('core.js'));
     }
@@ -361,7 +362,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase2-v23'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase3-v25'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -474,6 +475,23 @@ test('first migration conflict exposes working Continue and completes after reso
     assert.deepEqual(f.redirects,['index.html']);
 });
 
+test('sign-in restores an app deep link after the workspace sync succeeds', async () => {
+    for (const [stored, expected] of [
+        ['/preview/index.html#help-p-study', '/preview/index.html#help-p-study'],
+        ['/preview/components.html?view=universe&invite=example', '/preview/components.html?view=universe&invite=example'],
+        ['https://elsewhere.test/preview/index.html', 'index.html'],
+        ['/other/index.html', 'index.html']
+    ]) {
+        const f = await loginFixture([{success:true}]);
+        f.context.location.href = 'https://app.test/preview/login.html';
+        f.context.URL = URL;
+        f.context.sessionStorage.setItem('taskitator_login_return', stored);
+        await f.element('migrationForm').onsubmit({preventDefault(){}});
+        assert.deepEqual(f.redirects, [expected]);
+        assert.equal(f.context.sessionStorage.getItem('taskitator_login_return'), null);
+    }
+});
+
 test('new-account initial sync failure is retryable without creating or reconnecting an account',async()=>{
     const f=await loginFixture([{success:false,error:'network unavailable'},{success:true}]);
     await f.element('newAccountBtn').onclick({target:f.element('newAccountBtn')});
@@ -561,7 +579,7 @@ test('Settings defaults to General and separates local reset from account deleti
     assert.ok(html.includes('Your cloud account and synced data stay.'));
     assert.ok(html.includes('Permanently deletes your account, cloud data'));
     const account=html.slice(html.indexOf('id="tab-account"'), html.indexOf('id="tab-account"')+18000);
-    for(const href of ['components.html?view=legal','components.html?view=legal#deletion']) assert.ok(account.includes('href="'+href+'"'));
+    for(const href of ['legal.html','legal.html#deletion']) assert.ok(account.includes('href="'+href+'"'));
 });
 
 function verificationVaultClient() {
@@ -802,14 +820,60 @@ test('Timer enforces duration limits and finishes with a large break',()=>{
  assert.equal(engine.valid(r.state),true);r=engine.advance(s,1201000);assert.equal(r.state.done,true);assert.equal(r.event,'complete');
  for(const [field,value]of [['work',91],['rest',16],['large',36],['sessions',5]])assert.equal(engine.valid({...engine.fresh(),config:{...engine.fresh().config,[field]:value}}),false);
 });
-test('Workspace routes initialize independently and select Universe without database access',()=>{
+test('Universe page shows only Universe; old components.html views redirect into the shell or legal.html',()=>{
  const html=fs.readFileSync(new URL('components.html',rootURL()),'utf8');
- const scripts=[...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(m=>m[1]);const router=scripts.find(s=>s.includes('const publicViews'));
- assert.ok(router);assert.equal(router.includes('MODULE_START:'),false);
- const panes=['projects','calendar','stats','trash','universe'].map(v=>({id:'componentView-'+v,style:{}}));let events=[];
- const document={querySelectorAll:selector=>selector==='.component-view-pane'?panes:[],getElementById:()=>null};
- vm.runInNewContext(router,{document,window:{location:{search:'?view=universe',hash:''},dispatchEvent:e=>events.push(e.type)},URLSearchParams,Event});
- assert.equal(panes.find(p=>p.id==='componentView-universe').style.display,'block');assert.equal(panes[0].style.display,'none');assert.deepEqual(events,['taskitator-universe-view']);
+ assert.ok(html.indexOf('legacy-redirect.js')<html.indexOf('core.js'));assert.ok(html.includes('src="universe-page.js"'));
+ for(const v of ['projects','calendar','stats','trash','blocker-guide','compare','legal'])assert.equal(html.includes('id="componentView-'+v+'"'),false,v);
+ assert.equal([...html.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>[\s\S]*?\S[\s\S]*?<\/script>/g)].length,0,'no inline scripts');
+ const pane={style:{}},events=[],title={textContent:''};
+ vm.runInNewContext(fs.readFileSync(new URL('universe-page.js',rootURL()),'utf8'),{document:{getElementById:id=>id==='componentView-universe'?pane:id==='componentPageTitle'?title:null},window:{dispatchEvent:e=>events.push(e.type)},Event});
+ assert.equal(pane.style.display,'block');assert.deepEqual(events,['taskitator-universe-view']);assert.equal(title.textContent,'Universe');
+ const code=fs.readFileSync(new URL('legacy-redirect.js',rootURL()),'utf8');
+ const go=(pathname,search='',hash='')=>{let to=null;vm.runInNewContext(code,{location:{pathname,search,hash,replace:u=>{to=u;}},URLSearchParams});return to;};
+ assert.equal(go('/components.html','?view=universe'),null);
+ assert.equal(go('/components.html','?view=calendar'),'index.html#calendar');assert.equal(go('/components.html',''),'index.html#projects');
+ assert.equal(go('/components.html','?view=blocker-guide'),'index.html#blocker-guide');assert.equal(go('/components.html','?view=guide'),'index.html#blocker-guide');
+ assert.equal(go('/components.html','?view=guide&x=1','#bridge-manual'),'index.html?x=1#bridge-manual');
+ assert.equal(go('/components.html','?view=legal','#deletion'),'legal.html#deletion');assert.equal(go('/components.html','?view=compare'),'legal.html?view=compare');
+ assert.equal(go('/components.html','?view=terms'),'legal.html#legalTermsSection');
+ assert.equal(go('/sleep.html'),'index.html#sleep');assert.equal(go('/study-plans.html'),'index.html#study-plans');
+ assert.equal(go('/help.html'),'index.html#help');assert.equal(go('/help.html','','#p-study'),'index.html#help-p-study');
+ for(const stub of ['sleep.html','study-plans.html','help.html']){const t=fs.readFileSync(new URL(stub,rootURL()),'utf8');assert.ok(t.includes('src="legacy-redirect.js"'),stub);assert.equal(t.includes('core.js'),false);}
+});
+test('Shell router: one index.html, hash views, legacy ?view= and per-view refresh',()=>{
+ const html=fs.readFileSync(new URL('index.html',rootURL()),'utf8');
+ const views=[...html.matchAll(/<(?:div|section)\b[^>]*\bdata-shell-view="([^"]+)"/g)].map(m=>m[1]);
+ assert.deepEqual(views,['tasks','projects','calendar','stats','trash','blocker-guide','study-plans','sleep','help']);
+ for(const f of ['views/projects.js','views/calendar.js','views/stats.js','views/trash.js','views/blocker-guide.js','pro/study-manage.js','study-plans.js','sleep.js','shell-router.js'])assert.ok(html.includes('src="'+f+'"'),f);
+ assert.ok(html.indexOf('src="app.js')<html.indexOf('src="views/projects.js"')&&html.indexOf('src="study-plans.js"')<html.indexOf('src="shell-router.js"'));
+ for(const old of ['components.html?view=calendar','components.html?view=projects','sleep.html"','study-plans.html"','help.html"'])assert.equal(html.includes(old),false,old);
+ const code=fs.readFileSync(new URL('shell-router.js',rootURL()),'utf8');
+ const make=(id,v)=>({id,hidden:false,getAttribute:k=>k==='data-shell-view'?v:null,querySelectorAll:()=>[]});
+ const els=['tasks','projects','calendar','stats','trash','blocker-guide','study-plans','sleep','help'].map(v=>make('v-'+v,v));
+ const links=[{id:'navLinkToday'},{id:'navLinkGeneral'},{shell:'calendar'},{shell:'sleep'}].map(l=>({...l,classList:{on:false,toggle(_,v){this.on=v;}},getAttribute:k=>k==='data-shell-link'?l.shell||null:null}));
+ const calls=[],listeners={},title={textContent:'',hidden:true},jump={style:{}},back={href:'',setAttribute(k,v){this.href=v;}};let replaced=null;
+ const anchors = new Map(['help-p-study', 'help-calendar', 'bridge-manual'].map(id => [id, { scrollIntoView() { calls.push(id); } }]));
+ const location={pathname:'/index.html',search:'?view=stats&x=1',hash:''};
+ const window={scrollY:0,scrollTo(){},addEventListener:(t,f)=>{listeners[t]=f;},dispatchEvent:e=>calls.push(e.type),renderStats:()=>calls.push('stats'),renderCalendarView:()=>calls.push('calendar'),
+  TaskitatorSleepView:{show:()=>calls.push('sleep')},TaskitatorStudyPlansView:{show:()=>calls.push('study'),hide:()=>calls.push('study-hide')}};
+ const document={documentElement:{setAttribute(k,v){this[k]=v;}},title:'',querySelectorAll:s=>s==='.shell-view[data-shell-view]'?els:s==='#drawerNavLinks a'?links:[],querySelector:s=>els.find(e=>s.includes('"'+e.getAttribute('data-shell-view')+'"'))||null,
+  getElementById:id=>id==='componentPageTitle'?title:id==='todayJumpBtn'?jump:id==='helpReturn'?back:anchors.get(id)};
+ vm.runInNewContext(code,{window,document,location,history:{state:null,replaceState:(s,t,u)=>{replaced=u;const i=u.indexOf('#');location.search=u.slice(u.indexOf('?')>=0?u.indexOf('?'):i,i)||'';location.hash=u.slice(i);}},URLSearchParams,CustomEvent:class{constructor(t){this.type=t;}},requestAnimationFrame:f=>f(),console});
+ assert.equal(replaced,'/index.html?x=1#stats','?view= becomes a hash and other parameters stay');
+ const visible=()=>els.filter(e=>!e.hidden).map(e=>e.getAttribute('data-shell-view'));
+ assert.deepEqual(visible(),['stats']);assert.equal(document.documentElement['data-shell'],'stats');assert.equal(title.hidden,false);assert.ok(calls.includes('stats'));
+ location.hash='#calendar';listeners.hashchange();assert.deepEqual(visible(),['calendar']);assert.equal(jump.style.display,'inline-flex');assert.equal(links[2].classList.on,true);
+ location.hash='#sleep';listeners.hashchange();assert.deepEqual(visible(),['sleep']);assert.ok(calls.includes('sleep'));assert.equal(title.hidden,true);
+ location.hash='#help';listeners.hashchange();assert.equal(back.href,'#sleep');
+ location.hash='#help-p-study';listeners.hashchange();assert.deepEqual(visible(),['help']);assert.equal(back.href,'#sleep','Back in Help returns to the previous view');
+ location.hash='#help-calendar';listeners.hashchange();assert.equal(back.href,'#sleep');assert.equal(calls.at(-1),'help-calendar');
+ location.hash='#study-plans';listeners.hashchange();location.hash='#general';listeners.hashchange();
+ assert.deepEqual(visible(),['tasks']);assert.ok(calls.includes('study')&&calls.includes('study-hide'));assert.ok(calls.slice(-2).includes('taskitator-tasks-updated'),'Tasks reload storage when shown again');
+ assert.equal(links[1].classList.on,true);assert.equal(links[0].classList.on,false);
+ location.hash='#key-verification=abc';listeners.hashchange();assert.deepEqual(visible(),['tasks'],'unknown hashes keep Tasks');
+ location.hash='#bridge-manual';listeners.hashchange();assert.deepEqual(visible(),['blocker-guide']);assert.ok(calls.slice(-2).includes('bridge-manual'));
+ location.hash='#%67eneral';listeners.hashchange();assert.deepEqual(visible(),['tasks']);assert.equal(links[1].classList.on,true);
+ assert.match(code,/syncNow\(\{ origin: 'page-load' \}\)/);assert.match(code,/PULL_EVERY_MS = 60000/);
 });
 test('Phase 4.5 focus timer restores absolute deadlines and catches up missed transitions',()=>{
  const engine=focusEngine(),s=engine.fresh();Object.assign(s,{running:true,target:1000000});
@@ -970,11 +1034,11 @@ test('sync countdown label sits under the dot, digits + s only, and ignores read
 });
 
 test('Sleep Lock page: gear panel holds Firm mode and the Today override; Settings points to it',()=>{
- const sleep=fs.readFileSync(new URL('sleep.html',root),'utf8'),settings=fs.readFileSync(new URL('settings.html',root),'utf8');
+ const sleep=fs.readFileSync(new URL('index.html',root),'utf8')+fs.readFileSync(new URL('sleep.js',root),'utf8'),settings=fs.readFileSync(new URL('settings.html',root),'utf8');
  for(const id of ['sleepSettingsBtn','sleepSettingsPanel','firmMode','todayOn','todayBed','todayWake','delaySection'])assert.ok(sleep.includes(`id="${id}"`),id);
  assert.match(sleep,/sleep-gear-ic[\s\S]*Settings<\/span><\/button><\/header>/,'a real gear icon with a Settings label, not the theme icon');
  assert.match(sleep,/firm:firm\.checked,today:todayOn\.checked/);
- assert.match(settings,/id="sleepLockInfo"[\s\S]*href="sleep\.html"[\s\S]*gear icon/);
+ assert.match(settings,/id="sleepLockInfo"[\s\S]*href="index\.html#sleep"[\s\S]*gear icon/);
 });
 
 // ---- Phase 2.8: study plan editing ----
@@ -1012,14 +1076,14 @@ test('Study plan drafts: a restored create draft refills the form and the previe
  assert.equal(c.button('Create plan').disabled,true);assert.match(c.body.textContent,/Preview the schedule again/,'units changed: the preview is dropped');
 });
 test('Study plans page: drafts tab, save-draft button and Emergency Bypass button',()=>{
- const html=fs.readFileSync(new URL('study-plans.html',root),'utf8'),js=fs.readFileSync(new URL('study-plans.js',root),'utf8');
+ const html=fs.readFileSync(new URL('index.html',root),'utf8'),js=fs.readFileSync(new URL('study-plans.js',root),'utf8');
  for(const id of ['plansTabPlans','plansTabDrafts','plansDraftsView','plansDraftList','planSaveDraft','plansBypassBtn'])assert.ok(html.includes(`id="${id}"`),id);
  assert.ok(html.indexOf('task-drafts.js')<html.indexOf('src="study-plans.js"'));
  assert.match(js,/EmergencyManager\.activateBypass\(\)/);assert.match(js,/removeStudy\('edit_' \+ plan\.id\)/);
  assert.match(js,/ask\(tr\('Save draft\?'\)/);assert.match(js,/ask\(tr\('Restore draft\?'\)/);
 });
 test('Study plans page: soft reschedule dialog, Pro gate and free Move overdue to today',()=>{
- const html=fs.readFileSync(new URL('study-plans.html',root),'utf8'),js=fs.readFileSync(new URL('study-plans.js',root),'utf8');
+ const html=fs.readFileSync(new URL('index.html',root),'utf8'),js=fs.readFileSync(new URL('study-plans.js',root),'utf8');
  for(const id of ['planSoft','planSoftBody','planSoftYes','planSoftNo'])assert.ok(html.includes(`id="${id}"`),id);
  assert.match(js,/action: 'soften'/);assert.match(js,/mode: 'today'/);assert.match(js,/M\.softOverdue/);
  assert.match(js,/if \(pro !== true\) \{ status\(/,'spreading is Pro only on the page');
@@ -1028,8 +1092,9 @@ test('Study plans page: soft reschedule dialog, Pro gate and free Move overdue t
  for(const k of ['Soft reschedule','Move overdue to today','Spread over'])assert.ok(ar.includes(`"${k}"`),k);
 });
 test('Study plans: + button opens the create dialog; Pro pill on Study recurrence; editor starts from current settings',()=>{
- const html=fs.readFileSync(new URL('study-plans.html',root),'utf8'),js=fs.readFileSync(new URL('study-plans.js',root),'utf8');
- assert.ok(html.includes('id="plansAddBtn"'));assert.match(js,/study_new=1/);
+ const html=fs.readFileSync(new URL('index.html',root),'utf8'),js=fs.readFileSync(new URL('study-plans.js',root),'utf8');
+ assert.ok(html.includes('id="plansAddBtn"'));assert.match(js,/\$\('plansAddBtn'\)\?\.addEventListener\('click', \(\) => openCreate\(\{\}\)\)/,'the + button opens the dialog in place (Phase 3.0)');
+ assert.match(js,/d\.kind === 'create'\) \{ await openCreate\(\{ draft: \{ \.\.\.d, id \} \}\)/);assert.doesNotMatch(js,/location\.href/);
  assert.match(fs.readFileSync(new URL('pro/study-plan.js',root),'utf8'),/get\('study_new'\)==='1'/);
  const c=fs.readFileSync(new URL('components.js',root),'utf8');
  assert.equal((c.match(/proButton\('Study recurrence'/g)||[]).length,2);assert.match(c,/function proButton[\s\S]{0,200}pro-feature-pill/);

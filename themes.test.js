@@ -193,7 +193,7 @@ test('every #ic- reference in chrome resolves to a mapped icon key', () => {
     const keys = new Set([...icons.match(/nature: \{([\s\S]*?)\n        \}/)[1].matchAll(/'([a-z0-9-]+)': '/g)].map(m => m[1]));
     const animals = icons.match(/const ANIMALS = \[([^\]]+)\]/)[1].match(/'([a-z]+)'/g).map(a => 'animal-' + a.slice(1, -1));
     animals.forEach(k => keys.add(k)); ['bird0', 'bird1', 'bird2'].forEach(k => keys.add(k));
-    for (const f of ['index.html', 'components.html', 'settings.html', 'help.html', 'sleep.html', 'study-plans.html', 'login.html', 'app.js', 'components.js', 'pro.js', 'nature.js']) {
+    for (const f of ['index.html', 'components.html', 'settings.html', 'legal.html', 'login.html', 'app.js', 'components.js', 'pro.js', 'nature.js']) {
         for (const [, key] of read(f).matchAll(/#ic-([a-z0-9-]+)/g)) assert.ok(keys.has(key), `${f}: #ic-${key}`);
     }
     for (const [, key] of read('tutorial-integration.js').matchAll(/icon: '([a-z][a-z0-9-]+)'/g)) assert.ok(keys.has(key), 'tour icon ' + key);
@@ -207,7 +207,8 @@ test('service worker precaches every new theme file and the cache version change
         assert.ok(fs.existsSync(new URL(f, root)), f + ' exists');
     }
     assert.doesNotMatch(sw, /taskitator-button-startup-v1/);
-    for (const page of ['index.html', 'components.html', 'settings.html', 'help.html', 'sleep.html', 'study-plans.html', 'login.html']) {
+    // Phase 3.0: help/sleep/study-plans.html only redirect into index.html.
+    for (const page of ['index.html', 'components.html', 'settings.html', 'legal.html', 'login.html']) {
         const html = read(page);
         const i = html.indexOf('registry.js'), j = html.indexOf('theme-boot.js');
         assert.ok(i > 0 && j > i && j < html.indexOf('</head>'), page + ': registry then boot, blocking, in <head>');
@@ -248,7 +249,7 @@ test('emoji lint: app chrome uses icons; only user content and Universe keep emo
     const KEEP = new Set([...'✕✓☑✎⛶⇅▼↻←→↑↓◆◇•·☰']);
     // Allow-list: user-chosen project icons and the Inbox default (user data), Universe (not in this project).
     const ALLOW = /PROJECT_ICONS|is_default: true|projectObj\.icon \|\||🌌|\.replace\(\/\[/;
-    const files = ['index.html', 'components.html', 'settings.html', 'help.html', 'sleep.html', 'study-plans.html', 'login.html', 'app.js', 'components.js', 'pro.js', 'tutorial-integration.js', 'tutorial-spotlight.js', 'theme-boot.js', 'icons.js', 'nature.js', 'appearance-ui.js'];
+    const files = ['index.html', 'components.html', 'settings.html', 'legal.html', 'login.html', 'views/projects.js', 'views/calendar.js', 'views/stats.js', 'views/trash.js', 'views/blocker-guide.js', 'sleep.js', 'shell-router.js', 'app.js', 'components.js', 'pro.js', 'tutorial-integration.js', 'tutorial-spotlight.js', 'theme-boot.js', 'icons.js', 'nature.js', 'appearance-ui.js'];
     const hits = [];
     for (const f of files) read(f).split('\n').forEach((line, i) => {
         if (ALLOW.test(line)) return;
@@ -277,7 +278,7 @@ test('contrast: text and control pairs meet WCAG AA (4.5:1) in every palette', (
 test('sidebar: same order on every page (Drafts only where the editor exists); Study plans and Help use different icons',async()=>{
   const {readFileSync}=await import('node:fs');
   const read=f=>{const nav=/<nav class="drawer-links" id="drawerNavLinks">([\s\S]*?)<\/nav>/.exec(readFileSync(f,'utf8'))[1];return [...nav.matchAll(/<a [^>]*>([\s\S]*?)<\/a>/g)].map(m=>({icon:/#ic-([\w-]+)/.exec(m[1])[1],label:m[1].replace(/<[^>]*>/g,'').trim()}));};
-  const pages=['index.html','components.html','settings.html','study-plans.html'].map(read),ref=pages[0].map(i=>i.label);
+  const pages=['index.html','components.html','settings.html'].map(read),ref=pages[0].map(i=>i.label);
   for(const p of pages)assert.deepEqual(p.map(i=>i.label),ref.filter(l=>p.some(i=>i.label===l)));
   assert.deepEqual(ref,['Today','General Tasks','Calendar','Projects','Stats','Trash','Drafts','Universe','Sleep Lock','Study plans','Help','Settings']);
   for(const p of pages)assert.notEqual(p.find(i=>i.label==='Study plans').icon,p.find(i=>i.label==='Help').icon);

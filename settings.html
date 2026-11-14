@@ -39,14 +39,14 @@
     <nav class="drawer-links" id="drawerNavLinks">
         <a href="index.html#today"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-today"></use></svg> Today</a>
         <a href="index.html#general"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-general"></use></svg> General Tasks</a>
-        <a href="components.html?view=calendar"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-calendar"></use></svg> Calendar</a>
-        <a href="components.html?view=projects"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-projects"></use></svg> Projects</a>
-        <a href="components.html?view=stats"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-stats"></use></svg> Stats</a>
-        <a href="components.html?view=trash"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-trash"></use></svg> Trash</a>
+        <a href="index.html#calendar"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-calendar"></use></svg> Calendar</a>
+        <a href="index.html#projects"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-projects"></use></svg> Projects</a>
+        <a href="index.html#stats"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-stats"></use></svg> Stats</a>
+        <a href="index.html#trash"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-trash"></use></svg> Trash</a>
         <a href="components.html?view=universe"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-universe"></use></svg> Universe</a>
-        <a href="sleep.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-sleep"></use></svg> Sleep Lock</a>
-        <a href="study-plans.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</a>
-        <a href="help.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-help"></use></svg> Help</a>
+        <a href="index.html#sleep"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-sleep"></use></svg> Sleep Lock</a>
+        <a href="index.html#study-plans"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</a>
+        <a href="index.html#help"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-help"></use></svg> Help</a>
         <a href="settings.html" class="active"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-settings"></use></svg> Settings</a>
     </nav>
 </aside>
@@ -254,7 +254,7 @@
                     <h4 class="card-title">Help &amp; tutorials</h4>
                 </div>
                 <p class="setting-hint" style="margin-bottom:10px">Short guided tours of the app. Replay any of them whenever you like.</p>
-                <p class="setting-hint" style="margin-bottom:10px"><a href="help.html">Read the full help guide →</a> (every feature, with examples)</p>
+                <p class="setting-hint" style="margin-bottom:10px"><a href="index.html#help">Read the full help guide →</a> (every feature, with examples)</p>
                 <div id="tutorialHub" class="tour-list" role="list"></div>
             </div>
         </section>
@@ -455,7 +455,7 @@
                     <strong>First time setting this up?</strong>
                     <span>The setup guide walks you through MacroDroid step by step.</span>
                 </div>
-                <a href="components.html?view=blocker-guide" class="icon-btn btn-md btn-solid-primary btn-primary link-guarded">Open guide →</a>
+                <a href="index.html#blocker-guide" class="icon-btn btn-md btn-solid-primary btn-primary link-guarded">Open guide →</a>
             </div>
 
             <div class="settings-card" id="macrodroidCard">
@@ -518,7 +518,7 @@
 
             <div class="settings-card" id="sleepLockInfo">
                 <h4 class="card-title">Sleep Lock settings</h4>
-                <p class="setting-hint">Sleep Lock has its own page. Open <a href="sleep.html">Sleep Lock</a> and use the gear icon at the top right for Firm mode and for changing tonight's times without touching your default schedule.</p>
+                <p class="setting-hint">Sleep Lock has its own page. Open <a href="index.html#sleep">Sleep Lock</a> and use the gear icon at the top right for Firm mode and for changing tonight's times without touching your default schedule.</p>
                 <p class="setting-hint"><strong>Firm mode:</strong> from 2 hours before your bedtime until wake-up, you can't delay sleep, and turning Sleep Lock or Firm mode off, or moving bedtime or wake-up later, needs an Emergency Bypass. Earlier times are always free.</p>
             </div>
         </section>
@@ -594,9 +594,9 @@
                 <h4 class="card-title">Privacy &amp; terms</h4>
                 <p class="card-desc">How Taskitator handles your data, AI keys and account.</p>
                 <div class="vault-actions">
-                    <a class="icon-btn btn-md" href="components.html?view=legal" target="_blank" rel="noopener noreferrer">Privacy policy ↗</a>
-                    <a class="icon-btn btn-md" href="components.html?view=legal" target="_blank" rel="noopener noreferrer">Terms ↗</a>
-                    <a class="icon-btn btn-md" href="components.html?view=legal#deletion" target="_blank" rel="noopener noreferrer">Data deletion ↗</a>
+                    <a class="icon-btn btn-md" href="legal.html" target="_blank" rel="noopener noreferrer">Privacy policy ↗</a>
+                    <a class="icon-btn btn-md" href="legal.html#legalTermsSection" target="_blank" rel="noopener noreferrer">Terms ↗</a>
+                    <a class="icon-btn btn-md" href="legal.html#deletion" target="_blank" rel="noopener noreferrer">Data deletion ↗</a>
                 </div>
             </div>
 
@@ -754,7 +754,7 @@
 <p id="phoneRecovery"></p><p id="localCleanup"></p><button type="button" class="icon-btn btn-md" id="refreshDeletionStatus">Check status</button>
 <p>Turn off Taskitator blocking macros on every device. Old phone tokens report your phone as unlocked for 7 days after the request is accepted, then stop working.</p>
 <p>On your other devices, clear Taskitator's site data yourself, and delete any downloaded backups you don't need. Creating a new account won't bring deleted data back.</p>
-<p><a href="login.html">Back to sign-in</a> · <a href="components.html?view=legal#deletion">Privacy &amp; deletion</a> · <!--email_off--><a href="mailto:info@mazendev.com">Contact Mazendev</a><!--/email_off--></p>
+<p><a href="login.html">Back to sign-in</a> · <a href="legal.html#deletion">Privacy &amp; deletion</a> · <!--email_off--><a href="mailto:info@mazendev.com">Contact Mazendev</a><!--/email_off--></p>
 <small>This page shows no account details. Keep your deletion receipt private. Closing this tab may remove the saved receipt, but cleanup on our side continues either way.</small>
 </main>
     </div>

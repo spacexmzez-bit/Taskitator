@@ -429,6 +429,7 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             // finish logout instead of auto-entering the still-cached account.
             const marker = 'taskitator_logout_pending';
             sessionStorage.setItem(marker, '1');
+            sessionStorage.removeItem('taskitator_login_return');
             try {
                 await window.Clerk.signOut();
             } catch (error) {
@@ -2061,7 +2062,22 @@ function runTaskitatorLoginPage() {
             SyncEngine.beginLogin(account.user);
             const pulled = await SyncEngine.pull();
             if (!pulled.success && !pulled.conflict) throw new Error(pulled.error || 'Initial synchronization failed. Your local drafts are retained.');
-            if (!pulled.conflict) location.replace('index.html');
+            if (!pulled.conflict) {
+                let destination = 'index.html';
+                try {
+                    const saved = sessionStorage.getItem('taskitator_login_return');
+                    sessionStorage.removeItem('taskitator_login_return');
+                    if (saved) {
+                        const target = new URL(saved, location.href);
+                        const app = new URL('index.html', location.href);
+                        const appPaths = [app.pathname, new URL('.', app).pathname, new URL('components.html', app).pathname, new URL('settings.html', app).pathname];
+                        if (target.origin === app.origin && appPaths.includes(target.pathname)) {
+                            destination = target.pathname + target.search + target.hash;
+                        }
+                    }
+                } catch (_) {}
+                location.replace(destination);
+            }
             else show('This device has pending edits. Resolve the displayed cloud conflict, then choose Continue.');
         } finally { entering = false; continueButton.disabled = false; }
     }
@@ -2165,7 +2181,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-phase2-v23');
+                    resolve(event.data?.version === 'taskitator-phase3-v25');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
@@ -2266,8 +2282,10 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
             if (TaskitatorAuth.deletion.receipt) sessionStorage.setItem('taskitator_deletion_receipt', TaskitatorAuth.deletion.receipt);
             location.replace('settings.html?view=deletion-status'); return;
         }
-        if (!loginPage && !TaskitatorAuth.signedIn) { location.replace('login.html'); return; }
-        if (!loginPage && localStorage.getItem('taskitator_local_owner') !== TaskitatorAuth.account?.user) {
+        if (!loginPage && (!TaskitatorAuth.signedIn || localStorage.getItem('taskitator_local_owner') !== TaskitatorAuth.account?.user)) {
+            try {
+                sessionStorage.setItem('taskitator_login_return', location.pathname + (location.search || '') + (location.hash || ''));
+            } catch (_) {}
             location.replace('login.html'); return;
         }
         // Keep the original classic-script order and global bindings intact.

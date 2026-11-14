@@ -3,7 +3,8 @@
   'use strict';
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const owner = () => window.TaskitatorAuth?.userId || '';
-  const onIndex = () => /(^|\/)(index\.html)?$/.test(location.pathname);
+  // Index shell (Phase 3.0): tours run on the Tasks view only.
+  const onIndex = () => /(^|\/)(index\.html)?$/.test(location.pathname) && (!window.TaskitatorShell || window.TaskitatorShell.current() === 'tasks');
   const onSettings = () => /settings\.html$/.test(location.pathname);
 
   // ---- progress (synced inside taskitator_settings) ----

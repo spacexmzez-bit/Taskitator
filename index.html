@@ -1,5 +1,4 @@
-<!-- File: index.html -->
-<!-- index.html -->
+<!-- File: index.html (Phase 3.0 shell: Tasks, Calendar, Projects, Stats, Trash, Guide, Study plans, Sleep Lock, Help) -->
 <!DOCTYPE html>
 <html lang="en" class="auth-pending">
 <head>
@@ -286,6 +285,99 @@
 <link rel="stylesheet" href="palettes.css">
 <link rel="stylesheet" href="family-nature.css">
 <link rel="stylesheet" href="rtl.css">
+<style>/* Phase 3.0: styles of the pages that became shell views (study plans, sleep lock, help). */
+.plans-wrap{max-width:720px;margin:24px auto;padding:16px}
+.plans-header{display:flex;align-items:center;gap:12px;margin-bottom:16px}.plans-header h1{margin:0;font-size:1.4rem}
+.plans-note{color:var(--text-muted,#9bb1d3);line-height:1.6;margin:0 0 12px}
+.plans-notice{border:1px solid var(--alert-orange,#f59e0b);border-radius:12px;padding:10px 12px;margin:0 0 14px;line-height:1.5}
+.plans-notice[hidden],.plan-panel[hidden],.plans-empty[hidden]{display:none}
+.plans-section{margin:22px 0 8px;font-size:1rem;color:var(--text-muted,#9bb1d3)}
+.plan-card{border:1px solid var(--border-color,#344b7e);background:var(--card-bg,#081226);border-radius:16px;padding:16px;margin-bottom:12px}
+.plan-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.plan-top h2{margin:0;font-size:1.05rem;overflow-wrap:anywhere}
+.plan-badges{display:flex;gap:6px;flex-wrap:wrap}
+.plan-badge{border:1px solid var(--border-color,#344b7e);border-radius:999px;padding:2px 9px;font-size:.72rem}
+.plan-badge.ai{border-color:var(--primary,#3b82f6);color:var(--primary,#3b82f6)}
+.plan-meta{margin:8px 0 0;color:var(--text-muted,#9bb1d3);font-size:.85rem;line-height:1.6}
+.plan-bar{height:6px;border-radius:999px;background:var(--border-color,#344b7e);margin:10px 0;overflow:hidden}
+.plan-bar>span{display:block;height:100%;background:var(--primary,#3b82f6)}
+.plan-actions{display:flex;gap:8px;flex-wrap:wrap}
+.plan-actions .icon-btn,.plan-panel .icon-btn{width:auto;padding:8px 14px}
+.plan-delete{color:var(--danger,#ef4444);border-color:rgba(239,68,68,.45)}
+.plan-panel{margin-top:14px;display:grid;gap:12px}
+.plan-section{border:1px solid var(--border-color,#344b7e);border-radius:12px;padding:12px;margin:0;min-width:0}
+.plan-section legend{padding:0 6px;font-weight:700;font-size:.9rem}
+.plan-field{display:flex;flex-direction:column;gap:4px;margin:8px 0;font-size:.82rem}
+.plan-field input,.plan-field select,.plan-field textarea{font:inherit;font-size:.95rem;box-sizing:border-box;width:100%;min-width:0;padding:9px;border-radius:10px;background:var(--input-bg,#172a46);color:var(--text-color,#fff);border:1px solid var(--border-color,#344b7e)}
+.plan-field textarea{min-height:84px;resize:vertical}
+.plan-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.plan-hint{margin:6px 0 0;font-size:.78rem;color:var(--text-muted,#9bb1d3);line-height:1.5}
+.plan-hint.warn{color:var(--alert-orange,#f59e0b)}
+#plansStatus{min-height:1.6em;line-height:1.6;margin-top:10px}
+
+.plan-seg{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.plan-seg-btn{flex:1;min-width:120px;padding:8px;border-radius:10px;border:1px solid var(--border-color,#344b7e);background:transparent;color:inherit;font:inherit;font-size:.85rem;cursor:pointer}
+.plan-seg-btn.is-active{background:var(--primary,#3b82f6);border-color:var(--primary,#3b82f6);color:#fff}
+.plan-rates,.plan-weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin:6px 0}
+.plan-rate,.plan-day{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:.72rem}
+.plan-rate input{width:100%;box-sizing:border-box;padding:6px 2px;text-align:center;border-radius:8px;background:var(--input-bg,#172a46);color:var(--text-color,#fff);border:1px solid var(--border-color,#344b7e);font:inherit}
+.plan-days{display:grid;gap:6px;margin-top:10px;max-height:340px;overflow:auto}
+.plan-day-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:8px;border:1px solid var(--border-color,#344b7e);border-radius:10px;font-size:.85rem}
+.plan-day-units{color:var(--text-muted,#9bb1d3);overflow-wrap:anywhere;font-size:.8rem}
+.plan-step{display:flex;align-items:center;gap:6px}
+.plan-panel .plan-step .icon-btn{padding:4px 10px}
+
+.plans-wrap{padding-bottom:110px}
+.plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.plan-grid .plan-field{margin:8px 0 0}
+.plan-chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.plan-chip{padding:3px 9px;border-radius:99px;border:1px solid var(--border-color,#344b7e);font-size:.8rem}.plan-chip.lock::before{content:"\1F512 "}.plan-chip.skip{opacity:.5;text-decoration:line-through}.plan-chip.done{opacity:.6}
+.plan-delbox{margin-top:16px;border-top:1px solid var(--border-color,#344b7e);padding-top:12px}
+.plan-savebar{position:fixed;inset-inline:0;bottom:0;z-index:5;display:flex;gap:10px;align-items:center;padding:10px 14px;background:var(--card-bg,#081226);border-top:1px solid var(--border-color,#344b7e)}
+.plan-savebar[hidden],.plan-confirm:not([open]){display:none}
+.plan-savebar-msg{flex:1;font-size:.78rem;color:var(--text-muted,#9bb1d3);line-height:1.4}
+.plan-savebar .icon-btn,.plan-confirm .icon-btn{width:auto;padding:10px 16px}
+.plan-save{background:var(--primary,#3b82f6);border-color:var(--primary,#3b82f6);color:#fff}.plan-save.is-apply{background:#16a34a;border-color:#16a34a}.plan-save:disabled{opacity:.45}
+.plan-confirm{max-width:400px;width:calc(100% - 32px);border:1px solid var(--border-color,#344b7e);border-radius:14px;background:var(--card-bg,#081226);color:var(--text-color,#fff);padding:16px}
+.plan-confirm::backdrop{background:rgba(0,0,0,.65)}.plan-confirm h3{margin:0 0 8px}.plan-confirm ul{margin:0;padding-inline-start:18px;line-height:1.6;font-size:.88rem}
+.plan-confirm-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+.plan-ai-grid{margin-top:10px}.plan-chips[hidden],.plan-field[hidden]{display:none}.plan-soft{max-width:460px;max-height:86vh;overflow:auto}.plan-soft .plan-days{max-height:240px}
+.plans-header .plans-bypass{margin-inline-start:auto}.plans-bypass.is-active{border-color:#16a34a;color:#4ade80}
+.plans-pagetabs{margin:4px 0 12px}#plansDraftsView[hidden],#plansListView[hidden]{display:none}
+.plan-draft-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid var(--border-color,#344b7e);background:var(--card-bg,#081226);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.plan-draft-row .plan-draft-info{flex:1;min-width:0}.plan-draft-row strong{overflow-wrap:anywhere}.plan-draft-row .icon-btn{width:auto;padding:6px 12px}
+@media(max-width:480px){.plan-row{grid-template-columns:1fr}.plans-wrap{padding:10px}.plan-card{padding:12px}}
+.sleep-wrap{max-width:680px;margin:32px auto;padding:20px}.sleep-header{display:flex;align-items:center;gap:16px;margin-bottom:28px}.sleep-header h1{margin:0}.sleep-card{border:1px solid var(--border-color,#344b7e);background:var(--card-bg,#081226);border-radius:20px;padding:28px}.sleep-times{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:24px 0}.sleep-times label{display:flex;flex-direction:column;gap:12px;font-weight:700}.sleep-times input{font:inherit;font-size:1.5rem;min-width:0;width:100%;box-sizing:border-box;padding:14px;border-radius:12px;background:var(--input-bg,#172a46);color:var(--text-color,#fff);border:1px solid var(--border-color,#344b7e)}.sleep-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}.sleep-actions .icon-btn{width:auto;padding:12px 20px}.sleep-note{color:var(--text-muted,#9bb1d3);line-height:1.6}.sleep-gear{margin-inline-start:auto}.sleep-gear{display:inline-flex;align-items:center;gap:8px;width:auto;padding:8px 14px}.sleep-gear .sleep-gear-ic{width:20px;height:20px}.sleep-gear-label{font-size:.9rem;font-weight:700}.sleep-panel{margin-top:20px;padding:20px;border:1px solid var(--border-color,#344b7e);border-radius:16px;background:var(--input-bg,#172a46)}.sleep-panel[hidden]{display:none}.sleep-panel h2{margin:0 0 8px;font-size:1.15rem}.sleep-panel h3{margin:20px 0 6px;font-size:1rem}.sleep-panel .sleep-times{margin:12px 0}.sleep-panel .sleep-times input{font-size:1.2rem}.sleep-badge{display:inline-block;margin-inline-start:8px;padding:2px 10px;border-radius:999px;background:var(--primary,#4f8cff);color:#fff;font-size:.75rem;font-weight:700;vertical-align:middle}.sleep-badge[hidden]{display:none}#sleepStatus{line-height:1.6;min-height:1.6em}.sleep-card input[type=checkbox]{width:22px;height:22px;vertical-align:middle;margin-inline-end:10px}@media(max-width:480px){.sleep-times{grid-template-columns:1fr}.sleep-card{padding:20px}.sleep-wrap{margin:12px auto}}
+.hp{max-width:820px;margin:0 auto;padding:76px 16px 80px;color:var(--text-color,#e8eefc);line-height:1.55}
+.hp h1{margin:0 0 6px;font-size:clamp(1.5rem,3vw,2rem)}
+.hp .hp-sub{color:var(--text-muted,#9fb0d0);margin:0 0 18px}
+.hp-units{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 20px}
+.hp-units a{padding:9px 16px;border-radius:999px;border:1px solid var(--border-color,#2b3d66);text-decoration:none;color:inherit;font-weight:700}
+.hp-unit{margin-top:34px;padding-top:10px;border-top:2px solid var(--border-color,#2b3d66)}
+.hp-unit>h2{margin:10px 0 4px}
+.hp-toc{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;margin:12px 0 8px}
+.hp-toc a{padding:7px 10px;border-radius:8px;background:rgba(127,150,200,.1);text-decoration:none;color:inherit;font-size:.92rem}
+.hp-sec{margin:22px 0;padding:16px;border:1px solid var(--border-color,#2b3d66);border-radius:12px;background:var(--card-bg,rgba(15,29,58,.6))}
+.hp-sec h3{margin:0 0 4px}
+.hp-intro{margin:0 0 8px;color:var(--text-muted,#9fb0d0)}
+.hp-sec ol{margin:8px 0;padding-inline-start:22px}
+.hp-sec li{margin:6px 0}
+.hp-note{margin:8px 0;padding:8px 10px;border-inline-start:3px solid #f59e0b;background:rgba(245,158,11,.08);font-size:.92rem}
+.hp-ex{margin-top:10px}
+.hp-ex summary{cursor:pointer;display:inline-block;padding:6px 14px;border-radius:8px;border:1px solid var(--border-color,#2b3d66);font-weight:700;font-size:.9rem;list-style:none}
+.hp-ex summary::-webkit-details-marker{display:none}
+.hp-ex .c,.hp-ex[open] .o{display:none}
+.hp-ex[open] .c{display:inline}
+.hp-exbody{margin-top:8px;padding:10px 12px;border-radius:8px;background:rgba(59,130,246,.1)}
+.hp-nav{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}
+.hp-return{position:fixed;z-index:1000;top:max(12px,env(safe-area-inset-top));inset-inline-end:max(12px,env(safe-area-inset-right));min-height:44px;display:inline-flex;align-items:center;gap:6px;text-decoration:none;box-shadow:0 4px 16px rgba(0,0,0,.35)}
+.hp code{background:rgba(127,150,200,.2);padding:1px 5px;border-radius:4px}
+.shell-view[hidden]{display:none!important}
+html[data-shell]:not([data-shell="tasks"]) #openRootAddModalBtn,html[data-shell]:not([data-shell="tasks"]) #openCopilotFabBtn,html[data-shell]:not([data-shell="tasks"]) #batchActionBar{display:none!important}
+.shell-title-row[hidden]{display:none!important}
+#shellView-help .hp-return{position:static;display:inline-flex;margin:8px 0 0}
+#shellView-help .hp{padding-top:8px}
+html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
+</style>
+
 <script src="registry.js"></script>
 <script src="theme-boot.js"></script>
 <script src="i18n.js"></script>
@@ -302,15 +394,15 @@
     <nav class="drawer-links" id="drawerNavLinks">
         <a href="#today" id="navLinkToday" class="active"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-today"></use></svg> Today</a>
         <a href="#general" id="navLinkGeneral"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-general"></use></svg> General Tasks</a>
-        <a href="components.html?view=calendar"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-calendar"></use></svg> Calendar</a>
-        <a href="components.html?view=projects"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-projects"></use></svg> Projects</a>
-        <a href="components.html?view=stats"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-stats"></use></svg> Stats</a>
-        <a href="components.html?view=trash"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-trash"></use></svg> Trash</a>
+        <a href="#calendar" data-shell-link="calendar"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-calendar"></use></svg> Calendar</a>
+        <a href="#projects" data-shell-link="projects"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-projects"></use></svg> Projects</a>
+        <a href="#stats" data-shell-link="stats"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-stats"></use></svg> Stats</a>
+        <a href="#trash" data-shell-link="trash"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-trash"></use></svg> Trash</a>
         <a href="#" data-open-drafts><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-drafts"></use></svg> Drafts<span data-draft-count></span></a>
         <a href="components.html?view=universe"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-universe"></use></svg> Universe</a>
-        <a href="sleep.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-sleep"></use></svg> Sleep Lock</a>
-        <a href="study-plans.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</a>
-        <a href="help.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-help"></use></svg> Help</a>
+        <a href="#sleep" data-shell-link="sleep"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-sleep"></use></svg> Sleep Lock</a>
+        <a href="#study-plans" data-shell-link="study-plans"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</a>
+        <a href="#help" data-shell-link="help"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-help"></use></svg> Help</a>
         <a href="settings.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-settings"></use></svg> Settings</a>
     </nav>
 </aside>
@@ -375,6 +467,7 @@
         </div>
 
         <div class="nav-right">
+            <button class="icon-btn" id="todayJumpBtn" type="button" style="display:none; font-size:0.8rem; padding:4px 10px;">Today</button>
             <!-- Responsive Copilot Trigger: Icon-only on mobile, full label on desktop -->
             <button class="icon-btn nav-link-btn" id="openCopilotNavBtn" title="Open Ari Assistant" aria-label="Open Ari Assistant">
                 <span><svg class="tk-ic tk-ic-wide" aria-hidden="true" focusable="false"><use href="#ic-copilot"></use></svg></span>
@@ -382,7 +475,10 @@
             </button>
         </div>
     </header>
+    <!-- Title of the Calendar/Projects/Stats/Trash/Guide views (shell-router.js) -->
+    <div class="page-title-section shell-title-row" id="shellTitleRow" hidden><h1 class="shell-page-title" id="componentPageTitle"></h1></div>
 
+    <div class="shell-view" id="shellView-tasks" data-shell-view="tasks">
     <div class="page-title-section">
         <h1 id="pageViewHeading">Today's</h1>
         <button type="button" class="account-username-btn" id="accountUsernameBtn" title="Manage username" aria-label="Set username">Set username</button>
@@ -425,7 +521,1103 @@
     </div>
 
     <ul class="task-list-tree" id="taskListContainer"></ul>
+    </div>
+<!-- ===== Phase 3.0 shell views (were components.html?view=...) ===== -->
+        <section id="componentView-projects" class="component-view-pane shell-view" data-shell-view="projects" hidden>
+
+    <!-- Horizontal Projects Strip -->
+    <div class="projects-header-strip" id="projectsHeaderStrip">
+        <button class="add-project-pill-btn" id="openCreateProjectModalBtn" title="Create New Project">+</button>
+        <!-- Dynamic project pills render here -->
+    </div>
+
+    <div class="page-title-section" style="padding: 12px 4px 6px 4px; display: flex; align-items: center; justify-content: space-between;">
+        <h1 id="activeProjectTitleHeader" style="display: flex; align-items: center; gap: 8px;">
+            <span id="activeProjectIcon"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-inbox"></use></svg></span>
+            <span id="activeProjectName">Inbox</span>
+        </h1>
+        <span id="projectTaskCountBadge" class="due-badge" style="font-size: 0.8rem;">0 Tasks</span>
+    </div>
+
+    <div class="date-filter-row project-date-filter">
+        <select id="projectDateMode" aria-label="Filter by date">
+            <option value="">Any date</option>
+            <option value="overdue">Overdue</option>
+            <option value="today">Today</option>
+            <option value="week">Next 7 days</option>
+            <option value="none">No date</option>
+            <option value="range">Custom range</option>
+        </select>
+        <span class="date-filter-range" id="projectDateRange" hidden>
+            <input type="date" id="projectDateFrom" aria-label="From">
+            <span aria-hidden="true">–</span>
+            <input type="date" id="projectDateTo" aria-label="To">
+        </span>
+    </div>
+    <ul class="task-list-tree" id="projectTaskListContainer"></ul>
+
+
+<!-- Floating Action Buttons -->
+<button class="fab-edit-project" id="openEditActiveProjectFab" title="Edit Project Settings">✎</button>
+<button class="fab-add" id="openProjectTaskAddModalBtn" title="Create Task Under Active Project">+<span class="wide-label">New task</span></button>
+
+<!-- Modal: Create / Edit Project -->
+        </section>
+        <section id="componentView-calendar" class="component-view-pane shell-view" data-shell-view="calendar" hidden>
+
+    <!-- Month Navigation & Calendar Grid -->
+    <div class="calendar-card">
+        <div class="calendar-header">
+            <span class="calendar-month-title" id="calendarMonthTitle">Month Year</span>
+            <div class="calendar-nav-group">
+                <button type="button" class="icon-btn icon-only-btn" id="prevMonthBtn" title="Previous Month">‹</button>
+                <button type="button" class="icon-btn icon-only-btn" id="nextMonthBtn" title="Next Month">›</button>
+            </div>
+        </div>
+
+        <div class="calendar-grid" id="calendarDaysHeader">
+            <div class="calendar-day-header">Mon</div>
+            <div class="calendar-day-header">Tue</div>
+            <div class="calendar-day-header">Wed</div>
+            <div class="calendar-day-header">Thu</div>
+            <div class="calendar-day-header">Fri</div>
+            <div class="calendar-day-header">Sat</div>
+            <div class="calendar-day-header">Sun</div>
+        </div>
+
+        <div class="calendar-grid" id="calendarGridBody"></div>
+    </div>
+
+    <!-- Selected Day Agenda -->
+    <div class="agenda-header">
+        <div class="agenda-title" id="selectedDateHeading">Agenda</div>
+        <span class="agenda-count-badge" id="agendaCountBadge">0 tasks</span>
+    </div>
+
+    <ul class="agenda-tree-container" id="agendaListContainer"></ul>
+
+    <!-- Collapsible Unscheduled / Backlog Tasks -->
+    <div class="unscheduled-toggle-card" id="unscheduledCard">
+        <div class="unscheduled-header" data-cal-action-0="">
+            <span id="unscheduledTitle">▸ Unscheduled Tasks</span>
+            <span class="agenda-count-badge" id="unscheduledCountBadge">0</span>
+        </div>
+        <div class="unscheduled-body">
+            <ul class="agenda-tree-container" id="unscheduledListContainer"></ul>
+        </div>
+    </div>
+
+
+<!-- Copilot Slide-Over Drawer -->
+        </section>
+        <section id="componentView-stats" class="component-view-pane shell-view" data-shell-view="stats" hidden>
+
+    <!-- Key Metrics Grid -->
+    <div class="stats-grid">
+        <div class="stat-box">
+            <div class="stat-value" id="statCompletedToday">0</div>
+            <div class="stat-label">Done Today</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value" id="statPendingToday">0</div>
+            <div class="stat-label">Pending Today</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value" id="statAiRigor">0%</div>
+            <div class="stat-label">Rigor Ratio</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value" id="statTotalActive">0</div>
+            <div class="stat-label">Active Total</div>
+        </div>
+    </div>
+
+    <!-- 7-Day Velocity Heatmap -->
+    <div class="chart-card">
+        <h3>7-Day Completion Velocity</h3>
+        <p class="chart-card-subtitle">Volume of completed tasks over the past week.</p>
+        <div class="velocity-container" id="velocityBarsContainer"></div>
+    </div>
+
+    <!-- Project Productivity Allocation Breakdown -->
+    <div class="chart-card">
+        <h3>Project Allocation</h3>
+        <p class="chart-card-subtitle">Distribution of completed milestones across workspace projects.</p>
+        <div id="projectAllocationList"></div>
+    </div>
+
+    <!-- Deep-Work & Break Adherence Meter -->
+    <div class="chart-card">
+        <h3>Break & Focus Adherence</h3>
+        <p class="chart-card-subtitle">Performance sync with today's scheduled recovery windows.</p>
+        
+        <div class="meter-row">
+            <div>
+                <strong style="color: var(--text-color);">Scheduled Recovery</strong>
+                <div style="font-size: 0.75rem; color: var(--text-muted);" id="breakSlotsCount">0 breaks configured today</div>
+            </div>
+            <div class="meter-metric" id="totalBreakTime" style="color: var(--primary);">0m</div>
+        </div>
+
+        <div class="meter-row">
+            <div>
+                <strong style="color: var(--text-color);">Window State</strong>
+                <div style="font-size: 0.75rem; color: var(--text-muted);" id="breakWindowDetails">Scheduling Window Active</div>
+            </div>
+            <div class="meter-metric" id="breakAdherenceStatus" style="color: var(--success); font-size: 0.9rem;">Compliant</div>
+        </div>
+    </div>
+
+    <!-- AI Verification Summary Card -->
+    <div class="chart-card">
+        <h3>AI verification</h3>
+        <div class="bar-container">
+            <span class="bar-label">AI Verified</span>
+            <div class="bar-outer"><div class="bar-fill" id="barAiLocked" style="width: 0%; background: #6366f1;"></div></div>
+            <span class="bar-count" id="countAiLocked">0</span>
+        </div>
+        <div class="bar-container">
+            <span class="bar-label">Standard Done</span>
+            <div class="bar-outer"><div class="bar-fill" id="barStandard" style="width: 0%; background: #64748b;"></div></div>
+            <span class="bar-count" id="countStandard">0</span>
+        </div>
+    </div>
+
+    <!-- Distraction Archive Card -->
+    <div class="chart-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <h3 style="margin: 0;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-inbox"></use></svg> Distraction Archive</h3>
+            <button type="button" class="icon-btn" id="clearAllArchiveBtn" style="color: var(--danger); border-color: rgba(239, 68, 68, 0.4); font-size: 0.75rem; padding: 3px 8px;">
+                Clear Archive
+            </button>
+        </div>
+        <p class="chart-card-subtitle">
+            Your saved distraction notes.
+        </p>
+        <div id="archiveNotesListContainer" style="max-height: 50vh; overflow-y: auto;"></div>
+    </div>
+
+
+<!-- Copilot Slide-Over Drawer -->
+        </section>
+        <section id="componentView-trash" class="component-view-pane shell-view" data-shell-view="trash" hidden>
+
+    <ul class="task-list-tree" id="trashList"></ul>
+
+
+<!-- Copilot Slide-Over Drawer -->
+        </section>
+        <section id="componentView-blocker-guide" class="component-view-pane shell-view" data-shell-view="blocker-guide" hidden>
+
+    <section class="step-card" aria-labelledby="setup-choice-title">
+        <h2 id="setup-choice-title" style="margin-top:0;font-size:1.15rem">Choose your Cloud Bridge setup</h2>
+        <p>Pick one way to set up the App Blocker and the bridge that turns it on and off.</p>
+        <div class="setup-choices">
+            <a class="setup-choice" href="#bridge-download"><strong>↓ Download macro</strong><span>Import the ready-made App Blocker and Cloud Bridge. The token can be built in from Settings.</span></a>
+            <a class="setup-choice" href="#bridge-manual"><strong>Build manually</strong><span>Use the existing step-by-step instructions and screenshots.</span></a>
+        </div>
+        <p style="margin-bottom:0"><a href="#app-blocker-manual">Start with the manual App Blocker setup →</a></p>
+    </section>
+
+    <!-- PHASE 1: App Blocker Macro (Interactive Sequential Engine) -->
+    <div class="step-card" id="app-blocker-manual">
+        <span class="step-badge">Phase 1: Macro 1</span>
+        <h2 style="margin: 4px 0 10px 0; font-size: 1.2rem;">Building the App Blocker</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 16px;">
+            This macro monitors your device and immediately terminates distracting apps whenever tasks remain unfinished. Complete the checkpoints below.
+        </p>
+
+        <details class="recommendation-box" id="change-blocked-apps">
+            <summary><strong>Change which apps are blocked</strong></summary>
+            <ol>
+                <li>In MacroDroid → Macros, open your <strong>App Blocker</strong> macro.</li>
+                <li>Tap its <strong>Application Launched/Closed</strong> trigger and choose <strong>Configure</strong> or <strong>Edit</strong> (wording varies by version).</li>
+                <li>Keep <strong>Application Launched</strong> selected. Tick apps to add them, untick apps to remove them, confirm the selection and save the macro with the checkmark.</li>
+                <li>When App Blocker is enabled, launch a selected app to check that it returns you to the home screen. A removed app should open normally.</li>
+            </ol>
+            <p>Keep MacroDroid and the browser you use for Taskitator out of the blocked-app list so you can manage the setup. The Cloud Bridge does not choose or change blocked apps.</p>
+        </details>
+
+        <!-- Progress Tracker -->
+        <div class="progress-header">
+            <span>Progress: <strong id="p1-step-count" style="color: var(--text-color);">0 / 6</strong> sub-steps completed</span>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <span id="p1-percent-text" style="font-weight: 600;">0%</span>
+                <button class="reset-link" data-static-action-0="">Reset</button>
+            </div>
+        </div>
+        <div class="progress-bar-bg">
+            <div id="p1-progress-fill" class="progress-bar-fill"></div>
+        </div>
+
+        <!-- ==================== PHASE 1 MAJOR STEP 1 ==================== -->
+        <div class="major-block" id="p1-major-1">
+            <div class="major-header" data-static-action-1="">
+                <span class="major-title"><span class="major-badge">Step 1</span> Macro Setup & Triggers</span>
+                <span class="major-status" id="p1-status-major-1">0/3</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S1 -->
+                <div class="minor-block" id="p1-minor-1">
+                    <div class="minor-header" data-static-action-2="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.1 Open the Macros Tab</span>
+                        <span class="minor-status" id="p1-status-minor-1">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Open MacroDroid and tap the Macros tab on the bottom bar to open your macros list. Tap the floating <strong>+</strong> button (or select <strong>Add Macro</strong> from the home grid).</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase1/Ph1_S1.png" alt="MacroDroid Home Tab" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Fig 1: Tap Macros at the bottom bar to view and manage macros.</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="p1-item-sub-1">
+                                <input type="checkbox" id="p1-sub-1" data-static-action-3="">
+                                <label class="sub-label" for="p1-sub-1"><span class="hash-tag">#1</span> Tap Macros tab and open a new macro creation screen.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S2 -->
+                <div class="minor-block" id="p1-minor-2">
+                    <div class="minor-header" data-static-action-4="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.2 Name Macro & Add Trigger</span>
+                        <span class="minor-status" id="p1-status-minor-2">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Tap the top text field <code>(#1)</code> and enter the name <code>App Blocker</code>. Next, tap the <strong>+</strong> button on the red <strong>Triggers</strong> card <code>(#2)</code>.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase1/Ph1_S2.png" alt="MacroDroid Macro Editor" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Fig 2: Enter App Blocker at (#1) and tap the red Triggers plus button at (#2).</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="p1-item-sub-2">
+                                <input type="checkbox" id="p1-sub-2" data-static-action-5="">
+                                <label class="sub-label" for="p1-sub-2"><span class="hash-tag">#2</span> Name macro "App Blocker" and open the Triggers menu.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S3 -->
+                <div class="minor-block" id="p1-minor-3">
+                    <div class="minor-header" data-static-action-6="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.3 Choose Application Launched</span>
+                        <span class="minor-status" id="p1-status-minor-3">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Select <strong>Applications</strong> &rarr; <strong>Application Launched/Closed</strong>. Choose <strong>Application Launched</strong>, then select all apps you want to restrict during work hours.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase1/Ph1_S3.png" alt="Add Trigger - Applications" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Fig 3: Tap Application Launched/Closed (ignore the crossed-out options).</span>
+                        </div>
+                        <div class="warning-callout" style="margin-bottom:12px;">
+                            <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> <strong>Anti-Lockout Protection:</strong> Never check the <strong>Phone Dialer</strong>, <strong>SMS Messages</strong>, <strong>Android Settings</strong>, or <strong>MacroDroid</strong> itself. Keep all emergency and critical tools accessible.
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="p1-item-sub-3">
+                                <input type="checkbox" id="p1-sub-3" data-static-action-7="">
+                                <label class="sub-label" for="p1-sub-3"><span class="hash-tag">#3</span> Select restricted distracting apps under Application Launched.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== PHASE 1 MAJOR STEP 2 ==================== -->
+        <div class="major-block" id="p1-major-2">
+            <div class="major-header" data-static-action-8="">
+                <span class="major-title"><span class="major-badge">Step 2</span> Lockdown Actions & Home Screen Exit</span>
+                <span class="major-status" id="p1-status-major-2">0/3</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S4 -->
+                <div class="minor-block" id="p1-minor-4">
+                    <div class="minor-header" data-static-action-9="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.1 Add Lockdown Actions</span>
+                        <span class="minor-status" id="p1-status-minor-4">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Tap the <strong>+</strong> button on the blue <strong>Actions</strong> card <code>(#3)</code> to add your block handlers.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase1/Ph1_S4.png" alt="Actions Section" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Fig 4: Tap the blue Actions plus button at (#3) to attach exit actions.</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="p1-item-sub-4">
+                                <input type="checkbox" id="p1-sub-4" data-static-action-10="">
+                                <label class="sub-label" for="p1-sub-4"><span class="hash-tag">#4</span> Tap the blue Actions plus button to add response behavior.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S5 -->
+                <div class="minor-block" id="p1-minor-5">
+                    <div class="minor-header" data-static-action-11="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.2 Select Launch Home Screen</span>
+                        <span class="minor-status" id="p1-status-minor-5">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">The cleanest, most reliable way to kick yourself out of a blocked app without lag is the <strong>Launch Home Screen</strong> action. Search for <code>launch home screen</code> in the action search bar to locate it instantly.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase1/Ph1_S5.png" alt="Search for Launch Home Screen Action" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Fig 5: Under Device Actions, select Launch Home Screen.</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="p1-item-sub-5">
+                                <input type="checkbox" id="p1-sub-5" data-static-action-12="">
+                                <label class="sub-label" for="p1-sub-5"><span class="hash-tag">#5</span> Locate and configure Device Actions &rarr; Launch Home Screen.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S6 -->
+                <div class="minor-block" id="p1-minor-6">
+                    <div class="minor-header" data-static-action-13="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.3 Save App Blocker Macro</span>
+                        <span class="minor-status" id="p1-status-minor-6">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Review your complete action chain and commit the macro configuration.</p>
+                        <div class="visual-tree" style="margin-bottom: 12px;">
+                            <strong>Recommended Complete Action Chain:</strong><br>
+                            &bull; Device Actions &rarr; Launch Home Screen<br>
+                            &bull; Notification &rarr; Display Pop-Up Message &rarr; <em>"Tasks incomplete! Complete them first."</em>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="p1-item-sub-6">
+                                <input type="checkbox" id="p1-sub-6" data-static-action-14="">
+                                <label class="sub-label" for="p1-sub-6"><span class="hash-tag">#6</span> Tap the checkmark in the bottom-right corner to save your App Blocker macro.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <section class="step-card" id="bridge-download" aria-labelledby="bridge-download-title">
+        <span class="step-badge">Phase 2 · Download option</span>
+        <h2 id="bridge-download-title" style="margin:4px 0 10px;font-size:1.2rem">Import the macros</h2>
+        <p>Two ready-made macros: <strong>App Blocker</strong> (blocks your chosen apps) and <strong>Taskitator Cloud Bridge</strong> (turns the App Blocker on and off from your tasks and Sleep Lock). Import the App Blocker first, then the Bridge. Do not rename the App Blocker; the Bridge finds it by that title.</p>
+        <p><a class="macro-download" href="macros/App_Blocker.macro" download="App_Blocker.macro" id="blockerDownloadLink">↓ App Blocker</a>
+        <a class="macro-download" href="macros/Taskitator_Cloud_Bridge.macro" download="Taskitator_Cloud_Bridge.macro" id="macroDownloadLink">↓ Cloud Bridge (no token)</a></p>
+        <p class="download-note"><strong>Faster:</strong> in Taskitator → Settings, create your phone token and press <strong>Download Bridge (with your token)</strong>. That file already contains your token, so skip the token step below.</p>
+
+        <h3>Install MacroDroid and find your way around</h3>
+        <ol class="import-steps">
+            <li>Install <strong>MacroDroid</strong> from the Play Store and open it once. Grant the permissions it asks for (accessibility and notifications are needed for blocking).</li>
+            <li><strong>Import each macro (do this for both the App Blocker and the Cloud Bridge):</strong>
+                <ol>
+                    <li>Open MacroDroid and find the <strong>Import/Export</strong> section (in the side menu or the three-dots menu; the name varies slightly by version).</li>
+                    <li>Choose to import a macro, then locate the downloaded <code>.macro</code> or <code>.json</code> file (usually in your <strong>Downloads</strong> folder) and select it.</li>
+                    <li>The macro opens for review. Press the <strong>three dots</strong>, then <strong>Save macro</strong>. The import is not complete until you save.</li>
+                    <li>Repeat for the second macro. Import the App Blocker first, then the Cloud Bridge.</li>
+                </ol>
+            </li>
+
+            <li>Open any macro from the <strong>Macros</strong> tab to see its <strong>triggers</strong> (red), <strong>actions</strong> (blue) and <strong>local variables</strong> (swipe up from the bottom). Save with the three-dots menu → <strong>Save macro</strong>.</li>
+        </ol>
+
+        <h3>1. App Blocker</h3>
+        <ol class="import-steps">
+            <li>Import <strong>App_Blocker.macro</strong>. Default blocked apps: TikTok, Instagram, X (Twitter).</li>
+            <li>To change the blocked apps, press the red <strong>Application Launched</strong> trigger and press <strong>Configure</strong>.</li>
+            <li>Select <strong>Application Launched</strong> (leave the checkbox unchecked) and press OK.</li>
+            <li>Choose <strong>Select Application(s)</strong> and press OK.</li>
+            <li>Wait for the apps to load, then select every app you want blocked (you can search by name). Make sure <strong>Include</strong> is chosen, then press OK.</li>
+            <li>Press the three dots, then <strong>Save macro</strong>. Save before closing, or the change is lost.</li>
+            <li><strong>Do not change the macro's title.</strong> The Bridge looks for "App Blocker".</li>
+        </ol>
+
+        <h3>2. Cloud Bridge</h3>
+        <ol class="import-steps">
+            <li>Import the Bridge (the token-ready one from Settings, or the no-token one above).</li>
+            <li><strong>Only if you used the no-token file:</strong> swipe up the <strong>Local Variables</strong> drawer and select <strong>user token</strong>. Replace the value with your token from Taskitator → Settings. Tokens begin with <code>tkp_</code>. Paste the token only, without the word "Bearer".</li>
+            <li>The Bridge checks every 5 minutes, when the screen turns on, and when MacroDroid opens. Keep these triggers.</li>
+            <li>Make sure both macros are enabled. The Bridge then enables or disables the App Blocker for you.</li>
+        </ol>
+        <div class="bridge-state-table-wrap">
+            <table class="bridge-state-table">
+                <caption>What the Bridge does</caption>
+                <thead><tr><th>Server response</th><th>App Blocker</th></tr></thead>
+                <tbody>
+                    <tr><td><code>device_locked = false</code></td><td>Off. Apps open normally.</td></tr>
+                    <tr><td><code>device_locked = true</code></td><td>On. Blocked apps return to the home screen.</td></tr>
+                    <tr><td><code>sleep = true</code></td><td>On (Sleep Lock). Overrides the line above.</td></tr>
+                    <tr><td><code>sleep = false</code></td><td>Follows <code>device_locked</code>.</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <details class="recommendation-box" id="blocker-offline-sync">
+            <summary><strong>Working offline and syncing back</strong></summary>
+            <ul>
+                <li><strong>The blocker follows the cloud, not your device.</strong> The Bridge reads your status from the Taskitator server. Tasks you complete while offline do not unlock your apps until this device reconnects and syncs.</li>
+                <li><strong>Edits merge automatically.</strong> When you reconnect, changes made on this device are merged with the cloud field by field (for example, a title edited here and a due date edited elsewhere both stay). Tags from both sides are kept.</li>
+                <li><strong>Only real clashes ask you.</strong> If the same field was changed differently on both sides, or a task was deleted on one side and edited on the other, a panel on this device asks you to pick <em>This device</em> or <em>Cloud</em> for each. Nothing is uploaded until you press Apply.</li>
+                <li><strong>"Decide later" is safe.</strong> Your offline edits stay on this device and the blocker keeps following the last cloud state. The panel returns on the next sync.</li>
+                <li><strong>Phone token and macros need no changes.</strong> The token and the Bridge keep working the same way. Creating or disconnecting a phone token needs a connection.</li>
+            </ul>
+        </details>
+        <p><strong>Sleep Lock:</strong> there is no separate sleep macro. The same App Blocker is used for both task blocking and Sleep Lock. Emergency Bypass turns both off.</p>
+        <details class="recommendation-box">
+            <summary><strong>Not working?</strong></summary>
+            <ul>
+                <li><strong>Import fails:</strong> update MacroDroid and pick the actual <code>.macro</code> file, not an HTML page.</li>
+                <li><strong>401 / Unauthorized:</strong> the token is wrong, empty or was replaced. Create a new one in Settings and download the Bridge again, or paste it into <strong>user token</strong>.</li>
+                <li><strong>UnknownHostException:</strong> a connection error. Check your internet.</li>
+                <li><strong>Bridge runs but nothing blocks:</strong> check the App Blocker is enabled, was imported before the Bridge, still has the title "App Blocker", and its trigger lists your apps.</li>
+            </ul>
+        </details>
+        <p class="download-note">Questions? Ask the Taskitator assistant or email info@mazendev.com. See also <a href="https://macrodroidforum.com/wiki/index.php/Overview" target="_blank" rel="noopener noreferrer">MacroDroid's import/export overview</a>.</p>
+        <p><a href="#bridge-manual">Prefer manual setup? Continue to the full guide below →</a></p>
+    </section>
+
+    <!-- PHASE 2: Cloud Bridge Macro (Interactive Sequential Engine) -->
+    <div class="step-card" id="bridge-manual">
+        <span class="step-badge">Phase 2: Macro 2</span>
+        <h2 style="margin: 4px 0 10px 0; font-size: 1.2rem;">Building the Cloud Bridge</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 16px;">
+            Manual alternative: build the Cloud Bridge from scratch with the checkpoints below. If you imported and configured the download above, skip this section; do not create a second bridge.
+        </p>
+
+        <!-- Progress Tracker -->
+        <div class="progress-header">
+            <span>Progress: <strong id="p2-step-count" style="color: var(--text-color);">0 / 26</strong> sub-steps completed</span>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <span id="p2-percent-text" style="font-weight: 600;">0%</span>
+                <button class="reset-link" data-static-action-15="">Reset</button>
+            </div>
+        </div>
+        <div class="progress-bar-bg">
+            <div id="p2-progress-fill" class="progress-bar-fill"></div>
+        </div>
+
+        <!-- ==================== MAJOR STEP 1 ==================== -->
+        <div class="major-block" id="major-1">
+            <div class="major-header" data-static-action-16="">
+                <span class="major-title"><span class="major-badge">Step 1</span> Global Variable Setup</span>
+                <span class="major-status" id="status-major-1">0/3</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S1 -->
+                <div class="minor-block" id="minor-1">
+                    <div class="minor-header" data-static-action-17="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.1 Open Global Variables</span>
+                        <span class="minor-status" id="status-minor-1">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Access MacroDroid's global variable storage from the main menu.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S1.png" alt="Global Variables Tile" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S1: Main menu global variables tile</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-1">
+                                <input type="checkbox" id="sub-1" data-static-action-18="">
+                                <label class="sub-label" for="sub-1"><span class="hash-tag">#1</span> Tap the <strong>Global Variables</strong> tile on the MacroDroid main dashboard.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S2 -->
+                <div class="minor-block" id="minor-2">
+                    <div class="minor-header" data-static-action-19="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 1.2 Define http_response Variable</span>
+                        <span class="minor-status" id="status-minor-2">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Create a dedicated string variable to hold Taskitator's lock status response text.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S2.png" alt="Create New Variable" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S2: Enter variable name and set type to String</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-2">
+                                <input type="checkbox" id="sub-2" data-static-action-20="">
+                                <label class="sub-label" for="sub-2"><span class="hash-tag">#2</span> In the variable name field, type exactly <code>http_response</code>.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-3">
+                                <input type="checkbox" id="sub-3" data-static-action-21="">
+                                <label class="sub-label" for="sub-3"><span class="hash-tag">#3</span> Tap Variable Type, select <strong>String</strong>, and tap <strong>OK</strong>.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== MAJOR STEP 2 ==================== -->
+        <div class="major-block" id="major-2">
+            <div class="major-header" data-static-action-22="">
+                <span class="major-title"><span class="major-badge">Step 2</span> Cloud Bridge Triggers</span>
+                <span class="major-status" id="status-major-2">0/3</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S3 -->
+                <div class="minor-block" id="minor-3">
+                    <div class="minor-header" data-static-action-23="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.1 Set 5-Minute Regular Interval</span>
+                        <span class="minor-status" id="status-minor-3">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Configure the polling interval so MacroDroid repeatedly checks the task server in the background.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S3.png" alt="Regular Interval Trigger Dialog" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S3: Configure 5 minutes regular interval</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-4">
+                                <input type="checkbox" id="sub-4" data-static-action-24="">
+                                <label class="sub-label" for="sub-4"><span class="hash-tag">#4</span> Under Date/Time &rarr; Regular Interval, set <strong>Minutes</strong> to <code>5</code> (Hours 0, Seconds 0) and tap OK.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S4 -->
+                <div class="minor-block" id="minor-4">
+                    <div class="minor-header" data-static-action-25="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 2.2 Verify Triggers & Add Actions</span>
+                        <span class="minor-status" id="status-minor-4">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Confirm trigger configuration and proceed to the macro action sequence.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S4.png" alt="Triggers List" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S4: Confirm triggers and tap Actions plus</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-5">
+                                <input type="checkbox" id="sub-5" data-static-action-26="">
+                                <label class="sub-label" for="sub-5"><span class="hash-tag">#5</span> Verify both <code>Regular Interval (00:05:00)</code> and <code>Screen On</code> appear on the red card.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-6">
+                                <input type="checkbox" id="sub-6" data-static-action-27="">
+                                <label class="sub-label" for="sub-6"><span class="hash-tag">#6</span> Tap the <strong>+</strong> button on the blue <strong>Actions</strong> card.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== MAJOR STEP 3 ==================== -->
+        <div class="major-block" id="major-3">
+            <div class="major-header" data-static-action-28="">
+                <span class="major-title"><span class="major-badge">Step 3</span> Configure HTTP Request</span>
+                <span class="major-status" id="status-major-3">0/4</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S5 -->
+                <div class="minor-block" id="minor-5">
+                    <div class="minor-header" data-static-action-29="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 3.1 Select HTTP Request Action</span>
+                        <span class="minor-status" id="status-minor-5">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Locate the web interaction action inside the MacroDroid library.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S5.png" alt="Search HTTP Request" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S5: Search http and pick HTTP Request</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-7">
+                                <input type="checkbox" id="sub-7" data-static-action-30="">
+                                <label class="sub-label" for="sub-7"><span class="hash-tag">#7</span> Search <code>http</code> and select <strong>HTTP Request</strong> (avoid HTTP Server Response).</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S6 -->
+                <div class="minor-block" id="minor-6">
+                    <div class="minor-header" data-static-action-31="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 3.2 Request Method, URL, & Blocking</span>
+                        <span class="minor-status" id="status-minor-6">0/3</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Set up the endpoint details and enforce synchronous execution.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S6.png" alt="HTTP Request Settings" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S6: Set GET, paste URL, and check block until complete</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-8">
+                                <input type="checkbox" id="sub-8" data-static-action-32="">
+                                <label class="sub-label" for="sub-8"><span class="hash-tag">#8</span> Set Request method to <strong>GET</strong>.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-9">
+                                <input type="checkbox" id="sub-9" data-static-action-33="">
+                                <label class="sub-label" for="sub-9"><span class="hash-tag">#9</span> In Enter url, paste your Status URL from the Settings page.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-10">
+                                <input type="checkbox" id="sub-10" data-static-action-34="">
+                                <label class="sub-label" for="sub-10"><span class="hash-tag">#10</span> Check the box <strong>Block next actions until complete</strong>.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== MAJOR STEP 4 ==================== -->
+        <div class="major-block" id="major-4">
+            <div class="major-header" data-static-action-35="">
+                <span class="major-title"><span class="major-badge">Step 4</span> Auth Headers & Variable Binding</span>
+                <span class="major-status" id="status-major-4">0/5</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S7 -->
+                <div class="minor-block" id="minor-7">
+                    <div class="minor-header" data-static-action-36="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 4.1 Switch to Header Params</span>
+                        <span class="minor-status" id="status-minor-7">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Open the headers configuration tab inside the HTTP Request screen.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S7.png" alt="Header Params Tab" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S7: Tap Header Params tab and click +</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-11">
+                                <input type="checkbox" id="sub-11" data-static-action-37="">
+                                <label class="sub-label" for="sub-11"><span class="hash-tag">#11</span> Tap the <strong>Header Params</strong> tab at the top right, then tap the floating <strong>+</strong> button.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S8 -->
+                <div class="minor-block" id="minor-8">
+                    <div class="minor-header" data-static-action-38="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 4.2 Enter Authorization Header</span>
+                        <span class="minor-status" id="status-minor-8">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Add the Bearer token to authorize requests with your Taskitator sync engine.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S8.png" alt="Add Parameter Dialog" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S8: Enter Parameter Name and Token Value</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-12">
+                                <input type="checkbox" id="sub-12" data-static-action-39="">
+                                <label class="sub-label" for="sub-12"><span class="hash-tag">#12</span> Parameter Name: type exactly <code>Authorization</code>.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-13">
+                                <input type="checkbox" id="sub-13" data-static-action-40="">
+                                <label class="sub-label" for="sub-13"><span class="hash-tag">#13</span> Value: enter <code>Bearer &lt;your_token&gt;</code> (copied from Settings), then tap OK.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S9 -->
+                <div class="minor-block" id="minor-9">
+                    <div class="minor-header" data-static-action-41="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 4.3 Save Response to Variable</span>
+                        <span class="minor-status" id="status-minor-9">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Capture the HTTP response text into your global variable.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S9.png" alt="Save Response Settings" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S9: Check save to string variable and pick http_response</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-14">
+                                <input type="checkbox" id="sub-14" data-static-action-42="">
+                                <label class="sub-label" for="sub-14"><span class="hash-tag">#14</span> Return to the <em>Settings</em> tab, scroll down to Response, and select <strong>Save HTTP response in string variable</strong>.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-15">
+                                <input type="checkbox" id="sub-15" data-static-action-43="">
+                                <label class="sub-label" for="sub-15"><span class="hash-tag">#15</span> Select <code>http_response</code> from the dropdown, then tap the top-right checkmark to save.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== MAJOR STEP 5 ==================== -->
+        <div class="major-block" id="major-5">
+            <div class="major-header" data-static-action-44="">
+                <span class="major-title"><span class="major-badge">Step 5</span> If Condition Branching</span>
+                <span class="major-status" id="status-major-5">0/5</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S10 -->
+                <div class="minor-block" id="minor-10">
+                    <div class="minor-header" data-static-action-45="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 5.1 Add If Clause Action</span>
+                        <span class="minor-status" id="status-minor-10">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Begin the decision logic structure in the actions list.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S10.png" alt="Select If Clause" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S10: Conditions/Loops &rarr; If clause</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-16">
+                                <input type="checkbox" id="sub-16" data-static-action-46="">
+                                <label class="sub-label" for="sub-16"><span class="hash-tag">#16</span> Tap <strong>+</strong> on Actions &rarr; Conditions/Loops &rarr; select <strong>If clause</strong>.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S11 -->
+                <div class="minor-block" id="minor-11">
+                    <div class="minor-header" data-static-action-47="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 5.2 Add Condition Requirement</span>
+                        <span class="minor-status" id="status-minor-11">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Attach a variable comparison test to the condition statement.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S11.png" alt="If Clause Modal" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S11: Tap plus inside Conditions box</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-17">
+                                <input type="checkbox" id="sub-17" data-static-action-48="">
+                                <label class="sub-label" for="sub-17"><span class="hash-tag">#17</span> In the If clause dialog, tap the <strong>+</strong> button inside the purple Conditions box.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S12 -->
+                <div class="minor-block" id="minor-12">
+                    <div class="minor-header" data-static-action-49="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 5.3 Select MacroDroid Variable</span>
+                        <span class="minor-status" id="status-minor-12">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Choose to test against a saved variable.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S12.png" alt="MacroDroid Variable Condition" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S12: Select MacroDroid Variable</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-18">
+                                <input type="checkbox" id="sub-18" data-static-action-50="">
+                                <label class="sub-label" for="sub-18"><span class="hash-tag">#18</span> Choose <strong>MacroDroid Specific</strong> &rarr; <strong>MacroDroid Variable</strong>.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S13 -->
+                <div class="minor-block" id="minor-13">
+                    <div class="minor-header" data-static-action-51="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 5.4 Evaluate Unlock Condition</span>
+                        <span class="minor-status" id="status-minor-13">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Check if the server explicitly confirmed the device is unlocked.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S13.png" alt="Match Rule Configuration" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S13: Set Contains device_locked = false</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-19">
+                                <input type="checkbox" id="sub-19" data-static-action-52="">
+                                <label class="sub-label" for="sub-19"><span class="hash-tag">#19</span> Select <code>http_response</code> and set condition rule to <strong>Contains</strong>.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-20">
+                                <input type="checkbox" id="sub-20" data-static-action-53="">
+                                <label class="sub-label" for="sub-20"><span class="hash-tag">#20</span> Enter exact text: <code>device_locked = false</code> and tap OK.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== MAJOR STEP 6 ==================== -->
+        <div class="major-block" id="major-6">
+            <div class="major-header" data-static-action-54="">
+                <span class="major-title"><span class="major-badge">Step 6</span> Macro Toggling & Action Tree</span>
+                <span class="major-status" id="status-major-6">0/6</span>
+            </div>
+            <div class="major-body">
+
+                <!-- Minor S14 -->
+                <div class="minor-block" id="minor-14">
+                    <div class="minor-header" data-static-action-55="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 6.1 Add Else Clause</span>
+                        <span class="minor-status" id="status-minor-14">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Provide the fallback branch for when tasks are unfinished.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S14.png" alt="If Clause Context Menu" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S14: Context menu &rarr; Add else clause</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-21">
+                                <input type="checkbox" id="sub-21" data-static-action-56="">
+                                <label class="sub-label" for="sub-21"><span class="hash-tag">#21</span> Tap your <code>If</code> condition on the main screen and select <strong>Add else clause</strong>.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S15 -->
+                <div class="minor-block" id="minor-15">
+                    <div class="minor-header" data-static-action-57="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 6.2 Create Enable & Disable Actions</span>
+                        <span class="minor-status" id="status-minor-15">0/1</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Generate the commands that toggle your App Blocker macro state.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S15.png" alt="Enable Disable Macro Action" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S15: Select Enable/Disable Macro</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-22">
+                                <input type="checkbox" id="sub-22" data-static-action-58="">
+                                <label class="sub-label" for="sub-22"><span class="hash-tag">#22</span> Tap Actions <strong>+</strong> &rarr; Macros &rarr; <strong>Enable/Disable Macro</strong>. Create two actions: <code>Disable [App Blocker]</code> and <code>Enable [App Blocker]</code>.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S16 -->
+                <div class="minor-block" id="minor-16">
+                    <div class="minor-header" data-static-action-59="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 6.3 Enter Reorder Mode</span>
+                        <span class="minor-status" id="status-minor-16">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Reposition newly created actions into their respective If / Else branches.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S16.png" alt="Actions Reorder Button" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S16: Tap the reorder arrows button (&#8645;)</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-23">
+                                <input type="checkbox" id="sub-23" data-static-action-60="">
+                                <label class="sub-label" for="sub-23"><span class="hash-tag">#23</span> Observe the two new actions initially placed at the bottom of the list.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-24">
+                                <input type="checkbox" id="sub-24" data-static-action-61="">
+                                <label class="sub-label" for="sub-24"><span class="hash-tag">#24</span> Tap the <strong>Reorder Arrows (⇅)</strong> button in the blue Actions header.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Minor S17 -->
+                <div class="minor-block" id="minor-17">
+                    <div class="minor-header" data-static-action-62="">
+                        <span class="minor-title-group"><span class="minor-arrow">&#9654;</span> 6.4 Position Actions & Save</span>
+                        <span class="minor-status" id="status-minor-17">0/2</span>
+                    </div>
+                    <div class="minor-body">
+                        <p class="minor-desc">Nest the actions correctly inside the conditions and commit the macro.</p>
+                        <div class="guide-screenshot-container">
+                            <img src="image/phase2/Ph2_S17.png" alt="Final Nested Action Tree" class="guide-screenshot" loading="lazy">
+                            <span class="screenshot-caption">Ph2_S17: Final tree hierarchy and commit button</span>
+                        </div>
+                        <ul class="sub-checklist">
+                            <li class="sub-item" id="item-sub-25">
+                                <input type="checkbox" id="sub-25" data-static-action-63="">
+                                <label class="sub-label" for="sub-25"><span class="hash-tag">#25</span> Drag <code>Disable macro [App Blocker]</code> under <code>If</code>, and drag <code>Enable macro [App Blocker]</code> under <code>Else</code>.</label>
+                            </li>
+                            <li class="sub-item" id="item-sub-26">
+                                <input type="checkbox" id="sub-26" data-static-action-64="">
+                                <label class="sub-label" for="sub-26"><span class="hash-tag">#26</span> Tap the bottom-right checkmark button to save your completed Cloud Bridge macro.</label>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Copilot Slide-Over Drawer -->
+        </section>
+<section id="shellView-study-plans" class="shell-view" data-shell-view="study-plans" hidden>
+<div class="plans-wrap">
+<header class="plans-header"><h1><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</h1><button type="button" class="icon-btn" id="plansAddBtn" title="New study plan" aria-label="New study plan"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-add"></use></svg></button><button type="button" class="emergency-icon-btn plans-bypass" id="plansBypassBtn" title="Emergency Bypass" aria-label="Emergency Bypass"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-emergency"></use></svg><span class="wide-label" id="plansBypassLabel">Emergency bypass</span></button></header>
+<p class="plans-note">See the plans created by study recurrence, change their names and priorities, add AI criteria, or delete them.</p>
+<p id="plansNotice" class="plans-notice" hidden></p>
+<div class="tk-tabs plans-pagetabs" role="tablist"><button type="button" class="tk-tab" role="tab" id="plansTabPlans" aria-selected="true">Plans</button><button type="button" class="tk-tab" role="tab" id="plansTabDrafts" aria-selected="false">Drafts <span id="plansDraftCount"></span></button></div>
+<section id="plansDraftsView" hidden><p class="plans-note">Unfinished study plans: new plans from the study recurrence dialog and unsaved edits of existing plans. Nothing here is created or applied until you restore it and save. Up to 10 drafts.</p><div id="plansDraftList"></div></section>
+<section id="plansListView">
+<div id="plansCurrent"></div>
+<h2 id="plansPreviousTitle" class="plans-section" hidden>Previous plans</h2>
+<div id="plansPrevious"></div>
+<p id="plansEmpty" class="plans-note plans-empty" hidden>No study plans yet. Use the New study plan button to create one.</p>
+</section>
+<p id="plansStatus" role="status" aria-live="polite"></p>
 </div>
+<div class="plan-savebar" id="planSaveBar" hidden><span class="plan-savebar-msg" id="planSaveMsg" role="status"></span><button type="button" class="icon-btn" id="planDiscard">Discard</button><button type="button" class="icon-btn" id="planSaveDraft">Save draft</button><button type="button" class="icon-btn plan-save" id="planSave">Save changes</button></div>
+<dialog id="planConfirm" class="plan-confirm"><h3 id="planConfirmTitle"></h3><div id="planConfirmBody"></div><div class="plan-confirm-actions"><button type="button" class="icon-btn" id="planConfirmNo">Cancel</button><button type="button" class="icon-btn plan-save" id="planConfirmYes">Confirm</button></div></dialog>
+<dialog id="planSoft" class="plan-confirm plan-soft"><h3>Soft reschedule</h3><div id="planSoftBody"></div><div class="plan-confirm-actions"><button type="button" class="icon-btn" id="planSoftNo">Cancel</button><button type="button" class="icon-btn plan-save" id="planSoftYes">Reschedule</button></div></dialog>
+</section>
+<section id="shellView-sleep" class="shell-view" data-shell-view="sleep" hidden>
+<div class="sleep-wrap"><header class="sleep-header"><a class="icon-btn" href="#today" aria-label="Back to tasks">←</a><h1><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-moon"></use></svg> Sleep Lock<span class="sleep-badge" id="firmBadge" hidden>Firm</span></h1><button class="icon-btn sleep-gear" id="sleepSettingsBtn" type="button" aria-label="Sleep Lock settings" aria-expanded="false" aria-controls="sleepSettingsPanel"><svg class="tk-ic sleep-gear-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg><span class="sleep-gear-label">Settings</span></button></header><section class="sleep-panel" id="sleepSettingsPanel" hidden aria-label="Sleep Lock settings">
+<h2>Sleep Lock settings</h2>
+<form id="sleepSettingsForm">
+<label><input id="firmMode" type="checkbox" disabled>Firm mode</label>
+<p class="sleep-note">Firm mode removes the easy way out. From 2 hours before your bedtime until your wake-up time (the locking period): you can’t delay sleep, and turning Sleep Lock or Firm mode off, moving bedtime later, or moving wake-up later all need an Emergency Bypass. Earlier bedtime or wake-up is always free. Outside the locking period, you can still plan ahead freely.</p>
+<p class="sleep-note" id="lockingStatus" role="status" aria-live="polite"></p>
+<h3>Today only</h3>
+<p class="sleep-note">Change tonight’s bedtime or wake-up without touching your default schedule. It reverts by itself after tonight. Earlier is always free; later follows the Firm mode rules above.</p>
+<label><input id="todayOn" type="checkbox" disabled>Use different times tonight</label>
+<div class="sleep-times"><label>Tonight’s bedtime<input id="todayBed" type="time" disabled></label><label>Tonight’s wake-up<input id="todayWake" type="time" disabled></label></div>
+<div class="sleep-actions"><button class="icon-btn" id="saveSleepSettings" type="submit" disabled>Save settings</button><button class="icon-btn" id="closeSleepSettings" type="button">Close</button></div>
+<p id="sleepSettingsStatus" role="status" aria-live="polite"></p>
+</form></section>
+<section class="sleep-card"><p id="macroNeeded" class="sleep-note" hidden>Set up MacroDroid first. Sleep Lock can’t block your phone until a phone token is connected. <a href="settings.html#tab-phone">Create a token in Settings</a>, then import the Cloud Bridge.</p><p class="sleep-note">Your daily sleep schedule uses Riyadh time (UTC+3), even when you travel.</p>
+<form id="sleepForm"><label><input id="sleepEnabled" type="checkbox" disabled>Enable Sleep Lock</label>
+<div class="sleep-times"><label>Bedtime<input id="bedtime" type="time" required disabled></label><label>Wake-up time<input id="wakeTime" type="time" required disabled></label></div>
+<p class="sleep-note">During these hours, your existing MacroDroid setup blocks your phone. Taskitator can stay closed. Emergency Bypass unlocks it temporarily; ordinary breaks do not override Sleep Lock.</p>
+<p class="sleep-note">Outside these hours, your normal task and Universe blocking rules apply. Your phone needs internet and MacroDroid’s regular status checks.</p>
+<div class="sleep-actions"><button class="icon-btn" id="saveSleep" type="submit" disabled>Save schedule</button><button class="icon-btn" id="reloadSleep" type="button">Reload saved schedule</button><button class="icon-btn" id="sleepBypass" type="button" disabled><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-siren"></use></svg> Emergency Bypass</button></div>
+</form><div id="delaySection"><h2>Delay sleep for today</h2><p class="sleep-note">Postpone your saved bedtime by 30 or 60 minutes, once per night across all devices. Wake-up time stays the same. An overnight schedule uses the date its bedtime starts, so midnight does not give you another delay. Other task locks still apply.</p><div class="sleep-actions"><button class="icon-btn" id="delay30" type="button" disabled>Delay 30 minutes</button><button class="icon-btn" id="delay60" type="button" disabled>Delay 60 minutes</button></div><p id="delayStatus" role="status" aria-live="polite"></p><p class="sleep-note" id="delayFirmNote" hidden>Firm mode: delays are only available until 2 hours before bedtime, so plan ahead. From then on, delaying needs an Emergency Bypass.</p></div><p id="sleepStatus" role="status" aria-live="polite">Loading saved schedule…</p><p><a href="settings.html">Settings</a></p></section></div>
+</section>
+<section id="shellView-help" class="shell-view" data-shell-view="help" hidden>
+<a class="icon-btn hp-return" id="helpReturn" href="#today" aria-label="Return to previous page">← Back</a>
+<p class="legal-lang-note help-lang-note" lang="ar" dir="rtl" hidden>دليل المساعدة متاح باللغة الإنجليزية حاليًا. الترجمة العربية قادمة.</p>
+<!-- Help is not translated yet (second release): its content stays English and left-to-right. -->
+<div class="hp" translate="no" lang="en" dir="ltr">
+<h1>Taskitator Help</h1>
+<p class="hp-sub">How to use each feature. Tap <b>Show example</b> under any section to see one.</p>
+<nav class="hp-units" aria-label="Units"><a href="#help-free">Unit 1 · Free features</a><a href="#help-pro">Unit 2 · Pro features</a></nav>
+
+<div class="hp-unit" id="help-free">
+<h2>Unit 1 · Free features</h2>
+<p class="hp-sub">Available to every account.</p>
+<nav class="hp-toc" aria-label="Free sections"><a href="#help-today"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Today and General Tasks</a><a href="#help-create"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-add"></use></svg> Create and edit a task</a><a href="#help-drafts"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-notes"></use></svg> Drafts</a><a href="#help-subtasks"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-shield"></use></svg> Subtasks, Shield and Bonus</a><a href="#help-multi">☑ Multiselect and batch actions</a><a href="#help-filter"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-search"></use></svg> Filter and sort</a><a href="#help-overdue"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> Overdue tasks</a><a href="#help-projects"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-folder"></use></svg> Projects</a><a href="#help-repeat">↻ Repeating tasks</a><a href="#help-calendar"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Calendar, Statistics and Trash</a><a href="#help-breaks"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-coffee"></use></svg> Daily breaks</a><a href="#help-emergency"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-siren"></use></svg> Emergency bypass</a><a href="#help-scratch"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bulb"></use></svg> Scratchpad (Distraction Dump)</a><a href="#help-proof"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-camera"></use></svg> AI proof verification (your own key)</a><a href="#help-ai"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-robot"></use></svg> Set up AI with your own key</a><a href="#help-copilot"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-sparkle"></use></svg> Copilot</a><a href="#help-phone"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-phone"></use></svg> Phone lock (MacroDroid)</a><a href="#help-data">↻ Sync, backup and account</a></nav>
+<section class="hp-sec" id="help-today"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Today and General Tasks</h3><p class="hp-intro">Today is your committed list. General Tasks is everything.</p><ol><li>Open <b>Today</b> from the menu (☰). It lists tasks that are due today or overdue.</li><li>A task with <b>no due date never appears</b> on Today. Give it a date to commit to it.</li><li>When a dated subtask sits under undated parents, it shows on Today with a small path above it (for example <i>School › Biology</i>). The parents stay hidden. The task keeps its own subtasks.</li><li>Open <b>General Tasks</b> from the menu to see every task in its normal hierarchy.</li><li>The day rolls over at the time set in <b>Settings → Day &amp; week</b>. Anything you do before that time counts toward the previous day.</li></ol><p class="hp-note">A dated task under a dated parent shows inside the parent, not twice.</p><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">You have <i>School › Biology › Research</i>. Only Research has a due date of today.<br>Today shows <b>Research</b> with the path <i>School › Biology</i> above it. School and Biology do not appear. General Tasks still shows School.</div></details></section>
+<section class="hp-sec" id="help-create"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-add"></use></svg> Create and edit a task</h3><p class="hp-intro">Tap <b>+ New task</b> (the + button).</p><ol><li>Fill in <b>Task Title</b>. Description, Project, Priority, Tags and Due Date are optional.</li><li>Tags: type one and press <b>+ Add</b>. You can add several.</li><li>The Due Date starts as today only when you create from the Today view.</li><li>Tap <b>Save Task</b>.</li><li>To change a task later, tap it to open <b>Task Details</b>, edit, then <b>Save Changes</b>.</li><li>To move a task under another one, use <b>Hierarchy / Parent Task</b> in Task Details. Its subtasks move with it.</li></ol><p class="hp-note">Tag and priority choices are managed in <b>Settings → Tasks</b>.</p><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Title: <i>Write essay outline</i> · Project: <i>School</i> · Due: today · Tag: <i>writing</i> → <b>Save Task</b>. It now appears on Today.</div></details></section>
+<section class="hp-sec" id="help-drafts"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-notes"></use></svg> Drafts</h3><p class="hp-intro">Park an unfinished task and come back to it. A draft is not a task: it does not appear on Today, count as overdue or affect your phone lock.</p><ol><li><b>New task:</b> fill in whatever you have and press <b>Draft</b>. Only the title is required. Nothing is created or locked and no AI is used.</li><li>Open the menu (☰) and tap <b>Drafts</b>. Press <b>Open</b> to refill the form, or <b>Delete</b> to remove the draft.</li><li>Press <b>Save Task</b> on an opened draft to publish it. The draft is removed. Pressing <b>Draft</b> again updates the same draft.</li><li><b>Existing task:</b> in Task Details press <b>Draft</b> to keep your edits without changing the task. When you open that task again a notice offers <b>Restore</b> or <b>Discard draft</b>. <b>Save Changes</b> removes the draft.</li><li>Restoring only fills fields you are allowed to change. A locked or shielded task keeps its restrictions.</li><li>Drafts sync with your account and are included in backups. You can keep up to 50 new-task drafts.</li></ol><p class="hp-note">A draft stores the title, description, due date, project, priority, tags, bonus, shield, AI proof choice, criteria text, Mr. Study fields, Dynamic Priority choice and the subtasks you typed. It does <b>not</b> store the reference file, the criteria validation score (validate again before publishing) or the repeat schedule. Edit drafts do not include subtask changes.</p><p class="hp-note">An AI proof choice is only locked when you publish, and its confirmation appears then.</p><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">You are creating <i>Write essay</i> and the phone rings. Press <b>Draft</b>. Later: ☰ → <b>Drafts</b> → <b>Open</b> → finish the form → <b>Save Task</b>.</div></details></section>
+<section class="hp-sec" id="help-subtasks"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-shield"></use></svg> Subtasks, Shield and Bonus</h3><p class="hp-intro">Break a task into steps and decide whether the steps are required.</p><ol><li>In Create Task or Task Details, type a step in <b>Quick Subtasks</b> and press <b>+</b> (or Enter).</li><li>Turn on <b>Require all subtasks first (Irreversible Shield)</b> to stop the parent being completed until every required subtask beneath it is finished. It cannot be undone.</li><li>Mark a subtask <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus Subtask</b> to exclude it from the Shield. A bonus never blocks its parent.</li><li>To flip several tasks at once, use Multiselect → <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus</b> and choose <b>Make required</b> or <b>Make bonus</b>. Tasks that cannot change (shield-protected required work) are skipped.</li></ol><p class="hp-note">The Shield is irreversible: you cannot switch it off afterwards.</p><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Parent: <i>Finish report</i> with Shield on. Subtasks: <i>Draft</i>, <i>Edit</i>, and <i>Add cover page</i> marked <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus.<br>You can complete <i>Finish report</i> once Draft and Edit are done, even if the cover page is not.</div></details></section>
+<section class="hp-sec" id="help-multi"><h3>☑ Multiselect and batch actions</h3><p class="hp-intro">Change many tasks at once.</p><ol><li>Tap <b>☑ Multiselect</b>, then tick tasks. <b>All</b> selects everything shown.</li><li>The bar offers <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-tag"></use></svg> Tags</b>, <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-goal"></use></svg> Priority</b>, <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Due</b>, <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus</b>, <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-trash"></use></svg> Delete</b> and <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg> Batch review selected tasks</b>.</li><li>Tags replaces the current tags on every selected task.</li><li>Due date: overdue AI-locked tasks are guarded against postponement.</li><li>Delete shows <b>Apply · delete N</b>; nothing is deleted until you press it.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Select three tasks → <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-goal"></use></svg> Priority</b> → pick a level → <b>Apply to Selected</b>. All three get that priority.</div></details></section>
+<section class="hp-sec" id="help-filter"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-search"></use></svg> Filter and sort</h3><p class="hp-intro">Narrow or reorder what you see.</p><ol><li>Tap <b>Filter</b>. Choose Projects, Priorities and Tags, then <b>Apply Filters</b>. Parent tasks of matches stay visible for context. <b>Clear All</b> resets.</li><li>Tap <b>⇅</b> to sort by <b>Priority</b>, <b>Alphabetical</b>, or <b>Required, then priority</b>.</li><li>Numbers inside titles are compared as numbers, so <i>Chapter 2</i> comes before <i>Chapter 10</i> when sorting alphabetically.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Filter → Tags → <i>writing</i> → <b>Apply Filters</b>. Only tasks tagged <i>writing</i> (and their parents) remain.</div></details></section>
+<section class="hp-sec" id="help-overdue"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> Overdue tasks</h3><p class="hp-intro">The banner at the top of Today counts overdue tasks.</p><ol><li>The banner offers <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Reschedule to date…</b>. Pick a <b>Target Due Date</b> and press <b>Reschedule Tasks</b>.</li><li>This moves eligible, non-locked overdue tasks in bulk.</li><li>If you have active <b>AI-checked tasks that are past due</b>, rescheduling non-AI tasks is blocked. Complete or roll over the overdue AI tasks first.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Banner says 5 overdue. Choose Reschedule, pick tomorrow → <b>Reschedule Tasks</b>. The eligible tasks move to tomorrow.</div></details></section>
+<section class="hp-sec" id="help-projects"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-folder"></use></svg> Projects</h3><p class="hp-intro">Group tasks. Every account has an <b>Inbox</b>.</p><ol><li>Open <b>Projects</b> from the menu. Tap the <b>+</b> chip to create one: name, icon and theme color, then <b>Save Project</b>.</li><li>Tap a project chip to switch to it. Tap ✎ to edit the active project (the Inbox cannot be edited).</li><li>Deleting a project asks what should happen to its tasks: <b>divert to Inbox</b>, <b>reassign to another project</b>, or <b>delete all tasks</b> with it.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Create <i>School</i> with <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-book"></use></svg> and blue. Choose it in the Project field when creating a task.</div></details></section>
+<section class="hp-sec" id="help-repeat"><h3>↻ Repeating tasks</h3><p class="hp-intro">Make a task and its subtasks come back on a schedule.</p><ol><li>When creating, set <b>Repeat</b>. Or open a task's details and press <b>Set up recurrence</b> (only an active task can start repeating).</li><li>Options: <b>Daily</b>, <b>Selected weekdays</b>, <b>Monthly (start-date day)</b>, <b>Date of month</b>, <b>Every six months</b>, <b>Yearly</b>.</li><li>Set a <b>Start date</b> and an optional <b>End date</b>.</li><li>A subtask follows its parent's schedule. A repeating branch cannot contain another repeating series.</li><li>On a repeating task, <b>Apply ordinary task edits to</b> lets you pick <b>This occurrence</b> or <b>This and future occurrences</b>. Due-date changes apply to this occurrence only. Use <b>Recurrence &amp; future criteria</b> to change future dates or requirements.</li><li>If you stop repetition you can still finish the current task.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Repeat: <b>Selected weekdays</b> → Mon, Wed, Fri, start today. The task reappears on those days.</div></details></section>
+<section class="hp-sec" id="help-calendar"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Calendar, Statistics and Trash</h3><p class="hp-intro">Three views in the menu.</p><ol><li><b>Calendar</b>: month grid with an <b>Agenda</b> for the selected day, plus an <b>Unscheduled Tasks</b> list.</li><li><b>Statistics</b>: Done Today, Pending Today, Rigor Ratio, Active Total, 7-day completion velocity, project allocation, break adherence, and AI Verified vs Standard Done.</li><li><b>Trash</b>: deleted tasks. To remove finished and trashed tasks permanently, use <b>Settings → Account &amp; data → Clear completed &amp; trash</b>.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Open Calendar → tap a date → the Agenda lists that day's tasks.</div></details></section>
+<section class="hp-sec" id="help-breaks"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-coffee"></use></svg> Daily breaks</h3><p class="hp-intro">Tap the break pill (<svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-breaks"></use></svg> Breaks) to open the panel.</p><ol><li>You get <b>3 hours of breaks per day</b>, shared by two systems. The maximum can be lowered in <b>Settings → Day &amp; week</b>.</li><li>Each day you use <b>one</b> system. Once you pick one, the other is locked until the day resets.</li><li><b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Scheduled</b>: press start planning. You get <b>10 minutes</b> to enter up to <b>3</b> non-overlapping breaks within the allowance. Saving locks Scheduled for today; closing without saving cancels.</li><li><b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-coffee"></use></svg> Flexible</b>: pick 30 min, 45 min, 1 hour, a custom length, or until your allowance ends. It starts immediately. You cannot end it in its first 10 minutes (or your strict minimum).</li><li>Every started minute counts: 30 minutes 1 second uses 31 minutes. A break never continues into the next day.</li><li>Optional <b>Strict modes</b> are in Settings → Day &amp; week.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Flexible → <b>1 hour</b>. The break starts now and 60 minutes come off today's 3 hours.</div></details></section>
+<section class="hp-sec" id="help-emergency"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-siren"></use></svg> Emergency bypass</h3><p class="hp-intro">For real emergencies only.</p><ol><li>Tap <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-siren"></use></svg> Emergency bypass</b> and confirm.</li><li>It lifts restrictions for <b>15 minutes</b> and unlocks editing and deleting of protected tasks.</li><li>You get <b>4 per week</b>. They refill after your weekend. Set weekend days in Settings → Day &amp; week.</li><li>It is separate from breaks: it never ends a break or changes your break allowance.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Settings → Day &amp; week shows “4 of 4 left this week”. After one use it shows 3.</div></details></section>
+<section class="hp-sec" id="help-scratch"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bulb"></use></svg> Scratchpad (Distraction Dump)</h3><p class="hp-intro">Park a distracting thought and return to work.</p><ol><li>Tap <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bulb"></use></svg> Scratchpad</b>. A timer starts (default 90 seconds; set 30s–5m in <b>Settings → General</b>).</li><li>Write the thought, then press <b>Dump &amp; Return</b>. It also saves when the timer ends.</li><li>Notes expire after <b>48 hours</b>.</li><li><b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-inbox"></use></svg> View notes</b> is locked until you complete, move or trash required tasks due today or overdue.</li><li>In the notes view you can export as <b>.txt</b> or <b>.md</b>, or delete all.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">You remember to email Sam. Scratchpad → type “email Sam” → <b>Dump &amp; Return</b>.</div></details></section>
+<section class="hp-sec" id="help-proof"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-camera"></use></svg> AI proof verification (your own key)</h3><p class="hp-intro">Require proof before a task can be completed. Needs an AI key (see next section) or Pro.</p><ol><li>In Create Task or Task Details, turn on <b>Require AI Proof Verification (Irrevocable)</b>. It cannot be turned off afterwards.</li><li>Write <b>Proof Criteria</b>: what the proof must show. Press <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-search"></use></svg> Validate Criteria</b>. With the strict setting on (<b>Settings → Tasks</b>) criteria must score <b>7/10 or higher</b> before the task can lock.</li><li><b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bulb"></use></svg> Recommended</b> opens templates and your saved criteria. Saved criteria need 8/10 or higher; the limit is 6.</li><li>Optional: <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-clip"></use></svg> Attach Reference Exemplar</b> (1 file, up to 5 MB, image or PDF) when the proof must match an example.</li><li>To complete the task, submit proof: <b>1–5 files, 8 MB per photo or 30 MB per PDF</b>, plus an optional note. Proof and reference exemplars together can total up to 40 MB per review. The AI scores it; <b>7 out of 10 passes</b>.</li><li>Submitting consumes AI usage even if the proof is rejected. There are no refunds.</li><li><b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Test your criteria</b> (before the task is locked): upload a sample proof and see how the auditor reads your criteria. It runs the same audit as a real proof but saves, completes and locks nothing. It needs 7/10 validation first when strict is on, and costs AI usage like a real audit. Once a task is locked, tests are unavailable unless Emergency Bypass is active.</li></ol><p class="hp-note">A passing test does not guarantee the real audit passes. AI verdicts can vary.</p><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Criteria: <i>Photo of 2 handwritten pages showing the full essay outline</i> → Validate → score 8/10 → <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Test your criteria</b> → upload a photo → read the verdict → adjust the wording before saving the task.</div></details></section>
+<section class="hp-sec" id="help-ai"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-robot"></use></svg> Set up AI with your own key</h3><p class="hp-intro">Copilot, criteria checks, proof reviews and note extraction need a key on Free.</p><ol><li>Open <b>Settings → AI &amp; Pro</b>.</li><li>Choose a <b>Provider</b>: Gemini or Claude. Each keeps its own key, so switching never erases one.</li><li>Press add key and paste a key from Google AI Studio (Gemini) or the Claude Console. You confirm with your password or Google first. Keys are encrypted on Taskitator's server.</li><li>Press <b>Test key</b>. It checks the key works and uses none of your quota.</li><li>Press the button that makes the selected provider the active one.</li><li>Free accounts have a daily and monthly allowance for AI through your key. The card in Settings shows it as Available, Caution or Critical.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Settings → AI &amp; Pro → Provider: Gemini → add key → Test key → “Gemini is active”.</div></details></section>
+<section class="hp-sec" id="help-copilot"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-sparkle"></use></svg> Copilot</h3><p class="hp-intro">Chat with an assistant that can plan, reschedule and review your tasks.</p><ol><li>Tap <b>Copilot</b> (<svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-goal"></use></svg> / <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-sparkle"></use></svg>). Press <b>Start Conversation</b> and send a message.</li><li>It needs an AI key on Free. On Pro it works without one.</li><li>You can rename it in <b>Settings → General → Copilot → Name</b> (up to 20 characters).</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Open Copilot → “What should I do first today?”</div></details></section>
+<section class="hp-sec" id="help-phone"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-phone"></use></svg> Phone lock (MacroDroid)</h3><p class="hp-intro">Android only. MacroDroid blocks distracting apps until today's tasks are done.</p><ol><li>Open <b>Settings → Phone lock → Open guide</b> and follow it. Do it once.</li><li>Name your device and press <b>Add device</b>. Its token starts with <code>tkp_</code>. Free accounts connect up to 3 devices, Pro accounts up to 12; if Pro ends, only the first 3 keep working until you renew.</li><li>Press <b>Download Bridge (with your token)</b> and <b>Download App Blocker</b>. In MacroDroid import the <b>App Blocker first</b>, then the Bridge, and save each.</li><li>Do not rename the App Blocker: the Bridge finds it by that title. Keep MacroDroid and your browser out of the blocked list.</li><li>The Bridge checks every 5 minutes, when the screen turns on and when MacroDroid opens. Apps unlock when the server says the device is unlocked.</li><li>You can only change phone settings when today's tasks are done, during a break, or while Emergency Bypass is on.</li><li>Tasks completed offline do not unlock your phone until this device syncs.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Not blocking? Check the App Blocker is enabled, was imported before the Bridge, and still has its original title.</div></details></section>
+<section class="hp-sec" id="help-data"><h3>↻ Sync, backup and account</h3><p class="hp-intro">Where your data lives.</p><ol><li>The dot near the top shows sync: gray = this device only, yellow = waiting to sync, green = up to date, red = failed or offline. <b>Force Sync Now</b> sends changes immediately.</li><li>If two devices changed the same field differently, a panel asks you to pick <b>This device</b> or <b>Cloud</b> for each. Nothing is uploaded until you press Apply.</li><li><b>Settings → Account &amp; data → Download a backup</b> saves a .json file. To restore choose <b>Merge</b> (adds, deletes nothing) or <b>Replace everything</b>.</li><li>Clear browser, clear completed &amp; trash and Delete account are in the Danger zone. Download a backup first.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Download a backup → later, Restore → Merge adds its tasks to what you have.</div></details></section>
+</div>
+
+<div class="hp-unit" id="help-pro">
+<h2>Unit 2 · Pro features</h2>
+<p class="hp-sub">Require Taskitator Pro.</p>
+<nav class="hp-toc" aria-label="Pro sections"><a href="#help-p-ai">◆ Hosted AI (no key needed)</a><a href="#help-p-credits"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-receipt"></use></svg> How credits are charged</a><a href="#help-p-batch"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg> Batch proof review</a><a href="#help-p-num"> Consecutive subtasks {num==X}</a><a href="#help-p-dyn"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-growth"></use></svg> Dynamic Priority</a><a href="#help-p-study"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</a><a href="#help-p-uni">🌌 Universe</a><a href="#help-p-test"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Test your criteria on hosted AI</a><a href="#help-p-get"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-key"></use></svg> Getting Pro</a></nav>
+<section class="hp-sec" id="help-p-ai"><h3>◆ Hosted AI (no key needed)</h3><p class="hp-intro">On Pro, Copilot, criteria checks, proof reviews and notes use Taskitator AI automatically.</p><ol><li>Nothing to set up. Open <b>Settings → AI &amp; Pro</b> to see your plan and remaining credits.</li><li>Prefer your own Gemini or Claude key? Switch to it in the Pro section. Switching does not reset your hosted credits.</li><li>Your allowance comes from your Pro license, with a daily limit and a 30-day cycle limit. Daily limits reset at midnight Asia/Riyadh.</li></ol><p class="hp-note">The exact numbers on your account are shown in Settings.</p><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Open a task → submit proof. You see a credit estimate before it runs.</div></details></section>
+<section class="hp-sec" id="help-p-credits"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-receipt"></use></svg> How credits are charged</h3><p class="hp-intro">Every charge is rounded <b>up to the next 0.5</b> credit.</p><ol><li>Before a review runs you see a price preview. A temporary maximum is held; unused held credits return.</li><li>You pay the <b>real cost</b> of the review. There is no multiplier for reference exemplars and no batch discount.</li><li>Reviewing several tasks together is one combined request, so it <b>usually costs less</b> than reviewing them one by one.</li><li>If the verdict is <b>insufficient proof</b> (legitimate but needs another page or clearer photo) you are charged <b>half</b> the real usage, rounded up to the next 0.5.</li><li>Tap <b>View details</b> to see usage to 4 decimals.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">You review 4 tasks together. You pay what that one combined review really costs, rounded up to the next 0.5, shared across the 4 tasks.</div></details></section>
+<section class="hp-sec" id="help-p-batch"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg> Batch proof review</h3><p class="hp-intro">Review several AI-locked tasks together.</p><ol><li>Tap <b>☑ Multiselect</b>, tick the AI-locked tasks, then <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg> Batch review selected tasks</b>.</li><li>You can include up to <b>20</b> tasks per batch.</li><li>Attach <b>1–5</b> files (8 MB per photo or 30 MB per PDF).</li><li>You pay the real cost of the combined review. Check the price before you start.</li></ol><p class="hp-note">Reviewing several tasks together usually costs less than reviewing them one by one.</p><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Select 3 homework tasks → <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg> Batch review → attach one PDF of all three → submit.</div></details></section>
+<section class="hp-sec" id="help-p-num"><h3> Consecutive subtasks {num==X}</h3><p class="hp-intro">Fast numbered subtasks.</p><ol><li>In Create Task or Task Details, tick <b>Consecutive {num==X}</b> by Quick Subtasks.</li><li>Type a subtask containing <code>{num==1}</code> and press <b>Enter</b>. The number advances each time.</li><li>Without Pro, add subtasks one by one. Existing numbered subtasks stay intact.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Type <i>Read chapter {num==1}</i>, Enter → the box now holds <code>{num==2}</code>, Enter again → <code>{num==3}</code>.</div></details></section>
+<section class="hp-sec" id="help-p-dyn"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-growth"></use></svg> Dynamic Priority</h3><p class="hp-intro">Lower a task's priority while only bonus work is left.</p><ol><li>In Create Task or Task Details open the <b>Dynamic Priority</b> section.</li><li>Under <b>While only bonus work remains, use priority</b> choose a level.</li><li>The task takes that priority while only bonus subtasks are unfinished, and returns to normal automatically if required work becomes unfinished again.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Parent <i>Finish report</i> is priority 1. Only the bonus cover page remains. With Dynamic Priority set to a lower level, the parent drops to it until required work reappears.</div></details></section>
+<section class="hp-sec" id="help-p-study"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</h3><p class="hp-intro">Spread study units over days. Ask Copilot to create one.</p><ol><li>Tell Copilot you want a study plan. It asks for a <b>title</b>, the <b>total number of units</b> and your <b>study days</b>.</li><li>It opens an editable preview before anything is created.</li><li>Study plans require Pro. Without Pro Copilot tells you so.</li></ol><p class="hp-note">Missed days: on <b>Study plans</b> an overdue plan shows <b>Soft reschedule</b> (Pro) and <b>Move overdue to today</b>. Soft reschedule hands the overdue units out one at a time over the coming study days, so no day loses units and the plan stays in order; once a day for each plan. Move overdue to today is free and stacks them on today.</p><p class="hp-note">Smart Study is also included with Pro. Its instructions are not yet in this guide.</p><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">You: “Plan 12 chapters over Mon, Wed, Fri.” Copilot asks for the title, then shows a preview you can edit.</div></details></section>
+<section class="hp-sec" id="help-p-uni"><h3>🌌 Universe</h3><p class="hp-intro">A shared workspace for a group. Open it from the menu.</p><ol><li>Tabs: <b>My dashboard</b>, <b>Projects</b>, <b>My stats</b>, <b>Controls</b> (managers) and <b>Settings</b>. Needs an internet connection; changes are not queued offline.</li><li>Your tasks are grouped by <b>Overdue</b>, <b>Today</b>, <b>Upcoming</b>, <b>No date</b> and <b>Complete</b>. A task moves through <b>Open</b> → <b>Submitted</b> → <b>In review</b> → <b>Approved</b> or <b>Needs changes</b> (fix and resubmit).</li><li>Managers create work with <b>＋</b> in Projects and manage <b>People</b>, <b>Invitations</b> (single-use links that reserve a seat) and <b>Labels</b> in Controls.</li><li>Limits: up to <b>20</b> members besides the owner, <b>2</b> Universes you own. You can join <b>2</b> Universes on Free or <b>7</b> on Pro.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Controls → Invitations → create a link → send it. It reserves a seat until accepted, cancelled or expired.</div></details></section>
+<section class="hp-sec" id="help-p-test"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Test your criteria on hosted AI</h3><p class="hp-intro">Same as the Free test, but paid in credits.</p><ol><li>Press <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Test your criteria</b>. You see a credit estimate before it runs.</li><li>Charged exactly like a real audit; there are no free tests.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Criteria validated at 8/10 → Test → estimate shows → Run test.</div></details></section>
+<section class="hp-sec" id="help-p-get"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-key"></use></svg> Getting Pro</h3><p class="hp-intro">Tap <b>Want Pro? Contact developer now!</b> in <b>Settings → AI &amp; Pro</b> to email the developer.</p><ol><li>If you already have a code, enter it in <b>Activate a code</b> in Settings → AI &amp; Pro.</li><li>Press <b> Compare plans</b> to see Free and Pro side by side.</li></ol></section>
+</div>
+
+<div class="hp-nav">
+<a class="icon-btn" href="legal.html?view=compare" style="text-decoration:none"> Compare Free and Pro</a>
+<a class="icon-btn" href="#today" style="text-decoration:none">Open Today</a>
+<a class="icon-btn" href="settings.html" style="text-decoration:none">← Settings</a>
+</div>
+</div>
+</section>
+</div>
+<div class="modal-overlay" id="projectModal">
+    <div class="modal-box" style="max-width: 440px;">
+        <h3 style="margin-top: 0; color: var(--primary);" id="projectModalTitle">Create Project</h3>
+        
+        <form id="projectForm">
+            <input type="hidden" id="editingProjectId" value="">
+
+            <div class="form-group">
+                <label for="projectNameInput">Project Name</label>
+                <input type="text" id="projectNameInput" placeholder="e.g. Biology, Personal, Work" required autocomplete="off">
+            </div>
+
+            <div class="form-group">
+                <label>Select Icon / Emoji</label>
+                <div class="emoji-picker-grid" id="emojiPickerGrid"></div>
+            </div>
+
+            <div class="form-group">
+                <label>Theme Color</label>
+                <div class="color-picker-row" id="colorPickerRow"></div>
+            </div>
+
+            <div id="projectDeleteSection" style="display: none; border-top: 1px solid var(--border-color); padding-top: 14px; margin-top: 14px;">
+                <button type="button" class="icon-btn" id="triggerProjectDeleteToggleBtn" style="color: var(--danger); border-color: #7f1d1d; width: 100%; justify-content: center;">
+                    <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-trash"></use></svg> Delete Project
+                </button>
+
+                <div id="cascadeDeleteOptionsPanel" style="display: none;" class="cascade-options-card">
+                    <strong>What should happen to existing tasks?</strong>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="radio" name="cascadeChoice" value="inbox" checked>
+                        <span>Divert all tasks to <strong><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-inbox"></use></svg> Inbox</strong></span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="radio" name="cascadeChoice" value="reassign">
+                        <span>Reassign tasks to another project:</span>
+                    </label>
+                    <select id="reassignTargetProjectSelect" style="padding: 6px; border-radius: 6px; background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color);"></select>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--danger);">
+                        <input type="radio" name="cascadeChoice" value="trash">
+                        <span>Delete all tasks with this project</span>
+                    </label>
+                    <button type="button" class="icon-btn" id="confirmDeleteProjectBtn" style="background: var(--danger); color: #fff; border: none; font-weight: 700; margin-top: 6px;">
+                        Confirm Project Deletion
+                    </button>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button type="button" class="icon-btn" id="closeProjectModalBtn">Cancel</button>
+                <button type="submit" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;">Save Project</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Comprehensive Task Creation -->
 
 <!-- Floating Action Buttons -->
 <button class="fab-add" id="openRootAddModalBtn" title="Create Task" aria-label="Create task"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-add"></use></svg><span class="wide-label">New task</span></button>
@@ -1409,6 +2601,15 @@
     <script type="text/taskitator-script" src="components.js"></script>
     <script type="text/taskitator-script" src="uni/focus-timer.js"></script>
     <script type="text/taskitator-script" src="app.js?v=task-sort-20261102"></script>
+    <script type="text/taskitator-script" src="views/projects.js"></script>
+    <script type="text/taskitator-script" src="views/calendar.js"></script>
+    <script type="text/taskitator-script" src="views/stats.js"></script>
+    <script type="text/taskitator-script" src="views/trash.js"></script>
+    <script type="text/taskitator-script" src="views/blocker-guide.js"></script>
+    <script type="text/taskitator-script" src="pro/study-manage.js"></script>
+    <script type="text/taskitator-script" src="study-plans.js"></script>
+    <script type="text/taskitator-script" src="sleep.js"></script>
+    <script type="text/taskitator-script" src="shell-router.js"></script>
     <script type="text/taskitator-script" src="tutorial-spotlight.js?v=tour-v2"></script>
 <script type="text/taskitator-script" src="tutorial-integration.js?v=tour-v2"></script>
 <script defer src="core.js"></script>

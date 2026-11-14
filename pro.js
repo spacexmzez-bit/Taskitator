@@ -2166,7 +2166,7 @@ window.TaskitatorEngine = TaskitatorEngine;
 
                 <div class="pro-compare-link-row" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(148, 163, 184, 0.2); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                     <span style="font-size: 0.82rem; color: #94a3b8;">Not sure what Pro adds?</span>
-                    <a href="components.html?view=compare" class="pro-compare-link" id="proComparePageLink" style="font-size: 0.84rem; font-weight: 600; color: #60a5fa; text-decoration: none;">Compare Free and Pro →</a>
+                    <a href="legal.html?view=compare" class="pro-compare-link" id="proComparePageLink" style="font-size: 0.84rem; font-weight: 600; color: #60a5fa; text-decoration: none;">Compare Free and Pro →</a>
                 </div>
             </div>
         `;
@@ -2740,7 +2740,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                 requestAnimationFrame(() => { fill.style.width = Math.round((c.daily_remaining / c.daily_limit) * 100) + '%'; });
             }
         } else {
-            card.href = 'components.html?view=compare';
+            card.href = 'legal.html?view=compare';
             {const t = el('strong'); if (window.TaskitatorIcons) t.insertAdjacentHTML('afterbegin', window.TaskitatorIcons.icon('star') + ' '); t.append(document.createTextNode('Upgrade to Pro')); card.append(t);}
             card.append(el('span', 'Batch reviews and more AI credits.'));
         }
