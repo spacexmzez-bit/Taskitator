@@ -379,9 +379,10 @@ window.TaskitatorAgent = (() => {
             const todayStr = new Date().toISOString().split('T')[0];
             const filter = args.filter || 'today';
 
+            const expired = window.TaskitatorRootCompletion?.hiddenNow(tasks) || new Set();
             const filtered = tasks.filter(t => {
                 if (t.status === 'trash') return false;
-                if (filter === 'completed') return t.status === 'completed';
+                if (filter === 'completed') return t.status === 'completed' && !expired.has(t.id);
 
                 if (filter === 'today') {
                     if (t.status === 'completed') return false;
@@ -1764,9 +1765,45 @@ window.TaskitatorApp = (() => {
         });
     }
 
+    // Roots follow TaskitatorRootCompletion: completing never marks unfinished children done.
+    // Unfinished, unprotected children go to Trash and come back if the root is reopened.
+    function setRootStatus(root, newStatus, timestamp) {
+        const previousStamp = root.completed_at;
+        root.status = newStatus;
+        root.completed_at = timestamp;
+        if (newStatus === 'completed' && root.recurrence_series_id) root.recurrence_hold_until = Date.now() + 10000;
+        else delete root.recurrence_hold_until;
+        if (newStatus === 'completed') {
+            if (window.ExemplarStore) window.ExemplarStore.deleteExemplar(root.id);
+            const ids = new Set(window.TaskitatorRootCompletion?.removable(tasks, root.id) || []);
+            tasks.forEach(t => {
+                if (!ids.has(t.id)) return;
+                t.status = 'trash';
+                t.trashed_by_completion = root.id;
+                if (window.ExemplarStore) window.ExemplarStore.deleteExemplar(t.id);
+            });
+            return;
+        }
+        const branch = getAllDescendants(root.id);
+        tasks.forEach(t => {
+            if (t.trashed_by_completion !== root.id) return;
+            if (t.status === 'trash') t.status = 'active';
+            delete t.trashed_by_completion;
+        });
+        // Older data marked every child done with the root's timestamp: reopen those with it.
+        if (previousStamp) branch.forEach(t => {
+            if (t.status === 'completed' && t.completed_at === previousStamp) { t.status = newStatus; t.completed_at = null; }
+        });
+    }
+
+    function isHiddenCompleted(taskId) {
+        return Boolean(window.TaskitatorRootCompletion?.hiddenNow(tasks, id => pendingGraceCompletions.has(id)).has(taskId));
+    }
+
     function cascadeTaskStatus(targetTaskId, newStatus, timestamp = null) {
         const target = tasks.find(t => t.id === targetTaskId);
         if (!target) return;
+        if (!target.parent_id && window.TaskitatorRootCompletion) return setRootStatus(target, newStatus, timestamp);
 
         target.status = newStatus;
         target.completed_at = timestamp;
@@ -1912,6 +1949,10 @@ window.TaskitatorApp = (() => {
         if (task.status === 'completed') {
             if (task.ai_locked && !isBypassActiveSafe()) {
                 window.TaskitatorNotify('Blocked: AI-checked tasks are permanent and cannot be uncompleted.');
+                return;
+            }
+            if (isHiddenCompleted(taskId)) {
+                window.TaskitatorNotify('This task was finished on an earlier day and can no longer be reopened.');
                 return;
             }
             cascadeTaskStatus(taskId, 'active', null);
@@ -3312,9 +3353,11 @@ window.TaskitatorApp = (() => {
 
         const todayStr = getAppTodayStr();
 
+        const expired = window.TaskitatorRootCompletion?.hiddenNow(tasks, id => pendingGraceCompletions.has(id)) || new Set();
         const completedList = tasks.filter(t => {
             if (t.status !== 'completed') return false;
             if (pendingGraceCompletions.has(t.id)) return false;
+            if (expired.has(t.id)) return false;
             if (currentView === 'general') return true;
 
             const due = String(t.due_date || '').trim().toLowerCase();
@@ -3386,6 +3429,11 @@ window.TaskitatorApp = (() => {
             return;
         }
 
+        if (isHiddenCompleted(taskId)) {
+            window.TaskitatorNotify('This task was finished on an earlier day and can no longer be reopened.');
+            return;
+        }
+
         if (task.parent_id) {
             const parent = tasks.find(t => t.id === task.parent_id);
             if (!parent || parent.status === 'trash') {
@@ -3393,8 +3441,8 @@ window.TaskitatorApp = (() => {
             }
         }
 
-        task.status = 'active';
-        task.completed_at = null;
+        if (!task.parent_id) cascadeTaskStatus(task.id, 'active', null);
+        else { task.status = 'active'; task.completed_at = null; }
 
         saveStorageAndPush();
         renderUnifiedView();
@@ -4248,6 +4296,8 @@ window.TaskitatorApp = (() => {
         openTaskDetailModal,
         sortTasks,
         handleTaskCompletion,
+        isHiddenCompleted,
+        hiddenCompletedIds: () => window.TaskitatorRootCompletion?.hiddenNow(tasks, id => pendingGraceCompletions.has(id)) || new Set(),
         deleteTask,
         undoTaskCompletion,
         toggleSelectionMode,

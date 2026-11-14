@@ -93,10 +93,12 @@ function restoreTask(taskId) {
     }
 
     task.status = 'active';
+    delete task.trashed_by_completion;
 
     function recursiveRestoreChildren(parentId) {
         tasks.filter(t => t.parent_id === parentId && t.status === 'trash').forEach(child => {
             child.status = 'active';
+            delete child.trashed_by_completion;
             recursiveRestoreChildren(child.id);
         });
     }

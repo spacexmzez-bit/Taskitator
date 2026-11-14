@@ -74,14 +74,17 @@
         const tasks=canonicalTasks.map(t=>{if(t.status!=='active'||t.smart_early_date!==logicalToday)return t;const parent=canonicalTasks.find(p=>p.study_plan_id===t.study_plan_id&&!p.parent_id&&p.due_date===logicalToday);return parent?{...t,parent_id:parent.id,is_bonus:true}:t;});
         const allChildrenMap = new Map();
         const visibleChildrenMap = new Map();
+        // Finished roots disappear once their logical day ends (data is kept for Stats).
+        const expired = TaskitatorApp.hiddenCompletedIds?.() || new Set();
 
         tasks.forEach(t => {
-            if (t.status === 'trash') return;
+            if (t.status === 'trash' || expired.has(t.id)) return;
             const pId = t.parent_id || 'root';
             if (!allChildrenMap.has(pId)) allChildrenMap.set(pId, []);
             allChildrenMap.get(pId).push(t);
 
-            if (t.status === 'active') {
+            // Completed children stay visible (struck through) until their root's day ends.
+            if (t.status === 'active' || t.status === 'completed') {
                 if (!visibleChildrenMap.has(pId)) visibleChildrenMap.set(pId, []);
                 visibleChildrenMap.get(pId).push(t);
             }
@@ -93,7 +96,7 @@
         if (dateRange) dateRange.hidden = projectDate.mode !== 'range';
         const dateKeep = window.TaskitatorDateFilter?.active(projectDate) ? window.TaskitatorDateFilter.visible(canonicalTasks, logicalToday, projectDate) : null;
         if (dateKeep) for (const [k, list] of visibleChildrenMap) visibleChildrenMap.set(k, list.filter(t => dateKeep.has(t.id)));
-        const projectTasks = tasks.filter(t => (t.project_id || 'inbox') === activeProjectId && t.status !== 'trash');
+        const projectTasks = tasks.filter(t => (t.project_id || 'inbox') === activeProjectId && t.status !== 'trash' && !expired.has(t.id));
         if (countBadge) countBadge.textContent = `${projectTasks.length} Tasks`;
 
         if (!list) return;

@@ -235,6 +235,12 @@ function buildAgendaNode(task, depth, allChildrenMap, matchMap, descMatchMap) {
             alert('Complete this protected or recurring task from Today / General Tasks so proof, prerequisites, and recurrence are handled safely.');
             window.location.hash = '#general'; return;
         }
+        // Inside the app shell, use the shared completion rules (root rules, 10 s undo).
+        if (window.TaskitatorApp?.handleTaskCompletion) {
+            TaskitatorApp.loadStorage?.();
+            TaskitatorApp.handleTaskCompletion(current.id, refreshCalendar);
+            return;
+        }
         current.status = 'completed';
         current.completed_at = new Date().toISOString();
         saveDataAndSync();
