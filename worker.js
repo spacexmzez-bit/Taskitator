@@ -11,7 +11,7 @@ import './saved-criteria.js';
 // Combines: recurrence-core, break-core, auth, ai-models, verification,
 // deletion, vault, ai-gateway, and worker router.
 // ============================================================================
-import { ProGateway, TaskProtection, liveAccount, POLICY, planOf, periods } from './pro-backend.js';
+import { ProGateway, TaskProtection, liveAccount, POLICY, planOf, periods, entitlementFor, clientOf, refreshKeyo } from './pro-backend.js';
 import { BreakSystems } from './break-systems.js';
 import { proofRequestBody } from './pro-proof-payload.js';
 
@@ -777,7 +777,7 @@ export class AccountDeletion {
                     else if (job.stage==='vault-stages') next=await this.page(job,'vault-stage:'+await sha256(job.userId)+':');
                     else if (job.stage==='hosted') next=await this.page(job,'pro:',(value,key)=>
                         ['pro:usage:','pro:spend:','pro:op:','pro:study-validation:','pro:study-grant:','pro:study-delete:','pro:study-replan:','pro:study-soft:','pro:criteria-edit:'].some(prefix=>key.startsWith(prefix+job.userId+':')) ||
-                        key==='pro:user:username:'+job.userId || key==='pro:entitlement:'+job.userId ||
+                        key==='pro:user:username:'+job.userId || key==='pro:entitlement:'+job.userId || key==='pro:app:'+job.userId ||
                         key==='pro:emergency:'+job.userId || key==='pro:preview:'+job.userId || key==='pro:quote-index:'+job.userId ||
                         (key.startsWith('pro:binding:') && value?.account_id===job.userId) ||
                         (key.startsWith('pro:username:map:') && value?.accountId===job.userId) ||
@@ -1302,7 +1302,7 @@ export class AIGateway {
         const pro=this.service.pro;
         if(!pro || !identity?.userId)return false;
         if(refresh)try{await pro.credits?.refreshLicense(identity.userId);}catch{}
-        const e=await this.service.storage.get('pro:entitlement:'+identity.userId);
+        const e=await entitlementFor(this.service.storage,identity.userId,clientOf(identity));
         return Boolean(e && e.account_id===identity.userId && planOf(e)==='pro' && !e.use_byok);
     }
     claim(identity){
@@ -1387,11 +1387,11 @@ export class AIGateway {
             const key=await this.service.vault.unseal(identity,record,provider);
             // Free personal-key usage is metered server-side; Pro personal-key usage is not.
             await credits.refreshLicense(identity.userId);
-            const {ledger}=await credits.state(this.service.storage,identity.userId);
+            const {ledger}=await credits.state(this.service.storage,identity.userId,Date.now(),clientOf(identity));
             if(ledger.plan!=='pro'){
                 const maxOutput=provider==='claude'?forward.max_tokens:forward.generationConfig.maxOutputTokens;
                 const input=Math.ceil(await countInputTokens(provider,body.model,forward,key,largeProof)*1.2);
-                hold=await credits.reserveByok(identity.userId,{model:body.model,inputTokens:input,maxOutput});
+                hold=await credits.reserveByok(identity.userId,{model:body.model,inputTokens:input,maxOutput},clientOf(identity));
                 if(hold){
                     if(provider==='claude')forward.max_tokens=hold.maxOutput;
                     else forward.generationConfig={...forward.generationConfig,maxOutputTokens:hold.maxOutput};
@@ -1942,9 +1942,9 @@ export class TaskitatorSync {
     // Devices allowed right now: 12 with active Pro, otherwise 3. An unknown (stale) licence is refreshed once.
     async phoneLimit(owner) {
         if (!owner || !this.pro) return PHONE_LIMITS.free;
-        let entitlement = await this.storage.get('pro:entitlement:' + owner), plan = planOf(entitlement);
+        let entitlement = await entitlementFor(this.storage, owner, 'web'), plan = planOf(entitlement);
         if (plan === 'unknown') {
-            try { await this.pro.licenses?.resolve(owner); entitlement = await this.storage.get('pro:entitlement:' + owner); plan = planOf(entitlement); } catch { /* keep the free limit */ }
+            try { await this.pro.licenses?.resolve(owner); entitlement = await entitlementFor(this.storage, owner, 'web'); plan = planOf(entitlement); } catch { /* keep the free limit */ }
         }
         return plan === 'pro' ? PHONE_LIMITS.pro : PHONE_LIMITS.free;
     }
@@ -2248,7 +2248,7 @@ export class TaskitatorSync {
             if (push && identity?.userId && (snapshot.tasks.some(t => t.dynamic_priority_target != null || t.early_date != null || t.study_plan_id) ||
                 snapshot.recurrence_state?.series?.some(s => s.nodes?.some(n => n.task?.dynamic_priority_target != null)) ||
                 (Array.isArray(snapshot.saved_criteria) && (snapshot.saved_criteria.length > 4 || snapshot.saved_criteria.some(i => i && i.has_exemplar))))) {
-                try { await this.pro.licenses.resolve(identity.userId); } catch (e) { dynamicRefreshError = e; }
+                dynamicRefreshError = await refreshKeyo(this.pro.licenses, this.storage, identity.userId, clientOf(identity)); // Keyo never decides app Pro
             }
 
             return await this.storage.transaction(async tx => {
@@ -2320,16 +2320,16 @@ export class TaskitatorSync {
                         previous?.recurrence_state?.series?.some(s => s.nodes?.some(n => n.task?.dynamic_priority_target != null)))) {
                         throw new HTTPError(428, 'Refresh Taskitator on this device before syncing tasks that use Dynamic Priority.');
                     }
-                    try{globalThis.TaskitatorSmartStudy.guard(previous,snapshot);}catch(e){throw new HTTPError(409,e.message);}
+                    try{globalThis.TaskitatorSmartStudy.guard(previous,snapshot,replanned);}catch(e){throw new HTTPError(409,e.message);}
                     try{globalThis.TaskitatorEarly.guard(previous,snapshot);}catch(e){throw new HTTPError(400,e.message);}
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
                     try { Recurrence.reconcile(snapshot); }
                     catch (err) { throw new HTTPError(400, err.message); }
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
-                    await this.protection.guardDynamic(tx,identity.userId,previous,snapshot,dynamicRefreshError);
-                    await this.protection.guardEarly(tx,identity.userId,previous,snapshot,dynamicRefreshError);
-                    await this.protection.guardStudyEdit(tx,identity.userId,previous,snapshot,dynamicRefreshError);
-                    await this.protection.guardSavedCriteria(tx,identity.userId,previous,snapshot,dynamicRefreshError);
+                    await this.protection.guardDynamic(tx,identity.userId,previous,snapshot,dynamicRefreshError,clientOf(identity));
+                    await this.protection.guardEarly(tx,identity.userId,previous,snapshot,dynamicRefreshError,clientOf(identity));
+                    await this.protection.guardStudyEdit(tx,identity.userId,previous,snapshot,dynamicRefreshError,clientOf(identity));
+                    await this.protection.guardSavedCriteria(tx,identity.userId,previous,snapshot,dynamicRefreshError,clientOf(identity));
                     await this.protection.consumeStudyDeleteGrants(tx,identity.userId,previous,snapshot);
                     await this.protection.consumeStudyReplanGrants(tx,identity.userId,previous,snapshot);
                     await this.protection.consumeCriteriaEditGrants(tx,identity.userId,previous,snapshot);

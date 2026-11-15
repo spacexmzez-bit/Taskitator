@@ -77,7 +77,7 @@ function draftFor(plan) {
     if (!d) { d = { tab: 'info', info: infoOf(plan), ai: { criteria: '', exclude: '' }, sched: null, host: null, rev: null }; drafts.set(plan.id, d); mountSchedule(plan, d); }
     return d;
 }
-const infoOf = plan => ({ title: plan.base, unit: plan.unit, parent: plan.parentPriority === undefined ? MIXED : plan.parentPriority ?? '', unitP: plan.unitPriority === undefined ? MIXED : plan.unitPriority ?? '', chapSize: plan.chapter ? String(plan.chapter.size) : '', chapLabel: plan.chapter ? plan.chapter.label : 'Ch' });
+const infoOf = plan => ({ title: plan.base, unit: plan.unit, parent: plan.parentPriority === undefined ? MIXED : plan.parentPriority ?? '', unitP: plan.unitPriority === undefined ? MIXED : plan.unitPriority ?? '', chapOn: Boolean(plan.chapter), chapSize: plan.chapter ? String(plan.chapter.size) : '', chapLabel: plan.chapter ? plan.chapter.label : 'Ch' });
 const origInfo = plan => infoOf(plan);
 const infoDirty = (plan, d) => { const o = origInfo(plan); return d.info.title !== o.title || d.info.unit !== o.unit || d.info.parent !== o.parent || d.info.unitP !== o.unitP || d.info.chapSize !== o.chapSize || (d.info.chapSize !== '' && d.info.chapLabel !== o.chapLabel); };
 const aiDirty = d => Boolean(d.ai.criteria.trim() || d.ai.exclude.trim());
@@ -191,6 +191,7 @@ function card(plan, parent) {
     el('span', plan.finished ? tr('Finished') : tr('In progress'), badges, 'plan-badge');
     if (plan.audited) el('span', tr('AI audited: {n}', { n: plan.audited }), badges, 'plan-badge ai');
     if (plan.bonus) el('span', tr('Bonus: {done} of {n}', { done: plan.bonusDone, n: plan.bonus }), badges, 'plan-badge');
+    if (plan.early) el('span', tr('Bonus left: {n} ({plan} plan, {early} early)', { n: plan.bonusLeft + plan.early, plan: plan.bonusLeft, early: plan.early }), badges, 'plan-badge plan-badge-early');
     el('p', tr('{done} of {total} done', { done: plan.done, total: plan.total }) + ' · ' + tr('{n} study days', { n: plan.days }) + (plan.start ? ' · ' + fmtDate(plan.start) + ' – ' + fmtDate(plan.end) : ''), c, 'plan-meta');
     const bar = el('div', undefined, c, 'plan-bar'); el('span', undefined, bar).style.width = (plan.total ? Math.round(plan.done / plan.total * 100) : 0) + '%';
     const actions = el('div', undefined, c, 'plan-actions');
@@ -217,8 +218,8 @@ function card(plan, parent) {
     const d = draftFor(plan), edit = canEdit() && !busy;
     if (!canEdit()) el('p', pro === null ? tr('Could not confirm your Pro license, so editing is off. You can still delete this plan.') : tr('Editing study plans needs an active Pro license. You can still view, finish and delete this plan.'), c, 'plan-hint warn');
     const tabs = el('div', undefined, c, 'tk-tabs'); tabs.setAttribute('role', 'tablist'); ui = { dots: {} };
-    for (const [key, text] of [['info', tr('Task info')], ['ai', tr('AI criteria')], ['sched', tr('Scheduling')]]) {
-        const b = el('button', text, tabs, 'tk-tab'); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(d.tab === key));
+    for (const [key, text, icon] of [['info', tr('Task info'), 'notes'], ['ai', tr('AI criteria'), 'ai'], ['sched', tr('Scheduling'), 'calendar']]) {
+        const b = el('button', text, tabs, 'tk-tab'); b.type = 'button'; if (window.TaskitatorIcons?.has?.(icon)) b.prepend(window.TaskitatorIcons.node(icon, 'tk-tab-icon')); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(d.tab === key));
         ui.dots[key] = el('span', undefined, b, 'tk-tab-dot'); ui.dots[key].hidden = true;
         b.addEventListener('click', () => {
             const panel = c.querySelector('.plan-panel');
@@ -249,15 +250,23 @@ function infoTab(plan, d, panel, list, edit) {
     if (plan.unit) {
         const unit = field(tr('Unit name'), grid, d.info.unit), locked = plan.audited > 0 && !bypass.active; unit.maxLength = 40; unit.disabled = !edit || locked;
         unit.addEventListener('input', () => { d.info.unit = unit.value; chrome(); });
-        const cs = field(tr('Units per chapter (optional)'), grid, d.info.chapSize, 'number'); cs.min = 1; cs.max = 1000; cs.inputMode = 'numeric'; cs.disabled = !edit || locked;
-        cs.addEventListener('input', () => { d.info.chapSize = cs.value.trim(); chrome(); });
-        const cl = field(tr('Chapter label'), grid, d.info.chapLabel); cl.maxLength = 20; cl.disabled = !edit || locked;
-        cl.addEventListener('input', () => { d.info.chapLabel = cl.value; chrome(); });
     } else el('div', undefined, grid);
     const choices = [['', tr('No priority')], ...list.map(p => [p.id, p.name || p.id])];
     const make = (label, key) => { const s = field(label, grid, undefined, 'select'); if (d.info[key] === MIXED) el('option', tr('Mixed'), s).value = MIXED; for (const [v, t] of choices) el('option', t, s).value = v; s.value = d.info[key]; s.addEventListener('change', () => { d.info[key] = s.value; chrome(); }); return s; };
     make(tr('Parent task priority'), 'parent'); make(tr('Unit priority'), 'unitP');
     el('p', tr('Units cannot be more important than their parent. Finished tasks keep their priority.'), fs, 'plan-hint');
+    // Chapter labels (Phase 3.6.1): a separate section; the fields show only while the switch is on. Switching off removes the labels when saved.
+    if (plan.unit) {
+        const locked = plan.audited > 0 && !bypass.active, sec = el('div', undefined, fs, 'plan-chapters');
+        const on = field(tr('Use chapter labels'), sec, '', 'checkbox'); on.checked = d.info.chapOn === true; on.disabled = !edit || locked; on.dataset.act = 'chapter-toggle';
+        const body = el('div', undefined, sec); body.hidden = !on.checked; const cg = el('div', undefined, body, 'plan-grid');
+        const cs = field(tr('Units per chapter (optional)'), cg, d.info.chapSize, 'number'); cs.min = 1; cs.max = 1000; cs.inputMode = 'numeric'; cs.disabled = !edit || locked;
+        cs.addEventListener('input', () => { d.info.chapSize = cs.value.trim(); chrome(); });
+        const cl = field(tr('Chapter label'), cg, d.info.chapLabel); cl.maxLength = 20; cl.disabled = !edit || locked;
+        cl.addEventListener('input', () => { d.info.chapLabel = cl.value; chrome(); });
+        el('p', tr('Units per chapter adds a chapter label to every unit title (for example Ch 3 · Lesson.17) and to each day\'s "Covers" line. It does not create extra tasks.'), body, 'plan-hint');
+        on.addEventListener('change', () => { d.info.chapOn = on.checked; body.hidden = !on.checked; if (!on.checked) { d.info.chapSize = ''; cs.value = ''; } chrome(); });
+    }
     if (plan.audited && plan.unit) el('p', bypass.active ? tr('Emergency Bypass is active, so audited units can be renamed.') : tr('This plan has AI-audited units. Renaming them needs Emergency Bypass: use the Emergency Bypass button at the top of this page.'), fs, 'plan-hint warn');
     // Deleting stays outside the save bar and outside Pro.
     const del = el('div', undefined, panel, 'plan-delbox');
@@ -468,11 +477,13 @@ async function sendBonus(plan, options) {
     if (SyncEngine.isDirty?.()) { const sent = await SyncEngine.syncNow({ origin: 'manual' }); if (sent && sent.success === false) throw Error(sent.error || tr('Sync first, then try again.')); }
     const answer = await TaskitatorAuth.api('/study-plan/manage', { method: 'POST', body: JSON.stringify({ action: 'bonus', plan_id: plan.id, options }) });
     return commit(() => { const ids = M.planTree(tasks, plan.id); return { tasks: [...tasks.filter(t => !ids.has(t.id)), ...answer.tasks], answer }; },
-        r => options.op === 'finish' ? tr('Plan completed. {n} unfinished bonus unit(s) removed.', { n: r.answer.removed })
+        r => (options.op === 'finish' ? tr('Plan completed. {n} unfinished bonus unit(s) removed.', { n: r.answer.removed })
             : options.op === 'add' ? tr('{n} bonus unit(s) added.', { n: r.answer.added })
             : options.op === 'remove' ? tr('{n} bonus unit(s) removed.', { n: r.answer.removed })
-            : tr('{n} bonus unit(s) moved to the next day.', { n: r.answer.missed }));
+            : tr('{n} bonus unit(s) moved to the next day.', { n: r.answer.missed })) + clearedNote(r.answer));
 }
+// Smart Study + bonus (Phase 3.6.2): units that changed day lost their early appearance.
+const clearedNote = answer => answer?.early_cleared ? ' ' + tr('{n} early appearance(s) were cleared because their units changed day.', { n: answer.early_cleared }) : '';
 async function finishBonus(plan) {
     if (busy) return;
     if (!await ask(tr('Complete this plan?'), [tr('Every required unit is done. The {n} unfinished bonus unit(s) are removed.', { n: plan.bonusLeft }), tr('This cannot be undone.')], tr('Complete'))) return;
@@ -508,7 +519,7 @@ async function sweepBonus() {
                     throw Error(sent.error || 'rejected');
                 }
                 window.dispatchEvent(new CustomEvent('taskitator-tasks-updated'));
-                window.TaskitatorNotify?.(tr('{n} bonus unit(s) moved to the next day.', { n: answer.missed }), 'info');
+                window.TaskitatorNotify?.(tr('{n} bonus unit(s) moved to the next day.', { n: answer.missed }) + clearedNote(answer), 'info');
                 load();
             } catch (e) { sweepFailed.set(plan.id, Date.now()); }
         }
@@ -608,8 +619,9 @@ async function saveDraft() {
     try {
         Drafts().saveStudy({ kind: 'edit', plan_id: plan.id, title: plan.base, info: d.info, ai: d.ai, schedule: d.sched.snapshot() });
         status(tr('Draft saved. Find it in the Drafts tab.'));
+        // The panel stays open exactly as it is (no re-render); the confirmation shows inline next to the buttons too.
+        $('planSaveMsg').textContent = tr('Draft saved');
     } catch (e) { status(e.message); }
-    render();
 }
 async function restoreDraft(id) {
     const d = Drafts()?.getStudy(id); if (!d) { status(tr('This draft no longer exists.')); render(); return; }
@@ -620,7 +632,7 @@ async function restoreDraft(id) {
     const plan = planOf(d.plan_id); if (!plan) { status(tr('This plan no longer exists. Delete the draft.')); render(); return; }
     drafts.delete(plan.id); current = plan.id; pageTab = 'plans'; render();
     const draft = draftFor(plan);
-    draft.info = { ...infoOf(plan), ...Object.fromEntries(Object.entries(d.info).filter(([k]) => ['title', 'unit', 'parent', 'unitP', 'chapSize', 'chapLabel'].includes(k))) };
+    draft.info = { ...infoOf(plan), ...Object.fromEntries(Object.entries(d.info).filter(([k]) => ['title', 'unit', 'parent', 'unitP', 'chapOn', 'chapSize', 'chapLabel'].includes(k))) };
     draft.ai = { criteria: d.ai.criteria, exclude: d.ai.exclude };
     const r = draft.sched.restore(d.schedule);
     render();

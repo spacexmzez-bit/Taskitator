@@ -124,5 +124,5 @@ test('plan card and create dialog expose the two fields', () => {
     const plans = fs.readFileSync(new URL('./study-plans.js', import.meta.url), 'utf8');
     for (const s of ["tr('Units per chapter (optional)')", "tr('Chapter label')", 'M.setChapters']) assert.ok(plans.includes(s), s);
     const ui = fs.readFileSync(new URL('./pro/study-plan.js', import.meta.url), 'utf8');
-    for (const s of ["'Units per chapter (optional)'", "'Chapter label'", 'chapter_size:chapSize.value||null']) assert.ok(ui.includes(s), s);
+    for (const s of ["'Units per chapter (optional)'", "'Chapter label'", 'chapter_size:chapOn.checked?chapSize.value||null:null']) assert.ok(ui.includes(s), s);
 });

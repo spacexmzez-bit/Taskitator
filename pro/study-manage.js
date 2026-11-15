@@ -26,7 +26,7 @@ function plans(tasks){
   // Bonus units are optional work: progress counts the required units, bonus units are counted on their own.
   const required=units.filter(u=>!u.is_bonus),extra=units.filter(u=>u.is_bonus),done=required.filter(u=>u.status==='completed').length,bonusLeft=extra.filter(u=>u.status==='active').length;
   const same=values=>new Set(values).size===1?values[0]??null:undefined;
-  return {id,base,custom:custom.length,unit,plural,chapter,total:required.length,done,remaining:required.length-done,bonus:extra.length,bonusDone:extra.filter(u=>u.status==='completed').length,bonusLeft,ready:required.length>0&&done===required.length&&bonusLeft>0,days:parents.length,
+  return {id,base,custom:custom.length,unit,plural,chapter,total:required.length,done,remaining:required.length-done,bonus:extra.length,bonusDone:extra.filter(u=>u.status==='completed').length,bonusLeft,early:units.filter(u=>u.status==='active'&&!u.is_bonus&&u.smart_early_date&&!u.smart_adjusted).length,ready:required.length>0&&done===required.length&&bonusLeft>0,days:parents.length,
    start:dates[0]||null,end:dates.at(-1)||null,audited:units.filter(isAudited).length,
    parentPriority:same(parents.map(p=>p.priority_id||null)),unitPriority:same(units.map(u=>u.priority_id||null)),
    finished:units.length>0&&units.every(u=>u.status==='completed'),parents,units,group};
@@ -393,6 +393,25 @@ const planUnits=(tasks,id)=>{
 // finish: once every required unit is done, the plan can be completed; the unfinished bonus units are removed.
 // convert: the unfinished bonus units become required for good.
 const dayDate=(by,u)=>by.get(u.parent_id)?.due_date;
+// Smart Study + bonus units (Phase 3.6.2). An early appearance belongs to one unit on one required day. When a bonus change moves that unit to
+// another day, or turns it into a bonus unit, the appearance no longer means what the person chose: it is cleared, with the remembered Smart origin.
+// Units that keep their day keep everything. Finished units never move, so they are never touched.
+const SMART_CLEAR=['smart_early_date','smart_origin_date','smart_origin_parent','smart_moved_from'];
+const smartShift=(t,p)=>(t.due_date||'')!==(p.due_date||'')||(!t.is_bonus&&Boolean(p.is_bonus));
+function smartPlace(t,p,today,log){
+ const n={...t,...p};
+ if(smartShift(t,p)&&SMART_CLEAR.some(k=>t[k]!==undefined)){
+  if(t.smart_early_date){log.units.add(unitNumber(t));if(t.smart_early_date>=today)log.live++;}
+  for(const k of SMART_CLEAR)delete n[k];
+ }
+ return n;
+}
+// The plan's stored Smart Study choice forgets the cleared units, so it always lists only appearances that still exist.
+function smartPrune(out,id,log){
+ if(!log.units.size)return out;
+ return out.map(t=>t&&t.study_plan_id===id&&t.smart_config&&Array.isArray(t.smart_config.appearances)?{...t,smart_config:{...t.smart_config,appearances:t.smart_config.appearances.filter(a=>!log.units.has(a.unit))}}:t);
+}
+const smartLog=()=>({units:new Set(),live:0});
 function bonusMissed(tasks,id,today){
  const plan=forPlan(tasks,id),by=new Map(tasks.map(t=>[t.id,t]));
  return plan.units.filter(u=>u.status==='active'&&u.is_bonus&&dateOK(dayDate(by,u))&&dayDate(by,u)<today);
@@ -404,7 +423,7 @@ function bonusDays(plan,today){
 }
 // True when bonus units are waiting to slide: a missed one and a day to slide it to.
 function bonusWaiting(tasks,id,today){
- try{const plan=forPlan(tasks,id);return bonusMissed(tasks,id,today).length>0&&bonusDays(plan,today).length>0&&!plan.units.some(u=>u.status==='active'&&Object.keys(u).some(k=>k.startsWith('smart_')));}catch(e){return false;}
+ try{const plan=forPlan(tasks,id);return bonusMissed(tasks,id,today).length>0&&bonusDays(plan,today).length>0;}catch(e){return false;}
 }
 function refreshCoverage(plan,out,gone){
  const plural=plan.plural||((plan.unit||'unit')+'s'),by=new Map(out.map(t=>[t.id,t])),nums=new Map();
@@ -417,8 +436,7 @@ function refreshCoverage(plan,out,gone){
 }
 function bonusSlide(tasks,id,today){
  if(!dateOK(today))throw Error('Invalid date.');
- const plan=forPlan(tasks,id);
- if(plan.units.some(u=>u.status==='active'&&Object.keys(u).some(k=>k.startsWith('smart_'))))throw Error('This plan uses Smart Study early dates, which are fixed.');
+ const plan=forPlan(tasks,id),log=smartLog();
  const missed=bonusMissed(tasks,id,today);
  if(!missed.length)throw Error('No bonus unit is waiting to move.');
  const days=bonusDays(plan,today);
@@ -435,16 +453,17 @@ function bonusSlide(tasks,id,today){
   take.forEach((u,i)=>place.set(u.id,{parent_id:s.day.id,due_date:s.day.due_date,is_bonus:i>=s.required}));
  }
  const gone=new Set(banks.slice(at).map(u=>u.id)),moved=[];
+ for(const u of banks.slice(at))if(u.smart_early_date)log.units.add(unitNumber(u));
  const out=[];
  for(const t of tasks){
   if(gone.has(t.id))continue;
   const p=place.get(t.id);
-  if(p&&(t.parent_id!==p.parent_id||(t.due_date||'')!==p.due_date||Boolean(t.is_bonus)!==p.is_bonus)){moved.push(t.id);out.push({...t,...p});}
+  if(p&&(t.parent_id!==p.parent_id||(t.due_date||'')!==p.due_date||Boolean(t.is_bonus)!==p.is_bonus)){moved.push(t.id);out.push(smartPlace(t,p,today,log));}
   else out.push(t);
  }
- const next=refreshCoverage(plan,out,gone);
+ const next=refreshCoverage(plan,smartPrune(out,id,log),gone);
  const last=days.at(-1)?.due_date||null;
- return {tasks:next,moved:moved.length,dropped:gone.size,missed:missed.length,end:last};
+ return {tasks:next,moved:moved.length,dropped:gone.size,missed:missed.length,end:last,earlyCleared:log.live};
 }
 // ---- add / remove bonus units (Phase 3.3) ----
 // Free for everyone and never needs Emergency Bypass: only optional, unfinished bonus units are created or removed.
@@ -455,11 +474,9 @@ function bonusSlide(tasks,id,today){
 const BONUS_EDIT_MAX=500,PLAN_UNITS_MAX=2000;
 const bonusCount=n=>{const v=Number(n);if(!Number.isInteger(v)||v<1||v>BONUS_EDIT_MAX)throw Error('Enter a whole number from 1 to '+BONUS_EDIT_MAX+'.');return v;};
 const futureDays=(plan,today)=>plan.parents.filter(p=>dateOK(p.due_date)&&p.due_date>=today).sort((a,b)=>a.due_date.localeCompare(b.due_date)||String(a.id).localeCompare(String(b.id)));
-const smartLocked=plan=>plan.units.some(u=>u.status==='active'&&Object.keys(u).some(k=>k.startsWith('smart_')));
 function bonusAdd(tasks,id,today,count,now=new Date().toISOString()){
  const n=bonusCount(count);if(!dateOK(today))throw Error('Invalid date.');
- const plan=forPlan(tasks,id);
- if(smartLocked(plan))throw Error('This plan uses Smart Study early dates, which are fixed.');
+ const plan=forPlan(tasks,id),log=smartLog();
  const days=futureDays(plan,today);if(!days.length)throw Error('No study days are left to add bonus units to.');
  if(plan.units.length+n>PLAN_UNITS_MAX)throw Error('A plan can hold at most '+PLAN_UNITS_MAX+' units.');
  const numbered=plan.units.filter(u=>unitNumber(u)!==null);if(!numbered.length)throw Error('This plan has no numbered units to continue from.');
@@ -490,14 +507,13 @@ function bonusAdd(tasks,id,today,count,now=new Date().toISOString()){
  }
  if(at<banks.length)throw Error('The new bonus units do not fit the remaining study days.');
  const out=[];
- for(const t of tasks){const p=place.get(t.id);out.push(p&&(t.parent_id!==p.parent_id||(t.due_date||'')!==p.due_date||Boolean(t.is_bonus)!==p.is_bonus)?{...t,...p}:t);}
+ for(const t of tasks){const p=place.get(t.id);out.push(p&&(t.parent_id!==p.parent_id||(t.due_date||'')!==p.due_date||Boolean(t.is_bonus)!==p.is_bonus)?smartPlace(t,p,today,log):t);}
  for(const f of fresh)out.push({...f,...place.get(f.id)});
- return {tasks:refreshCoverage(plan,out,new Set()),added:fresh.length,first:fresh[0].id};
+ return {tasks:refreshCoverage(plan,smartPrune(out,id,log),new Set()),added:fresh.length,first:fresh[0].id,earlyCleared:log.live};
 }
 function bonusRemove(tasks,id,today,count){
  const n=bonusCount(count);if(!dateOK(today))throw Error('Invalid date.');
- const plan=forPlan(tasks,id);
- if(smartLocked(plan))throw Error('This plan uses Smart Study early dates, which are fixed.');
+ const plan=forPlan(tasks,id),log=smartLog();
  const open=plan.units.filter(u=>u.status==='active'&&u.is_bonus);
  if(!open.length)throw Error('This plan has no unfinished bonus units.');
  if(n>open.length)throw Error('The plan has only '+open.length+' unfinished bonus unit'+(open.length===1?'':'s')+'.');
@@ -516,6 +532,7 @@ function bonusRemove(tasks,id,today,count){
  if(left)throw Error('The plan has only '+(n-left)+' unfinished bonus place'+(n-left===1?'':'s')+' left from today.');
  const banks=plan.units.filter(u=>u.status==='active'&&dayOfParent.has(u.parent_id)).sort(byNum);
  const gone=new Set(banks.slice(banks.length-n).map(u=>u.id)),keep=banks.filter(u=>!gone.has(u.id)),place=new Map();let at=0;
+ for(const u of banks)if(gone.has(u.id)&&u.smart_early_date)log.units.add(unitNumber(u));
  for(const s of slots){
   const take=keep.slice(at,at+s.required+s.bonus);at+=s.required+s.bonus;
   take.forEach((u,i)=>place.set(u.id,{parent_id:s.day.id,due_date:s.day.due_date,is_bonus:i>=s.required}));
@@ -524,9 +541,9 @@ function bonusRemove(tasks,id,today,count){
  for(const t of tasks){
   if(gone.has(t.id))continue;
   const p=place.get(t.id);
-  out.push(p&&(t.parent_id!==p.parent_id||(t.due_date||'')!==p.due_date||Boolean(t.is_bonus)!==p.is_bonus)?{...t,...p}:t);
+  out.push(p&&(t.parent_id!==p.parent_id||(t.due_date||'')!==p.due_date||Boolean(t.is_bonus)!==p.is_bonus)?smartPlace(t,p,today,log):t);
  }
- return {tasks:refreshCoverage(plan,out,gone),removed:gone.size};
+ return {tasks:refreshCoverage(plan,smartPrune(out,id,log),gone),removed:gone.size,earlyCleared:log.live};
 }
 function bonusConvert(tasks,id){
  const plan=forPlan(tasks,id),open=plan.units.filter(u=>u.status==='active'&&u.is_bonus);
@@ -549,7 +566,13 @@ function bonusCheck(before,after,id,op,today,count=0){
   const n=a.get(k);
   if(!n){if(u.status==='completed')return 'A finished unit was removed.';if(!u.is_bonus&&op!=='slide'&&op!=='remove')return 'A required unit was removed.';if(op==='add')return 'A unit was removed.';continue;}
   if(op==='finish'&&u.parent_id!==n.parent_id)return 'A unit moved.';
-  for(const f of new Set([...Object.keys(u),...Object.keys(n)]))if(!FREE.has(f)&&JSON.stringify(u[f]??null)!==JSON.stringify(n[f]??null))return 'A unit changed beyond its day.';
+  const shifted=smartShift(u,n);
+  for(const f of new Set([...Object.keys(u),...Object.keys(n)])){
+   if(FREE.has(f)||JSON.stringify(u[f]??null)===JSON.stringify(n[f]??null))continue;
+   if(shifted&&SMART_CLEAR.includes(f)&&n[f]===undefined)continue; // an early appearance cleared because the unit changed day
+   return 'A unit changed beyond its day.';
+  }
+  if(shifted&&SMART_CLEAR.some(f=>n[f]!==undefined))return 'A unit changed day and kept its Smart Study early date.';
   if(u.status!=='active'&&(u.parent_id!==n.parent_id||Boolean(u.is_bonus)!==Boolean(n.is_bonus)||(u.due_date||'')!==(n.due_date||'')))return 'A finished unit moved.';
  }
  const added=[...a.keys()].filter(k=>!b.has(k));

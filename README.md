@@ -653,6 +653,7 @@ HTML navigation is network-first with cached fallback. JavaScript/CSS and the ex
 | `KEYO_API_ORIGIN`, `KEYO_FALLBACK_ORIGIN`, `KEYO_PROJECT_ID`, `KEYO_PUBLIC_JWK` | Public subscription-verification configuration; no owner/admin secret is needed by normal subscription integration. |
 | `ANTHROPIC_API_KEY` / supported `CLAUDE_API_KEY` fallback | Hosted personal audit credential. Personal BYOK credentials live encrypted in the vault instead. |
 | `UNIVERSE_FOUNDATION_ENABLED` | Enables the relational subsystem after required setup. |
+| `DEV_PRO_SWITCH` | Set to `on` on a development Worker to let any signed-in app account use the developer Pro switch (`POST /pro/dev`). Unset in production: the route answers 404. Remove the route before the app is published. |
 | `UNIVERSE_GEMINI_MODEL`, verification flag and token-rate variables | Dedicated Universe audit model and accounting configuration. |
 | `UNIVERSE_HOSTED_ENABLED`, hosted Gemini key and monthly ceiling | Additional safeguards required for hosted Universe inference; checked-in hosted switch is false. |
 | Offline Pro signing | `OFFLINE_PRO_PRIVATE_JWK` is a Worker secret. Its matching public key is in the browser auth configuration. `tools/offline-pro-keygen.mjs` generates a matching pair for setup. |

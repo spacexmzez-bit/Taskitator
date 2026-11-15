@@ -200,10 +200,16 @@ function mount(parent,ctx){
    const title=ctx.parentTitle?.(index,date);if(title)el('p',tr('Parent: {title}',{title}),d,'ss-hint');
    const c=el('div',undefined,d,'ss-chips');for(const n of nums){const info=ctx.chip?.(n,date)||{text:ctx.label()+'.'+n};el('span',info.text,c,'ss-chip'+(info.cls?' '+info.cls:''));}
   }else el('p',tr('No new tasks on this date.'),d,'ss-hint');
-  const step=el('div',undefined,d,'ss-step');el('span',tr('Units on this date'),step,'ss-hint');
-  const minus=el('button','−',step,'ss-step-btn');minus.type='button';minus.setAttribute('data-ss-key','minus');minus.setAttribute('aria-label',tr('Remove one unit'));minus.disabled=!nums.length;minus.addEventListener('click',()=>setCount(date,nums.length-1));
-  el('b',String(nums.length),step);
-  const plus=el('button','+',step,'ss-step-btn');plus.type='button';plus.setAttribute('data-ss-key','plus');plus.setAttribute('aria-label',tr('Add one unit'));plus.addEventListener('click',()=>setCount(date,nums.length+1));
+  // The plan's own count for this date is the main amount; anything the layout adds on top of it is bonus. The stepper edits main only.
+  const main=st.sched.find(x=>x.date===date)?.count||0,extra=Math.max(0,nums.length-main);
+  const step=el('div',undefined,d,'ss-step');el('span',tr('Main tasks'),step,'ss-hint');
+  const minus=el('button','−',step,'ss-step-btn');minus.type='button';minus.setAttribute('data-ss-key','minus');minus.setAttribute('aria-label',tr('Remove one unit'));minus.disabled=!main;minus.addEventListener('click',()=>setCount(date,main-1));
+  const mainB=el('b',String(main),step);mainB.setAttribute('data-ss-main','');
+  const plus=el('button','+',step,'ss-step-btn');plus.type='button';plus.setAttribute('data-ss-key','plus');plus.setAttribute('aria-label',tr('Add one unit'));plus.addEventListener('click',()=>setCount(date,main+1));
+  // Bonus = the plan's own bonus units on this date plus units of later dates that Smart Study shows early here (Phase 3.6.2).
+  const early=ctx.early?.(date)||[];
+  const bon=el('div',undefined,d,'ss-step');el('span',tr('Bonus tasks'),bon,'ss-hint');const bonB=el('b',String(extra+early.length),bon);bonB.setAttribute('data-ss-bonus','');
+  if(early.length){el('span',tr('({plan} plan, {early} early)',{plan:extra,early:early.length}),bon,'ss-hint');const c=el('div',undefined,d,'ss-chips');for(const x of early)el('span',tr('Early')+' · '+x.text,c,'ss-chip is-early');}
   el('p',tr('Changing a date does not move other dates. It creates a surplus or a missing amount that you settle yourself.'),d,'ss-hint');
   if(nums.length){const rm=el('button',tr('Remove this date'),d,'ss-remove');rm.type='button';rm.setAttribute('data-ss-key','remove');rm.addEventListener('click',()=>setCount(date,0));}
  }

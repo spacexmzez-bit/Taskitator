@@ -139,15 +139,24 @@
             edited: Array.isArray(d.edited) ? d.edited.filter(date).slice(0, 366) : []
         };
     }
+    // Smart Study state of a draft (Phase 3.6.1): the switch, the lightening option, its dates and every unit's early date.
+    function cleanSmart(input) {
+        const d = input && typeof input === 'object' ? input : {};
+        const seen = new Set();
+        const appearances = (Array.isArray(d.appearances) ? d.appearances : []).slice(0, 1000).filter(a => a && int(a.unit, 1, 1000000) !== null && date(a.date) && !seen.has(a.unit) && seen.add(a.unit)).map(a => ({ unit: a.unit, date: a.date }));
+        return { enabled: flag(d.enabled), mode: ['original', 'weekend', 'dates'].includes(d.mode) ? d.mode : 'original', dates: Array.isArray(d.dates) ? [...new Set(d.dates.filter(date))].slice(0, 366) : [], appearances };
+    }
     function cleanStudy(input) {
         const d = input && typeof input === 'object' ? input : {};
         const kind = d.kind === 'edit' ? 'edit' : 'create';
         const info = d.info && typeof d.info === 'object' ? d.info : {}, ai = d.ai && typeof d.ai === 'object' ? d.ai : {};
         return {
             kind, plan_id: kind === 'edit' ? text(d.plan_id, 160) : '', title: text(d.title, 160),
-            info: { title: text(info.title, 160), unit: text(info.unit, 40), total: text(String(info.total ?? ''), 6), parent: text(info.parent, 100), unitP: text(info.unitP, 100), description: text(info.description, 5000) },
+            info: { title: text(info.title, 160), unit: text(info.unit, 40), total: text(String(info.total ?? ''), 6), bonus: text(String(info.bonus ?? ''), 6), chapOn: flag(info.chapOn), chapSize: text(String(info.chapSize ?? ''), 6), chapLabel: text(info.chapLabel, 20),
+                parent: text(info.parent, 100), unitP: text(info.unitP, 100), description: text(info.description, 5000) },
             ai: { enabled: flag(ai.enabled), criteria: text(ai.criteria, 4000), exclude: text(ai.exclude, 500) },
-            schedule: cleanSchedule(d.schedule)
+            schedule: cleanSchedule(d.schedule),
+            smart: cleanSmart(d.smart)
         };
     }
     function listStudy() {

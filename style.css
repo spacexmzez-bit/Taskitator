@@ -5790,3 +5790,12 @@ html .sidebar-drawer > * { flex-shrink: 0; }
 .lab-wrap .lab-hist-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lab-wrap .lab-save { margin-top: 8px; padding: 8px; border: 1px solid var(--border-color); border-radius: 8px; }
 .lab-wrap .lab-foot { margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 8px; }
+/* Phase 3.6.1: tab icons and the Smart Study calendar extras */
+.tk-tab .tk-tab-icon{width:1.1em;height:1.1em;margin-inline-end:5px;vertical-align:-.2em}
+.plan-chapters,.study-dialog .ss-detail{margin-top:10px}
+/* Phase 3.6.2: plan bonus and Smart Study early work are told apart by colour */
+.bonus-badge.early-badge{background:rgba(56,189,248,.16);border-color:rgba(56,189,248,.5);color:#7dd3fc}
+html[data-family="nature"] .bonus-badge.early-badge{color:#8fd0e6}
+.ss-dot-bonus{width:5px;height:5px;border-radius:50%;display:inline-block;background:#fbbf24}
+.ss-chip.is-early{border-style:dashed;border-color:#38bdf8;color:#38bdf8}
+.plan-badge-early{border-style:dashed}

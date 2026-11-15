@@ -40,7 +40,8 @@ test('create: no bonus behaves as before; invalid bonus input is refused', () =>
     assert.equal(unitsOf(plain).length, 100); assert.ok(unitsOf(plain).every(t => t.is_bonus === false));
     assert.equal('bonus' in C.normalize({ ...cfg, bonus: 0 }), false);
     for (const bonus of [-1, 1.5, 1001, '3']) assert.throws(() => C.normalize({ ...cfg, bonus }), /whole numbers/);
-    assert.throws(() => C.normalize({ ...cfg, smart: { mode: 'original', dates: [], appearances: [] } }), /Smart Study/);
+    // Phase 3.6.2: bonus units and Smart Study can be combined; only required units can be shown early.
+    assert.equal(C.normalize({ ...cfg, smart: { mode: 'original', dates: [], appearances: [{ unit: 6, date: cfg.start }] } }).smart.appearances.length, 1);
 });
 
 test('plan summary counts required units; bonus has its own counters; Complete appears when the required are done', () => {

@@ -5,7 +5,7 @@
  const int=(v,min,max)=>{if(!Number.isSafeInteger(v)||v<min||v>max)throw Error('Use whole numbers within the displayed limits.');return v;};
  function normalize(c){
   if(typeof c.title!=='string'||!c.title.trim()||c.title.length>160)throw Error('Enter a title, up to 160 characters.');
-  const total=int(c.total,1,1000),days=int(c.days,1,365),first=int(c.first??1,1,1000000),bonus=int(c.bonus??0,0,1000);if(bonus&&c.smart)throw Error('Smart Study early bonuses cannot be combined with bonus units.');if(days>total)throw Error('Each study day needs at least one unit.');if(!dateOK(c.start))throw Error('Choose a valid starting date.');
+  const total=int(c.total,1,1000),days=int(c.days,1,365),first=int(c.first??1,1,1000000),bonus=int(c.bonus??0,0,1000);if(days>total)throw Error('Each study day needs at least one unit.');if(!dateOK(c.start))throw Error('Choose a valid starting date.');
   const weekdays=c.weekdays??[];if(!Array.isArray(weekdays)||weekdays.some(n=>!Number.isInteger(n)||n<0||n>6))throw Error('Choose valid weekdays.');
   const skipped=[...new Set(c.skipped??[])].sort((a,b)=>a-b);if(skipped.length>1000||skipped.some(n=>!Number.isSafeInteger(n)||n<first||n>first+total+bonus+1000))throw Error('Invalid skipped unit.');
   const unit=String(c.unit||'Chapter').trim(),plural=String(c.plural||unit+'s').trim();if(!unit||unit.length>40||plural.length>45||/[{}·]/.test(unit))throw Error('Enter a unit name without syntax brackets.');
@@ -142,7 +142,7 @@
   calcBtn.onclick=()=>{if(!calcShow){calcShow=node('div','0',calcBox,'study-calc-display');calcShow.setAttribute('aria-live','polite');const pad=node('div',undefined,calcBox,'study-calc-pad');for(const k of ['7','8','9','÷','4','5','6','×','1','2','3','−','0','.','=','+','C','⌫']){const b=node('button',k,pad,'icon-btn study-calc-key'+(/[+−×÷=]/.test(k)?' is-op':''));b.type='button';b.onclick=()=>calcKey(k);}}calcBox.hidden=!calcBox.hidden;calcBtn.setAttribute('aria-expanded',String(!calcBox.hidden));};
   // Tabs: Task info, AI criteria, Scheduling (Phase 2.6)
   const tabBar=node('div',undefined,d,'tk-tabs'),panels={},tabButtons={};tabBar.setAttribute('role','tablist');
-  for(const [key,text]of [['info','Task info'],['ai','AI criteria'],['sched','Scheduling']]){const b=node('button',text,tabBar,'tk-tab');b.type='button';b.setAttribute('role','tab');b.onclick=()=>showTab(key);tabButtons[key]=b;panels[key]=node('div',undefined,d,'study-panel');}
+  for(const [key,text,icon]of [['info','Task info','notes'],['ai','AI criteria','ai'],['sched','Scheduling','calendar']]){const b=node('button',text,tabBar,'tk-tab');if(window.TaskitatorIcons?.has?.(icon)){const ic=window.TaskitatorIcons.node(icon,'tk-tab-icon');ic.setAttribute?.('aria-hidden','true');b.prepend(ic);}b.type='button';b.setAttribute('role','tab');b.onclick=()=>showTab(key);tabButtons[key]=b;panels[key]=node('div',undefined,d,'study-panel');}
   let activeTab=null,tabTimer=null;
   function showTab(k){
     clearTimeout(tabTimer);
@@ -158,14 +158,19 @@
   const info=panels.info,title=field('Title',initial.title||'','text',info);
   const grid=node('div',undefined,info,'ss-grid');grid.style.marginTop='12px';
   const unit=field('Unit name',initial.unit||'Chapter','text',grid),total=field('Total units (1–1,000)',initial.total??20,'number',grid),bonus=field('Bonus units (optional)',initial.bonus??0,'number',grid);bonus.min=0;bonus.max=1000;bonus.inputMode='numeric';
-  const chapSize=field('Units per chapter (optional)',initial.chapter_size||'','number',grid),chapLabel=field('Chapter label',initial.chapter_label||'Ch','text',grid);chapSize.min=1;chapSize.max=1000;chapSize.inputMode='numeric';chapLabel.maxLength=20;
   const prios=(()=>{try{const st=JSON.parse(localStorage.getItem('taskitator_settings')||'{}');return Array.isArray(st.custom_priorities)&&st.custom_priorities.length?st.custom_priorities:[{id:'prio_high',name:'High',rank:1},{id:'prio_med',name:'Medium',rank:2},{id:'prio_low',name:'Low',rank:3}];}catch{return [];}})();
   const prioRank=id=>{if(!id)return Infinity;const p=prios.find(x=>x.id===id);return p?(Number(p.rank)||prios.indexOf(p)+1):Infinity;};
   const prioField=label=>{const l=node('label',label,grid,'study-field');const e=node('select',undefined,l);node('option','No priority',e).value='';for(const p of prios)node('option',p.name||p.id,e).value=p.id;e.addEventListener('change',()=>refresh());return e;};
   const parentPrio=prioField('Parent task priority'),unitPrio=prioField('Unit priority');
-  node('p','Units per chapter adds a chapter label to every unit title (for example Ch 3 · Lesson.17) and to each day\'s "Covers" line. It does not create extra tasks.',info,'study-hint');
   node('p','Bonus units are extra work on top of the total. Each day gets its share and the last unit of every day is the bonus. A bonus you skip moves to the next day, and the plan gives up one unit at the end.',info,'study-hint');
   const desc=field('Description (optional)','','textarea',info);
+  // Chapter labels (Phase 3.6.1): an optional section after the description. Its fields only exist for the plan while the switch is on.
+  const chapOn=field('Use chapter labels',false,'checkbox',info);chapOn.checked=Boolean(initial.chapter_size);
+  const chapBody=node('div',undefined,info);chapBody.hidden=!chapOn.checked;
+  const chapGrid=node('div',undefined,chapBody,'ss-grid');
+  const chapSize=field('Units per chapter (optional)',initial.chapter_size||'','number',chapGrid),chapLabel=field('Chapter label',initial.chapter_label||'Ch','text',chapGrid);chapSize.min=1;chapSize.max=1000;chapSize.inputMode='numeric';chapLabel.maxLength=20;
+  node('p','Units per chapter adds a chapter label to every unit title (for example Ch 3 · Lesson.17) and to each day\'s "Covers" line. It does not create extra tasks.',chapBody,'study-hint');
+  chapOn.onchange=()=>{chapBody.hidden=!chapOn.checked;refresh();};chapSize.addEventListener('input',()=>refresh());chapLabel.addEventListener('input',()=>refresh());
   // The plural is automatic ("Chapter" gives "Chapters") unless Copilot supplied one for the unit it named.
   const pluralOf=()=>initial.plural&&unit.value===(initial.unit||'Chapter')?initial.plural:unit.value.trim()+'s';
   // -- AI criteria --
@@ -179,7 +184,8 @@
   // -- Scheduling --
   const sched=window.TaskitatorStudySchedule.mount(panels.sched,{today,start:initial.start||today,weekdays:initial.weekdays??defaultDays(settings),startUnit:initial.first??1,startUnitHint:1,days:initial.days??5,
    note:'Choose how the units are spread over days.',label:()=>unit.value.trim()||'Unit',units:o=>unitSpec(o).numbers,
-   parentTitle:i=>title.value.trim()+' '+(i+1),disabled:()=>false,onChange:()=>refresh(),assign:rowsSorted=>layout(rowsSorted),chip:n=>starred.has(n)?{text:(unit.value.trim()||'Unit')+'.'+n+' ★',cls:'is-bonus'}:null});
+   parentTitle:i=>title.value.trim()+' '+(i+1),disabled:()=>false,onChange:()=>refresh(),assign:rowsSorted=>layout(rowsSorted),chip:n=>starred.has(n)?{text:(unit.value.trim()||'Unit')+'.'+n+' ★',cls:'is-bonus'}:null,
+   early:date=>smartEnabled?[...smartAppearances].filter(([,d])=>d===date).sort((a,b)=>a[0]-b[0]).map(([n])=>({text:(unit.value.trim()||'Unit')+'.'+n})):[]});
   const bonusN=()=>{const n=Number(bonus.value);return Number.isSafeInteger(n)&&n>0?Math.min(n,1000):0;},starred=new Set();
   // Preview numbering with the bonus units placed at the end of each day.
   function layout(rowsSorted){
@@ -210,18 +216,86 @@
   const strict=settings.strict_criteria_validation!==false;
   function buildPlan(){
    planError='';const st=sched.state();if(!st.hasPreview||st.stale||st.balance!==0||!st.sched.length)return null;
-   try{const {sp,exclude:ex}=audited();return normalize({title:title.value,unit:unit.value,plural:pluralOf(),parent_priority:parentPrio.value||null,unit_priority:unitPrio.value||null,total:sp.total,bonus:bonusN(),chapter_size:chapSize.value||null,chapter_label:chapLabel.value,days:st.sched.length,counts:st.sched.map(x=>x.count),dates:st.sched.map(x=>x.date),first:sp.first,start:st.sched[0].date,weekdays:st.options.weekdays,skipped:sp.skipped,description:desc.value,...(audit.checked&&ex.length?{exclude:ex}:{})});}
+   try{const {sp,exclude:ex}=audited();return normalize({title:title.value,unit:unit.value,plural:pluralOf(),parent_priority:parentPrio.value||null,unit_priority:unitPrio.value||null,total:sp.total,bonus:bonusN(),chapter_size:chapOn.checked?chapSize.value||null:null,chapter_label:chapLabel.value,days:st.sched.length,counts:st.sched.map(x=>x.count),dates:st.sched.map(x=>x.date),first:sp.first,start:st.sched[0].date,weekdays:st.options.weekdays,skipped:sp.skipped,description:desc.value,...(audit.checked&&ex.length?{exclude:ex}:{})});}
    catch(e){planError=e.message;return null;}
   }
+  // Smart Study (Phase 3.6.1): a calendar, per-unit taps, bulk tools and templates all write the same unit -> earlier date map.
+  let smartMonth=null,smartSel=null,smartUndo=[],smartTool='next',smartScope='all',smartWd=new Set(),smartScopeDates=new Set(),smartAmount='',smartPick='first',smartLevel='',smartFrom='',smartTo='',smartCount='',smartNote='',smartTarget='';
+  const isoDay=(date,opt)=>window.TaskitatorI18n?.date(date+'T12:00:00Z',{...opt,timeZone:'UTC'})??new Date(date+'T12:00:00Z').toLocaleDateString(undefined,{...opt,timeZone:'UTC'});
+  const weekdayOf=date=>new Date(date+'T12:00:00Z').getUTCDay(),shortWd=i=>isoDay('2023-01-0'+(i+1),{weekday:'short'});
+  const smartRemember=()=>{smartUndo.push(new Map(smartAppearances));if(smartUndo.length>20)smartUndo.shift();};
   function renderSmart(){
    const wasOpen=smartPanel.open;smartPanel.replaceChildren();node('summary','Smart Study Recurrence · Pro',smartPanel);smartPanel.open=wasOpen;const body=node('div',undefined,smartPanel,'study-collapse-body');
-   const enable=field('Enable early bonus opportunities',false,'checkbox',body);enable.checked=smartEnabled;enable.onchange=()=>{smartEnabled=enable.checked;renderSmart();};
+   const enable=field('Enable early bonus opportunities',false,'checkbox',body);enable.checked=smartEnabled;enable.onchange=()=>{smartEnabled=enable.checked;renderSmart();sched.rerender();};
    node('p','Only tasks in this recurrence can be shown early or rearranged. Each opportunity expires at the end of its chosen study day. Unfinished work stays required on its original date.',body,'study-hint');
    if(!smartEnabled)return;if(!plan){node('p','Preview a balanced schedule first.',body,'study-hint');return;}
-   const schedule=rows(plan);
-   node('p','Choose an earlier date for each specific future unit you want to show as bonus work. Leave other units unchanged.',body);
-   const options=node('div',undefined,body,'study-scroll');
-   for(const r of schedule)for(const n of r.numbers){const earlier=schedule.filter(x=>x.date<r.date);if(!earlier.length)continue;const l=node('label',plan.unit+'.'+n+' · required '+r.date,options,'study-field');const sel=node('select',undefined,l);node('option','No early appearance',sel).value='';for(const row of earlier)node('option',row.date,sel).value=row.date;sel.value=smartAppearances.get(n)||'';sel.onchange=()=>{if(sel.value)smartAppearances.set(n,sel.value);else smartAppearances.delete(n);renderSmart();};}
+   // Only required units can be shown early. A date's bonus is its plan bonus (the last units of the day) plus what shows early on it.
+   const full=rows(plan).filter(r=>r.numbers.length),schedule=full.map(r=>({...r,numbers:r.numbers.slice(0,r.count)})),planBonus=new Map(full.map(r=>[r.date,r.numbers.length-r.count])),dates=schedule.map(r=>r.date),dueOf=new Map();for(const r of schedule)for(const n of r.numbers)dueOf.set(n,r.date);
+   let pruned=false;for(const [u,d]of [...smartAppearances])if(!(dueOf.has(u)&&d<dueOf.get(u))){smartAppearances.delete(u);pruned=true;}
+   const early=new Map();for(const [u,d]of smartAppearances){if(!early.has(d))early.set(d,[]);early.get(d).push(u);}
+   const again=()=>{renderSmart();sched.rerender();};if(pruned)sched.rerender();
+   if(bonusN())node('p','This plan also has bonus units. They are optional already, so only required units can be shown early. If a bonus unit later slides, or bonus units are added or removed, any unit that changes day loses its early appearance.',body,'study-hint');
+   // Calendar
+   if(!smartMonth||smartMonth<dates[0].slice(0,7)||smartMonth>dates.at(-1).slice(0,7))smartMonth=dates[0].slice(0,7);
+   node('p','Tap a date to see what is due and what shows early on it.',body,'study-hint');
+   const [y,m]=smartMonth.split('-').map(Number),len=new Date(Date.UTC(y,m,0)).getUTCDate(),pad=new Date(Date.UTC(y,m-1,1)).getUTCDay();
+   const nav=node('div',undefined,body,'ss-cal-nav'),shift=k=>{smartMonth=new Date(Date.UTC(y,m-1+k,1)).toISOString().slice(0,7);again();};
+   const pv=node('button','‹',nav,'ss-cal-arrow');pv.type='button';pv.setAttribute('aria-label','Previous month');pv.onclick=()=>shift(-1);
+   node('strong',isoDay(smartMonth+'-01',{month:'long',year:'numeric'}),nav);
+   const nx=node('button','›',nav,'ss-cal-arrow');nx.type='button';nx.setAttribute('aria-label','Next month');nx.onclick=()=>shift(1);
+   const grid=node('div',undefined,body,'calendar-grid ss-cal');for(let i=0;i<7;i++)node('div',shortWd(i),grid,'calendar-day-header');for(let k=0;k<pad;k++)node('div','',grid,'calendar-cell empty');
+   for(let day=1;day<=len;day++){
+    const date=smartMonth+'-'+String(day).padStart(2,'0'),due=dueOf.size?schedule.find(r=>r.date===date)?.numbers.length||0:0,pb=planBonus.get(date)||0,em=early.get(date)?.length||0;
+    const cell=node('button',undefined,grid,'calendar-cell ss-cell'+(date===smartSel?' selected':''));cell.type='button';node('span',String(day),cell,'calendar-date-number');
+    const dots=node('div',undefined,cell,'calendar-dots-row');if(due)node('span',undefined,dots,'cal-dot-solid');if(pb)node('span',undefined,dots,'ss-dot-bonus');if(em)node('span',undefined,dots,'ss-dot-edit');
+    if(due||em)node('small',pb+em?due+' +'+(pb+em):String(due),cell,'ss-cell-count');
+    cell.disabled=!due;cell.setAttribute('data-ss-smart-cell',date);cell.onclick=()=>{smartSel=date;smartTarget='';again();};
+   }
+   const legend=node('div',undefined,body,'ss-legend');for(const [cls,text]of [['cal-dot-solid','Due'],...(bonusN()?[['ss-dot-bonus','Plan bonus']]:[]),['ss-dot-edit','Early bonus']]){const sp=node('span',undefined,legend);node('i',undefined,sp,cls);node('span',text,sp);}
+   // Selected date: what is due, what shows early, and manual picking.
+   if(smartSel&&dueOf.size&&schedule.some(r=>r.date===smartSel)){
+    const det=node('div',undefined,body,'ss-detail');node('strong',longDate(smartSel),det);
+    const dueHere=schedule.find(r=>r.date===smartSel).numbers,earlyHere=(early.get(smartSel)||[]).sort((a,b)=>a-b),earlier=dates.filter(x=>x<smartSel);
+    const pbHere=planBonus.get(smartSel)||0;
+    node('p','Required here: '+dueHere.length,det,'ss-hint');node('p','Bonus here: '+(pbHere+earlyHere.length)+' ('+pbHere+' plan, '+earlyHere.length+' early)',det,'ss-hint').setAttribute('data-ss-bonus-line','');
+    if(earlyHere.length){const c=node('div',undefined,det,'ss-chips');for(const n of earlyHere){const b=node('button',plan.unit+'.'+n+' · due '+dueOf.get(n)+' ✕',c,'ss-chip is-early');b.type='button';b.setAttribute('aria-label','Remove early appearance');b.onclick=()=>{smartRemember();smartAppearances.delete(n);again();};}}
+    if(earlier.length){
+     node('p','Show these units early on:',det,'ss-hint');const l=node('label',undefined,det,'study-field'),sel=node('select',undefined,l);for(const e of earlier)node('option',e,sel).value=e;if(!earlier.includes(smartTarget))smartTarget=earlier.at(-1);sel.value=smartTarget;sel.onchange=()=>{smartTarget=sel.value;};
+     const c=node('div',undefined,det,'ss-chips');for(const n of dueHere){const to=smartAppearances.get(n),b=node('button',plan.unit+'.'+n+(to?' → '+to:''),c,'ss-chip'+(to?' is-early':''));b.type='button';b.setAttribute('aria-pressed',String(Boolean(to)));b.setAttribute('data-ss-unit',String(n));b.onclick=()=>{smartRemember();if(smartAppearances.get(n)===smartTarget)smartAppearances.delete(n);else smartAppearances.set(n,smartTarget);again();};}
+    }else node('p','This is the first date, so nothing can show before it.',det,'ss-hint');
+   }
+   // Bulk tools and templates
+   const tools=node('div',undefined,body,'ss-detail');node('strong','Apply to many dates',tools);
+   const tl=node('label','Tool',tools,'study-field'),ts=node('select',undefined,tl);for(const [v,t]of [['next','Take from the next date'],['level','Level to a number per day'],['move','Template: move first or last units from one date to an earlier one']])node('option',t,ts).value=v;ts.value=smartTool;ts.onchange=()=>{smartTool=ts.value;again();};
+   if(smartTool!=='move'){
+    node('p','Apply to',tools,'ss-hint');
+    for(const [v,t]of [['all','All dates'],['weekdays','Chosen weekdays'],['dates','Chosen dates']]){const l=node('label',t,tools,'study-radio'),r=node('input',undefined,l);r.type='radio';r.name='smartScope';r.value=v;r.checked=smartScope===v;r.onchange=()=>{smartScope=v;again();};}
+    if(smartScope==='weekdays'){const w=node('div',undefined,tools,'ss-chips');for(let i=0;i<7;i++){const l=node('label',shortWd(i),w,'study-check'),c=node('input',undefined,l);c.type='checkbox';c.checked=smartWd.has(i);c.onchange=()=>{c.checked?smartWd.add(i):smartWd.delete(i);};}}
+    if(smartScope==='dates'){const w=node('div',undefined,tools,'study-scroll');for(const d of dates){const l=node('label',d,w,'study-check'),c=node('input',undefined,l);c.type='checkbox';c.checked=smartScopeDates.has(d);c.onchange=()=>{c.checked?smartScopeDates.add(d):smartScopeDates.delete(d);};}}
+   }
+   if(smartTool==='next'){const a=field('How many to take from the next date (blank = as many as it has)',smartAmount,'number',tools);a.min=1;a.max=1000;a.inputMode='numeric';a.oninput=()=>{smartAmount=a.value;};}
+   if(smartTool==='level'){const a=field('Tasks per day to reach',smartLevel,'number',tools);a.min=1;a.max=1000;a.inputMode='numeric';a.oninput=()=>{smartLevel=a.value;};node('p','Each chosen date pulls units from the dates after it until it shows this many (its own units count).',tools,'ss-hint');}
+   if(smartTool==='move'){
+    for(const [label,key]of [['From date (the units are due here)','from'],['Show them early on','to']]){const l=node('label',label,tools,'study-field'),sel=node('select',undefined,l);node('option','Choose a date',sel).value='';for(const d of key==='to'&&smartFrom?dates.filter(x=>x<smartFrom):dates)node('option',d,sel).value=d;sel.value=key==='from'?smartFrom:smartTo;sel.onchange=()=>{if(key==='from'){smartFrom=sel.value;if(smartTo&&smartTo>=smartFrom)smartTo='';again();}else smartTo=sel.value;};}
+    const a=field('How many units',smartCount,'number',tools);a.min=1;a.max=1000;a.inputMode='numeric';a.oninput=()=>{smartCount=a.value;};
+   }
+   if(smartTool!=='level'){node('p','Take',tools,'ss-hint');for(const [v,t]of [['first','The first units of the date'],['last','The last units of the date']]){const l=node('label',t,tools,'study-radio'),r=node('input',undefined,l);r.type='radio';r.name='smartPick';r.value=v;r.checked=smartPick===v;r.onchange=()=>{smartPick=v;};}}
+   const bar=node('div',undefined,tools,'study-actions');
+   const apply=node('button','Apply',bar,'icon-btn study-btn');apply.type='button';apply.setAttribute('data-ss-apply','');apply.onclick=()=>{
+    try{
+     let scope=null;if(smartTool!=='move'&&smartScope!=='all'){scope=new Set(smartScope==='weekdays'?dates.filter(d=>smartWd.has(weekdayOf(d))):smartScopeDates);if(!scope.size)throw Error('Choose at least one '+(smartScope==='weekdays'?'weekday':'date')+'.');}
+     const r=root.TaskitatorSmartStudy.bulk(schedule,smartTool,{scope,amount:smartAmount,pick:smartPick,target:smartLevel,from:smartFrom,to:smartTo,count:smartCount},smartAppearances);
+     if(r.added){smartRemember();smartAppearances=r.appearances;}
+     smartNote=r.added?'Added '+r.added+' early appearance(s).'+(r.notes.length?' '+r.notes.length+' date(s) had nothing to take.':''):'Nothing changed: no date had free tasks to take.';
+    }catch(e){smartNote=e.message;}
+    again();};
+   const undo=node('button','Undo last change',bar,'icon-btn study-btn');undo.type='button';undo.disabled=!smartUndo.length;undo.setAttribute('data-ss-undo','');undo.onclick=()=>{if(smartUndo.length){smartAppearances=smartUndo.pop();smartNote='Last change undone.';again();}};
+   const clr=node('button','Clear all early appearances',bar,'icon-btn study-btn');clr.type='button';clr.disabled=!smartAppearances.size;clr.setAttribute('data-ss-clear','');clr.onclick=()=>{smartRemember();smartAppearances=new Map();smartNote='All early appearances cleared.';again();};
+   if(smartNote){const n=node('p',smartNote,tools,'ss-note');n.setAttribute('role','status');}
+   node('p','Early appearances now: '+smartAppearances.size,body,'ss-hint');
+   // Per-unit list view
+   const list=node('details',undefined,body,'study-collapse');node('summary','List view',list);const options=node('div',undefined,list,'study-scroll');
+   for(const r of schedule)for(const n of r.numbers){const earlier=schedule.filter(x=>x.date<r.date);if(!earlier.length)continue;const l=node('label',plan.unit+'.'+n+' · required '+r.date,options,'study-field');const sel=node('select',undefined,l);node('option','No early appearance',sel).value='';for(const row of earlier)node('option',row.date,sel).value=row.date;sel.value=smartAppearances.get(n)||'';sel.onchange=()=>{smartRemember();if(sel.value)smartAppearances.set(n,sel.value);else smartAppearances.delete(n);again();};}
    const weekendOK=smartAppearances.size>0&&[...smartAppearances.values()].every(date=>root.TaskitatorSmartStudy.nextWeekend(date,Number(settings.weekend_start??5),Number(settings.weekend_end??6)).some(day=>schedule.some(r=>r.date===day)));
    for(const [value,text]of [['original','A · Lighten the original date'],['weekend','B · Lighten the next configured weekend'],['dates','C · Lighten selected dates']]){const l=node('label',text,body,'study-radio');const radio=node('input',undefined,l);radio.type='radio';radio.name='smartStudyMode';radio.value=value;radio.checked=smartMode===value;radio.disabled=value==='weekend'&&!weekendOK;radio.onchange=()=>{smartMode=value;renderSmart();};}
    node('small','Option B targets the next weekend starting after each early date; a weekend already underway is skipped. It is unavailable when that next weekend has no tasks. Use C to select other dates. Completed bonus tasks free slots on their original dates; at most one eligible task moves per freed slot.',body,'study-hint');
@@ -232,7 +306,6 @@
    plan=buildPlan();renderSmart();const st=sched.state();let msg='',ok=false;
    if(!title.value.trim())msg='Enter a title.';
    else if(prioRank(unitPrio.value)<prioRank(parentPrio.value))msg='Units cannot have a higher priority than their parent task.';
-   else if(smartEnabled&&bonusN())msg='Smart Study early bonuses cannot be combined with bonus units.';
    else if(!st.hasPreview)msg='Preview a schedule to create the plan.';
    else if(st.stale)msg='Preview the new schedule again to create the plan.';
    else if(st.balance!==0)msg=(st.balance>0?'Settle '+st.balance+' surplus unit(s) first.':'Settle '+(-st.balance)+' missing unit(s) first.');
@@ -245,7 +318,8 @@
   // Drafts (Phase 2.8): a restored draft fills the form; the preview comes back only if the units still match.
   let draftId=initial.draft?.id||null;
   if(initial.draft){
-   const dr=initial.draft;title.value=dr.info.title||'';unit.value=dr.info.unit||unit.value;if(dr.info.total)total.value=dr.info.total;if(dr.info.bonus)bonus.value=dr.info.bonus;if(dr.info.chapSize)chapSize.value=dr.info.chapSize;if(dr.info.chapLabel)chapLabel.value=dr.info.chapLabel;desc.value=dr.info.description||'';
+   const dr=initial.draft;title.value=dr.info.title||'';unit.value=dr.info.unit||unit.value;if(dr.info.total)total.value=dr.info.total;if(dr.info.bonus)bonus.value=dr.info.bonus;if(dr.info.chapSize)chapSize.value=dr.info.chapSize;if(dr.info.chapLabel)chapLabel.value=dr.info.chapLabel;chapOn.checked=dr.info.chapOn===true||(dr.info.chapOn===undefined&&Boolean(dr.info.chapSize));chapBody.hidden=!chapOn.checked;desc.value=dr.info.description||'';
+   if(dr.smart){smartEnabled=dr.smart.enabled===true;smartMode=dr.smart.mode||'original';smartDates=new Set(dr.smart.dates||[]);smartAppearances=new Map((dr.smart.appearances||[]).map(a=>[a.unit,a.date]));}
    for(const [sel,v]of [[parentPrio,dr.info.parent],[unitPrio,dr.info.unitP]])if(Array.from(sel.options||sel.children||[]).some(o=>o.value===v))sel.value=v;
    audit.checked=dr.ai.enabled;aiBody.hidden=!audit.checked;criteria.value=dr.ai.criteria||'';exclude.value=dr.ai.exclude||'';
    const r=sched.restore(dr.schedule);
@@ -266,8 +340,8 @@
   button('Save draft',actions,async()=>{
    if(!window.TaskitatorDrafts)throw Error('Drafts are unavailable. Reload Taskitator.');
    if(!await confirmAsk('Keep this study plan in Drafts? Nothing is created. Find it in the Drafts tab of the Study plans page.'+(draftId?' This replaces the draft you restored.':'')))return;
-   draftId=window.TaskitatorDrafts.saveStudy({kind:'create',title:title.value,info:{title:title.value,unit:unit.value,total:total.value,bonus:bonus.value,chapSize:chapSize.value,chapLabel:chapLabel.value,parent:parentPrio.value,unitP:unitPrio.value,description:desc.value},
-    ai:{enabled:audit.checked,criteria:criteria.value,exclude:exclude.value},schedule:sched.snapshot()},draftId);
+   draftId=window.TaskitatorDrafts.saveStudy({kind:'create',title:title.value,info:{title:title.value,unit:unit.value,total:total.value,bonus:bonus.value,chapOn:chapOn.checked,chapSize:chapSize.value,chapLabel:chapLabel.value,parent:parentPrio.value,unitP:unitPrio.value,description:desc.value},
+    ai:{enabled:audit.checked,criteria:criteria.value,exclude:exclude.value},schedule:sched.snapshot(),smart:{enabled:smartEnabled,mode:smartMode,dates:[...smartDates],appearances:[...smartAppearances].map(([unit,date])=>({unit,date}))}},draftId);
    status.textContent='Draft saved. Find it in the Drafts tab of the Study plans page.';
   });
   button('Cancel',actions,()=>d.close());d.addEventListener('close',()=>{d.remove();if(opened===d)opened=null;window.dispatchEvent(new Event('taskitator-study-closed'));});document.body.append(d);d.showModal();return {status:'confirmation_required',message:'Study preview opened. No tasks exist until the user confirms. Audit controls are manual only.'};

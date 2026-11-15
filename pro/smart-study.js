@@ -9,7 +9,9 @@ function nextWeekend(day,start=5,end=6){
 function normalize(s,rows){
  if(!s)return null;
  if(!['original','weekend','dates'].includes(s.mode)||!Array.isArray(s.appearances)||!s.appearances.length||s.appearances.length>1000)throw Error('Choose a Smart Study option and at least one future unit.');
- const units=new Map(rows.flatMap(r=>r.numbers.map(n=>[n,r.date]))),dates=new Set(rows.map(r=>r.date)),seen=new Set();
+ // Only required units can be shown early: a plan's own bonus units (the last ones of a day) are optional already.
+ const units=new Map(rows.flatMap(r=>r.numbers.slice(0,r.count??r.numbers.length).map(n=>[n,r.date]))),dates=new Set(rows.map(r=>r.date)),seen=new Set();
+ if(s.appearances.some(a=>a&&!units.has(a.unit)&&rows.some(r=>r.numbers.includes(a.unit))))throw Error('Bonus units are optional already and cannot be shown early. Choose required units.');
  const appearances=s.appearances.map(a=>{if(!Number.isInteger(a.unit)||seen.has(a.unit)||!dates.has(a.date)||!units.has(a.unit)||a.date>=units.get(a.unit))throw Error('Each unit needs one earlier date already in this recurrence.');seen.add(a.unit);return {unit:a.unit,date:a.date};});
  const targets=[...new Set(s.dates||[])].sort();if(targets.some(d=>!date(d)||!dates.has(d)))throw Error('Select dates in this study recurrence.');
  if(s.mode==='dates'&&!targets.length)throw Error('Choose at least one date to lighten.');
@@ -42,12 +44,53 @@ function apply(snapshot,previous,now=Date.now(),approval=null){
  }
  return snapshot;
 }
-function guard(previous,next){
+// exempt: plan ids whose whole task tree the Worker computed itself and pinned for this sync (a bonus change that cleared early appearances).
+function guard(previous,next,exempt=new Set()){
  const map=new Map((next.tasks||[]).map(t=>[t.id,t]));
- for(const old of previous?.tasks||[]){const t=map.get(old.id);if(!t)continue;
+ for(const old of previous?.tasks||[]){const t=map.get(old.id);if(!t)continue;if(old.study_plan_id&&exempt.has(old.study_plan_id))continue;
   for(const k of new Set([...Object.keys(old),...Object.keys(t)].filter(k=>k.startsWith('smart_'))))if(JSON.stringify(old[k])!==JSON.stringify(t[k]))throw Error('Smart Study schedule changed elsewhere. Sync and retry.');
  }
  for(const t of next.tasks||[])if(!previous?.tasks?.some(o=>o.id===t.id)&&!t.study_plan_id&&Object.keys(t).some(k=>k.startsWith('smart_')))throw Error('Smart Study requires an authorized study recurrence.');
 }
-root.TaskitatorSmartStudy={normalize,decorate,apply,guard,nextWeekend};
+// Bulk tools (Phase 3.6.1). They only choose early appearances (unit -> earlier date); every unit stays required on its own date.
+// rows: [{date, numbers}] in any order. current: Map(unit -> date). o.scope: Set of dates the tool may fill (null = every date).
+// o.pick 'first'|'last' decides which units of a source date are taken. Returns {appearances, added, notes}. Never edits its inputs.
+function bulk(rows,tool,o={},current=new Map()){
+ const sched=[...rows].filter(r=>r&&r.numbers?.length).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+ const dateOf=new Map();for(const r of sched)for(const n of r.numbers)dateOf.set(n,r.date);
+ if(tool==='clear')return {appearances:new Map(),added:0,notes:[]};
+ const out=new Map();for(const [u,d] of current)if(dateOf.has(u)&&d<dateOf.get(u))out.set(u,d);
+ const pick=o.pick==='last'?'last':'first',notes=[],inScope=d=>!o.scope||o.scope.has(d);
+ const free=r=>r.numbers.filter(n=>!out.has(n));
+ const take=(src,k)=>{const f=free(src),chosen=pick==='last'?f.slice(-k):f.slice(0,k);return chosen;};
+ const amount=o.amount==null||o.amount===''?null:Number(o.amount);
+ if(amount!==null&&(!Number.isSafeInteger(amount)||amount<1||amount>1000))throw Error('Use a whole number of tasks from 1 to 1,000.');
+ let added=0;
+ if(tool==='next'){
+  sched.forEach((row,i)=>{
+   if(!inScope(row.date))return;const src=sched[i+1];
+   if(!src){notes.push({date:row.date,why:'last'});return;}
+   const avail=free(src).length,k=amount===null?avail:Math.min(amount,avail);
+   if(!k){notes.push({date:row.date,why:'empty'});return;}
+   for(const n of take(src,k)){out.set(n,row.date);added++;}
+  });
+ }else if(tool==='level'){
+  const target=Number(o.target);if(!Number.isSafeInteger(target)||target<1||target>1000)throw Error('Use a whole number of tasks from 1 to 1,000.');
+  sched.forEach((row,i)=>{
+   if(!inScope(row.date))return;
+   let load=row.numbers.length+[...out.values()].filter(d=>d===row.date).length;
+   for(let j=i+1;j<sched.length&&load<target;j++){const got=take(sched[j],target-load);for(const n of got){out.set(n,row.date);added++;load++;}}
+   if(load<target)notes.push({date:row.date,why:'short'});
+  });
+ }else if(tool==='move'){
+  const from=sched.find(r=>r.date===o.from),to=sched.find(r=>r.date===o.to);
+  if(!from||!to)throw Error('Choose two dates that are in this recurrence.');
+  if(!(o.to<o.from))throw Error('The tasks can only appear on an earlier date than the one they are due.');
+  const count=Number(o.count);if(!Number.isSafeInteger(count)||count<1||count>1000)throw Error('Use a whole number of tasks from 1 to 1,000.');
+  const got=take(from,count);if(!got.length)notes.push({date:o.from,why:'empty'});
+  for(const n of got){out.set(n,o.to);added++;}
+ }else throw Error('Unknown Smart Study tool.');
+ return {appearances:out,added,notes};
+}
+root.TaskitatorSmartStudy={normalize,decorate,apply,guard,nextWeekend,bulk};
 })(typeof window==='undefined'?globalThis:window);

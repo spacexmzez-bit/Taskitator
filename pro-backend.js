@@ -255,10 +255,55 @@ export function hostedAllowance(payload) {
 const validAllowance = a => Boolean(a) && validAllowanceValue(a.daily) && validAllowanceValue(a.monthly);
 export const LICENSE_PARAMETERS_MESSAGE = 'Your Pro license is missing valid Taskitator allowance settings. Contact support; Pro features stay locked until it is fixed.';
 
+// ---- Pro per source (Phase 4 of the Android plan) ----
+// 'pro:entitlement:<id>' is the Keyo record (website purchases). 'pro:app:<id>' is Pro that came
+// through the app. Today the only app source is the developer switch (POST /pro/dev); Google Play
+// is added later. Rule: app Pro counts everywhere; Keyo Pro counts on the website only.
+export const APP_PRO_PREFIX = 'pro:app:';
+export const DEV_APP_ALLOWANCE = Object.freeze({daily:45, monthly:1000});
+export const clientOf = identity => identity?.native ? 'android' : 'web';
+export function appEntitlement(rec, account, now=Date.now()) {
+    if (!rec || rec.account_id !== account || rec.active !== true) return null;
+    if (rec.expires_at !== null && rec.expires_at !== undefined && (!Number.isSafeInteger(rec.expires_at) || rec.expires_at <= now)) return null;
+    const allowance = rec.hosted_allowance || DEV_APP_ALLOWANCE;
+    return {source:'app', app_source:rec.source || 'dev', account_id:account, tier:'pro', status:'active',
+        expires_at:rec.expires_at ?? null, valid_until:now+HOUR, activated_at:rec.activated_at || now,
+        policy_version:'3.0', allowance_version:ALLOWANCE_VERSION, hosted_allowance:{...allowance},
+        credits_daily_limit:allowance.daily, credits_monthly_limit:allowance.monthly, use_byok:Boolean(rec.use_byok)};
+}
+// The entitlement a client is allowed to use. Android: app Pro only. Website: Keyo Pro, else app Pro.
+export async function entitlementFor(store, account, client='web', now=Date.now()) {
+    const app = appEntitlement(await store.get(APP_PRO_PREFIX+account), account, now);
+    if (client === 'android') return app;
+    const keyo = await store.get('pro:entitlement:'+account);
+    return planOf(keyo,now) === 'pro' ? keyo : (app || keyo || null);
+}
+export async function proSources(store, account, now=Date.now()) {
+    const keyo = await store.get('pro:entitlement:'+account), app = appEntitlement(await store.get(APP_PRO_PREFIX+account), account, now);
+    return {
+        keyo:{active:planOf(keyo,now) === 'pro', expires_at:keyo?.expires_at ?? null, platforms:['web']},
+        app:{active:Boolean(app), source:app ? app.app_source : null, expires_at:app ? app.expires_at : null, platforms:['web','android']}
+    };
+}
+
+// Keyo refresh for one client (review fix). The app never uses Keyo Pro, so it never waits on Keyo. On the website,
+// active app Pro already decides, so a Keyo failure is ignored there too. Otherwise the Keyo error is returned for
+// the caller to throw or ignore, as before.
+export async function refreshKeyo(licenses, store, account, client='web') {
+    if (client === 'android') return null;
+    try { await licenses.resolve(account); return null; }
+    catch (e) { return appEntitlement(await store.get(APP_PRO_PREFIX+account), account) ? null : e; }
+}
+// The developer switch exists only where the operator turned it on: DEV_PRO_SWITCH="on" (a Worker variable). Any signed-in app
+// account may use it then; unset (production) means the route does not exist. Remove the route before the app is published.
+export const devProOn = env => String(env?.DEV_PRO_SWITCH || '').toLowerCase() === 'on';
+
 // Plan derived only from the stored, server-verified entitlement record.
 // 'unknown' means not provably Pro and not a confirmed downgrade (stale cache while
 // Keyo is unreachable, or invalid Keyo parameters). It never starts a transition.
 export function planOf(e, now=Date.now()) {
+    if (e?.source === 'app') return e.status === 'active' && typeof e.account_id === 'string' && validAllowance(e.hosted_allowance) &&
+        ['pro','max'].includes(e.tier) && Number.isSafeInteger(e.valid_until) && e.valid_until > now ? 'pro' : 'free';
     if (!e || !e.signed_token || ['revoked','invalid','expired','verification_required'].includes(e.status)) return 'free';
     if (e.expires_at !== null && Number.isSafeInteger(e.expires_at) && e.expires_at <= now) return 'free';
     if (e.status !== 'active' || e.keyo_version !== 1 || e.allowance_version !== ALLOWANCE_VERSION ||
@@ -280,7 +325,9 @@ export function nextPlanState(state, plan, now, e) {
     if (plan === 'pro' && !Number.isSafeInteger(state.anchor)) return {changed:true,state:{...state,anchor:anchor()}};
     return {state,changed:false};
 }
-export async function syncPlan(tx, account, e, now=Date.now()) {
+export async function syncPlan(tx, account, _e, now=Date.now()) {
+    // The credit period follows account-wide Pro (any source), never one client's view.
+    const e = await entitlementFor(tx, account, 'web', now);
     const key = PLAN_PREFIX+account, {state,changed} = nextPlanState(await tx.get(key), planOf(e,now), now, e);
     if (changed) await tx.put(key,state);
     return state;
@@ -436,10 +483,14 @@ export class KeyoLicenses {
 const MIN_FREE_OUTPUT = 256;
 export class CreditLedger {
     constructor(gateway) { this.gateway=gateway; this.storage=gateway.storage; }
-    async state(store, account, now=Date.now()) {
-        const e=await store.get('pro:entitlement:'+account);
-        const {state,changed}=nextPlanState(await store.get(PLAN_PREFIX+account),planOf(e,now),now,e);
-        return {e,state,changed,ledger:ledgerFor(account,state,e,now)};
+    async state(store, account, now=Date.now(), client='web') {
+        const web=await entitlementFor(store,account,'web',now);
+        const {state,changed}=nextPlanState(await store.get(PLAN_PREFIX+account),planOf(web,now),now,web);
+        if (client !== 'android' || planOf(web,now) !== 'pro') return {e:web,state,changed,ledger:ledgerFor(account,state,web,now)};
+        // Website-only Pro is Free in the app: Free personal-key limits, no hosted credits.
+        const app=await entitlementFor(store,account,'android',now);
+        const ledger=planOf(app,now) === 'pro' ? ledgerFor(account,state,app,now) : ledgerFor(account,state && {...state,plan:'free'},null,now);
+        return {e:app,state,changed,ledger};
     }
     async usage(store, ledger) {
         return {daily:(await store.get(ledger.dayKey)) || 0,monthly:(await store.get(ledger.monthKey)) || 0};
@@ -458,13 +509,13 @@ export class CreditLedger {
     }
     // Atomically checks and reserves both allowances. Returns null for Pro (unmetered).
     // clamp lowers the request's output limit to what the remaining allowance can pay for.
-    async reserveByok(account, {model, inputTokens, maxOutput, clamp=true}) {
+    async reserveByok(account, {model, inputTokens, maxOutput, clamp=true}, client='web') {
         if (!Number.isSafeInteger(inputTokens) || inputTokens < 0 || !Number.isSafeInteger(maxOutput) || maxOutput < 1)
             throw fail(503,'TOKEN_COUNT_UNAVAILABLE','The AI request size could not be checked. Nothing was charged.');
         const inputCost=modelCost(model,inputTokens,0),outputPrice=modelCost(model,inputTokens,1)-inputCost;
         return this.storage.transaction(async tx => {
             await liveAccount(tx,account);
-            const now=Date.now(),{state,changed,ledger}=await this.state(tx,account,now);
+            const now=Date.now(),{state,changed,ledger}=await this.state(tx,account,now,client);
             if (changed) await tx.put(PLAN_PREFIX+account,state);
             if (ledger.plan === 'pro') return null;
             const used=await this.usage(tx,ledger);
@@ -497,8 +548,8 @@ export class CreditLedger {
         });
         return amount;
     }
-    async freeStatus(account) {
-        const {ledger}=await this.state(this.storage,account),used=await this.usage(this.storage,ledger);
+    async freeStatus(account, client='web') {
+        const {ledger}=await this.state(this.storage,account,Date.now(),client),used=await this.usage(this.storage,ledger);
         const exhausted=Math.min(ledger.limits.daily-used.daily,ledger.limits.monthly-used.monthly) < 0.5;
         return {state:limitsState(ledger.limits,used),exhausted,metered:true,reset_timezone:'Asia/Riyadh'};
     }
@@ -728,7 +779,7 @@ export class TaskProtection {
     //  - It cannot change once the task is already AI-locked or shielded, unless Emergency Bypass is active.
     //    A lock/shield saved in the same snapshot is allowed because the check uses the PREVIOUS stored task.
     //  - Unchanged values always pass, so a lapsed Pro plan keeps existing configuration intact.
-    async guardDynamic(tx,account,previous,next,refreshError=null){
+    async guardDynamic(tx,account,previous,next,refreshError=null,client='web'){
         const raw=t=>t&&t[DYNAMIC_FIELD]!==undefined?t[DYNAMIC_FIELD]:null;
         const same=(a,b)=>JSON.stringify(stable(a))===JSON.stringify(stable(b));
         const before=new Map((previous?.tasks||[]).map(t=>[t.id,t]));
@@ -751,44 +802,43 @@ export class TaskProtection {
                 throw fail(400,'INVALID_DYNAMIC_PRIORITY','Dynamic Priority must target one of your existing priorities.');
             if(checked)continue;
             if(refreshError)throw refreshError; // Keyo unreachable or rejected and no valid signed cache: fail closed.
-            const e=await tx.get('pro:entitlement:'+account); // re-read inside the transaction; no network here
-            if(!e||e.status!=='active'||!DYNAMIC_PRIORITY_TIERS.includes(e.tier)||e.account_id!==account||e.keyo_version!==1||!e.signed_token||
-                !Number.isSafeInteger(e.valid_until)||e.valid_until<=Date.now()||(e.expires_at!==null&&(!Number.isSafeInteger(e.expires_at)||e.expires_at<=Date.now())))
+            if(!await this.proActive(tx,account,client)) // stored records only; no network here
                 throw fail(403,'PRO_REQUIRED','Dynamic Priority is a Taskitator Pro feature. Existing settings are kept, but enabling or changing it needs an active Pro license.');
             checked=true;
         }
     }
     // Early bonus (Pro): adding or changing an early_date needs verified Pro (fail closed). Clearing one never does.
     // Cached, signed Pro entitlement (no network). Fails closed.
-    async proActive(tx,account){
-        const e=await tx.get('pro:entitlement:'+account);
+    async proActive(tx,account,client='web'){
+        const e=await entitlementFor(tx,account,client);
+        if(e?.source==='app')return planOf(e)==='pro';
         return !(!e||e.status!=='active'||!DYNAMIC_PRIORITY_TIERS.includes(e.tier)||e.account_id!==account||e.keyo_version!==1||!e.signed_token||
             !Number.isSafeInteger(e.valid_until)||e.valid_until<=Date.now()||(e.expires_at!==null&&(!Number.isSafeInteger(e.expires_at)||e.expires_at<=Date.now())));
     }
-    async guardEarly(tx,account,previous,next,refreshError=null){
+    async guardEarly(tx,account,previous,next,refreshError=null,client='web'){
         if(!globalThis.TaskitatorEarly.changed(previous,next).length)return;
         if(refreshError)throw refreshError;
-        if(!await this.proActive(tx,account))
+        if(!await this.proActive(tx,account,client))
             throw fail(403,'PRO_REQUIRED','Early bonus is a Taskitator Pro feature. Existing early dates are kept, but adding or changing one needs an active Pro license.');
     }
     // Study plans (Phase 2.4a): editing a generated plan's names, priorities or audit criteria is Pro only.
     // Viewing, completing, rescheduling and deleting stay available after Pro ends.
-    async guardStudyEdit(tx,account,previous,next,refreshError=null){
+    async guardStudyEdit(tx,account,previous,next,refreshError=null,client='web'){
         if(!previous)return;
         const before=new Map(previous.tasks.map(t=>[t.id,t])),same=(a,b)=>JSON.stringify(stable(a??null))===JSON.stringify(stable(b??null));
         const edited=next.tasks.some(t=>{const old=t.study_plan_id&&before.get(t.id);return old&&old.study_plan_id&&STUDY_EDIT_FIELDS.some(f=>!same(old[f],t[f]));});
         if(!edited)return;
         if(refreshError)throw refreshError;
-        if(!await this.proActive(tx,account))
+        if(!await this.proActive(tx,account,client))
             throw fail(403,'PRO_REQUIRED','Editing a study plan needs an active Taskitator Pro license. You can still view it, finish its tasks and delete it.');
     }
     // Saved criteria (Phase 3.5): a sync may not grow the list past the account's limits (free 5, Pro 100; exemplars 4 / 10; 8 MB together).
     // A list that is already over (Pro ended) is kept and can still shrink. Pro status is only looked up when the free limits would be broken.
-    async guardSavedCriteria(tx,account,previous,next,refreshError=null){
+    async guardSavedCriteria(tx,account,previous,next,refreshError=null,client='web'){
         const S=globalThis.TaskitatorSavedCriteria,after=next?.saved_criteria;
         if(!S||!Array.isArray(after)||!S.growthError(previous?.saved_criteria,after,false))return;
         if(refreshError)throw refreshError;
-        const pro=await this.proActive(tx,account),why=S.growthError(previous?.saved_criteria,after,pro);
+        const pro=await this.proActive(tx,account,client),why=S.growthError(previous?.saved_criteria,after,pro);
         if(why)throw fail(403,pro?'SAVED_CRITERIA_LIMIT':'PRO_REQUIRED',why+(pro?'':' Taskitator Pro raises the limits to 100 saved criteria, 10 with an exemplar.'));
     }
     async emergencyState(tx,userId,snapshot,now){
@@ -880,7 +930,7 @@ export class TaskProtection {
         const bad=M.bonusCheck(tasks,r.tasks,planId,op,today,r.added??r.removed??0);if(bad)throw fail(409,'INVALID_BONUS','This change was refused: '+bad);
         const tree=M.planTree(r.tasks,planId),out=r.tasks.filter(t=>tree.has(t.id)).sort((a,b)=>a.id.localeCompare(b.id));
         await tx.put('pro:study-replan:'+userId+':'+planId,{hash:await sha256(JSON.stringify(out)),expires:Date.now()+10*60000});
-        return {authorized:true,tasks:out,op,moved:r.moved??0,dropped:r.dropped??0,missed:r.missed??0,removed:r.removed??0,added:r.added??0};
+        return {authorized:true,tasks:out,op,moved:r.moved??0,dropped:r.dropped??0,missed:r.missed??0,removed:r.removed??0,added:r.added??0,early_cleared:r.earlyCleared??0};
     }
     async studyReplanGrants(tx,account,previous,next){
         if(!previous)return new Set();
@@ -943,9 +993,9 @@ export class HostedAudits {
         if (!key) throw fail(503,'AI_PROVIDER_ERROR','CLAUDE_API_KEY is not configured. Ask the operator to configure and redeploy the Worker.');
         return { 'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01' };
     }
-    async entitled(store, account) {
+    async entitled(store, account, client='web') {
         await liveAccount(store,account);
-        const e = await store.get('pro:entitlement:'+account);
+        const e = await entitlementFor(store,account,client);
         if (e?.status === 'invalid_parameters') throw fail(403,'LICENSE_PARAMETERS_INVALID',LICENSE_PARAMETERS_MESSAGE);
         if (!e || e.account_id !== account || planOf(e) !== 'pro')
             throw fail(403,'PRO_REQUIRED','Active Taskitator Pro is required for hosted proof audits.');
@@ -954,11 +1004,11 @@ export class HostedAudits {
     }
     // Current hosted ledger (plan epoch, Riyadh day and 30-day cycle) plus the
     // calendar-month provider-spend safety cap, which transitions never reset.
-    async balance(store, account, now = Date.now(), keys = null) {
+    async balance(store, account, now = Date.now(), keys = null, client = 'web') {
         const month = periods(now).month;
         let ledger = keys, plan = null;
         if (!ledger) {
-            plan = await this.gateway.credits.state(store,account,now);
+            plan = await this.gateway.credits.state(store,account,now,client);
             if (plan.ledger.plan !== 'pro') throw fail(403,'PRO_REQUIRED','Active Taskitator Pro is required for hosted proof audits.');
             ledger = {dayKey:plan.ledger.dayKey,monthKey:plan.ledger.monthKey,spendKey:`pro:spend:${account}:${month}`,limits:plan.ledger.limits};
         }
@@ -968,17 +1018,17 @@ export class HostedAudits {
         const spend = (await store.get(ledger.spendKey)) ?? Math.ceil(legacy * POLICY.creditValue);
         return { ...ledger,daily,monthly,spend,plan };
     }
-    async handle(account, session, body, batch, quoteOnly = false) {
-        try { return { status:200, body: await this.run(account,session,body,batch,quoteOnly) }; }
+    async handle(account, session, body, batch, quoteOnly = false, client = 'web') {
+        try { return { status:200, body: await this.run(account,session,body,batch,quoteOnly,client) }; }
         catch (e) { return {status:e.status || 503,body:{error:e.status ? e.message : 'Hosted review is temporarily unavailable. Retry the same operation.',code:e.code || 'HOSTED_UNAVAILABLE'}}; }
     }
-    async run(account, session, body, batch, quoteOnly) {
+    async run(account, session, body, batch, quoteOnly, client = 'web') {
         if (typeof session !== 'string' || !session) throw fail(401,'SESSION_REQUIRED','A current signed-in session is required for hosted audits.');
         const operation = body.operation_id;
         if (typeof operation !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(operation))
             throw fail(400,'OPERATION_REQUIRED','A unique operation ID is required. Reload and retry.');
-        await this.licenses.resolve(account);
-        await this.entitled(this.storage,account);
+        { const err = await refreshKeyo(this.licenses,this.storage,account,client); if (err) throw err; }
+        await this.entitled(this.storage,account,client);
         const {tasks,payload,bindings,largeProof} = await this.protection.bind(this.storage,account,body,batch);
         const hash = await digest({payload,bindings,policy:POLICY.version,batch},largeProof);
         const opKey = `pro:op:${account}:${operation}`;
@@ -1003,7 +1053,7 @@ export class HostedAudits {
             if (!rec || rec.expires <= Date.now() || rec.period.day !== periods().day) {
                 const reservedCost=providerCost(POLICY.maxInput,payload.max_tokens);
                 const taskCharges=charges(reservedCost,tasks,batch);
-                this.checkBalance(await this.balance(this.storage,account),{reservedCost,reservedCredits:halfUp(totalCredits(taskCharges))});
+                this.checkBalance(await this.balance(this.storage,account,Date.now(),null,client),{reservedCost,reservedCredits:halfUp(totalCredits(taskCharges))});
                 const lease=await this.previewSlot(account,opKey);
                 let keepSlot=false;
                 try {
@@ -1029,14 +1079,14 @@ export class HostedAudits {
                     if (current && current.state !== 'quoted') { matches(current); throw fail(409,'AUDIT_PENDING','An audit already uses this operation. Retry the same operation later.'); }
                     if (current) matches(current);
                     if (current && current.expires > Date.now() && current.period.day === periods().day) return current;
-                    this.checkBalance(await this.balance(tx,account),rec);
+                    this.checkBalance(await this.balance(tx,account,Date.now(),null,client),rec);
                     await tx.put(opKey,rec); return rec;
                 });
                 keepSlot=true;
                 await this.gateway.parent.ensureAlarm?.(60000);
                 } finally { await this.releasePreview(account,lease,opKey,keepSlot); }
             }
-            const b = await this.balance(this.storage,account);
+            const b = await this.balance(this.storage,account,Date.now(),null,client);
             this.checkBalance(b,rec);
             const estimated = totalCredits(charges(providerCost(rec.input,payload.max_tokens),tasks,batch));
             // Main figures are charged amounts (half-credit steps); *_exact and task values are real, unrounded usage.
@@ -1048,13 +1098,13 @@ export class HostedAudits {
         if (!rec || body.quote_id !== rec.quote || rec.expires <= Date.now() || rec.period.day !== periods().day)
             throw fail(409,'QUOTE_REQUIRED','Request a current price preview before starting this audit.');
         await this.storage.transaction(async tx => {
-            await this.entitled(tx,account);
+            await this.entitled(tx,account,client);
             const current = await tx.get(opKey);
             if (!current || current.state !== 'quoted' || current.quote !== rec.quote || current.expires <= Date.now())
                 throw fail(409,'AUDIT_PENDING','This price preview has expired or is already in use.');
             matches(current);
             // Recheck the stored entitlement, plan epoch and allowances inside the reservation.
-            const b = await this.balance(tx,account);
+            const b = await this.balance(tx,account,Date.now(),null,client);
             this.checkBalance(b,rec);
             if (b.plan.changed) await tx.put(PLAN_PREFIX+account,b.plan.state);
             await tx.put(b.dayKey,this.round(b.daily+rec.reservedCredits));
@@ -1313,7 +1363,15 @@ export class ProGateway {
 
         // Route: GET /pro/status or GET /pro/me
         if (method === 'GET' && (path === '/pro/status' || path === '/pro/me')) {
-            return await this.getStatus(accountId);
+            return await this.withAi(await this.getStatus(accountId, clientOf(identity)), identity);
+        }
+
+        // Route: POST /pro/dev — developer switch for app Pro. Development only: 404 unless DEV_PRO_SWITCH is "on".
+        if (method === 'POST' && path === '/pro/dev') {
+            if (!devProOn(this.env)) return json({error:'Not found.',code:'NOT_FOUND'},404);
+            if (!identity.native) return json({error:'The developer Pro switch is only available in the app.',code:'APP_ONLY'},403);
+            const body = await readProJSON(request);
+            return await this.withAi(await this.setDevPro(accountId, body), identity);
         }
 
         // Route: POST /pro/activate
@@ -1325,7 +1383,7 @@ export class ProGateway {
         // Route: POST /pro/byok (Toggle BYOK mode without resetting limits)
         if (method === 'POST' && path === '/pro/byok') {
             const body = await readProJSON(request);
-            return await this.toggleByok(accountId, body);
+            return await this.toggleByok(accountId, body, clientOf(identity));
         }
 
         if (method === 'POST' && ['/pro/ai/quote','/pro/ai/review','/pro/ai/batch-review','/pro/ai/personal-review'].includes(path)) {
@@ -1362,8 +1420,12 @@ export class ProGateway {
 
     // --- Entitlement & Status ---
 
-    async getStatus(accountId) {
-        const entitlement = await this.licenses.resolve(accountId);
+    async getStatus(accountId, client = 'web') {
+        { const err = await refreshKeyo(this.licenses, this.storage, accountId, client); if (err) throw err; }
+        const entitlement = await entitlementFor(this.storage, accountId, client);
+        const sources = await proSources(this.storage, accountId);
+        // Computed by the Worker so clients never decide: app Pro counts on both, Keyo Pro on the website only.
+        const entitlements = {web: sources.keyo.active || sources.app.active, app: sources.app.active};
 
         const usernameRec = await this.storage.get(`pro:user:username:${accountId}`);
         const claimed = usernameRec?.normalizedUsername ? await this.storage.get('pro:username:map:'+usernameRec.normalizedUsername) : null;
@@ -1371,7 +1433,7 @@ export class ProGateway {
 
         // Limits come only from the stored, verified entitlement and the server ledger.
         const now = Date.now();
-        const {state, ledger} = await this.credits.state(this.storage, accountId, now);
+        const {state, ledger} = await this.credits.state(this.storage, accountId, now, client);
         if (ledger.plan === 'pro') {
             const used = await this.credits.usage(this.storage, ledger);
             const round = n => Math.round(n * 1000) / 1000;
@@ -1380,6 +1442,10 @@ export class ProGateway {
                 tier: entitlement.tier,
                 status: 'active',
                 plan: 'pro',
+                source: entitlement.source === 'app' ? 'app' : 'keyo',
+                sources,
+                entitlements,
+                client,
                 username: currentUsername,
                 use_byok: Boolean(entitlement.use_byok),
                 // Personal-key requests never use Taskitator credits on Pro.
@@ -1411,9 +1477,13 @@ export class ProGateway {
         const status = !entitlement ? 'inactive' :
             entitlement.status === 'active' ? 'expired' : entitlement.status;
         // Free numeric allowances and usage are intentionally never returned.
-        const limits = await this.credits.freeStatus(accountId);
+        const limits = await this.credits.freeStatus(accountId, client);
         return json({
             isPro: false,
+            source: null,
+            sources,
+            entitlements,
+            client,
             tier: entitlement ? entitlement.tier : 'free',
             status,
             plan: ledger.plan,
@@ -1428,7 +1498,25 @@ export class ProGateway {
         });
     }
 
-    async toggleByok(accountId, body) {
+    async toggleByok(accountId, body, client = 'web') {
+        { const err = await refreshKeyo(this.licenses, this.storage, accountId, client); if (err && !err.code) throw err; }
+        const effective = await entitlementFor(this.storage, accountId, client);
+        // The app only ever changes app Pro. Website-only Keyo Pro is Free in the app, so it cannot change the website's setting (review fix).
+        if (client === 'android' && effective?.source !== 'app')
+            return json({error:'Pro in the app is required to configure personal-key mode here.',code:'PRO_REQUIRED'},403);
+        if (effective?.source === 'app') {
+            const saved = await this.storage.transaction(async tx => {
+                await liveAccount(tx,accountId);
+                const rec = await tx.get(APP_PRO_PREFIX+accountId);
+                if (!appEntitlement(rec,accountId)) return null;
+                rec.use_byok = Boolean(body.use_byok);
+                await tx.put(APP_PRO_PREFIX+accountId,rec);
+                return rec;
+            });
+            if (!saved) return json({error:'Your Pro changed. Refresh and retry.',code:'LICENSE_CHANGED'},409);
+            return json({success:true,use_byok:saved.use_byok,
+                message:saved.use_byok ? 'Switched to personal-key mode. Your AI provider bills you directly. Your hosted credits are unchanged.' : 'Switched to hosted Claude Haiku 5.5 mode.'});
+        }
         const entitlement = await this.licenses.resolve(accountId);
         if (!entitlement || entitlement.status !== 'active') {
             return json({ error: 'Pro entitlement required to configure BYOK mode.', code: 'PRO_REQUIRED' }, 403);
@@ -1451,6 +1539,36 @@ export class ProGateway {
             use_byok: entitlement.use_byok,
             message: entitlement.use_byok ? 'Switched to personal-key mode. Taskitator credit limits do not apply to personal-key usage; your AI provider bills you directly. Your hosted credits are unchanged.' : 'Switched to hosted Claude Haiku 5.5 mode.'
         });
+    }
+
+    // What the app needs to call /ai/generate without reading key management routes:
+    // hosted or personal key, the selected provider, its models and the saved key's version. Never the key.
+    async withAi(response, identity) {
+        if (response.status !== 200) return response;
+        const body = await response.json();
+        try {
+            const vault = this.parent.vault, provider = await vault.selectedProvider(identity), meta = await vault.providerMetadata(identity, provider);
+            body.ai = {hosted: await this.parent.ai.hostedFor(identity), selected_provider: provider, models: meta.models,
+                key_saved: meta.saved, key_version: meta.version};
+        } catch { body.ai = null; }
+        return json(body, 200);
+    }
+
+    async setDevPro(accountId, body) {
+        if (typeof body.enabled !== 'boolean') return json({error:'Send enabled: true or false.',code:'INVALID_REQUEST'},400);
+        await this.storage.transaction(async tx => {
+            await liveAccount(tx,accountId);
+            const key = APP_PRO_PREFIX+accountId, old = await tx.get(key), now = Date.now();
+            if (body.enabled) {
+                const wasActive = Boolean(appEntitlement(old,accountId,now));
+                await tx.put(key,{account_id:accountId,source:'dev',active:true,expires_at:null,
+                    activated_at:wasActive ? old.activated_at : now,hosted_allowance:{...DEV_APP_ALLOWANCE},use_byok:Boolean(old?.use_byok)});
+            } else if (old) {
+                await tx.delete(key);
+            }
+            await syncPlan(tx,accountId,null,now);
+        });
+        return this.getStatus(accountId, 'android');
     }
 
     async activateLicense(accountId, body) {
@@ -1494,7 +1612,7 @@ export class ProGateway {
             if (path === '/pro/ai/personal-review') return await this.personalReview(identity, body);
             const result = await this.audits.handle(identity.userId, identity.sessionId, body,
                 path === '/pro/ai/batch-review' || (path === '/pro/ai/quote' && body.batch === true),
-                path === '/pro/ai/quote');
+                path === '/pro/ai/quote', clientOf(identity));
             return json(result.body,result.status);
         } finally {
             if (large) this.largeProofInFlight = false;
@@ -1505,7 +1623,7 @@ export class ProGateway {
         const account=identity.userId,session=identity.sessionId;
         if(typeof session!=='string'||!session)throw fail(401,'SESSION_REQUIRED','Sign in again before reviewing proof.');
         const batch=body.batch===true;
-        if(batch){const e=await this.licenses.resolve(account);if(!e||planOf(e)!=='pro'||!e.use_byok)throw fail(403,'PRO_REQUIRED','Active Pro with personal-key mode is required for personal batch review.');}
+        if(batch){{const err=await refreshKeyo(this.licenses,this.storage,account,clientOf(identity));if(err&&!err.code)throw err;}const e=await entitlementFor(this.storage,account,clientOf(identity));if(!e||planOf(e)!=='pro'||!e.use_byok)throw fail(403,'PRO_REQUIRED','Active Pro with personal-key mode is required for personal batch review.');}
         const submittedAt=Date.now();
         const bound=await this.protection.bind(this.storage,account,body,batch,true),created=operationTime(body.operation_id);
         const provider=await this.parent.vault.selectedProvider(identity),config=PROVIDERS[provider];
@@ -1605,7 +1723,8 @@ export class ProGateway {
     async getUsernameProfile(accountId) {
         const rec = await this.storage.get(`pro:user:username:${accountId}`);
         const owner = rec?.normalizedUsername ? await this.storage.get('pro:username:map:'+rec.normalizedUsername) : null;
-        const entitlement = await this.licenses.resolve(accountId);
+        { const err = await refreshKeyo(this.licenses, this.storage, accountId, 'web'); if (err && !err.code) throw err; }
+        const entitlement = await entitlementFor(this.storage, accountId, 'web');
         return json({username:owner?.accountId === accountId ? rec.username : null,
             isPro:entitlement?.status === 'active' && (!entitlement.expires_at || entitlement.expires_at > Date.now()),
             tier:entitlement?.tier || 'free'});
@@ -1653,8 +1772,10 @@ export class UniverseService {
         if(row?.blocked) throw universeError(410,'ACCOUNT_BLOCKED','Account deletion has been accepted.');
     }
     async entitlement(identity) {
+        const client=clientOf(identity),app=await entitlementFor(this.service.storage,identity.userId,'android');
+        if(client==='android'||planOf(app)==='pro')return planOf(app)==='pro'; // Keyo never counts in the app; app Pro never waits on Keyo
         const e=await this.service.pro.licenses.resolve(identity.userId);
-        return Boolean(e?.status==='active' && e.tier==='pro' && (e.expires_at===null || Number(e.expires_at)>Date.now()));
+        return Boolean(e?.status==='active' && e.tier==='pro' && (e.expires_at===null || Number(e.expires_at)>Date.now())) || planOf(app)==='pro';
     }
     async project(db, identity, pro) {
         // Conflict updates never clear a deletion tombstone or change identity.

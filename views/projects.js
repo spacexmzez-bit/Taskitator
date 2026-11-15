@@ -149,7 +149,7 @@
             titleSpan.className = 'task-title';
             titleSpan.textContent = task.title;
             main.appendChild(titleSpan);
-            if(task.smart_early_date===logicalToday&&task.is_bonus){const badge=document.createElement('span');badge.className='bonus-badge';badge.textContent='Early bonus';main.appendChild(badge);}if(task.early_date===logicalToday&&task.status==='active'&&task.due_date&&task.due_date>logicalToday){const badge=document.createElement('span');badge.className='bonus-badge early-badge';badge.textContent='Early today';main.appendChild(badge);}else if(task.early_date&&task.status==='active'&&window.TaskitatorEarly?.appearance(window.TaskitatorEarly.index(canonicalTasks),task,logicalToday)){const badge=document.createElement('span');badge.className='bonus-badge early-badge';badge.textContent='Early on '+task.early_date;main.appendChild(badge);}
+            if(task.smart_early_date===logicalToday&&task.is_bonus){const badge=document.createElement('span');badge.className='bonus-badge early-badge';badge.textContent='Early bonus';main.appendChild(badge);}if(task.early_date===logicalToday&&task.status==='active'&&task.due_date&&task.due_date>logicalToday){const badge=document.createElement('span');badge.className='bonus-badge early-badge';badge.textContent='Early today';main.appendChild(badge);}else if(task.early_date&&task.status==='active'&&window.TaskitatorEarly?.appearance(window.TaskitatorEarly.index(canonicalTasks),task,logicalToday)){const badge=document.createElement('span');badge.className='bonus-badge early-badge';badge.textContent='Early on '+task.early_date;main.appendChild(badge);}
 
             if (task.due_date) {
                 const due = document.createElement('span');

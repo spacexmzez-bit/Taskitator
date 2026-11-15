@@ -59,8 +59,9 @@ test('add: input limits and plans that cannot take bonus units are refused', () 
     for (const bad of [0, -1, 1.5, 'x', 501, null]) assert.throws(() => M.bonusAdd(plain, ID, day(0), bad), /whole number/);
     assert.throws(() => M.bonusAdd(plain, ID, day(40), 1), /No study days are left/);
     assert.throws(() => M.bonusAdd(plain, 'missing', day(0), 1), /no longer exists/);
-    const smart = plain.map(t => t.parent_id && num(t) === 3 ? { ...t, smart_early_date: day(0) } : t);
-    assert.throws(() => M.bonusAdd(smart, ID, day(0), 1), /Smart Study/);
+    // Phase 3.6.2: a plan with Smart Study early dates can take bonus units.
+    const smart = plain.map(t => t.parent_id && num(t) === 5 ? { ...t, smart_early_date: day(0) } : t);
+    assert.equal(M.bonusAdd(smart, ID, day(0), 1).added, 1);
 });
 
 test('remove: the plan gives up its highest numbers and as many bonus places; numbering stays continuous', () => {

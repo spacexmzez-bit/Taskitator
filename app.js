@@ -3190,8 +3190,10 @@ window.TaskitatorApp = (() => {
                     }
                 } else if (task.is_bonus) {
                     const bonusBadge = document.createElement('span');
-                    bonusBadge.className = 'bonus-badge';
-                    tkLabel(bonusBadge, 'bonus', task.smart_early_date ? 'Early · required '+task.smart_origin_date : 'Bonus');
+                    // Plan bonus and Smart Study early work carry different tags (Phase 3.6.2).
+                    const smartEarly = task.smart_early_date === todayStr;
+                    bonusBadge.className = smartEarly ? 'bonus-badge early-badge' : 'bonus-badge';
+                    tkLabel(bonusBadge, 'bonus', smartEarly ? 'Early · required '+(task.smart_origin_date||'') : 'Bonus');
                     main.appendChild(bonusBadge);
                 }
 
