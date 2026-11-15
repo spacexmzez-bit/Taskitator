@@ -11,16 +11,17 @@
   const unit=String(c.unit||'Chapter').trim(),plural=String(c.plural||unit+'s').trim();if(!unit||unit.length>40||plural.length>45||/[{}·]/.test(unit))throw Error('Enter a unit name without syntax brackets.');
   const chSize=c.chapter_size==null||c.chapter_size===''?null:int(Number(c.chapter_size),1,1000),chLabel=String(c.chapter_label??'Ch').trim()||'Ch';if(chSize&&(chLabel.length>20||/[{}·]/.test(chLabel)))throw Error('Enter a chapter label without brackets or the · sign, up to 20 characters.');
   const counts=c.counts??Array.from({length:days},(_,i)=>Math.floor(total/days)+(i<total%days?1:0));if(!Array.isArray(counts)||counts.length!==days||counts.some(n=>!Number.isSafeInteger(n)||n<1||n>1000))throw Error('Each day needs at least one unit.');
+  let bonusCounts=c.bonus_counts;if(bonusCounts!=null){if(!Array.isArray(bonusCounts)||bonusCounts.length!==days||bonusCounts.some(n=>!Number.isSafeInteger(n)||n<0||n>1000)||bonusCounts.reduce((x,y)=>x+y,0)!==bonus)throw Error('The daily bonus amounts must add up to the bonus total.');bonusCounts=[...bonusCounts];}
   if(typeof c.description!=='undefined'&&(typeof c.description!=='string'||c.description.length>8000))throw Error('Description exceeds 8,000 characters.');
   const prio=v=>{if(v==null||v==='')return null;if(typeof v!=='string'||v.length>64||/[^\w-]/.test(v))throw Error('Choose valid priorities.');return v;},parentPriority=prio(c.parent_priority),unitPriority=prio(c.unit_priority);
   let dates=c.dates;if(dates!=null){if(!Array.isArray(dates)||dates.length!==days||dates.some((d,i)=>!dateOK(d)||d<c.start||(i&&d<=dates[i-1])))throw Error('Choose valid study dates.');dates=[...dates];}
   const exclude=[...new Set(c.exclude??[])].sort((a,b)=>a-b);if(exclude.length>1000||exclude.some(n=>!Number.isSafeInteger(n)||n<first||n>first+total+bonus+1000))throw Error('Invalid excluded unit.');
   let titles=c.titles??[];if(!Array.isArray(titles)||titles.length>days||titles.some(t=>typeof t!=='string'||!t.trim()||t.length>200))throw Error('Enter valid parent titles.');titles=Array.from({length:days},(_,i)=>titles[i]||c.title.trim()+' '+(i+1));
-  return {title:c.title.trim(),unit,plural,total,...(bonus?{bonus}:{}),days,first,start:c.start,weekdays:[...new Set(weekdays)],skipped,counts:[...counts],titles:[...titles],...(dates?{dates}:{}),...(exclude.length?{exclude}:{}),description:c.description||'',...(chSize?{chapter_size:chSize,chapter_label:chLabel}:{}),...(parentPriority?{parent_priority:parentPriority}:{}),...(unitPriority?{unit_priority:unitPriority}:{}),...(c.smart?{smart:root.TaskitatorSmartStudy.normalize(c.smart,rows({...c,smart:null}))}:{})};
+  return {title:c.title.trim(),unit,plural,total,...(bonus?{bonus}:{}),...(bonus&&bonusCounts?{bonus_counts:bonusCounts}:{}),days,first,start:c.start,weekdays:[...new Set(weekdays)],skipped,counts:[...counts],titles:[...titles],...(dates?{dates}:{}),...(exclude.length?{exclude}:{}),description:c.description||'',...(chSize?{chapter_size:chSize,chapter_label:chLabel}:{}),...(parentPriority?{parent_priority:parentPriority}:{}),...(unitPriority?{unit_priority:unitPriority}:{}),...(c.smart?{smart:root.TaskitatorSmartStudy.normalize(c.smart,rows({...c,smart:null}))}:{})};
  }
  // Bonus units are spread like the required ones: day i gets floor(B/days) plus one while i < B mod days. They are the LAST units of the day.
  function bonusSplit(days,bonus){const b=bonus||0;return Array.from({length:days},(_,i)=>Math.floor(b/days)+(i<b%days?1:0));}
- function rows(input){const c=normalize(input),allowed=new Set(c.weekdays.length?c.weekdays:[0,1,2,3,4,5,6]),skip=new Set(c.skipped),units=[],extra=bonusSplit(c.days,c.bonus);for(let n=c.first;units.length<c.total+(c.bonus||0);n++)if(!skip.has(n))units.push(n);
+ function rows(input){const c=normalize(input),allowed=new Set(c.weekdays.length?c.weekdays:[0,1,2,3,4,5,6]),skip=new Set(c.skipped),units=[],extra=c.bonus_counts||bonusSplit(c.days,c.bonus);for(let n=c.first;units.length<c.total+(c.bonus||0);n++)if(!skip.has(n))units.push(n);
   let at=Date.parse(c.start+'T00:00:00Z'),offset=0;return c.counts.map((count,i)=>{let date;if(c.dates)date=c.dates[i];else{while(!allowed.has(new Date(at).getUTCDay()))at+=86400000;date=new Date(at).toISOString().slice(0,10);at+=86400000;}const bonus=extra[i],numbers=units.slice(offset,offset+count+bonus);offset+=count+bonus;return {date,numbers,count,bonus,title:c.titles[i]||c.title+' '+(i+1)};});
  }
  // Chapter label (Phase 3.5): units are grouped by number, chapter = ceil(number / size). It only labels; no extra tasks exist.
@@ -184,13 +185,17 @@
   // -- Scheduling --
   const sched=window.TaskitatorStudySchedule.mount(panels.sched,{today,start:initial.start||today,weekdays:initial.weekdays??defaultDays(settings),startUnit:initial.first??1,startUnitHint:1,days:initial.days??5,
    note:'Choose how the units are spread over days.',label:()=>unit.value.trim()||'Unit',units:o=>unitSpec(o).numbers,
-   parentTitle:i=>title.value.trim()+' '+(i+1),disabled:()=>false,onChange:()=>refresh(),assign:rowsSorted=>layout(rowsSorted),chip:n=>starred.has(n)?{text:(unit.value.trim()||'Unit')+'.'+n+' ★',cls:'is-bonus'}:null,
+   parentTitle:i=>title.value.trim()+' '+(i+1),disabled:()=>false,onChange:()=>refresh(),assign:rowsSorted=>layout(rowsSorted),bonusStep:(date,v)=>setBonus(date,v),bonusRoom:()=>1000-bonusN(),chip:n=>starred.has(n)?{text:(unit.value.trim()||'Unit')+'.'+n+' ★',cls:'is-bonus'}:null,
    early:date=>smartEnabled?[...smartAppearances].filter(([,d])=>d===date).sort((a,b)=>a[0]-b[0]).map(([n])=>({text:(unit.value.trim()||'Unit')+'.'+n})):[]});
   const bonusN=()=>{const n=Number(bonus.value);return Number.isSafeInteger(n)&&n>0?Math.min(n,1000):0;},starred=new Set();
+  // Phase 3.7.3: per-date bonus amounts (date -> count). Valid only while it covers exactly the previewed dates and adds up to the bonus total.
+  let bonusPer=null;
+  function bonusFor(rowsSorted,n){const even=core.bonusSplit(rowsSorted.length,n);if(!bonusPer)return even;const ok=bonusPer.size===rowsSorted.length&&rowsSorted.every(r=>bonusPer.has(r.date))&&[...bonusPer.values()].reduce((a,b)=>a+b,0)===n;if(!ok){bonusPer=null;return even;}return rowsSorted.map(r=>bonusPer.get(r.date));}
+  function setBonus(date,v){const rs=sched.state().sched;if(!rs.some(r=>r.date===date)||!Number.isInteger(v)||v<0)return;const cur=bonusFor(rs,bonusN()),m=new Map(rs.map((r,i)=>[r.date,cur[i]]));m.set(date,v);const sum=[...m.values()].reduce((a,b)=>a+b,0);if(sum>1000)return;bonusPer=m;bonus.value=String(sum);sched.rerender();refresh();}
   // Preview numbering with the bonus units placed at the end of each day.
   function layout(rowsSorted){
    const sp=unitSpec(sched.state().options),n=bonusN(),nums=[...sp.numbers],skip=new Set(sp.skipped);for(let k=(nums.at(-1)||sp.first-1)+1;nums.length<sp.total+n;k++)if(!skip.has(k))nums.push(k);
-   const extra=core.bonusSplit(rowsSorted.length,n),out=new Map();let i=0;starred.clear();
+   const extra=bonusFor(rowsSorted,n),out=new Map();let i=0;starred.clear();
    rowsSorted.forEach(({date,count},j)=>{const take=count+extra[j],list=nums.slice(i,i+take);out.set(date,list);list.slice(count).forEach(x=>starred.add(x));i+=take;});
    return out;
   }
@@ -204,7 +209,7 @@
   let smartEnabled=false,smartMode='original',smartDates=new Set(),smartAppearances=new Map(),plan=null,planError='';
   const smartPanel=node('details',undefined,panels.sched,'study-collapse');node('summary','Smart Study Recurrence · Pro',smartPanel);
   for(const e of [title,unit,desc])e.addEventListener('input',()=>refresh());
-  total.addEventListener('input',()=>{sched.invalidate();});bonus.addEventListener('input',()=>{sched.rerender();refresh();});
+  total.addEventListener('input',()=>{bonusPer=null;sched.invalidate();});bonus.addEventListener('input',()=>{bonusPer=null;sched.rerender();refresh();});
   audit.onchange=()=>{aiBody.hidden=!audit.checked;validation=null;refresh();};criteria.oninput=()=>{validation=null;validationText.textContent='Criteria changed. Validate again.';refresh();};exclude.addEventListener('input',()=>refresh());
   button('Validate reusable criteria',aiBody,async()=>{
    if(!audit.checked)throw Error('Enable audits first.');if(!criteria.value.trim())throw Error('Enter the criteria for the units.');
@@ -216,7 +221,7 @@
   const strict=settings.strict_criteria_validation!==false;
   function buildPlan(){
    planError='';const st=sched.state();if(!st.hasPreview||st.stale||st.balance!==0||!st.sched.length)return null;
-   try{const {sp,exclude:ex}=audited();return normalize({title:title.value,unit:unit.value,plural:pluralOf(),parent_priority:parentPrio.value||null,unit_priority:unitPrio.value||null,total:sp.total,bonus:bonusN(),chapter_size:chapOn.checked?chapSize.value||null:null,chapter_label:chapLabel.value,days:st.sched.length,counts:st.sched.map(x=>x.count),dates:st.sched.map(x=>x.date),first:sp.first,start:st.sched[0].date,weekdays:st.options.weekdays,skipped:sp.skipped,description:desc.value,...(audit.checked&&ex.length?{exclude:ex}:{})});}
+   try{const {sp,exclude:ex}=audited();return normalize({title:title.value,unit:unit.value,plural:pluralOf(),parent_priority:parentPrio.value||null,unit_priority:unitPrio.value||null,total:sp.total,bonus:bonusN(),...(bonusN()&&bonusFor(st.sched,bonusN())&&bonusPer?{bonus_counts:st.sched.map(x=>bonusPer.get(x.date))}:{}),chapter_size:chapOn.checked?chapSize.value||null:null,chapter_label:chapLabel.value,days:st.sched.length,counts:st.sched.map(x=>x.count),dates:st.sched.map(x=>x.date),first:sp.first,start:st.sched[0].date,weekdays:st.options.weekdays,skipped:sp.skipped,description:desc.value,...(audit.checked&&ex.length?{exclude:ex}:{})});}
    catch(e){planError=e.message;return null;}
   }
   // Smart Study (Phase 3.6.1): a calendar, per-unit taps, bulk tools and templates all write the same unit -> earlier date map.
@@ -303,20 +308,67 @@
   }
   // Summary tab (Phase 3.7): read-only, filled only while the plan is ready to create.
   let ready=false;
+  // Phase 3.7.3: the Summary is read only. Sub tabs keep it organised: Schedule (calendar or list), AI criteria (only when set), Task info.
+  let sumSub='sched',sumView='cal',sumMonth=null,sumSel=null;
   function renderSummary(){
    const box=panels.summary;box.replaceChildren();
    if(!ready||!plan){node('p','Complete the plan to see its summary.',box,'study-hint');return;}
-   const sch=rows(plan),auditOn=audit.checked&&criteria.value.trim(),earlyBy=new Map();
-   if(smartEnabled)for(const [,d]of smartAppearances)earlyBy.set(d,(earlyBy.get(d)||0)+1);
-   const line=(k,v)=>{const r=node('div',undefined,box,'ss-sum-row');node('span',k,r,'ss-hint');node('b',v,r);};
-   node('h3',plan.title,box,'ss-sum-title');
-   line('Unit',plan.unit+' · '+plan.total+' required'+(plan.bonus?' + '+plan.bonus+' bonus':''));
-   line('Study days',sch.length+' · '+sch[0].date+' to '+sch.at(-1).date);
-   if(plan.chapter_size)line('Chapter labels',plan.chapter_label+' every '+plan.chapter_size+' units');
-   line('AI criteria',auditOn?'On · '+(plan.exclude?.length?plan.exclude.length+' unit(s) excluded':'every unit')+(validation?' · '+validation.score+'/10':''):'Off');
-   line('Smart Study',smartEnabled&&smartAppearances.size?smartAppearances.size+' early appearance(s)':'Off');
-   const list=node('div',undefined,box,'ss-sum-list');
-   for(const r of sch){const e=earlyBy.get(r.date)||0,row=node('div',undefined,list,'ss-sum-day');node('strong',r.date,row);node('span','Main '+r.count+' · Bonus '+(r.bonus+e)+(e?' ('+r.bonus+' plan, '+e+' early)':''),row,'ss-hint');}
+   const sch=rows(plan),auditOn=Boolean(audit.checked&&criteria.value.trim()),U=plan.unit;
+   if(sumSub==='ai'&&!auditOn)sumSub='sched';
+   node('h3',plan.title,box,'ss-sum-title');node('p','Read only. Make changes in the other tabs.',box,'ss-hint');
+   const bar=node('div',undefined,box,'ss-sum-sub');bar.setAttribute('role','tablist');
+   for(const [k,t]of [['sched','Schedule'],...(auditOn?[['ai','AI criteria']]:[]),['info','Task info']]){const b=node('button',t,bar,'ss-sum-subtab'+(k===sumSub?' is-on':''));b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',String(k===sumSub));b.setAttribute('data-sum-sub',k);b.onclick=()=>{sumSub=k;renderSummary();};}
+   const body=node('div',undefined,box,'ss-sum-body');
+   const line=(k,v)=>{const r=node('div',undefined,body,'ss-sum-row');node('span',k,r,'ss-hint');node('b',v,r);};
+   if(sumSub==='info'){
+    line('Unit',U+' · '+plan.total+' required'+(plan.bonus?' + '+plan.bonus+' bonus':''));
+    line('Study days',sch.length+' · '+sch[0].date+' to '+sch.at(-1).date);
+    line('Required per day',sch.map(r=>r.count).join(' / '));
+    if(plan.bonus)line('Bonus per day',sch.map(r=>r.bonus).join(' / '));
+    if(plan.chapter_size)line('Chapter labels',plan.chapter_label+' every '+plan.chapter_size+' units');
+    line('Smart Study',smartEnabled&&smartAppearances.size?smartAppearances.size+' early appearance(s)':'Off');
+    line('AI criteria',auditOn?'On':'Off');
+    return;
+   }
+   if(sumSub==='ai'){
+    line('AI criteria','On'+(validation?' · '+validation.score+'/10':''));
+    line('Applies to',plan.exclude?.length?'Every unit except '+plan.exclude.length:'Every unit');
+    node('p','Criteria',body,'ss-hint');node('div',criteria.value.trim(),body,'ss-sum-crit');
+    if(plan.exclude?.length){node('p','Excluded units',body,'ss-hint');const w=node('div',undefined,body,'ss-sum-pills');for(const n of plan.exclude)node('span',U+'.'+n,w,'ss-sum-pill');}
+    return;
+   }
+   // Schedule: one record per date. An early unit is listed on the day it appears early AND on its due day as a main unit.
+   const days=new Map(),slot=d=>{if(!days.has(d))days.set(d,{main:[],bonus:[],early:[]});return days.get(d);},dueOf=new Map();
+   for(const r of sch){const sl=slot(r.date);r.numbers.forEach((n,i)=>{(i<r.count?sl.main:sl.bonus).push(n);dueOf.set(n,r.date);});}
+   const earlyOn=new Map();if(smartEnabled)for(const [n,d]of smartAppearances){slot(d).early.push(n);earlyOn.set(n,d);}
+   const dates=[...days.keys()].sort();
+   const items=d=>{const sl=days.get(d);return [...sl.main.map(n=>['main',U+'.'+n+(earlyOn.has(n)?' · also early on '+earlyOn.get(n):'')]),...sl.bonus.map(n=>['bonus',U+'.'+n]),...sl.early.sort((a,b)=>a-b).map(n=>['early',U+'.'+n+' · due '+dueOf.get(n)])];};
+   const kinds={main:'Main',bonus:'Bonus',early:'Early'};
+   const seg=node('div',undefined,body,'ss-sum-seg');for(const [k,t]of [['cal','Calendar'],['list','List']]){const b=node('button',t,seg,k===sumView?'is-on':'');b.type='button';b.setAttribute('data-sum-view',k);b.onclick=()=>{sumView=k;renderSummary();};}
+   const legend=node('div',undefined,body,'ss-sum-legend');for(const k of ['main','bonus','early']){const l=node('span',undefined,legend);node('i',undefined,l,'sum-dot is-'+k);node('span',kinds[k],l);}
+   if(sumView==='list'){
+    const list=node('div',undefined,body,'ss-sum-list');
+    for(const d of dates){const row=node('div',undefined,list,'ss-sum-day');node('strong',d,row);const col=node('div',undefined,row,'ss-sum-items');for(const [k,t]of items(d)){const it=node('div',undefined,col,'ss-sum-item');node('i',undefined,it,'sum-dot is-'+k);node('span',t,it);}}
+    return;
+   }
+   if(!sumMonth||!dates.some(d=>d.startsWith(sumMonth))&&!/^\d{4}-\d{2}$/.test(sumMonth))sumMonth=dates[0].slice(0,7);
+   const [y,m]=sumMonth.split('-').map(Number),first=new Date(Date.UTC(y,m-1,1)),len=new Date(Date.UTC(y,m,0)).getUTCDate();
+   const nav=node('div',undefined,body,'ss-cal-nav');
+   const go=k=>{sumMonth=new Date(Date.UTC(y,m-1+k,1)).toISOString().slice(0,7);sumSel=null;renderSummary();};
+   const prev=node('button','‹',nav,'ss-cal-arrow');prev.type='button';prev.setAttribute('aria-label','Previous month');prev.onclick=()=>go(-1);
+   node('strong',isoDay(sumMonth+'-01',{month:'long',year:'numeric'}),nav);
+   const next=node('button','›',nav,'ss-cal-arrow');next.type='button';next.setAttribute('aria-label','Next month');next.onclick=()=>go(1);
+   const grid=node('div',undefined,body,'calendar-grid ss-cal');
+   for(const n of ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'])node('div',n,grid,'calendar-day-header');
+   for(let k=0;k<first.getUTCDay();k++)node('div','',grid,'calendar-cell empty');
+   for(let n=1;n<=len;n++){
+    const d=sumMonth+'-'+String(n).padStart(2,'0'),sl=days.get(d),cell=node('button',undefined,grid,'calendar-cell ss-cell'+(d===sumSel?' selected':'')+(sl?'':' is-off'));cell.type='button';cell.setAttribute('data-sum-date',d);
+    node('span',String(n),cell,'calendar-date-number');
+    if(sl){const dots=node('div',undefined,cell,'calendar-dots-row');for(const k of ['main','bonus','early'])if(sl[k].length)node('span',undefined,dots,'sum-dot is-'+k);cell.onclick=()=>{sumSel=d;renderSummary();};}else cell.disabled=true;
+   }
+   const det=node('div',undefined,body,'ss-detail');
+   if(sumSel&&days.has(sumSel)){node('strong',sumSel,det);for(const [k,t]of items(sumSel)){const it=node('div',undefined,det,'ss-sum-item');node('i',undefined,it,'sum-dot is-'+k);node('span',t,it);node('small',kinds[k],it,'ss-hint');}}
+   else node('p','Select a date to see its tasks.',det,'ss-hint');
   }
   // One place decides whether "Create plan" is available and says why not.
   function refresh(){
@@ -339,7 +391,7 @@
    if(dr.smart){smartEnabled=dr.smart.enabled===true;smartMode=dr.smart.mode||'original';smartDates=new Set(dr.smart.dates||[]);smartAppearances=new Map((dr.smart.appearances||[]).map(a=>[a.unit,a.date]));}
    for(const [sel,v]of [[parentPrio,dr.info.parent],[unitPrio,dr.info.unitP]])if(Array.from(sel.options||sel.children||[]).some(o=>o.value===v))sel.value=v;
    audit.checked=dr.ai.enabled;aiBody.hidden=!audit.checked;criteria.value=dr.ai.criteria||'';exclude.value=dr.ai.exclude||'';
-   const r=sched.restore(dr.schedule);
+   const r=sched.restore(dr.schedule);bonusPer=Array.isArray(dr.schedule.bonus_per)&&dr.schedule.bonus_per.length?new Map(dr.schedule.bonus_per):null;if(bonusPer)sched.rerender();
    var draftMsg=dr.schedule.sched&&!r.preview?'Draft restored. Preview the schedule again.':'Draft restored. Nothing is created until you confirm.';
   }
   async function confirmAsk(message){return window.TaskitatorConfirm?await window.TaskitatorConfirm({title:'Save draft?',message,confirmLabel:'Save draft'}):confirm(message);}
@@ -364,7 +416,7 @@
    if(!window.TaskitatorDrafts)throw Error('Drafts are unavailable. Reload Taskitator.');
    if(!await confirmAsk('Keep this study plan in Drafts? Nothing is created. Find it in the Drafts tab of the Study plans page.'+(draftId?' This replaces the draft you restored.':'')))return;
    draftId=window.TaskitatorDrafts.saveStudy({kind:'create',title:title.value,info:{title:title.value,unit:unit.value,total:total.value,bonus:bonus.value,chapOn:chapOn.checked,chapSize:chapSize.value,chapLabel:chapLabel.value,parent:parentPrio.value,unitP:unitPrio.value,description:desc.value},
-    ai:{enabled:audit.checked,criteria:criteria.value,exclude:exclude.value},schedule:sched.snapshot(),smart:{enabled:smartEnabled,mode:smartMode,dates:[...smartDates],appearances:[...smartAppearances].map(([unit,date])=>({unit,date}))}},draftId);
+    ai:{enabled:audit.checked,criteria:criteria.value,exclude:exclude.value},schedule:{...sched.snapshot(),bonus_per:bonusPer?[...bonusPer]:[]},smart:{enabled:smartEnabled,mode:smartMode,dates:[...smartDates],appearances:[...smartAppearances].map(([unit,date])=>({unit,date}))}},draftId);
    status.textContent='Draft saved. Find it in the Drafts tab of the Study plans page.';
   });
   button('Cancel',actions,()=>d.close());d.addEventListener('close',()=>{d.remove();if(opened===d)opened=null;window.dispatchEvent(new Event('taskitator-study-closed'));});document.body.append(d);d.showModal();return {status:'confirmation_required',message:'Study preview opened. No tasks exist until the user confirms. Audit controls are manual only.'};

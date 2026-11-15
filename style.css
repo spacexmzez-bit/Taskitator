@@ -5822,3 +5822,22 @@ html[data-family="nature"] .bonus-badge.early-badge{color:#8fd0e6}
 .pull-num input{width:70px}
 .pull-unit{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:.85rem}
 .pull-empty{font-size:.85rem;color:var(--text-muted)}
+
+/* Phase 3.7.3: a hidden settings section stays hidden whatever else sets display */
+.settings-pane[hidden]{display:none!important}
+
+/* Phase 3.7.3: Summary sub tabs, calendar dots (main blue, bonus orange, early purple) */
+.ss-sum-sub{display:flex;gap:6px;margin:10px 0;overflow:auto}
+.ss-sum-subtab{flex:none;padding:6px 12px;border-radius:10px;border:1px solid var(--border-color);background:transparent;color:var(--text-muted);font:inherit;font-size:.82rem}
+.ss-sum-subtab.is-on{background:var(--primary);border-color:var(--primary);color:#fff}
+.ss-sum-seg{display:inline-flex;border:1px solid var(--border-color);border-radius:10px;overflow:hidden;margin-bottom:8px}
+.ss-sum-seg button{border:0;background:transparent;color:var(--text-muted);padding:6px 14px;font:inherit;font-size:.82rem}
+.ss-sum-seg button.is-on{background:var(--card-subtle);color:var(--text-main,inherit)}
+.ss-sum-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.78rem;color:var(--text-muted);margin-bottom:8px}
+.sum-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-inline-end:5px;flex:none}
+.calendar-dots-row .sum-dot{margin:0 1px;width:8px;height:8px}
+.sum-dot.is-main{background:#3b82f6}.sum-dot.is-bonus{background:#f59e0b}.sum-dot.is-early{background:#d946ef}
+.ss-sum-item{display:flex;align-items:center;padding:4px 0;font-size:.85rem}.ss-sum-item small{margin-inline-start:auto}
+.ss-sum-day{align-items:flex-start}.ss-sum-items{flex:1;text-align:end}.ss-sum-items .ss-sum-item{justify-content:flex-end}
+.ss-sum-crit{white-space:pre-wrap;border:1px solid var(--border-color);border-radius:10px;padding:10px;font-size:.84rem;background:var(--card-subtle)}
+.ss-sum-pills{display:flex;flex-wrap:wrap;gap:6px}.ss-sum-pill{padding:2px 8px;border-radius:99px;background:var(--card-subtle);font-size:.75rem}

@@ -208,7 +208,15 @@ function mount(parent,ctx){
   const plus=el('button','+',step,'ss-step-btn');plus.type='button';plus.setAttribute('data-ss-key','plus');plus.setAttribute('aria-label',tr('Add one unit'));plus.addEventListener('click',()=>setCount(date,main+1));
   // Bonus = the plan's own bonus units on this date plus units of later dates that Smart Study shows early here (Phase 3.6.2).
   const early=ctx.early?.(date)||[];
-  const bon=el('div',undefined,d,'ss-step');el('span',tr('Bonus tasks'),bon,'ss-hint');const bonB=el('b',String(extra+early.length),bon);bonB.setAttribute('data-ss-bonus','');
+  const bon=el('div',undefined,d,'ss-step');el('span',tr('Bonus tasks'),bon,'ss-hint');
+  // Phase 3.7.3: the plan's own bonus for this date has its own stepper. It never changes the main amount or the balance.
+  if(ctx.bonusStep){
+   const bm=el('button','−',bon,'ss-step-btn');bm.type='button';bm.setAttribute('data-ss-key','bonus-minus');bm.setAttribute('aria-label',tr('Remove one bonus unit'));bm.disabled=!extra;bm.addEventListener('click',()=>ctx.bonusStep(date,extra-1));
+   var bonB=el('b',String(extra+early.length),bon);
+   const bp=el('button','+',bon,'ss-step-btn');bp.type='button';bp.setAttribute('data-ss-key','bonus-plus');bp.setAttribute('aria-label',tr('Add one bonus unit'));bp.disabled=(ctx.bonusRoom?.()??1)<=0;bp.addEventListener('click',()=>ctx.bonusStep(date,extra+1));
+  }else var bonB=el('b',String(extra+early.length),bon);
+  bonB.setAttribute('data-ss-bonus','');
+  const tot=el('div',undefined,d,'ss-step');el('span',tr('Day total'),tot,'ss-hint');el('b',String(main+extra+early.length),tot).setAttribute('data-ss-total','');
   if(early.length){el('span',tr('({plan} plan, {early} early)',{plan:extra,early:early.length}),bon,'ss-hint');const c=el('div',undefined,d,'ss-chips');for(const x of early)el('span',tr('Early')+' · '+x.text,c,'ss-chip is-early');}
   el('p',tr('Changing a date does not move other dates. It creates a surplus or a missing amount that you settle yourself.'),d,'ss-hint');
   if(nums.length){const rm=el('button',tr('Remove this date'),d,'ss-remove');rm.type='button';rm.setAttribute('data-ss-key','remove');rm.addEventListener('click',()=>setCount(date,0));}

@@ -136,7 +136,8 @@
             weekdays: Array.isArray(d.weekdays) ? [...new Set(d.weekdays.filter(n => int(n, 0, 6) !== null))].sort() : [],
             startUnit: text(String(d.startUnit ?? ''), 6), skipText: text(d.skipText, 500), previewed: flag(d.previewed),
             sched: sched && sched.length && key ? sched : null, units_key: sched && sched.length && key ? key : null,
-            edited: Array.isArray(d.edited) ? d.edited.filter(date).slice(0, 366) : []
+            edited: Array.isArray(d.edited) ? d.edited.filter(date).slice(0, 366) : [],
+            bonus_per: Array.isArray(d.bonus_per) ? d.bonus_per.slice(0, 366).filter(x => Array.isArray(x) && date(x[0]) && int(x[1], 0, 1000) !== null).map(x => [x[0], x[1]]) : []
         };
     }
     // Smart Study state of a draft (Phase 3.6.1): the switch, the lightening option, its dates and every unit's early date.

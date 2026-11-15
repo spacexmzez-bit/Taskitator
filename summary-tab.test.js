@@ -8,7 +8,7 @@ test('create dialog has a fourth Summary tab that is empty until the plan is rea
     assert.ok(u.includes("['summary','Summary','goal']"));
     assert.ok(u.includes("'Complete the plan to see its summary.'"));
     assert.ok(u.includes('ready=ok;renderSummary();'));
-    for (const s of ["'Main '+r.count", "' plan, '", "'AI criteria'", "'Study days'"]) assert.ok(u.includes(s), s);
+    for (const s of ["'Schedule'", "'Task info'", "'AI criteria'", "'Study days'", "data-sum-view", "sum-dot is-'+k"]) assert.ok(u.includes(s), s);
 });
 test('Create plan: first press opens Summary, second asks; red with criteria, blue without', () => {
     const u = src('pro/study-plan.js'), i = u.indexOf("if(activeTab!=='summary'){showTab('summary')");
