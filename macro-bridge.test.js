@@ -73,7 +73,13 @@ test('bridge macro makes one correct final blocking decision for every task/slee
     const run = response => {
         let state = null; const stack = [];
         const active = () => stack.every(f => f.on);
-        const test = a => { const c = a.m_constraintList[0]; assert.equal(c.m_variable.isLocalVar, true, 'conditions read the local response'); return response.includes(c.m_stringValue); };
+        const test = a => {
+            const hits = a.m_constraintList.map(c => {
+                assert.equal(c.m_variable.isLocalVar, true, 'conditions read the local response');
+                return response.includes(c.m_stringValue);
+            });
+            return a.m_isOrCondition ? hits.some(Boolean) : hits.every(Boolean);
+        };
         for (const a of macro.m_actionList) {
             if (a.m_classType === 'IfConditionAction') { const hit = test(a); stack.push({ on: hit, done: hit }); }
             else if (a.m_classType === 'ElseIfConditionAction') { const f = stack.at(-1); f.on = !f.done && test(a); f.done ||= f.on; }
@@ -89,5 +95,6 @@ test('bridge macro makes one correct final blocking decision for every task/slee
     }
     assert.equal(run(''), -1, 'an empty/failed response blocks');
     const vars = macro.localVariables.find(v => v.m_name === 'http_response');
-    assert.equal(vars.m_stringValue, '', 'no shipped default "unlocked" response');
+    assert.equal(run(vars.m_stringValue), -1, 'the shipped default response fails closed (blocks)');
+    assert.ok(!/device_locked = false/.test(vars.m_stringValue), 'no shipped default "unlocked" response');
 });

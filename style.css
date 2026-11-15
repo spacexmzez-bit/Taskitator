@@ -5799,3 +5799,26 @@ html[data-family="nature"] .bonus-badge.early-badge{color:#8fd0e6}
 .ss-dot-bonus{width:5px;height:5px;border-radius:50%;display:inline-block;background:#fbbf24}
 .ss-chip.is-early{border-style:dashed;border-color:#38bdf8;color:#38bdf8}
 .plan-badge-early{border-style:dashed}
+/* Phase 3.7: Summary tab, Smart calendar counts, red edit confirmation */
+.ss-smart-count{display:flex;gap:3px;justify-content:center;font-size:.66rem;line-height:1.1;margin-top:2px;color:var(--text-muted)}
+.ss-smart-count i{font-style:normal;color:var(--alert-orange,#f59e0b)}
+.ss-cell.selected .ss-smart-count,.ss-cell.selected .ss-smart-count i{color:#fff}
+.ss-sum-row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--border-color)}
+.ss-sum-title{margin:4px 0 8px}
+.plan-confirm .is-danger{background:var(--danger);color:#fff;border-color:var(--danger)}
+.ss-sum-list{margin-top:10px}.ss-sum-day{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:.85rem}
+/* Phase 3.7.1: Preview plan on the Study plans page */
+.plan-preview{margin-top:10px;padding:10px;border:1px solid var(--border-color);border-radius:12px}
+.plan-sum-row,.plan-sum-day{display:flex;justify-content:space-between;gap:10px;padding:4px 0}
+.plan-sum-row{border-bottom:1px solid var(--border-color)}.plan-sum-list{margin-top:8px}.plan-sum-day{font-size:.85rem}
+
+/* Phase 3.7.2: Pull from tomorrow */
+.pull-block{padding:10px 12px;margin-top:10px;border:1px solid var(--border-color);border-radius:12px;background:var(--card-subtle)}
+.pull-block.locked{opacity:.8}
+.pull-head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.pull-count{font-size:.78rem;color:var(--text-muted)}
+.pull-why{margin-top:6px;font-size:.8rem;color:#f87171}
+.pull-num{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0;font-size:.85rem}
+.pull-num input{width:70px}
+.pull-unit{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:.85rem}
+.pull-empty{font-size:.85rem;color:var(--text-muted)}

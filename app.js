@@ -3453,8 +3453,88 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     // Master View Render & Router
     // =========================================================================
+    // ---- Pull from tomorrow (Pro): the rules live in pro/early-move.js ----
+    function pullTr(k, v) { const I = window.TaskitatorI18n; return I ? I.t(k, v || {}) : k.replace(/\{(\w+)\}/g, (_, x) => (v || {})[x]); }
+    function updatePullTomorrowBtn() {
+        const btn = document.getElementById('pullTomorrowBtn');
+        if (!btn) return;
+        const show = currentView === 'today' && Boolean(window.TaskitatorEarlyMove) && window.TaskitatorEarlyMove.blocks(tasks, getAppTodayStr()).length > 0;
+        btn.hidden = !show;
+    }
+    function renderPullTomorrowPanel(proOk) {
+        const body = document.getElementById('pullTomorrowBody'), apply = document.getElementById('applyPullTomorrowBtn');
+        if (!body || !apply) return;
+        const blocks = window.TaskitatorEarlyMove.blocks(tasks, getAppTodayStr());
+        body.textContent = '';
+        const sync = () => {
+            const n = body.querySelectorAll('input[data-pull-unit]:checked').length;
+            apply.disabled = !proOk || n === 0;
+            apply.textContent = n ? pullTr('Pull {n} to today', { n }) : pullTr('Pull to today');
+        };
+        if (!blocks.length) { const p = document.createElement('p'); p.className = 'pull-empty'; p.textContent = pullTr('Nothing from tomorrow to pull.'); body.appendChild(p); sync(); return; }
+        for (const b of blocks) {
+            const box = document.createElement('div'); box.className = 'pull-block' + (b.locked ? ' locked' : '');
+            const head = document.createElement('div'); head.className = 'pull-head';
+            const name = document.createElement('strong'); name.textContent = b.name;
+            const count = document.createElement('span'); count.className = 'pull-count'; count.textContent = pullTr('{n} unit(s) tomorrow', { n: b.units.length });
+            head.append(name, count); box.appendChild(head);
+            if (b.locked) {
+                const why = []; if (b.own) why.push(pullTr("{n} of this plan's tasks left today", { n: b.own })); if (b.others) why.push(pullTr('{n} AI-audited tasks left today', { n: b.others }));
+                const note = document.createElement('div'); note.className = 'pull-why'; note.textContent = pullTr('Locked:') + ' ' + why.join(' · '); box.appendChild(note);
+            } else {
+                const row = document.createElement('label'); row.className = 'pull-num';
+                const lab = document.createElement('span'); lab.textContent = pullTr('How many');
+                const inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.max = String(b.units.length); inp.value = '0'; inp.disabled = !proOk;
+                row.append(lab, inp); box.appendChild(row);
+                const boxes = [];
+                for (const u of b.units) {
+                    const l = document.createElement('label'); l.className = 'pull-unit';
+                    const c = document.createElement('input'); c.type = 'checkbox'; c.dataset.pullUnit = u.id; c.disabled = !proOk;
+                    const t = document.createElement('span'); t.textContent = u.title;
+                    l.append(c, t); box.appendChild(l); boxes.push(c);
+                    c.addEventListener('change', () => { inp.value = String(boxes.filter(x => x.checked).length); sync(); });
+                }
+                inp.addEventListener('input', () => {
+                    const n = Math.max(0, Math.min(b.units.length, parseInt(inp.value, 10) || 0));
+                    boxes.forEach((c, i) => { c.checked = i < n; }); sync();
+                });
+            }
+            body.appendChild(box);
+        }
+        sync();
+    }
+    function initPullTomorrow() {
+        const btn = document.getElementById('pullTomorrowBtn'), modal = document.getElementById('pullTomorrowModal');
+        if (!btn || !modal) return;
+        const note = document.getElementById('pullTomorrowNotice');
+        btn.addEventListener('click', () => {
+            if (note) { note.style.display = 'none'; note.textContent = ''; }
+            renderPullTomorrowPanel(false);
+            modal.classList.add('open');
+            window.TaskitatorPro?.checkConsecutiveEntitlement?.().then(access => {
+                if (access?.allowed) { renderPullTomorrowPanel(true); return; }
+                if (note) { note.textContent = pullTr('Pull from tomorrow is a Taskitator Pro feature.'); note.style.display = 'block'; }
+            }).catch(() => {});
+        });
+        document.getElementById('closePullTomorrowBtn')?.addEventListener('click', () => modal.classList.remove('open'));
+        document.getElementById('applyPullTomorrowBtn')?.addEventListener('click', () => {
+            const ids = [...modal.querySelectorAll('input[data-pull-unit]:checked')].map(c => c.dataset.pullUnit);
+            if (!ids.length) return;
+            const result = window.TaskitatorEarlyMove.apply(tasks, ids, getAppTodayStr());
+            if (result.set.length || result.covered.length) saveStorageAndPush();
+            modal.classList.remove('open');
+            renderUnifiedView();
+            const parts = [];
+            if (result.set.length) parts.push(pullTr('{n} unit(s) will show today.', { n: result.set.length }));
+            const left = result.skipped.length + result.rejected;
+            if (left) parts.push(pullTr('{n} could not be pulled.', { n: left }));
+            if (parts.length) window.TaskitatorNotify(parts.join(' '));
+        });
+    }
+
     function renderUnifiedView() {
         renderUnifiedTaskTree();
+        updatePullTomorrowBtn();
         renderCompletedModalList();
         BreakUI.updateStatusPill();
         updateBatchBarUI();
@@ -3637,6 +3717,8 @@ window.TaskitatorApp = (() => {
         const batchPriorityModal = document.getElementById('batchPriorityModal');
         const closeBatchPriorityBtn = document.getElementById('closeBatchPriorityBtn');
         const applyBatchPriorityBtn = document.getElementById('applyBatchPriorityBtn');
+
+        initPullTomorrow();
 
         const batchDueDateModal = document.getElementById('batchDueDateModal');
         const closeBatchDueDateBtn = document.getElementById('closeBatchDueDateBtn');

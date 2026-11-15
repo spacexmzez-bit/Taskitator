@@ -88,7 +88,7 @@ test('Study preview: nothing is created before a balanced preview; +/- on a date
  const skip=f.inputs().filter(i=>i.placeholder==='8, 10-12'&&i.type==='text').at(-1);skip.value='2-3';f.fire(skip);
  assert.equal(f.button('Create plan').disabled,true,'changing a setting makes the preview stale');assert.ok(f.button('Regenerate preview'),'and re-enables the preview button');
  f.button('Regenerate preview').handlers.click.forEach(fn=>fn());assert.match(f.body.textContent,/Regenerating replaces the changes you made/);f.button('Regenerate preview').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,false);
- await f.button('Create plan').onclick();const tasks=JSON.parse(f.storage.getItem('taskitator_tasks'));assert.equal(tasks.length,15);assert.equal(tasks.at(-1).raw_title,'Lesson.{num==12}');assert.equal(f.requests.filter(r=>r.action==='authorize').length,1);
+ f.window.TaskitatorConfirm=async()=>true;await f.button('Create plan').onclick();await f.button('Create plan').onclick();const tasks=JSON.parse(f.storage.getItem('taskitator_tasks'));assert.equal(tasks.length,15);assert.equal(tasks.at(-1).raw_title,'Lesson.{num==12}');assert.equal(f.requests.filter(r=>r.action==='authorize').length,1);
  const cancelled=studyUI();await cancelled.window.TaskitatorStudy.open({title:'Biology'});await cancelled.button('Cancel').onclick();assert.equal(cancelled.storage.getItem('taskitator_tasks'),'[]');assert.equal(cancelled.requests.length,0);
 });
 test('Study preview: units-per-day split, list and calendar share the same dates, bad skips are refused',async()=>{
@@ -362,7 +362,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase3-v34'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase3-v37'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};

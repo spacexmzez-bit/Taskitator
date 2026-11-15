@@ -183,6 +183,25 @@ function chrome() {
 }
 
 // ---- cards ----
+const previews = new Set();
+function planPreview(plan, parent) {
+    const box = el('div', undefined, parent, 'plan-preview');
+    const line = (k, v) => { const r = el('div', undefined, box, 'plan-sum-row'); el('span', k, r, 'plan-hint'); el('b', v, r); };
+    const live = u => u.status === 'active', early = new Map();
+    for (const u of plan.units) if (live(u) && !u.is_bonus && u.smart_early_date && !u.smart_adjusted) early.set(u.smart_early_date, (early.get(u.smart_early_date) || 0) + 1);
+    line(tr('Unit'), (plan.unit || tr('Unit')) + ' · ' + tr('{n} required', { n: plan.total }) + (plan.bonus ? ' + ' + tr('{n} bonus', { n: plan.bonus }) : ''));
+    line(tr('Study days'), plan.days + (plan.start ? ' · ' + fmtDate(plan.start) + ' – ' + fmtDate(plan.end) : ''));
+    if (plan.chapter) line(tr('Chapter labels'), plan.chapter.label + ' · ' + tr('every {n} units', { n: plan.chapter.size }));
+    line(tr('AI criteria'), plan.audited ? tr('On · {n} unit(s)', { n: plan.audited }) : tr('Off'));
+    line(tr('Smart Study'), plan.early ? tr('{n} early appearance(s)', { n: plan.early }) : tr('Off'));
+    const list = el('div', undefined, box, 'plan-sum-list');
+    for (const p of [...plan.parents].sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''))) {
+        const mine = plan.units.filter(u => u.parent_id === p.id), main = mine.filter(u => !u.is_bonus), bonus = mine.filter(u => u.is_bonus), e = early.get(p.due_date) || 0;
+        const done = mine.filter(u => u.status === 'completed').length;
+        const row = el('div', undefined, list, 'plan-sum-day'); el('strong', p.due_date ? fmtDate(p.due_date) : tr('(no date)'), row);
+        el('span', tr('Main {n}', { n: main.length }) + ' · ' + tr('Bonus {n}', { n: bonus.length + e }) + (e ? ' ' + tr('({plan} plan, {early} early)', { plan: bonus.length, early: e }) : '') + ' · ' + tr('{done} of {total} done', { done, total: mine.length }), row, 'plan-hint');
+    }
+}
 function card(plan, parent) {
     const list = M.prioritiesOf(settings), isOpen = current === plan.id;
     const c = el('section', undefined, parent, 'plan-card');
@@ -197,6 +216,11 @@ function card(plan, parent) {
     const actions = el('div', undefined, c, 'plan-actions');
     const toggle = el('button', isOpen ? tr('Close') : tr('Edit'), actions, 'icon-btn'); toggle.type = 'button'; toggle.disabled = busy;
     toggle.addEventListener('click', () => { current = isOpen ? null : plan.id; render(); });
+    // Read-only summary of the plan as it stands, without opening the editor (Phase 3.7.1).
+    const previewing = previews.has(plan.id);
+    const prev = el('button', previewing ? tr('Hide preview') : tr('Preview plan'), actions, 'icon-btn'); prev.type = 'button'; prev.dataset.act = 'preview';
+    prev.addEventListener('click', () => { if (previews.has(plan.id)) previews.delete(plan.id); else previews.add(plan.id); render(); });
+    if (previewing) planPreview(plan, c);
     if (plan.ready) {
         const fin = el('button', tr('Complete'), actions, 'icon-btn'); fin.type = 'button'; fin.disabled = busy; fin.dataset.act = 'bonus-finish';
         fin.addEventListener('click', () => finishBonus(plan));
@@ -311,11 +335,11 @@ async function validateCriteria(plan, d) {
 }
 
 // ---- saving ----
-function ask(title, lines, yes) {
+function ask(title, lines, yes, tone) {
     return new Promise(resolve => {
         const dlg = $('planConfirm'), body = $('planConfirmBody'); $('planConfirmTitle').textContent = title; body.replaceChildren();
         const ul = el('ul', undefined, body); for (const l of lines) el('li', l, ul);
-        $('planConfirmYes').textContent = yes; let settled = false;
+        $('planConfirmYes').textContent = yes; $('planConfirmYes').classList.toggle('is-danger', tone === 'danger'); let settled = false;
         const finish = v => { if (settled) return; settled = true; if (dlg.open) dlg.close(); resolve(v); };
         $('planConfirmYes').onclick = () => finish(true); $('planConfirmNo').onclick = () => finish(false); dlg.onclose = () => finish(false);
         dlg.showModal();
@@ -340,7 +364,9 @@ async function save() {
         lines.push(tr('Finished units and past days stay as they are.'));
         if (info.dirty.info || info.dirty.ai) lines.push(tr('Saved in two steps: task info and criteria first, then the schedule. If the schedule step fails, the first step stays saved.'));
     }
-    if (!await ask(info.apply ? tr('Apply re-plan?') : tr('Save changes?'), lines, info.apply ? tr('Apply re-plan') : tr('Save'))) return;
+    // Red when the save touches AI criteria or the audited units' schedule/names; blue otherwise (Phase 3.7).
+    const risky = info.dirty.ai || (plan.audited > 0 && (info.dirty.sched || (info.dirty.info && d.info.unit !== origInfo(plan).unit)));
+    if (!await ask(info.apply ? tr('Apply re-plan?') : tr('Save changes?'), lines, info.apply ? tr('Apply re-plan') : tr('Save'), risky ? 'danger' : 'primary')) return;
     if (info.dirty.info || info.dirty.ai) {
         const ok = await commit(() => {
             let t = tasks;

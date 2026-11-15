@@ -142,7 +142,7 @@
   calcBtn.onclick=()=>{if(!calcShow){calcShow=node('div','0',calcBox,'study-calc-display');calcShow.setAttribute('aria-live','polite');const pad=node('div',undefined,calcBox,'study-calc-pad');for(const k of ['7','8','9','÷','4','5','6','×','1','2','3','−','0','.','=','+','C','⌫']){const b=node('button',k,pad,'icon-btn study-calc-key'+(/[+−×÷=]/.test(k)?' is-op':''));b.type='button';b.onclick=()=>calcKey(k);}}calcBox.hidden=!calcBox.hidden;calcBtn.setAttribute('aria-expanded',String(!calcBox.hidden));};
   // Tabs: Task info, AI criteria, Scheduling (Phase 2.6)
   const tabBar=node('div',undefined,d,'tk-tabs'),panels={},tabButtons={};tabBar.setAttribute('role','tablist');
-  for(const [key,text,icon]of [['info','Task info','notes'],['ai','AI criteria','ai'],['sched','Scheduling','calendar']]){const b=node('button',text,tabBar,'tk-tab');if(window.TaskitatorIcons?.has?.(icon)){const ic=window.TaskitatorIcons.node(icon,'tk-tab-icon');ic.setAttribute?.('aria-hidden','true');b.prepend(ic);}b.type='button';b.setAttribute('role','tab');b.onclick=()=>showTab(key);tabButtons[key]=b;panels[key]=node('div',undefined,d,'study-panel');}
+  for(const [key,text,icon]of [['info','Task info','notes'],['ai','AI criteria','ai'],['sched','Scheduling','calendar'],['summary','Summary','goal']]){const b=node('button',text,tabBar,'tk-tab');if(window.TaskitatorIcons?.has?.(icon)){const ic=window.TaskitatorIcons.node(icon,'tk-tab-icon');ic.setAttribute?.('aria-hidden','true');b.prepend(ic);}b.type='button';b.setAttribute('role','tab');b.onclick=()=>showTab(key);tabButtons[key]=b;panels[key]=node('div',undefined,d,'study-panel');}
   let activeTab=null,tabTimer=null;
   function showTab(k){
     clearTimeout(tabTimer);
@@ -248,7 +248,7 @@
     const date=smartMonth+'-'+String(day).padStart(2,'0'),due=dueOf.size?schedule.find(r=>r.date===date)?.numbers.length||0:0,pb=planBonus.get(date)||0,em=early.get(date)?.length||0;
     const cell=node('button',undefined,grid,'calendar-cell ss-cell'+(date===smartSel?' selected':''));cell.type='button';node('span',String(day),cell,'calendar-date-number');
     const dots=node('div',undefined,cell,'calendar-dots-row');if(due)node('span',undefined,dots,'cal-dot-solid');if(pb)node('span',undefined,dots,'ss-dot-bonus');if(em)node('span',undefined,dots,'ss-dot-edit');
-    if(due||em)node('small',pb+em?due+' +'+(pb+em):String(due),cell,'ss-cell-count');
+    if(due||em){const cnt=node('span',undefined,cell,'ss-smart-count');node('b',String(due),cnt);if(pb+em)node('i','+'+(pb+em),cnt);}
     cell.disabled=!due;cell.setAttribute('data-ss-smart-cell',date);cell.onclick=()=>{smartSel=date;smartTarget='';again();};
    }
    const legend=node('div',undefined,body,'ss-legend');for(const [cls,text]of [['cal-dot-solid','Due'],...(bonusN()?[['ss-dot-bonus','Plan bonus']]:[]),['ss-dot-edit','Early bonus']]){const sp=node('span',undefined,legend);node('i',undefined,sp,cls);node('span',text,sp);}
@@ -301,6 +301,23 @@
    node('small','Option B targets the next weekend starting after each early date; a weekend already underway is skipped. It is unavailable when that next weekend has no tasks. Use C to select other dates. Completed bonus tasks free slots on their original dates; at most one eligible task moves per freed slot.',body,'study-hint');
    if(smartMode==='dates'){node('p','Choose dates to lighten. Eligible unfinished units move in date order, finishing the earliest date first.',body);for(const r of schedule){const l=node('label',r.date,body,'study-check');const c=node('input',undefined,l);c.type='checkbox';c.checked=smartDates.has(r.date);c.onchange=()=>c.checked?smartDates.add(r.date):smartDates.delete(r.date);}}
   }
+  // Summary tab (Phase 3.7): read-only, filled only while the plan is ready to create.
+  let ready=false;
+  function renderSummary(){
+   const box=panels.summary;box.replaceChildren();
+   if(!ready||!plan){node('p','Complete the plan to see its summary.',box,'study-hint');return;}
+   const sch=rows(plan),auditOn=audit.checked&&criteria.value.trim(),earlyBy=new Map();
+   if(smartEnabled)for(const [,d]of smartAppearances)earlyBy.set(d,(earlyBy.get(d)||0)+1);
+   const line=(k,v)=>{const r=node('div',undefined,box,'ss-sum-row');node('span',k,r,'ss-hint');node('b',v,r);};
+   node('h3',plan.title,box,'ss-sum-title');
+   line('Unit',plan.unit+' · '+plan.total+' required'+(plan.bonus?' + '+plan.bonus+' bonus':''));
+   line('Study days',sch.length+' · '+sch[0].date+' to '+sch.at(-1).date);
+   if(plan.chapter_size)line('Chapter labels',plan.chapter_label+' every '+plan.chapter_size+' units');
+   line('AI criteria',auditOn?'On · '+(plan.exclude?.length?plan.exclude.length+' unit(s) excluded':'every unit')+(validation?' · '+validation.score+'/10':''):'Off');
+   line('Smart Study',smartEnabled&&smartAppearances.size?smartAppearances.size+' early appearance(s)':'Off');
+   const list=node('div',undefined,box,'ss-sum-list');
+   for(const r of sch){const e=earlyBy.get(r.date)||0,row=node('div',undefined,list,'ss-sum-day');node('strong',r.date,row);node('span','Main '+r.count+' · Bonus '+(r.bonus+e)+(e?' ('+r.bonus+' plan, '+e+' early)':''),row,'ss-hint');}
+  }
   // One place decides whether "Create plan" is available and says why not.
   function refresh(){
    plan=buildPlan();renderSmart();const st=sched.state();let msg='',ok=false;
@@ -313,7 +330,7 @@
    else if(audit.checked&&strict&&!(validation?.passed&&validationStamp===stampOf()))msg='Validate the criteria (7/10 or higher) before creating.';
    else if(!plan)msg=planError||'Check the plan settings.';
    else{ok=true;msg='Review the schedule, then create the plan.';}
-   status.textContent=msg;if(confirmBtn)confirmBtn.disabled=!ok||used;
+   status.textContent=msg;if(confirmBtn)confirmBtn.disabled=!ok||used;ready=ok;renderSummary();
   }
   // Drafts (Phase 2.8): a restored draft fills the form; the preview comes back only if the units still match.
   let draftId=initial.draft?.id||null;
@@ -326,11 +343,17 @@
    var draftMsg=dr.schedule.sched&&!r.preview?'Draft restored. Preview the schedule again.':'Draft restored. Nothing is created until you confirm.';
   }
   async function confirmAsk(message){return window.TaskitatorConfirm?await window.TaskitatorConfirm({title:'Save draft?',message,confirmLabel:'Save draft'}):confirm(message);}
-  showTab('info');
+  showTab('info');renderSummary();
   const actions=node('div',undefined,d,'study-actions study-footer');
   const planId=crypto.randomUUID(),created=new Date().toISOString();
   confirmBtn=button('Create plan',actions,async()=>{
    refresh();if(used||!plan||confirmBtn.disabled)throw Error(status.textContent||'Preview a balanced schedule first.');if(window.TaskitatorEditorDraft)throw Error('Save or cancel your open task editor first.');
+   // First press shows the summary; the second one, from the summary, asks for confirmation (red when AI criteria is set).
+   if(activeTab!=='summary'){showTab('summary');status.textContent='Review the summary, then press Create plan again to confirm.';return;}
+   const guarded=Boolean(audit.checked&&criteria.value.trim()),tasksN=rows(plan).reduce((a,r)=>a+r.numbers.length,0)+plan.days;
+   const message='Create "'+plan.title+'": '+tasksN+' tasks over '+plan.days+' study days.'+(guarded?' AI criteria is on: the audited units are locked, changing them later needs Emergency Bypass, and deleting this plan costs Emergency Bypass uses.':' Nothing here is locked; you can edit or delete the plan later.');
+   const sure=window.TaskitatorConfirm?await window.TaskitatorConfirm({title:'Create this plan?',message,confirmLabel:'Create plan',tone:guarded?'danger':'primary'}):confirm(message);
+   if(!sure)return;
    const frozen=normalize({...plan,...(smartEnabled?{smart:{mode:smartMode,dates:[...smartDates],appearances:[...smartAppearances].map(([unit,date])=>({unit,date})),weekend_start:Number(settings.weekend_start??5),weekend_end:Number(settings.weekend_end??6)}}:{})}),payload={action:'authorize',config:frozen,plan_id:planId,created_at:created,audit:audit.checked,criteria:criteria.value,validation_id:validation?.id};
    if(!await window.SyncEngine.forceImmediateSync())throw Error('Sync your workspace successfully before creating the plan.');if(actor!==window.Clerk?.session?.id)throw Error('Account changed. Reopen the preview.');const before=localStorage.getItem('taskitator_tasks');
    if(!d.open)throw Error('Preview closed. Nothing was created.');const tasks=build(frozen,planId,created,audit.checked,criteria.value);await window.TaskitatorAuth.api('/study-plan',{method:'POST',body:JSON.stringify(payload)});

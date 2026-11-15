@@ -490,6 +490,9 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
                 <span style="font-size: 0.95rem; line-height: 1;">☑</span><span class="wide-label">Multiselect</span>
             </button>
 
+            <button type="button" class="icon-only-btn" id="pullTomorrowBtn" title="Pull from tomorrow" aria-label="Pull from tomorrow" hidden>
+                <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg><span class="wide-label">Pull from tomorrow</span>
+            </button>
             <button class="icon-only-btn" id="openFilterModalBtn" title="Filter Tasks" aria-label="Filter Tasks" style="position: relative;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M3 4c0-.55.45-1 1-1h16c.55 0 1 .45 1 1s-.45 1-1 1h-1.5l-6.5 8.67V20c0 .38-.21.73-.55.91l-3 1.5c-.52.26-1.12-.1-1.12-.68v-7.06L3.5 5H3c-.55 0-1-.45-1-1z"/>
@@ -1707,6 +1710,19 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
     </div>
 </div>
 
+<div class="modal-overlay" id="pullTomorrowModal">
+    <div class="modal-box" style="max-width: 440px;">
+        <h3 style="margin-top: 0; color: var(--primary);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg> Pull from tomorrow</h3>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">Show tomorrow's study units today as optional work. Their due date stays tomorrow. A plan unlocks when its tasks for today and all of today's AI-audited tasks are done.</p>
+        <small id="pullTomorrowNotice" class="pro-consecutive-notice" style="display: none;" role="status" aria-live="polite"></small>
+        <div id="pullTomorrowBody" class="pull-body"></div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+            <button type="button" class="icon-btn" id="closePullTomorrowBtn">Cancel</button>
+            <button type="button" class="icon-btn btn-primary" id="applyPullTomorrowBtn" style="background: var(--primary); color: #fff; border: none; font-weight: 600;" disabled>Pull to today</button>
+        </div>
+    </div>
+</div>
+
 <!-- Modal: Batch phone-lock counting -->
 <div class="modal-overlay" id="batchStatusModal">
     <div class="modal-box" style="max-width: 400px;">
@@ -2597,6 +2613,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
 <script type="text/taskitator-script" src="pro.js"></script>
     <script type="text/taskitator-script" src="pro/smart-study.js"></script>
     <script type="text/taskitator-script" src="pro/early-bonus.js"></script>
+    <script type="text/taskitator-script" src="pro/early-move.js"></script>
     <script type="text/taskitator-script" src="pro/status-count.js"></script>
     <script type="text/taskitator-script" src="date-filter.js"></script>
     <script type="text/taskitator-script" src="pro/criteria-edit.js"></script>
