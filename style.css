@@ -5764,3 +5764,29 @@ html .sidebar-drawer > * { flex-shrink: 0; }
     }
   }
 }
+
+/* Test lab (Phase 3.5) and Saved criteria extras */
+#savedCriteriaSearch[hidden] { display: none !important; }
+.saved-lab-tag { display: inline-flex; align-items: center; gap: 3px; background: var(--accent-light); color: var(--accent); }
+.lab-wrap .lab-bench { display: flex; flex-direction: column; gap: 12px; }
+.lab-wrap .lab-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; }
+.lab-wrap .lab-col { border: 1.5px solid var(--border-color); border-radius: 10px; padding: 12px; background: var(--card-subtle); min-width: 0; }
+.lab-wrap .lab-col[hidden] { display: none; }
+.lab-wrap .lab-col-title { margin: 0 0 8px; font-size: 1rem; }
+.lab-wrap .lab-field { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; margin-bottom: 8px; }
+.lab-wrap .lab-field :is(input, textarea) { width: 100%; box-sizing: border-box; }
+.lab-wrap .lab-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.lab-wrap .lab-actions[hidden], .lab-wrap .lab-result[hidden], .lab-wrap .lab-save[hidden] { display: none; }
+.lab-wrap .lab-result { border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 0.85rem; overflow-wrap: anywhere; }
+.lab-wrap .lab-result p { margin: 4px 0 0; white-space: pre-wrap; }
+.lab-wrap .lab-muted { color: var(--text-muted); font-size: 0.78rem; }
+.lab-wrap .lab-warn { color: #f59e0b; font-size: 0.78rem; }
+.lab-wrap .lab-proof { border: 1px dashed var(--border-color); border-radius: 10px; padding: 10px; }
+.lab-wrap .lab-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.lab-wrap .lab-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--border-color); border-radius: 999px; font-size: 0.78rem; }
+.lab-wrap .lab-chip-x { background: none; border: 0; cursor: pointer; color: inherit; padding: 0 2px; }
+.lab-wrap .lab-hist-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border-color); }
+.lab-wrap .lab-hist-row.current .lab-hist-name { font-weight: 700; }
+.lab-wrap .lab-hist-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lab-wrap .lab-save { margin-top: 8px; padding: 8px; border: 1px solid var(--border-color); border-radius: 8px; }
+.lab-wrap .lab-foot { margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 8px; }

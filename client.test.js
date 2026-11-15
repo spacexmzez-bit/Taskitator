@@ -86,8 +86,8 @@ test('Study preview: nothing is created before a balanced preview; +/- on a date
  cell().handlers.click.forEach(fn=>fn());f.button('+').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,true,'surplus blocks creating');
  f.button('−').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,false);
  const skip=f.inputs().filter(i=>i.placeholder==='8, 10-12'&&i.type==='text').at(-1);skip.value='2-3';f.fire(skip);
- assert.equal(f.button('Create plan').disabled,true,'changing a setting makes the preview stale');assert.ok(f.button('Preview new schedule'),'and re-enables the preview button');
- f.button('Preview new schedule').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,false);
+ assert.equal(f.button('Create plan').disabled,true,'changing a setting makes the preview stale');assert.ok(f.button('Regenerate preview'),'and re-enables the preview button');
+ f.button('Regenerate preview').handlers.click.forEach(fn=>fn());assert.match(f.body.textContent,/Regenerating replaces the changes you made/);f.button('Regenerate preview').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,false);
  await f.button('Create plan').onclick();const tasks=JSON.parse(f.storage.getItem('taskitator_tasks'));assert.equal(tasks.length,15);assert.equal(tasks.at(-1).raw_title,'Lesson.{num==12}');assert.equal(f.requests.filter(r=>r.action==='authorize').length,1);
  const cancelled=studyUI();await cancelled.window.TaskitatorStudy.open({title:'Biology'});await cancelled.button('Cancel').onclick();assert.equal(cancelled.storage.getItem('taskitator_tasks'),'[]');assert.equal(cancelled.requests.length,0);
 });
@@ -97,9 +97,9 @@ test('Study preview: units-per-day split, list and calendar share the same dates
  f.button('Preview new schedule').handlers.click.forEach(fn=>fn());f.button('List').handlers.click.forEach(fn=>fn());
  const rows=()=>f.body.querySelectorAll('div').filter(e=>/(^| )ss-row( |$)/.test(e.className||''));
  assert.deepEqual(rows().map(r=>r.querySelectorAll('span').at(-1).textContent.split(', ').length),[6,6,6,2]);
- const skip=f.inputs().filter(i=>i.placeholder==='8, 10-12'&&i.type==='text').at(-1);skip.value='3, 99';f.fire(skip);f.button('Preview new schedule').handlers.click.forEach(fn=>fn());
+ const skip=f.inputs().filter(i=>i.placeholder==='8, 10-12'&&i.type==='text').at(-1);skip.value='3, 99';f.fire(skip);f.button('Regenerate preview').handlers.click.forEach(fn=>fn());
  assert.match(f.body.textContent,/99 is outside this plan/);assert.equal(f.button('Create plan').disabled,true);
- skip.value='';f.fire(skip);f.button('Preview new schedule').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,false);
+ skip.value='';f.fire(skip);f.button('Regenerate preview').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,false);
  f.button('Calendar').handlers.click.forEach(fn=>fn());const cell=f.body.querySelectorAll('button').find(b=>/ss-cell/.test(b.className)&&b.querySelectorAll('small').length);cell.handlers.click.forEach(fn=>fn());
  f.button('+').handlers.click.forEach(fn=>fn());assert.equal(f.button('Create plan').disabled,true);
  f.button('List').handlers.click.forEach(fn=>fn());assert.equal(rows()[0].querySelectorAll('span').at(-1).textContent.split(', ').length,7);
@@ -362,7 +362,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase3-v29'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase3-v32'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -843,13 +843,13 @@ test('Universe page shows only Universe; old components.html views redirect into
 test('Shell router: one index.html, hash views, legacy ?view= and per-view refresh',()=>{
  const html=fs.readFileSync(new URL('index.html',rootURL()),'utf8');
  const views=[...html.matchAll(/<(?:div|section)\b[^>]*\bdata-shell-view="([^"]+)"/g)].map(m=>m[1]);
- assert.deepEqual(views,['tasks','projects','calendar','stats','trash','blocker-guide','study-plans','sleep','help']);
+ assert.deepEqual(views,['tasks','projects','calendar','stats','trash','blocker-guide','study-plans','test-lab','sleep','help']);
  for(const f of ['views/projects.js','views/calendar.js','views/stats.js','views/trash.js','views/blocker-guide.js','pro/study-manage.js','study-plans.js','sleep.js','shell-router.js'])assert.ok(html.includes('src="'+f+'"'),f);
  assert.ok(html.indexOf('src="app.js')<html.indexOf('src="views/projects.js"')&&html.indexOf('src="study-plans.js"')<html.indexOf('src="shell-router.js"'));
  for(const old of ['components.html?view=calendar','components.html?view=projects','sleep.html"','study-plans.html"','help.html"'])assert.equal(html.includes(old),false,old);
  const code=fs.readFileSync(new URL('shell-router.js',rootURL()),'utf8');
  const make=(id,v)=>({id,hidden:false,getAttribute:k=>k==='data-shell-view'?v:null,querySelectorAll:()=>[]});
- const els=['tasks','projects','calendar','stats','trash','blocker-guide','study-plans','sleep','help'].map(v=>make('v-'+v,v));
+ const els=['tasks','projects','calendar','stats','trash','blocker-guide','study-plans','test-lab','sleep','help'].map(v=>make('v-'+v,v));
  const links=[{id:'navLinkToday'},{id:'navLinkGeneral'},{shell:'calendar'},{shell:'sleep'}].map(l=>({...l,classList:{on:false,toggle(_,v){this.on=v;}},getAttribute:k=>k==='data-shell-link'?l.shell||null:null}));
  const calls=[],listeners={},title={textContent:'',hidden:true},jump={style:{}},back={href:'',setAttribute(k,v){this.href=v;}};let replaced=null;
  const anchors = new Map(['help-p-study', 'help-calendar', 'bridge-manual'].map(id => [id, { scrollIntoView() { calls.push(id); } }]));

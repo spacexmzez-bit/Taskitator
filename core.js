@@ -1781,6 +1781,7 @@ window.addEventListener('storage', event => {
         try {
             if (window.ExemplarStore?.deleteAccountFiles) complete = await window.ExemplarStore.deleteAccountFiles(user);
         } catch { complete = false; }
+        try { if (window.TaskitatorTestLab && !await window.TaskitatorTestLab.clear(user)) complete = false; } catch { complete = false; }
         // Audit F09: the merge base snapshot (tasks, settings, audit ledger) lives in IndexedDB.
         try {
             if (window.TaskitatorMerge && !await window.TaskitatorMerge.clearBase(user)) complete = false;
@@ -2181,7 +2182,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-phase3-v29');
+                    resolve(event.data?.version === 'taskitator-phase3-v32');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });

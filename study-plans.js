@@ -77,9 +77,9 @@ function draftFor(plan) {
     if (!d) { d = { tab: 'info', info: infoOf(plan), ai: { criteria: '', exclude: '' }, sched: null, host: null, rev: null }; drafts.set(plan.id, d); mountSchedule(plan, d); }
     return d;
 }
-const infoOf = plan => ({ title: plan.base, unit: plan.unit, parent: plan.parentPriority === undefined ? MIXED : plan.parentPriority ?? '', unitP: plan.unitPriority === undefined ? MIXED : plan.unitPriority ?? '' });
+const infoOf = plan => ({ title: plan.base, unit: plan.unit, parent: plan.parentPriority === undefined ? MIXED : plan.parentPriority ?? '', unitP: plan.unitPriority === undefined ? MIXED : plan.unitPriority ?? '', chapSize: plan.chapter ? String(plan.chapter.size) : '', chapLabel: plan.chapter ? plan.chapter.label : 'Ch' });
 const origInfo = plan => infoOf(plan);
-const infoDirty = (plan, d) => { const o = origInfo(plan); return d.info.title !== o.title || d.info.unit !== o.unit || d.info.parent !== o.parent || d.info.unitP !== o.unitP; };
+const infoDirty = (plan, d) => { const o = origInfo(plan); return d.info.title !== o.title || d.info.unit !== o.unit || d.info.parent !== o.parent || d.info.unitP !== o.unitP || d.info.chapSize !== o.chapSize || (d.info.chapSize !== '' && d.info.chapLabel !== o.chapLabel); };
 const aiDirty = d => Boolean(d.ai.criteria.trim() || d.ai.exclude.trim());
 const schedDirty = d => Boolean(d.sched?.state().touched);
 const anyDirty = () => [...drafts.entries()].some(([id, d]) => { const p = planOf(id); return p && (infoDirty(p, d) || aiDirty(d) || schedDirty(d)); });
@@ -249,6 +249,10 @@ function infoTab(plan, d, panel, list, edit) {
     if (plan.unit) {
         const unit = field(tr('Unit name'), grid, d.info.unit), locked = plan.audited > 0 && !bypass.active; unit.maxLength = 40; unit.disabled = !edit || locked;
         unit.addEventListener('input', () => { d.info.unit = unit.value; chrome(); });
+        const cs = field(tr('Units per chapter (optional)'), grid, d.info.chapSize, 'number'); cs.min = 1; cs.max = 1000; cs.inputMode = 'numeric'; cs.disabled = !edit || locked;
+        cs.addEventListener('input', () => { d.info.chapSize = cs.value.trim(); chrome(); });
+        const cl = field(tr('Chapter label'), grid, d.info.chapLabel); cl.maxLength = 20; cl.disabled = !edit || locked;
+        cl.addEventListener('input', () => { d.info.chapLabel = cl.value; chrome(); });
     } else el('div', undefined, grid);
     const choices = [['', tr('No priority')], ...list.map(p => [p.id, p.name || p.id])];
     const make = (label, key) => { const s = field(label, grid, undefined, 'select'); if (d.info[key] === MIXED) el('option', tr('Mixed'), s).value = MIXED; for (const [v, t] of choices) el('option', t, s).value = v; s.value = d.info[key]; s.addEventListener('change', () => { d.info[key] = s.value; chrome(); }); return s; };
@@ -337,6 +341,7 @@ async function save() {
                 const o = origInfo(plan);
                 if (plan.base && d.info.title !== o.title) t = M.renamePlan(t, plan.id, d.info.title).tasks;
                 if (plan.unit && d.info.unit !== o.unit) t = M.renameUnit(t, plan.id, d.info.unit, d.info.unit.trim() + 's', { bypass: bypass.active }).tasks;
+                if (plan.unit && (d.info.chapSize !== o.chapSize || (d.info.chapSize !== '' && d.info.chapLabel !== o.chapLabel))) t = M.setChapters(t, plan.id, d.info.chapSize || null, d.info.chapLabel, { bypass: bypass.active }).tasks;
                 if (d.info.parent !== o.parent || d.info.unitP !== o.unitP) t = M.setPriorities(t, plan.id, { parent: d.info.parent || null, unit: d.info.unitP || null }, settings).tasks;
             }
             if (info.dirty.ai) t = M.addCriteria(t, plan.id, d.ai.criteria, M.auditTargets(latest, d.ai.exclude).numbers).tasks;
@@ -615,7 +620,7 @@ async function restoreDraft(id) {
     const plan = planOf(d.plan_id); if (!plan) { status(tr('This plan no longer exists. Delete the draft.')); render(); return; }
     drafts.delete(plan.id); current = plan.id; pageTab = 'plans'; render();
     const draft = draftFor(plan);
-    draft.info = { ...infoOf(plan), ...Object.fromEntries(Object.entries(d.info).filter(([k]) => ['title', 'unit', 'parent', 'unitP'].includes(k))) };
+    draft.info = { ...infoOf(plan), ...Object.fromEntries(Object.entries(d.info).filter(([k]) => ['title', 'unit', 'parent', 'unitP', 'chapSize', 'chapLabel'].includes(k))) };
     draft.ai = { criteria: d.ai.criteria, exclude: d.ai.exclude };
     const r = draft.sched.restore(d.schedule);
     render();

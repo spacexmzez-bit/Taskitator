@@ -5,6 +5,7 @@ import './pro/status-count.js';
 import './pro/study-manage.js';
 import './pro/criteria-edit.js';
 import './pro/study-plan.js';
+import './saved-criteria.js';
 // ============================================================================
 // Taskitator Consolidated Cloudflare Worker & Security Engine (worker.js)
 // Combines: recurrence-core, break-core, auth, ai-models, verification,
@@ -2245,7 +2246,8 @@ export class TaskitatorSync {
             // the stored entitlement, so a change between this refresh and the commit is still caught.
             let dynamicRefreshError = null;
             if (push && identity?.userId && (snapshot.tasks.some(t => t.dynamic_priority_target != null || t.early_date != null || t.study_plan_id) ||
-                snapshot.recurrence_state?.series?.some(s => s.nodes?.some(n => n.task?.dynamic_priority_target != null)))) {
+                snapshot.recurrence_state?.series?.some(s => s.nodes?.some(n => n.task?.dynamic_priority_target != null)) ||
+                (Array.isArray(snapshot.saved_criteria) && (snapshot.saved_criteria.length > 4 || snapshot.saved_criteria.some(i => i && i.has_exemplar))))) {
                 try { await this.pro.licenses.resolve(identity.userId); } catch (e) { dynamicRefreshError = e; }
             }
 
@@ -2327,6 +2329,7 @@ export class TaskitatorSync {
                     await this.protection.guardDynamic(tx,identity.userId,previous,snapshot,dynamicRefreshError);
                     await this.protection.guardEarly(tx,identity.userId,previous,snapshot,dynamicRefreshError);
                     await this.protection.guardStudyEdit(tx,identity.userId,previous,snapshot,dynamicRefreshError);
+                    await this.protection.guardSavedCriteria(tx,identity.userId,previous,snapshot,dynamicRefreshError);
                     await this.protection.consumeStudyDeleteGrants(tx,identity.userId,previous,snapshot);
                     await this.protection.consumeStudyReplanGrants(tx,identity.userId,previous,snapshot);
                     await this.protection.consumeCriteriaEditGrants(tx,identity.userId,previous,snapshot);

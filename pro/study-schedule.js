@@ -43,7 +43,7 @@ function mount(parent,ctx){
  if(ctx.note)el('p',ctx.note,box,'ss-hint');
  const controls=el('div',undefined,box,'ss-controls'),previewBox=el('div',undefined,box,'ss-preview');previewBox.hidden=true;
  const off=()=>Boolean(ctx.disabled?.());
- const changed=({touch=true}={})=>{if(touch){st.touched=true;st.previewed=false;}paintButton();ctx.onChange?.();};
+ const changed=({touch=true}={})=>{if(touch){st.touched=true;st.previewed=false;st.regenOk=false;}paintButton();paintRateMsg();ctx.onChange?.();};
  const field=(label,p)=>{const w=el('label',label,p,'ss-field');return w;};
  const input=(label,p,type,value,cls)=>{const w=field(label,p);if(cls)w.classList.add(cls);const i=el('input',undefined,w);i.type=type;i.value=value??'';return i;};
 
@@ -64,7 +64,7 @@ function mount(parent,ctx){
   c.addEventListener('change',()=>{c.checked?st.weekdays.add(i):st.weekdays.delete(i);syncRates();changed();});return c;});
  // Specific amount per weekday (units-per-day mode). Only selected weekdays can have their own amount.
  const rateBox=el('details',undefined,controls,'ss-collapse');el('summary',tr('Specific amount per weekday'),rateBox);const rateBody=el('div',undefined,rateBox,'ss-collapse-body');
- el('p',tr('Only selected weekdays can have their own amount. Empty means the default above.'),rateBody,'ss-hint');
+ const rateHint=el('p','',rateBody,'ss-hint'),rateMsg=el('p','',rateBody,'ss-hint');rateMsg.setAttribute('role','status');
  const rateRow=el('div',undefined,rateBody,'ss-wd'),rateInputs=WD.map((n,i)=>{const l=el('label',tr(n),rateRow,'ss-wd-item'),e=el('input',undefined,l);e.type='number';e.min=1;e.max=1000;e.inputMode='numeric';
   e.addEventListener('input',()=>{if(e.value.trim())st.rates[i]=Number(e.value);else delete st.rates[i];changed();});return e;});
  function syncRates(){rateInputs.forEach((e,i)=>{const on=!st.weekdays.size||st.weekdays.has(i);e.disabled=!on||off();if(!on){e.value='';delete st.rates[i];}});}
@@ -75,20 +75,39 @@ function mount(parent,ctx){
  const button=el('button',tr('Preview new schedule'),controls,'ss-preview-btn');button.type='button';
  const buttonError=el('p','',controls,'ss-hint ss-warn');buttonError.setAttribute('role','alert');
  button.addEventListener('click',generate);
- function paintMode(){for(const [k,b]of Object.entries(segBtns)){b.classList.toggle('is-active',st.mode===k);b.setAttribute('aria-pressed',String(st.mode===k));}rowDays.hidden=st.mode!=='cal';rowPer.hidden=st.mode!=='per';rateBox.hidden=st.mode!=='per';}
+ function paintMode(){for(const [k,b]of Object.entries(segBtns)){b.classList.toggle('is-active',st.mode===k);b.setAttribute('aria-pressed',String(st.mode===k));}rowDays.hidden=st.mode!=='cal';rowPer.hidden=st.mode!=='per';
+  // Units per day: always available. Number of study days: opens once there is a preview (or the plan already has amounts).
+  rateBox.hidden=!(st.mode==='per'||st.sched||Object.keys(st.rates).length>0);
+  rateHint.textContent=st.mode==='per'?tr('Only selected weekdays can have their own amount. Empty means the default above.')
+   :tr('Fixed amount for every study day that falls on this weekday. The other days share the rest, so the total and the number of days stay the same. Bonus units are not counted here. To skip a weekday, uncheck it.');
+  paintRateMsg();}
+ // Live check of the weekday amounts against the total (Number of study days only).
+ function paintRateMsg(){
+  rateMsg.textContent='';rateMsg.classList.remove('ss-warn');
+  if(st.mode!=='cal'||!Object.keys(st.rates).length||rateBox.hidden)return;
+  let total=0;
+  try{total=ctx.units({startUnit:st.startUnit===''?null:Number(st.startUnit),skipText:st.skipText}).length;}catch(e){total=st.units?.length||0;}
+  if(!total)return;
+  try{
+   const r=root.TaskitatorStudyCore.schedule(total,{mode:'days',days:Number(st.days),rates:st.rates,weekdays:[...st.weekdays].sort(),start:st.start});
+   if(r.ignored?.length)rateMsg.textContent=tr('{days} is not one of this plan\'s study days, so it has no effect.',{days:r.ignored.map(d=>tr(WD[d])).join(', ')});
+  }catch(e){rateMsg.textContent=e.message;rateMsg.classList.add('ss-warn');}
+ }
  function paintButton(){
-  button.classList.toggle('is-done',st.previewed);button.textContent=st.previewed?tr('Preview generated ✓'):tr('Preview new schedule');
+  button.classList.toggle('is-done',st.previewed);button.textContent=st.previewed?tr('Preview generated ✓'):st.sched?tr('Regenerate preview'):tr('Preview new schedule');
   button.disabled=off()||st.previewed;button.setAttribute('aria-pressed',String(st.previewed));
  }
  function generate(){
   buttonError.textContent='';
+  if(st.sched&&st.edited.size&&!st.regenOk){buttonError.textContent=tr('Regenerating replaces the changes you made to single days. Press again to continue.');st.regenOk=true;return;}
   try{
    if(st.start<ctx.today)throw Error(tr('The new schedule cannot start before today.'));
    const units=ctx.units({startUnit:st.startUnit===''?null:Number(st.startUnit),skipText:st.skipText});
    if(!units.length)throw Error(tr('No unfinished units are left to schedule.'));
    const r=root.TaskitatorStudyCore.schedule(units.length,{mode:st.mode==='per'?'perDay':'days',days:Number(st.days),per:Number(st.per),rates:st.rates,weekdays:[...st.weekdays].sort(),start:st.start});
-   st.sched=r.dates.map((date,i)=>({date,count:r.counts[i]}));st.units=units;st.edited=new Set();st.redistError='';st.previewed=true;st.touched=true;st.view='cal';st.sel=null;st.month=r.dates[0].slice(0,7);
+   st.sched=r.dates.map((date,i)=>({date,count:r.counts[i]}));st.units=units;st.edited=new Set();st.redistError='';st.previewed=true;st.touched=true;st.regenOk=false;st.view='cal';st.sel=null;st.month=r.dates[0].slice(0,7);
   }catch(e){buttonError.textContent=e.message;return;}
+  const firstPreview=rateBox.hidden;paintMode();if(firstPreview&&st.mode==='cal'&&!rateBox.hidden)rateBox.open=true;
   paintButton();renderPreview();ctx.onChange?.();
  }
 

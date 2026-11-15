@@ -83,7 +83,7 @@
         const h = shell?.key() ?? location.hash.slice(1).toLowerCase();
         const view = shell?.routeOf(h).view ?? h;
         if (view === 'sleep') return 'sleep';
-        if (view === 'study-plans' || view === 'projects' || h === 'general') return 'general';
+        if (view === 'study-plans' || view === 'test-lab' || view === 'projects' || h === 'general') return 'general';
         if (['help', 'calendar', 'stats', 'trash', 'blocker-guide'].includes(view) || h.startsWith('help-')) return 'help';
         return 'today';
     }

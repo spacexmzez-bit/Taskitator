@@ -4,7 +4,7 @@
    picks one:
      #today #general          Tasks (handled by app.js as before)
      #calendar #projects #stats #trash #blocker-guide
-     #study-plans #sleep #help (and #help-<section> for a section of Help)
+     #study-plans #test-lab #sleep #help (and #help-<section> for a section of Help)
    Unknown hashes keep the Tasks view, so app links such as #key-verification=... still work.
    Old addresses (components.html?view=..., sleep.html, study-plans.html, help.html) redirect here.
    Universe, Settings, sign-in and the legal pages stay separate pages. */
@@ -19,10 +19,11 @@
         trash: { title: 'Trash & Recovery', doc: 'Trash — Taskitator' },
         'blocker-guide': { title: 'Phone Blocker Setup Guide', doc: 'Phone blocker guide — Taskitator' },
         'study-plans': { title: '', doc: 'Study plans — Taskitator' },
+        'test-lab': { title: '', doc: 'Test lab — Taskitator' },
         sleep: { title: '', doc: 'Sleep Lock — Taskitator' },
         help: { title: '', doc: 'Help — Taskitator' }
     };
-    const ALIASES = { guide: 'blocker-guide', blocker_guide: 'blocker-guide', study_plans: 'study-plans', plans: 'study-plans' };
+    const ALIASES = { guide: 'blocker-guide', blocker_guide: 'blocker-guide', study_plans: 'study-plans', plans: 'study-plans', test_lab: 'test-lab', lab: 'test-lab' };
     const GUIDE_ANCHORS = new Set(['bridge-download', 'bridge-manual', 'app-blocker-manual']);
     const canonicalView = key => Object.hasOwn(ALIASES, key) ? ALIASES[key] : key;
     function hashKey() {
@@ -85,6 +86,7 @@
             else if (view === 'stats') window.renderStats?.();
             else if (view === 'trash') window.renderTrashView?.();
             else if (view === 'study-plans') window.TaskitatorStudyPlansView?.show();
+            else if (view === 'test-lab') window.TaskitatorTestLabView?.show();
             else if (view === 'sleep') window.TaskitatorSleepView?.show();
         } catch (err) { console.error('Taskitator view could not refresh', view, err); }
     }
@@ -95,6 +97,7 @@
             const old = document.querySelector('[data-shell-view="' + leaving + '"]');
             closeInside(old);
             if (leaving === 'study-plans') window.TaskitatorStudyPlansView?.hide?.();
+            if (leaving === 'test-lab') window.TaskitatorTestLabView?.hide?.();
             if (leaving === 'sleep') window.TaskitatorSleepView?.hide?.();
         }
         if (view === 'help' && leaving !== 'help') {
@@ -146,7 +149,7 @@
     window.addEventListener('hashchange', show);
     // After a pull, redraw the open view (app.js redraws Tasks itself).
     window.addEventListener('taskitator-page-load-synced', () => { if (current && current !== 'tasks' && current !== 'sleep') hooks(current); });
-    window.addEventListener('taskitator-reconnected', () => { if (current === 'sleep' || current === 'study-plans') hooks(current); });
+    window.addEventListener('taskitator-reconnected', () => { if (current === 'sleep' || current === 'study-plans' || current === 'test-lab') hooks(current); });
     // app.js marks Today/General active on sign-in; correct the drawer for other views afterwards.
     window.addEventListener('taskitator-auth-ready', () => activeLinks(current || routeOf(hashKey()).view));
     show();

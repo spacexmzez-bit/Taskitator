@@ -782,6 +782,15 @@ export class TaskProtection {
         if(!await this.proActive(tx,account))
             throw fail(403,'PRO_REQUIRED','Editing a study plan needs an active Taskitator Pro license. You can still view it, finish its tasks and delete it.');
     }
+    // Saved criteria (Phase 3.5): a sync may not grow the list past the account's limits (free 5, Pro 100; exemplars 4 / 10; 8 MB together).
+    // A list that is already over (Pro ended) is kept and can still shrink. Pro status is only looked up when the free limits would be broken.
+    async guardSavedCriteria(tx,account,previous,next,refreshError=null){
+        const S=globalThis.TaskitatorSavedCriteria,after=next?.saved_criteria;
+        if(!S||!Array.isArray(after)||!S.growthError(previous?.saved_criteria,after,false))return;
+        if(refreshError)throw refreshError;
+        const pro=await this.proActive(tx,account),why=S.growthError(previous?.saved_criteria,after,pro);
+        if(why)throw fail(403,pro?'SAVED_CRITERIA_LIMIT':'PRO_REQUIRED',why+(pro?'':' Taskitator Pro raises the limits to 100 saved criteria, 10 with an exemplar.'));
+    }
     async emergencyState(tx,userId,snapshot,now){
         const key='pro:emergency:'+userId;let s=await tx.get(key);
         if(!s||s.reset_at<=now){

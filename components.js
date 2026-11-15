@@ -852,9 +852,13 @@ window.TaskitatorComponents = Object.freeze({
         // Saved Criteria Store & Storage Helpers (Max 6, Max 4 Exemplars <= 4MB)
         // =========================================================================
         const SAVED_CRITERIA_KEY = 'taskitator_saved_criteria';
-        const MAX_SAVED_CRITERIA = 6;
-        const MAX_EXEMPLARS = 4;
-        const MAX_EXEMPLAR_SIZE_BYTES = 4 * 1024 * 1024; // 4 MB limit
+        // Limits live in saved-criteria.js (shared with the Worker): free 5 / Pro 100, exemplars 4 / 10, 8 MB of exemplars together.
+        const SC = window.TaskitatorSavedCriteria;
+        let savedIsPro = false;
+        async function refreshSavedPro() {
+            try { const s = await window.TaskitatorPro?.getStatus?.(); savedIsPro = Boolean(s && s.isPro); } catch (_) { savedIsPro = false; }
+            return savedIsPro;
+        }
 
         function getSavedCriteria() {
             if(draft?.savedCriteria)return draft.savedCriteria;
@@ -879,7 +883,7 @@ window.TaskitatorComponents = Object.freeze({
             const badge = document.getElementById('savedCriteriaCountBadge');
             if (badge) {
                 const count = getSavedCriteria().length;
-                badge.textContent = `${count}/${MAX_SAVED_CRITERIA}`;
+                badge.textContent = `${count}/${SC.limits(savedIsPro).items}`;
             }
         }
 
@@ -3355,31 +3359,12 @@ window.TaskitatorComponents = Object.freeze({
                                     return;
                                 }
 
+                                await refreshSavedPro();
                                 const currentSaved = getSavedCriteria();
-                                if (currentSaved.length >= MAX_SAVED_CRITERIA) {
-                                    if (errDiv) {
-                                        errDiv.style.display = 'block';
-                                        errDiv.textContent = `Limit reached: Maximum ${MAX_SAVED_CRITERIA} saved criteria. Delete one first.`;
-                                    }
+                                const limitError = SC.addError(currentSaved, savedIsPro, exemplarFile ? exemplarFile.size : 0);
+                                if (limitError) {
+                                    if (errDiv) { errDiv.style.display = 'block'; errDiv.textContent = limitError; }
                                     return;
-                                }
-
-                                if (exemplarFile) {
-                                    if (exemplarFile.size > MAX_EXEMPLAR_SIZE_BYTES) {
-                                        if (errDiv) {
-                                            errDiv.style.display = 'block';
-                                            errDiv.textContent = `Exemplar exceeds 4 MB limit (${(exemplarFile.size / (1024 * 1024)).toFixed(2)} MB).`;
-                                        }
-                                        return;
-                                    }
-                                    const withExCount = currentSaved.filter(c => c.has_exemplar).length;
-                                    if (withExCount >= MAX_EXEMPLARS) {
-                                        if (errDiv) {
-                                            errDiv.style.display = 'block';
-                                            errDiv.textContent = `Exemplar limit reached: Maximum ${MAX_EXEMPLARS} saved criteria can have attached files.`;
-                                        }
-                                        return;
-                                    }
                                 }
 
                                 confirmBtn.disabled = true, confirmBtn.classList.toggle('is-loading', true);
@@ -3392,7 +3377,7 @@ window.TaskitatorComponents = Object.freeze({
 
                                 const newSavedItem = {
                                     id: 'sc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-                                    title: userTitle.slice(0, 40),
+                                    title: SC.clean(userTitle),
                                     criteria: criteriaText,
                                     score: res.score,
                                     has_exemplar: Boolean(exemplarPayload),
@@ -3595,6 +3580,7 @@ window.TaskitatorComponents = Object.freeze({
                     if (paneTemplates) paneTemplates.classList.remove('active');
                     if (paneSavedCriteria) paneSavedCriteria.classList.add('active');
                     renderSavedCriteriaList();
+                    refreshSavedPro().then(() => { if (currentTemplatesTab === 'saved') renderSavedCriteriaList(); });
                 } else {
                     if (tabTemplatesBtn) tabTemplatesBtn.classList.add('active');
                     if (tabSavedCriteriaBtn) tabSavedCriteriaBtn.classList.remove('active');
@@ -3610,12 +3596,18 @@ window.TaskitatorComponents = Object.freeze({
                 tabSavedCriteriaBtn.addEventListener('click', () => switchTemplatesModalTab('saved'));
             }
 
+            document.getElementById('savedCriteriaSearch')?.addEventListener('input', () => renderSavedCriteriaList());
             function renderSavedCriteriaList() {
                 const container = document.getElementById('savedCriteriaListContainer');
                 if (!container) return;
                 container.innerHTML = '';
                 const savedList = getSavedCriteria();
                 updateSavedCriteriaBadge();
+                const searchEl = document.getElementById('savedCriteriaSearch');
+                if (searchEl) searchEl.hidden = !savedIsPro || savedList.length === 0;
+                const hint = document.getElementById('savedCriteriaHint');
+                if (hint) { const L = SC.limits(savedIsPro), u = SC.usage(savedList); hint.textContent = `Your custom criteria verified at 8/10 or higher (max ${L.items} criteria, up to ${L.exemplars} with exemplars, 4 MB each and 8 MB together: ${(u.bytes / 1048576).toFixed(1)} MB used).`; }
+                const shown = savedIsPro && searchEl && searchEl.value.trim() ? SC.search(savedList, searchEl.value) : savedList;
 
                 if (savedList.length === 0) {
                     container.innerHTML = `
@@ -3627,7 +3619,11 @@ window.TaskitatorComponents = Object.freeze({
                     return;
                 }
 
-                savedList.forEach(item => {
+                if (!shown.length) {
+                    container.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:0.85rem;padding:24px 0;">No saved criteria match your search.</div>';
+                    return;
+                }
+                shown.forEach(item => {
                     const card = document.createElement('div');
                     card.className = 'template-picker-card';
                     card.style.cssText = 'position: relative; padding: 12px 14px; border: 1.5px solid var(--border-color); border-radius: 8px; margin-bottom: 8px; cursor: pointer; background: var(--card-subtle);';
@@ -3640,15 +3636,40 @@ window.TaskitatorComponents = Object.freeze({
                     card.innerHTML = `
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                             <div style="display: flex; align-items: center; gap: 8px;">
-                                <strong style="color: var(--text-color); font-size: 0.9rem;">${TaskitatorSafety.escapeHtml(item.title)}</strong>
+                                <strong class="saved-crit-title" style="color: var(--text-color); font-size: 0.9rem;">${TaskitatorSafety.escapeHtml(item.title)}</strong>
+                                ${item.source === 'lab' ? '<span class="tag-chip saved-lab-tag" title="Made in the Test lab" style="font-size: 0.7rem;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Lab</span>' : ''}
                                 <span class="tag-chip" style="font-size: 0.7rem; background: #052e16; color: #86efac;">${TaskitatorSafety.escapeHtml(item.score)}/10</span>
                                 ${exemplarBadge}
                             </div>
-                            <button type="button" class="action-del-btn delete-saved-crit-btn" title="Delete Saved Criteria" style="font-size: 0.85rem; padding: 2px 6px;">✕</button>
+                            <span><button type="button" class="action-del-btn rename-saved-crit-btn" title="Rename" aria-label="Rename" style="font-size: 0.85rem; padding: 2px 6px;">✎</button><button type="button" class="action-del-btn delete-saved-crit-btn" title="Delete Saved Criteria" style="font-size: 0.85rem; padding: 2px 6px;">✕</button></span>
                         </div>
                         <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; white-space: pre-wrap;">${TaskitatorSafety.escapeHtml(item.criteria)}</p>
                     `;
 
+                    const renameBtn = card.querySelector('.rename-saved-crit-btn');
+                    if (renameBtn) {
+                        renameBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            const titleEl = card.querySelector('.saved-crit-title');
+                            if (!titleEl || titleEl.tagName === 'INPUT') return;
+                            const input = document.createElement('input');
+                            input.type = 'text'; input.value = item.title || ''; input.maxLength = SC.POLICY.title; input.className = 'saved-crit-rename';
+                            input.style.cssText = 'font-size:0.9rem;min-width:0;width:11em;';
+                            input.addEventListener('click', ev => ev.stopPropagation());
+                            let done = false;
+                            const finish = (save) => {
+                                if (done) return; done = true;
+                                if (save) {
+                                    try { saveSavedCriteriaList(SC.rename(getSavedCriteria(), item.id, input.value)); }
+                                    catch (err) { window.TaskitatorNotify(err.message); }
+                                }
+                                renderSavedCriteriaList();
+                            };
+                            input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); finish(true); } else if (ev.key === 'Escape') finish(false); });
+                            input.addEventListener('blur', () => finish(true));
+                            titleEl.replaceWith(input); input.focus(); input.select();
+                        });
+                    }
                     const delBtn = card.querySelector('.delete-saved-crit-btn');
                     if (delBtn) {
                         delBtn.addEventListener('click', (e) => {

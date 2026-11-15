@@ -403,6 +403,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
         <a href="components.html?view=universe"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-universe"></use></svg> Universe</a>
         <a href="#sleep" data-shell-link="sleep"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-sleep"></use></svg> Sleep Lock</a>
         <a href="#study-plans" data-shell-link="study-plans"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</a>
+        <a href="#test-lab" data-shell-link="test-lab"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Test lab</a>
         <a href="#help" data-shell-link="help"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-help"></use></svg> Help</a>
         <a href="settings.html"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-settings"></use></svg> Settings</a>
     </nav>
@@ -1484,6 +1485,10 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
 <dialog id="planConfirm" class="plan-confirm"><h3 id="planConfirmTitle"></h3><div id="planConfirmBody"></div><div class="plan-confirm-actions"><button type="button" class="icon-btn" id="planConfirmNo">Cancel</button><button type="button" class="icon-btn plan-save" id="planConfirmYes">Confirm</button></div></dialog>
 <dialog id="planSoft" class="plan-confirm plan-soft"><h3>Soft reschedule</h3><div id="planSoftBody"></div><div class="plan-confirm-actions"><button type="button" class="icon-btn" id="planSoftNo">Cancel</button><button type="button" class="icon-btn plan-save" id="planSoftYes">Reschedule</button></div></dialog>
 </section>
+<section id="shellView-test-lab" class="shell-view" data-shell-view="test-lab" hidden>
+<div class="plans-wrap lab-wrap" id="labRoot"></div>
+</section>
+
 <section id="shellView-sleep" class="shell-view" data-shell-view="sleep" hidden>
 <div class="sleep-wrap"><header class="sleep-header"><a class="icon-btn" href="#today" aria-label="Back to tasks">←</a><h1><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-moon"></use></svg> Sleep Lock<span class="sleep-badge" id="firmBadge" hidden>Firm</span></h1><button class="icon-btn sleep-gear" id="sleepSettingsBtn" type="button" aria-label="Sleep Lock settings" aria-expanded="false" aria-controls="sleepSettingsPanel"><svg class="tk-ic sleep-gear-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg><span class="sleep-gear-label">Settings</span></button></header><section class="sleep-panel" id="sleepSettingsPanel" hidden aria-label="Sleep Lock settings">
 <h2>Sleep Lock settings</h2>
@@ -2277,7 +2282,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
         <!-- 2-Tab Navigation Bar -->
         <div class="settings-tab-nav">
             <button type="button" class="tab-btn active" id="tabTemplatesBtn">Templates</button>
-            <button type="button" class="tab-btn" id="tabSavedCriteriaBtn">Saved Criteria (<span id="savedCriteriaCountBadge">0/6</span>)</button>
+            <button type="button" class="tab-btn" id="tabSavedCriteriaBtn">Saved Criteria (<span id="savedCriteriaCountBadge">0/5</span>)</button>
         </div>
 
         <!-- Pane 1: Templates (Default) -->
@@ -2290,9 +2295,8 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
 
         <!-- Pane 2: Saved Criteria -->
         <div id="paneSavedCriteria" class="tab-pane">
-            <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 10px;">
-                Your custom criteria verified at 8/10 or higher (max 6 criteria, up to 4 with exemplars &le; 4 MB).
-            </p>
+            <p id="savedCriteriaHint" style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 10px;">Your custom criteria verified at 8/10 or higher (max 5 criteria, up to 4 with exemplars).</p>
+            <input type="search" id="savedCriteriaSearch" placeholder="Search saved criteria" aria-label="Search saved criteria" hidden style="width:100%;box-sizing:border-box;margin-bottom:10px;">
             <div class="template-picker-list" id="savedCriteriaListContainer"></div>
         </div>
     </div>
@@ -2599,6 +2603,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
     <script type="text/taskitator-script" src="pro/study-plan.js"></script>
     <script type="text/taskitator-script" src="pro/study-schedule.js"></script>
     <script type="text/taskitator-script" src="task-drafts.js"></script>
+    <script type="text/taskitator-script" src="saved-criteria.js"></script>
     <script type="text/taskitator-script" src="components.js"></script>
     <script type="text/taskitator-script" src="root-completion.js"></script>
     <script type="text/taskitator-script" src="uni/focus-timer.js"></script>
@@ -2610,6 +2615,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
     <script type="text/taskitator-script" src="views/blocker-guide.js"></script>
     <script type="text/taskitator-script" src="pro/study-manage.js"></script>
     <script type="text/taskitator-script" src="study-plans.js"></script>
+    <script type="text/taskitator-script" src="test-lab.js"></script>
     <script type="text/taskitator-script" src="sleep.js"></script>
     <script type="text/taskitator-script" src="shell-router.js"></script>
     <script type="text/taskitator-script" src="tutorial-spotlight.js?v=tour-v2"></script>

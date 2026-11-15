@@ -19,14 +19,14 @@ function plans(tasks){
   const bases=new Set(),custom=[];
   for(const p of parents){const m=/^(.*) (\d+)$/.exec(p.raw_title||p.title||'');if(m)bases.add(m[1]);else custom.push(p.id);}
   const base=bases.size===1?[...bases][0]:'';
-  const um=units.map(u=>/^(.*)\.\{num==\d+\}$/.exec(u.raw_title||'')).find(Boolean);
+  const um=units.map(u=>root.TaskitatorStudyCore.unitName(u.raw_title)).map(n=>n===null?null:[0,n]).find(Boolean),chapUnit=units.find(u=>Number(u.chapter_size)>0),chapter=chapUnit?{size:Number(chapUnit.chapter_size),label:chapUnit.chapter_label||'Ch'}:null;
   const dm=parents.map(p=>/^Covers (.*?) \d/.exec(p.description||'')).find(Boolean);
   const unit=um?um[1]:'',plural=dm?dm[1]:'';
   const dates=parents.map(p=>p.due_date).filter(Boolean).sort();
   // Bonus units are optional work: progress counts the required units, bonus units are counted on their own.
   const required=units.filter(u=>!u.is_bonus),extra=units.filter(u=>u.is_bonus),done=required.filter(u=>u.status==='completed').length,bonusLeft=extra.filter(u=>u.status==='active').length;
   const same=values=>new Set(values).size===1?values[0]??null:undefined;
-  return {id,base,custom:custom.length,unit,plural,total:required.length,done,remaining:required.length-done,bonus:extra.length,bonusDone:extra.filter(u=>u.status==='completed').length,bonusLeft,ready:required.length>0&&done===required.length&&bonusLeft>0,days:parents.length,
+  return {id,base,custom:custom.length,unit,plural,chapter,total:required.length,done,remaining:required.length-done,bonus:extra.length,bonusDone:extra.filter(u=>u.status==='completed').length,bonusLeft,ready:required.length>0&&done===required.length&&bonusLeft>0,days:parents.length,
    start:dates[0]||null,end:dates.at(-1)||null,audited:units.filter(isAudited).length,
    parentPriority:same(parents.map(p=>p.priority_id||null)),unitPriority:same(units.map(u=>u.priority_id||null)),
    finished:units.length>0&&units.every(u=>u.status==='completed'),parents,units,group};
@@ -52,9 +52,29 @@ function renameUnit(tasks,id,unit,plural,{bypass=false}={}){
  if(plan.audited&&!bypass)throw Error('This plan has AI-audited units. Renaming them needs Emergency Bypass.');
  const out=copy(tasks),units=new Set(plan.units.map(u=>u.id)),parents=new Set(plan.parents.map(p=>p.id));let changed=0;
  for(const t of out){
-  if(units.has(t.id)){const n=unitNumber(t);if(n!==null){t.title=unit+'.'+n;t.raw_title=unit+'.{num=='+n+'}';changed++;}}
+  if(units.has(t.id)){const n=unitNumber(t);if(n!==null){const x=root.TaskitatorStudyCore.unitTexts(unit,n,plan.chapter);t.title=x.title;t.raw_title=x.raw;changed++;}}
   else if(parents.has(t.id)&&plan.plural&&typeof t.description==='string'&&t.description.startsWith('Covers '+plan.plural+' '))t.description='Covers '+plural.toLowerCase()+t.description.slice(7+plan.plural.length);
  }
+ return {tasks:out,changed};
+}
+// Chapter label (Phase 3.5): "Ch 3 · Lesson.17" and "Covers lessons 15 to 19 · Ch 3 (15), Ch 4 (16–19)". size null removes it.
+// Only titles, the "Covers" lines and the two chapter fields change; units, days and numbering stay exactly as they are.
+function setChapters(tasks,id,size,label,{bypass=false}={}){
+ const plan=forPlan(tasks,id),core=root.TaskitatorStudyCore;
+ if(!plan.unit)throw Error('This plan has no units to label.');
+ const sz=size==null||size===''?null:Number(size),lab=String(label??'Ch').trim()||'Ch';
+ if(sz!==null&&(!Number.isSafeInteger(sz)||sz<1||sz>1000))throw Error('Use whole numbers within the displayed limits.');
+ if(sz&&(lab.length>20||/[{}·]/.test(lab)))throw Error('Enter a chapter label without brackets or the · sign, up to 20 characters.');
+ if(plan.audited&&!bypass)throw Error('This plan has AI-audited units. Relabelling them needs Emergency Bypass.');
+ const ch=sz?{size:sz,label:lab}:null,out=copy(tasks),units=new Set(plan.units.map(u=>u.id)),parents=new Set(plan.parents.map(p=>p.id)),byParent=new Map();let changed=0;
+ for(const t of out)if(units.has(t.id)){
+  const n=unitNumber(t);if(n===null)continue;
+  const x=core.unitTexts(plan.unit,n,ch);t.title=x.title;t.raw_title=x.raw;
+  if(ch){t.chapter_size=ch.size;t.chapter_label=ch.label;}else{delete t.chapter_size;delete t.chapter_label;}
+  if(!byParent.has(t.parent_id))byParent.set(t.parent_id,[]);byParent.get(t.parent_id).push(n);changed++;
+ }
+ const plural=plan.plural||((plan.unit||'unit')+'s');
+ for(const t of out)if(parents.has(t.id)&&String(t.description||'').startsWith('Covers ')){const list=(byParent.get(t.id)||[]).sort((a,b)=>a-b);if(list.length)t.description=coverageLine(plural,list,ch)+userPart(t.description);}
  return {tasks:out,changed};
 }
 // Priorities apply to unfinished tasks only. A unit can never be more important than its parent.
@@ -135,7 +155,7 @@ function planTree(tasks,id){
  while(grew){grew=false;for(const t of tasks||[])if(t&&t.parent_id&&ids.has(t.parent_id)&&!ids.has(t.id)){ids.add(t.id);grew=true;}}
  return ids;
 }
-const coverageLine=(plural,numbers)=>root.TaskitatorStudyCore.coverage(plural,numbers);
+const coverageLine=(plural,numbers,ch)=>root.TaskitatorStudyCore.coverage(plural,numbers,ch);
 const userPart=desc=>{const s=String(desc||'');return s.startsWith('Covers ')?(s.includes('\n')?s.slice(s.indexOf('\n')):''):(s?'\n'+s:'');};
 function replanOptions(o){
  if(!o||typeof o!=='object')throw Error('Choose re-plan options.');
@@ -202,7 +222,7 @@ function replan(tasks,id,options){
   const units=keep.slice(offset,offset+count);offset+=count;const nums=units.map(unitNumber).filter(n=>n!==null);
   const title=(base||'Study plan')+' '+(next+i);
   const parent={study_plan_id:id,status:'active',project_id:template?.project_id||'inbox',tags:[...(template?.tags||[])],is_bonus:false,created_at:template?.created_at||null,completed_at:null,due_date:dates[i],
-   id:pid,parent_id:null,title,raw_title:title,description:coverageLine(plural,nums)+extra,ai_locked:false,proof_criteria:'',raw_proof_criteria:'',strict_prerequisites:true,
+   id:pid,parent_id:null,title,raw_title:title,description:coverageLine(plural,nums,plan.chapter)+extra,ai_locked:false,proof_criteria:'',raw_proof_criteria:'',strict_prerequisites:true,
    ...(prio?{priority_id:prio}:{}),...(typeof template?.status_count==='boolean'?{status_count:template.status_count}:{})};
   fresh.push(parent);for(const u of units)placed.set(u.id,{parent_id:pid,due_date:dates[i]});
  });
@@ -213,7 +233,7 @@ function replan(tasks,id,options){
   if(parentIds.has(t.id)){
    // A day that keeps some units gets an updated "Covers" line.
    const left=(byParent.get(t.id)||[]).filter(c=>!moving.has(c.id)&&!doomed.has(c.id)).map(unitNumber).filter(n=>n!==null);
-   if(left.length&&String(t.description||'').startsWith('Covers ')){const d=coverageLine(plural,left)+userPart(t.description);if(d!==t.description){out.push({...t,description:d});continue;}}
+   if(left.length&&String(t.description||'').startsWith('Covers ')){const d=coverageLine(plural,left,plan.chapter)+userPart(t.description);if(d!==t.description){out.push({...t,description:d});continue;}}
   }
   out.push(t);
  }
@@ -326,14 +346,14 @@ function softReschedule(tasks,id,options,today){
   if(unitIds.has(t.id)&&moveSet.has(t.id)){const date=placed.get(t.id),u={...t,parent_id:target.get(t.id),due_date:date};if(typeof u.early_date==='string'&&u.early_date>=date)delete u.early_date;out.push(u);continue;}
   if(parentIds.has(t.id)&&String(t.description||'').startsWith('Covers ')){
    const nums=(nowIn.get(t.id)||[]).sort((a,b)=>a-b);
-   if(nums.length){const d=coverageLine(plural,nums)+userPart(t.description);if(d!==t.description){out.push({...t,description:d});continue;}}
+   if(nums.length){const d=coverageLine(plural,nums,plan.chapter)+userPart(t.description);if(d!==t.description){out.push({...t,description:d});continue;}}
   }
   out.push(t);
  }
  fresh.forEach((f,i)=>{
   const title=(base||'Study plan')+' '+(next+i),nums=(nowIn.get(f.id)||[]).sort((a,b)=>a-b);
   out.push({study_plan_id:id,status:'active',project_id:template?.project_id||'inbox',tags:[...(template?.tags||[])],is_bonus:false,created_at:template?.created_at||null,completed_at:null,due_date:f.date,
-   id:f.id,parent_id:null,title,raw_title:title,description:coverageLine(plural,nums)+extra,ai_locked:false,proof_criteria:'',raw_proof_criteria:'',strict_prerequisites:true,
+   id:f.id,parent_id:null,title,raw_title:title,description:coverageLine(plural,nums,plan.chapter)+extra,ai_locked:false,proof_criteria:'',raw_proof_criteria:'',strict_prerequisites:true,
    ...(prio?{priority_id:prio}:{}),...(typeof template?.status_count==='boolean'?{status_count:template.status_count}:{})});
  });
  const locked=[...moveSet].filter(uid=>isAudited(by.get(uid))||by.get(uid).strict_prerequisites);
@@ -392,7 +412,7 @@ function refreshCoverage(plan,out,gone){
  return out.map(t=>{
   if(!plan.parents.some(p=>p.id===t.id)||!String(t.description||'').startsWith('Covers '))return t;
   const list=(nums.get(t.id)||[]).sort((a,b)=>a-b);if(!list.length)return t;
-  const d=coverageLine(plural,list)+userPart(t.description);return d===t.description?t:{...t,description:d};
+  const d=coverageLine(plural,list,plan.chapter)+userPart(t.description);return d===t.description?t:{...t,description:d};
  });
 }
 function bonusSlide(tasks,id,today){
@@ -446,13 +466,13 @@ function bonusAdd(tasks,id,today,count,now=new Date().toISOString()){
  const byNum=(a,b)=>unitNumber(b)-unitNumber(a);
  // New bonus units follow the plan's audit setup: audited when any unit of the plan is.
  const template=[...numbered].filter(u=>u.ai_locked&&u.raw_proof_criteria).sort(byNum)[0]||[...numbered].sort(byNum)[0];
- const unit=(/^(.*)\.\{num==\d+\}$/.exec(template.raw_title||'')||[])[1];if(!unit)throw Error('Unit names could not be read from this plan.');
+ const unit=root.TaskitatorStudyCore.unitName(template.raw_title);if(!unit)throw Error('Unit names could not be read from this plan.');
  const audited=Boolean(template.ai_locked&&template.raw_proof_criteria),taken=new Set(tasks.map(t=>t&&t.id));
  let next=Math.max(...numbered.map(unitNumber));const fresh=[];
  while(fresh.length<n){
   next++;const uid='study_'+id+'_unit_'+next;if(taken.has(uid))continue;
   fresh.push({study_plan_id:id,status:'active',project_id:template.project_id||'inbox',tags:[...(template.tags||[])],is_bonus:true,created_at:now,completed_at:null,
-   id:uid,parent_id:null,title:unit+'.'+next,raw_title:unit+'.{num=='+next+'}',description:'',ai_locked:audited,
+   id:uid,parent_id:null,title:root.TaskitatorStudyCore.unitTexts(unit,next,plan.chapter).title,raw_title:root.TaskitatorStudyCore.unitTexts(unit,next,plan.chapter).raw,...(plan.chapter?{chapter_size:plan.chapter.size,chapter_label:plan.chapter.label}:{}),description:'',ai_locked:audited,
    proof_criteria:audited?template.raw_proof_criteria.replace(/\{num\}/g,String(next)):'',raw_proof_criteria:audited?template.raw_proof_criteria:'',strict_prerequisites:false,
    ...(template.priority_id?{priority_id:template.priority_id}:{})});
  }
@@ -578,6 +598,20 @@ function bonusCheck(before,after,id,op,today,count=0){
 // The plan's current schedule, read back from its upcoming days, so editing starts from what the plan does now and not from defaults.
 // Weekdays are the weekdays those days fall on (all seven = every day). Units per day and per-weekday amounts are read from the
 // days before the last one (the last day holds the remainder); when they follow no pattern the editor opens in "number of study days" mode.
+// Which weekday amounts (if any) make "Number of study days" produce exactly these dates and counts? Smallest set first; null when none does.
+function inferWeekdayAmounts(dates,counts,weekdays){
+ const C=root.TaskitatorStudyCore;if(!C?.schedule||!dates.length)return null;
+ const total=counts.reduce((a,n)=>a+n,0),by=new Map();
+ dates.forEach((d,i)=>{const k=new Date(d+'T00:00:00Z').getUTCDay();if(!by.has(k))by.set(k,new Set());by.get(k).add(counts[i]);});
+ const uniform=[...by].filter(([,v])=>v.size===1).map(([k,v])=>[k,[...v][0]]);
+ const same=r=>r.dates.length===dates.length&&r.dates.every((d,i)=>d===dates[i]&&r.counts[i]===counts[i]);
+ const run=rates=>{try{return same(C.schedule(total,{mode:'days',days:dates.length,rates,weekdays,start:dates[0]}));}catch(e){return false;}};
+ if(run({}))return null; // a plain equal split explains it
+ const subsets=[];for(let m=1;m<(1<<uniform.length);m++)subsets.push(uniform.filter((_,i)=>m&(1<<i)));
+ subsets.sort((a,b)=>a.length-b.length);
+ for(const list of subsets){const rates=Object.fromEntries(list);if(run(rates))return rates;}
+ return null;
+}
 function currentSchedule(plan,today,fallbackWeekdays=[]){
  const size=new Map();for(const u of plan.units)size.set(u.parent_id,(size.get(u.parent_id)||0)+1);
  let days=plan.parents.filter(p=>size.get(p.id)&&p.due_date>=today&&p.status==='active');
@@ -589,7 +623,12 @@ function currentSchedule(plan,today,fallbackWeekdays=[]){
  out.weekdays=set.length>=7?[]:set;
  const body=days.length>1?days.slice(0,-1):days,by=new Map();
  for(const p of body){const k=wd(p.due_date);if(!by.has(k))by.set(k,[]);by.get(k).push(size.get(p.id));}
- if([...by.values()].some(list=>new Set(list).size>1))return out;
+ if([...by.values()].some(list=>new Set(list).size>1)){
+  // Not a per-day pattern. It may be "Number of study days" with specific weekday amounts: use them only when they rebuild these days exactly.
+  const found=inferWeekdayAmounts(days.map(p=>p.due_date),days.map(p=>size.get(p.id)),out.weekdays);
+  if(found)out.rates=found;
+  return out;
+ }
  const freq=new Map();for(const list of by.values())freq.set(list[0],(freq.get(list[0])||0)+list.length);
  const per=[...freq].sort((a,b)=>b[1]-a[1]||a[0]-b[0])[0][0];
  out.mode='per';out.per=per;
@@ -597,5 +636,5 @@ function currentSchedule(plan,today,fallbackWeekdays=[]){
  return out;
 }
 
-root.TaskitatorStudyManage={currentSchedule,auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,bonusAdd,bonusRemove,bonusMissed,bonusWaiting,bonusSlide,bonusConvert,bonusFinish,bonusCheck,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
+root.TaskitatorStudyManage={setChapters,currentSchedule,auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,bonusAdd,bonusRemove,bonusMissed,bonusWaiting,bonusSlide,bonusConvert,bonusFinish,bonusCheck,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
 })(typeof window==='undefined'?globalThis:window);
