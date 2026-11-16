@@ -964,6 +964,10 @@ window.TaskitatorApp = (() => {
 
     // Phase 4.2: one matcher for the main list and the parent picker. `logic` is 'and' (every chosen filter must match,
     // the original behaviour) or 'or' (any one chosen filter is enough). Filters left empty are ignored in both modes.
+    // Today is already a date view, so the date filter only applies elsewhere.
+    function viewFilters(f) {
+        return (typeof currentView !== 'undefined' && currentView === 'today' && f.date && f.date.mode) ? { ...f, date: { mode: '', from: '', to: '' } } : f;
+    }
     function filtersActive(f) {
         return f.tags.size > 0 || f.priorities.size > 0 || f.projects.size > 0 || !!globalThis.TaskitatorDateFilter?.active(f.date);
     }
@@ -2367,7 +2371,7 @@ window.TaskitatorApp = (() => {
             const status = engine?.getPlanningStatus ? engine.getPlanningStatus() : { isRunning: false, remainingWindowMs: 0, bounds: { start: new Date() } };
             const active = engine?.getActiveBreak ? engine.getActiveBreak() : null;
             const breaks = engine?.getTodayBreaks ? engine.getTodayBreaks() : getTodayBreaksSafe();
-            const PILL_ICONS = { break: 'breaks', allowance: 'breaks', plan: 'breaks', idle: 'breaks', locked: 'breaks' };
+            const PILL_ICONS = { break: 'breaks-active', allowance: 'breaks', plan: 'breaks', idle: 'breaks', locked: 'breaks' };
             const set = (icon, text, label = text) => {
                 const pillIcon = this.pillIcon;
                 if (pillIcon) {
@@ -2375,6 +2379,8 @@ window.TaskitatorApp = (() => {
                     if (ds.state !== icon) {
                         ds.state = icon;
                         if (typeof pillIcon.replaceChildren === 'function') pillIcon.replaceChildren(tkIcon(PILL_ICONS[icon] || 'breaks'));
+                        const titleIc = typeof document !== 'undefined' && document.querySelector('#breakModalTitle > span');
+                        if (titleIc && typeof titleIc.replaceChildren === 'function') titleIc.replaceChildren(tkIcon(PILL_ICONS[icon] || 'breaks'));
                     }
                 }
                 if (this.pillText) this.pillText.textContent = text;
@@ -2963,15 +2969,16 @@ window.TaskitatorApp = (() => {
             return allKids.some(k => hasVisibleDescendant(k.id, visited));
         }
 
-        const dateFilterOn = !!globalThis.TaskitatorDateFilter?.active(activeFilters.date);
-        const hasFilters = filtersActive(activeFilters);
+        const listFilters = viewFilters(activeFilters);
+        const dateFilterOn = !!globalThis.TaskitatorDateFilter?.active(listFilters.date);
+        const hasFilters = filtersActive(listFilters);
         const filterIndex = dateFilterOn ? new Map(tasks.map(t => [t.id, t])) : null;
         const matchMap = new Map();
         const descMatchMap = new Map();
 
         if (hasFilters) {
             tasks.forEach(t => {
-                matchMap.set(t.id, taskMatchesFilters(t, activeFilters, { dynamicPriority, index: filterIndex, today: todayStr }));
+                matchMap.set(t.id, taskMatchesFilters(t, listFilters, { dynamicPriority, index: filterIndex, today: todayStr }));
             });
 
             function checkDesc(nodeId, visited = new Set()) {
@@ -4277,6 +4284,8 @@ window.TaskitatorApp = (() => {
                 draftFilters.projects = new Set(activeFilters.projects);
                 draftFilters.date = { ...activeFilters.date };
                 draftFilters.logic = activeFilters.logic;
+                const dateSec = document.getElementById('filterDateSection');
+                if (dateSec) dateSec.hidden = currentView === 'today';
                 syncDateFilterInputs();
                 renderFilterClouds();
                 filterModal.classList.add('open');
@@ -4306,7 +4315,7 @@ window.TaskitatorApp = (() => {
                 activeFilters.date = { ...draftFilters.date };
                 activeFilters.logic = draftFilters.logic === 'or' ? 'or' : 'and';
 
-                const hasFilters = filtersActive(activeFilters);
+                const hasFilters = filtersActive(viewFilters(activeFilters));
                 const dot = document.getElementById('filterActiveDot');
                 if (dot) dot.style.display = hasFilters ? 'block' : 'none';
 

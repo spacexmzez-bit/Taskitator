@@ -11,13 +11,13 @@
     const MAPS = {
         nature: {
             // shell
-            'menu': 'nt-i-earth', 'completed': 'nt-i-clover', 'breaks': 'nt-i-tent', 'scratchpad': 'nt-i-ff0',
+            'menu': 'nt-i-earth', 'completed': 'nt-i-clover', 'breaks': 'nt-i-weapons', 'breaks-active': 'nt-i-farming', 'scratchpad': 'nt-i-ff0',
             'scratchpad-lit': 'nt-i-ff1', 'emergency': 'nt-i-viper-asleep', 'emergency-active': 'nt-i-viper-awake', 'copilot': 'nt-x-copilot-head', 'sparkle': 'nt-x-sparkle',
             'add': 'nt-x-plus', 'leaf': 'nt-leaf',
             // navigation
             'nav-today': 'nt-e-pine', 'nav-general': 'nt-e-palm', 'nav-calendar': 'nt-e-calendar', 'nav-projects': 'nt-e-briefcase',
             'nav-stats': 'nt-e-sprout2', 'nav-trash': 'nt-x-trash', 'nav-drafts': 'nt-e-receipt', 'nav-universe': 'nt-e-planet',
-            'nav-sleep': 'nt-e-moon', 'nav-help': 'nt-e-book', 'nav-settings': 'nt-e-mountain', 'nav-login': 'nt-e-key',
+            'nav-sleep': 'nt-e-moon', 'nav-help': 'nt-e-book', 'nav-settings': 'nt-x-gear', 'nav-login': 'nt-e-key',
             // states and features
             'lock': 'nt-e-lock', 'unlock': 'nt-x-unlock', 'shield': 'nt-e-shield', 'bonus': 'nt-e-star', 'star': 'nt-e-star',
             'warning': 'nt-e-warning', 'calendar': 'nt-e-calendar', 'robot': 'nt-x-copilot-head', 'copilot-body': 'nt-x-copilot-body', 'ai': 'nt-e-owl', 'owl': 'nt-e-owl',

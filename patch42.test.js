@@ -44,7 +44,7 @@ test('filter panel has the AND/OR dropdown wired to draft, apply, clear and reop
     assert.match(app, /draftFilters\.logic = activeFilters\.logic/);
     assert.match(app, /activeFilters\.logic = draftFilters\.logic === 'or' \? 'or' : 'and'/);
     assert.match(app, /draftFilters\.logic = 'and';\n\s+syncDateFilterInputs/);
-    assert.match(app, /taskMatchesFilters\(t, activeFilters, \{ dynamicPriority, index: filterIndex, today: todayStr \}\)/);
+    assert.match(app, /taskMatchesFilters\(t, listFilters, \{ dynamicPriority, index: filterIndex, today: todayStr \}\)/);
 });
 
 // ---- parent move rules, taken from the editor source ----
