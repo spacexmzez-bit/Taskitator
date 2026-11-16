@@ -8,7 +8,7 @@ test('create dialog has a fourth Summary tab that is empty until the plan is rea
     assert.ok(u.includes("['summary','Summary','goal']"));
     assert.ok(u.includes("'Complete the plan to see its summary.'"));
     assert.ok(u.includes('ready=ok;renderSummary();'));
-    for (const s of ["'Schedule'", "'Task info'", "'AI criteria'", "'Study days'", "data-sum-view", "sum-dot is-'+k"]) assert.ok(u.includes(s), s);
+    for (const s of ["'Schedule'", "'Task info'", "'AI criteria'", "'Study days'", "PC.render(body"]) assert.ok(u.includes(s), s);
 });
 test('Create plan: first press opens Summary, second asks; red with criteria, blue without', () => {
     const u = src('pro/study-plan.js'), i = u.indexOf("if(activeTab!=='summary'){showTab('summary')");
@@ -34,5 +34,5 @@ test('Study plans page: Preview plan shows a read-only summary without opening E
     assert.ok(p.includes("if (previewing) planPreview(plan, c);"));
     const fn = p.slice(p.indexOf('function planPreview'), p.indexOf('function card(plan'));
     assert.ok(!/addEventListener|Drafts\(|commit\(/.test(fn), 'read-only');
-    assert.ok(fn.includes("tr('Main {n}'") && fn.includes("tr('({plan} plan, {early} early)'"));
+    assert.ok(fn.includes('PC.render(calBox') && fn.includes('PC.fromPlan(plan)'), 'Preview uses the shared calendar/list');
 });

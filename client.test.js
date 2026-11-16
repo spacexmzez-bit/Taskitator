@@ -73,7 +73,7 @@ function studyUI(pro=true){
  const body=new Element('body'),storage=new LocalStorage(),requests=[];storage.setItem('taskitator_tasks','[]');storage.setItem('taskitator_settings',JSON.stringify({weekend_start:5,weekend_end:6}));
  const document={body,createElement:tag=>new Element(tag)},window={document,Clerk:{session:{id:'session_study'}},TaskitatorPro:{checkConsecutiveEntitlement:async()=>({allowed:pro})},TaskitatorRecurrence:{today:()=> '2026-10-27'},SyncEngine:{forceImmediateSync:async()=>true},TaskitatorApp:{loadStorage(){},saveStorageAndPush(){},renderUnifiedView(){}},TaskitatorAuth:{api:async(path,options)=>{requests.push(JSON.parse(options.body));return {authorized:true};}},dispatchEvent(){}};
  window.matchMedia=()=>({matches:true});
- const context=vm.createContext({window,document,location:{search:''},localStorage:storage,crypto:webcrypto,URLSearchParams,Event:class{},confirm:()=>true,setTimeout,clearTimeout,console});vm.runInContext(fs.readFileSync(new URL('pro/study-plan.js',root),'utf8'),context);for(const f of ['pro/study-manage.js','pro/study-schedule.js'])vm.runInContext(fs.readFileSync(new URL(f,root),'utf8'),context);
+ const context=vm.createContext({window,document,location:{search:''},localStorage:storage,crypto:webcrypto,URLSearchParams,Event:class{},confirm:()=>true,setTimeout,clearTimeout,console});vm.runInContext(fs.readFileSync(new URL('pro/study-plan.js',root),'utf8'),context);for(const f of ['pro/study-manage.js','pro/study-schedule.js','pro/plan-calendar.js'])vm.runInContext(fs.readFileSync(new URL(f,root),'utf8'),context);
  const fire=(e,name='input')=>{for(const fn of e.handlers[name]||[])fn({});};
  return {window,body,storage,requests,fire,button:(text,container=body)=>container.querySelectorAll('button').find(b=>b.textContent===text),inputs:()=>body.querySelectorAll('input')};
 }
@@ -362,7 +362,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase3-v40'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase3-v41'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};

@@ -309,7 +309,7 @@
   // Summary tab (Phase 3.7): read-only, filled only while the plan is ready to create.
   let ready=false;
   // Phase 3.7.3: the Summary is read only. Sub tabs keep it organised: Schedule (calendar or list), AI criteria (only when set), Task info.
-  let sumSub='sched',sumView='cal',sumMonth=null,sumSel=null;
+  let sumSub='sched';const sumState={view:'cal',month:null,sel:null};
   function renderSummary(){
    const box=panels.summary;box.replaceChildren();
    if(!ready||!plan){node('p','Complete the plan to see its summary.',box,'study-hint');return;}
@@ -337,39 +337,15 @@
     if(plan.exclude?.length){node('p','Excluded units',body,'ss-hint');const w=node('div',undefined,body,'ss-sum-pills');for(const n of plan.exclude)node('span',U+'.'+n,w,'ss-sum-pill');}
     return;
    }
-   // Schedule: one record per date. An early unit is listed on the day it appears early AND on its due day as a main unit.
-   const days=new Map(),slot=d=>{if(!days.has(d))days.set(d,{main:[],bonus:[],early:[]});return days.get(d);},dueOf=new Map();
-   for(const r of sch){const sl=slot(r.date);r.numbers.forEach((n,i)=>{(i<r.count?sl.main:sl.bonus).push(n);dueOf.set(n,r.date);});}
-   const earlyOn=new Map();if(smartEnabled)for(const [n,d]of smartAppearances){slot(d).early.push(n);earlyOn.set(n,d);}
-   const dates=[...days.keys()].sort();
-   const items=d=>{const sl=days.get(d);return [...sl.main.map(n=>['main',U+'.'+n+(earlyOn.has(n)?' · also early on '+earlyOn.get(n):'')]),...sl.bonus.map(n=>['bonus',U+'.'+n]),...sl.early.sort((a,b)=>a-b).map(n=>['early',U+'.'+n+' · due '+dueOf.get(n)])];};
-   const kinds={main:'Main',bonus:'Bonus',early:'Early'};
-   const seg=node('div',undefined,body,'ss-sum-seg');for(const [k,t]of [['cal','Calendar'],['list','List']]){const b=node('button',t,seg,k===sumView?'is-on':'');b.type='button';b.setAttribute('data-sum-view',k);b.onclick=()=>{sumView=k;renderSummary();};}
-   const legend=node('div',undefined,body,'ss-sum-legend');for(const k of ['main','bonus','early']){const l=node('span',undefined,legend);node('i',undefined,l,'sum-dot is-'+k);node('span',kinds[k],l);}
-   if(sumView==='list'){
-    const list=node('div',undefined,body,'ss-sum-list');
-    for(const d of dates){const row=node('div',undefined,list,'ss-sum-day');node('strong',d,row);const col=node('div',undefined,row,'ss-sum-items');for(const [k,t]of items(d)){const it=node('div',undefined,col,'ss-sum-item');node('i',undefined,it,'sum-dot is-'+k);node('span',t,it);}}
-    return;
-   }
-   if(!sumMonth||!dates.some(d=>d.startsWith(sumMonth))&&!/^\d{4}-\d{2}$/.test(sumMonth))sumMonth=dates[0].slice(0,7);
-   const [y,m]=sumMonth.split('-').map(Number),first=new Date(Date.UTC(y,m-1,1)),len=new Date(Date.UTC(y,m,0)).getUTCDate();
-   const nav=node('div',undefined,body,'ss-cal-nav');
-   const go=k=>{sumMonth=new Date(Date.UTC(y,m-1+k,1)).toISOString().slice(0,7);sumSel=null;renderSummary();};
-   const prev=node('button','‹',nav,'ss-cal-arrow');prev.type='button';prev.setAttribute('aria-label','Previous month');prev.onclick=()=>go(-1);
-   node('strong',isoDay(sumMonth+'-01',{month:'long',year:'numeric'}),nav);
-   const next=node('button','›',nav,'ss-cal-arrow');next.type='button';next.setAttribute('aria-label','Next month');next.onclick=()=>go(1);
-   const grid=node('div',undefined,body,'calendar-grid ss-cal');
-   for(const n of ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'])node('div',n,grid,'calendar-day-header');
-   for(let k=0;k<first.getUTCDay();k++)node('div','',grid,'calendar-cell empty');
-   for(let n=1;n<=len;n++){
-    const d=sumMonth+'-'+String(n).padStart(2,'0'),sl=days.get(d),cell=node('button',undefined,grid,'calendar-cell ss-cell'+(d===sumSel?' selected':'')+(sl?'':' is-off'));cell.type='button';cell.setAttribute('data-sum-date',d);
-    node('span',String(n),cell,'calendar-date-number');
-    if(sl){const dots=node('div',undefined,cell,'calendar-dots-row');for(const k of ['main','bonus','early'])if(sl[k].length)node('span',undefined,dots,'sum-dot is-'+k);cell.onclick=()=>{sumSel=d;renderSummary();};}else cell.disabled=true;
-   }
-   const det=node('div',undefined,body,'ss-detail');
-   if(sumSel&&days.has(sumSel)){node('strong',sumSel,det);for(const [k,t]of items(sumSel)){const it=node('div',undefined,det,'ss-sum-item');node('i',undefined,it,'sum-dot is-'+k);node('span',t,it);node('small',kinds[k],it,'ss-hint');}}
-   else node('p','Select a date to see its tasks.',det,'ss-hint');
+   // Schedule: the shared read-only calendar/list (pro/plan-calendar.js). An early unit is listed on its early day AND on its due day.
+   const PC=window.TaskitatorPlanCalendar,earlyOn=new Map(),entries=[];
+   if(smartEnabled)for(const [n,d] of smartAppearances)earlyOn.set(n,d);
+   const dueOf=new Map();for(const r of sch)for(const n of r.numbers)dueOf.set(n,r.date);
+   for(const r of sch)r.numbers.forEach((n,k)=>{const main=k<r.count;entries.push({date:r.date,kind:main?'main':'bonus',n,text:U+'.'+n+(main&&earlyOn.has(n)?' · '+PC.tr('also early on {date}',{date:earlyOn.get(n)}):'')});});
+   for(const [n,d] of earlyOn)entries.push({date:d,kind:'early',n,text:U+'.'+n+' · '+PC.tr('due {date}',{date:dueOf.get(n)})});
+   PC.render(body,PC.group(entries),sumState,renderSummary,{fmtMonth:ym=>isoDay(ym+'-01',{month:'long',year:'numeric'})});
   }
+
   // One place decides whether "Create plan" is available and says why not.
   function refresh(){
    plan=buildPlan();renderSmart();const st=sched.state();let msg='',ok=false;

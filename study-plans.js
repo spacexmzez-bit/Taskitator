@@ -183,24 +183,21 @@ function chrome() {
 }
 
 // ---- cards ----
-const previews = new Set();
+const previews = new Set(), previewState = new Map();
 function planPreview(plan, parent) {
     const box = el('div', undefined, parent, 'plan-preview');
     const line = (k, v) => { const r = el('div', undefined, box, 'plan-sum-row'); el('span', k, r, 'plan-hint'); el('b', v, r); };
-    const live = u => u.status === 'active', early = new Map();
-    for (const u of plan.units) if (live(u) && !u.is_bonus && u.smart_early_date && !u.smart_adjusted) early.set(u.smart_early_date, (early.get(u.smart_early_date) || 0) + 1);
     line(tr('Unit'), (plan.unit || tr('Unit')) + ' · ' + tr('{n} required', { n: plan.total }) + (plan.bonus ? ' + ' + tr('{n} bonus', { n: plan.bonus }) : ''));
     line(tr('Study days'), plan.days + (plan.start ? ' · ' + fmtDate(plan.start) + ' – ' + fmtDate(plan.end) : ''));
     if (plan.chapter) line(tr('Chapter labels'), plan.chapter.label + ' · ' + tr('every {n} units', { n: plan.chapter.size }));
     line(tr('AI criteria'), plan.audited ? tr('On · {n} unit(s)', { n: plan.audited }) : tr('Off'));
     line(tr('Smart Study'), plan.early ? tr('{n} early appearance(s)', { n: plan.early }) : tr('Off'));
-    const list = el('div', undefined, box, 'plan-sum-list');
-    for (const p of [...plan.parents].sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''))) {
-        const mine = plan.units.filter(u => u.parent_id === p.id), main = mine.filter(u => !u.is_bonus), bonus = mine.filter(u => u.is_bonus), e = early.get(p.due_date) || 0;
-        const done = mine.filter(u => u.status === 'completed').length;
-        const row = el('div', undefined, list, 'plan-sum-day'); el('strong', p.due_date ? fmtDate(p.due_date) : tr('(no date)'), row);
-        el('span', tr('Main {n}', { n: main.length }) + ' · ' + tr('Bonus {n}', { n: bonus.length + e }) + (e ? ' ' + tr('({plan} plan, {early} early)', { plan: bonus.length, early: e }) : '') + ' · ' + tr('{done} of {total} done', { done, total: mine.length }), row, 'plan-hint');
-    }
+    // Phase 3.7.5: the same read-only Calendar/List as the builder's Summary, from the saved plan's own tasks.
+    const PC = window.TaskitatorPlanCalendar, calBox = el('div', undefined, box, 'plan-sum-cal');
+    let state = previewState.get(plan.id); if (!state) { state = { view: 'cal', month: null, sel: null }; previewState.set(plan.id, state); }
+    const lang = document.documentElement.lang === 'ar' ? 'ar' : undefined;
+    const draw = () => { calBox.replaceChildren(); PC.render(calBox, PC.group(PC.fromPlan(plan)), state, draw, { fmtDay: fmtDate, fmtMonth: ym => new Date(ym + '-01T12:00:00Z').toLocaleDateString(lang, { month: 'long', year: 'numeric', timeZone: 'UTC' }) }); };
+    draw();
 }
 function card(plan, parent) {
     const list = M.prioritiesOf(settings), isOpen = current === plan.id;

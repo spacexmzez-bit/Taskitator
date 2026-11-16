@@ -47,9 +47,9 @@ test('settings page: every section starts hidden, the script hides inactive ones
 });
 test('Summary sub tabs: schedule/AI/info, calendar and list, three distinct dot colours, read only', () => {
     const u = src('pro/study-plan.js'), c = src('style.css');
-    for (const k of ["['sched','Schedule']", "['ai','AI criteria']", "['info','Task info']", "data-sum-view", "data-sum-date", "also early on", "' · due '"]) assert.ok(u.includes(k), k);
+    for (const k of ["['sched','Schedule']", "['ai','AI criteria']", "['info','Task info']", "PC.render(body", "also early on {date}", "due {date}"]) assert.ok(u.includes(k), k);
     const colours = ['main', 'bonus', 'early'].map(k => new RegExp('\\.sum-dot\\.is-' + k + '\\{background:(#[0-9a-f]{6})').exec(c)?.[1]);
     assert.ok(colours.every(Boolean) && new Set(colours).size === 3, colours.join());
-    const body = u.slice(u.indexOf('function renderSummary()'), u.indexOf('// One place decides'));
+    const body = u.slice(u.indexOf('function renderSummary()'), u.indexOf('// One place decides')) + src('pro/plan-calendar.js');
     assert.ok(!/<input|<textarea|\.contentEditable|type=.number/.test(body) && !/createElement\('input'|node\('input'|node\('textarea'/.test(body), 'no editing controls in the Summary');
 });
