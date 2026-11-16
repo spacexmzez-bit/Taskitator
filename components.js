@@ -2879,11 +2879,10 @@ window.TaskitatorComponents = Object.freeze({
                     if (addTaskModal) addTaskModal.classList.remove('open');
                     if (activeCreateDraftId) { window.TaskitatorDrafts?.removeCreate(activeCreateDraftId); activeCreateDraftId = null; refreshDraftBadges(); }
                     
-                    if (typeof window.refreshCurrentProjectView === 'function') {
-                        window.refreshCurrentProjectView();
-                    } else {
-                        host.view.refresh();
-                    }
+                    // The Projects workspace and the Today list are separate renderers: a task created from Today
+                    // must show there at once, not only after the next sync event re-renders it.
+                    if (typeof window.refreshCurrentProjectView === 'function') window.refreshCurrentProjectView();
+                    host.view.refresh();
                 });
             }
 
