@@ -6,7 +6,10 @@
     'use strict';
     const LIMITS = Object.freeze({ files: 5, history: 30, bytes: 25 * 1024 * 1024, pass: 8, title: 40 });
     const blank = () => ({ criteria: '', validate: null, test: null });
-    const newTest = (now = Date.now(), rand = Math.random) => ({ id: 'lab_' + now.toString(36) + '_' + rand().toString(36).slice(2, 6), created: now, updated: now, taskTitle: '', context: '', a: blank(), b: null, files: [], exemplar: null, credits: 0, calls: 0 });
+    // {num} in the criteria is replaced with the test's unit number before anything is sent to the AI.
+    const unitOf = n => { const v = Math.floor(Number(n)); return v >= 1 && v <= 9999 ? v : 1; };
+    const fillNum = (text, n) => String(text).replace(/\{num\}/g, String(unitOf(n)));
+    const newTest = (now = Date.now(), rand = Math.random) => ({ id: 'lab_' + now.toString(36) + '_' + rand().toString(36).slice(2, 6), created: now, updated: now, taskTitle: '', context: '', unit: 1, a: blank(), b: null, files: [], exemplar: null, credits: 0, calls: 0 });
     const sizeOf = r => (r.files || []).reduce((n, f) => n + (f.blob && f.blob.size || 0), 0) + (r.exemplar && r.exemplar.blob ? r.exemplar.blob.size : 0);
     // Oldest tests go first when there are more than 30 or more than 25 MB of stored proofs. The test being edited is never dropped.
     function toDrop(records, keepId, limits = LIMITS) {
@@ -60,7 +63,7 @@
             catch (_) { resolve(false); }
         });
     }
-    root.TaskitatorTestLab = { LIMITS, newTest, sizeOf, toDrop, canConfirm, stale, labelOf, savedItem, memoryAdapter, idbAdapter, dbName, clear };
+    root.TaskitatorTestLab = { LIMITS, unitOf, fillNum, newTest, sizeOf, toDrop, canConfirm, stale, labelOf, savedItem, memoryAdapter, idbAdapter, dbName, clear };
 
     if (typeof document === 'undefined') return;
     const $ = id => document.getElementById(id);
@@ -183,12 +186,12 @@
             if (rec.exemplar) { exemplarFile = await toFile(rec.exemplar); if (kind === 'test') exemplarPart = await AE().fileToBase64(exemplarFile); }
             const files = kind === 'test' ? await Promise.all(rec.files.map(toFile)) : [];
             for (const k of keys) {
-                const side = rec[k], text = side.criteria.trim();
+                const side = rec[k], text = side.criteria.trim(), sent = fillNum(text, rec.unit);
                 let res;
                 try {
                     res = kind === 'validate'
-                        ? await AE().validateCriteria(text, rec.taskTitle, exemplarFile)
-                        : await AE().verifyProof({ taskId: rec.id, file: files[0], files, taskTitle: rec.taskTitle, criteria: text, userContext: rec.context, exemplarPart, test: true });
+                        ? await AE().validateCriteria(sent, rec.taskTitle, exemplarFile)
+                        : await AE().verifyProof({ taskId: rec.id, file: files[0], files, taskTitle: rec.taskTitle, criteria: sent, userContext: rec.context, exemplarPart, test: true });
                 } catch (e) { res = { success: false, error: e.message }; }
                 sessionCalls++; rec.calls++;
                 const credits = res && res.credits_charged != null ? Number(res.credits_charged) : null;
@@ -221,7 +224,7 @@
         ui.exName.textContent = rec.exemplar ? rec.exemplar.name : '';
         ui.exClear.hidden = !rec.exemplar;
     }
-    function load() { ui.title.value = rec.taskTitle; ui.context.value = rec.context; renderFiles(); paintAll(); for (const k of ['a', 'b']) ui[k].savePane.hidden = true; }
+    function load() { ui.title.value = rec.taskTitle; ui.unit.value = unitOf(rec.unit); ui.context.value = rec.context; renderFiles(); paintAll(); for (const k of ['a', 'b']) ui[k].savePane.hidden = true; }
 
     function build() {
         const rootEl = $('labRoot'); rootEl.textContent = '';
@@ -233,6 +236,8 @@
         const wb = ui.wb = el('div', undefined, rootEl, 'lab-bench');
         ui.title = field(tr('Task title (optional, helps the AI)'), wb); ui.title.maxLength = 160;
         ui.title.addEventListener('input', () => { rec.taskTitle = ui.title.value; later(); });
+        ui.unit = field(tr('Unit number ({num} in the criteria is replaced with this)'), wb); ui.unit.type = 'number'; ui.unit.min = '1'; ui.unit.max = '9999'; ui.unit.step = '1'; ui.unit.value = '1';
+        ui.unit.addEventListener('input', () => { rec.unit = unitOf(ui.unit.value); later(); });
         const cols = el('div', undefined, wb, 'lab-cols');
         ui.a = column('a', cols); ui.b = ui.colB = column('b', cols);
         ui.addB = el('button', tr('Add a second version (B) to compare'), wb, 'icon-btn'); ui.addB.type = 'button';

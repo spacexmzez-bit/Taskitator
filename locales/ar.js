@@ -2431,6 +2431,7 @@
         "Collapse": "طيّ",
         "Expand": "توسيع",
         "Pick a new parent from your task tree. Descendants move along with their parent.": "اختر أمًّا جديدة من شجرة مهامك. تنتقل المهام الفرعية مع أمّها.",
+        "Unit number ({num} in the criteria is replaced with this)": "رقم الوحدة (يُستبدل {num} في المعايير بهذا الرقم)",
         "Early Appearance": "الظهور المبكر",
         "Review the summary, then press Create plan again to confirm.": "راجع الملخص ثم اضغط «إنشاء الخطة» مرة أخرى للتأكيد.",
         "Create this plan?": "إنشاء هذه الخطة؟",
