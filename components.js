@@ -729,6 +729,8 @@ window.TaskitatorComponents = Object.freeze({
         let activeDetailTaskId = null;
         // Where the open editor came from. 'calendar' blocks completion inside the panel (Phase 4.0).
         let detailOrigin = null;
+        // Phase 4.1: true while the subtask list is in hand-arranging mode (arrows instead of completion circles). Not saved anywhere.
+        let manualSort = false;
         let graceTicker = null;
         const liveHost=host;
         let draft=null,editBaseline='',removeEditReference=false;
@@ -1450,7 +1452,7 @@ window.TaskitatorComponents = Object.freeze({
             const keep = new Set(['editTitleGroup', 'editDescGroup', 'editSubtasksGroup']);
             const parts = [...box.querySelectorAll(':scope > .form-group, :scope > fieldset, :scope > .ai-audit-card, :scope > #recurrenceTaskControls')].filter(e => !keep.has(e.id));
             const sub = document.getElementById('editSubtasksGroup');
-            for (const sel of ['.subtask-head-tools', '.quick-subtask-row', '#detailConsecutiveNotice']) { const e = sub?.querySelector(sel); if (e) parts.push(e); }
+            for (const sel of ['.subtask-head-tools', '.quick-subtask-row', '#detailConsecutiveNotice', '.subtask-sort-tools']) { const e = sub?.querySelector(sel); if (e) parts.push(e); }
             for (const e of parts) { e.inert = on; e.classList.toggle('done-locked', on); }
             box.classList.toggle('is-done-locked', on);
             const note = document.getElementById('detailDoneNote');
@@ -1524,6 +1526,53 @@ window.TaskitatorComponents = Object.freeze({
             updateDetailCompletionUI();
         }
 
+        // ---- Phase 4.1: subtask order ---------------------------------------------------------------------
+        // Order lives in each subtask's `order` number (1..n). It is written into the editor's draft, so it is saved,
+        // confirmed and synced exactly like any other edit. Nothing here runs a persistent "auto" mode.
+        const subsOf = id => host.tasks.getAll().filter(t => t.parent_id === id && t.status !== 'trash');
+        const prioRank = t => { const p = (host.catalogs.priorities() || []).find(x => x.id === t.priority_id); return p ? p.rank : 9999; };
+        const cmpText = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base', numeric: true });
+        const cmpDefault = (a, b) => prioRank(a) - prioRank(b) || cmpText(a.due_date || '9999', b.due_date || '9999') || cmpText(a.created_at, b.created_at) || cmpText(a.title, b.title);
+        const SORTERS = {
+            alpha: (a, b) => cmpText(a.title, b.title) || cmpDefault(a, b),
+            priority: (a, b) => cmpDefault(a, b),
+            required: (a, b) => (!!a.is_bonus - !!b.is_bonus) || cmpDefault(a, b)
+        };
+        function writeOrder(list) { list.forEach((t, i) => { t.order = i + 1; }); }
+        function applyAutoSort(mode) {
+            const id = activeDetailTaskId; if (!id) return;
+            const kids = subsOf(id);
+            if (mode === 'default') kids.forEach(t => { delete t.order; });
+            else if (SORTERS[mode]) writeOrder([...kids].sort(SORTERS[mode]));
+            else return;
+            manualSort = false;
+            refreshDetailSubtaskList(id, document.getElementById('taskDetailModal')?._customRenderFn);
+        }
+        function moveSubtask(childId, dir) {
+            const id = activeDetailTaskId; if (!id) return;
+            const list = host.tasks.sort([...subsOf(id)]), i = list.findIndex(t => t.id === childId), j = i + dir;
+            if (i < 0 || j < 0 || j >= list.length) return;
+            [list[i], list[j]] = [list[j], list[i]];
+            writeOrder(list);
+            refreshDetailSubtaskList(id, document.getElementById('taskDetailModal')?._customRenderFn);
+        }
+        function orderChanged() {
+            if (!draft) return false;
+            const was = new Map(JSON.parse(draft.originalTasks).map(t => [t.id, t.order ?? null]));
+            return draft.tasks.some(t => was.has(t.id) && (t.order ?? null) !== was.get(t.id));
+        }
+        function setupSortTools() {
+            const tools = document.getElementById('detailSortTools'), menu = document.getElementById('detailSortMenu');
+            const auto = document.getElementById('detailAutoSortBtn'), manual = document.getElementById('detailManualSortBtn');
+            if (!tools || !auto || !manual || tools._wired) return;
+            tools._wired = true;
+            const closeMenu = () => { if (menu) menu.hidden = true; auto.setAttribute('aria-expanded', 'false'); };
+            auto.addEventListener('click', e => { e.stopPropagation(); const open = menu.hidden; menu.hidden = !open; auto.setAttribute('aria-expanded', String(open)); });
+            menu?.addEventListener('click', e => { const b = e.target.closest?.('[data-sort]'); if (!b) return; closeMenu(); applyAutoSort(b.dataset.sort); });
+            document.addEventListener('click', e => { if (menu && !menu.hidden && !tools.contains(e.target)) closeMenu(); });
+            manual.addEventListener('click', () => { manualSort = !manualSort; closeMenu(); refreshDetailSubtaskList(activeDetailTaskId, document.getElementById('taskDetailModal')?._customRenderFn); });
+        }
+
         function refreshDetailSubtaskList(parentId, triggerRenderFn) {
             const detailSubtasksList = document.getElementById('detailSubtasksList');
             if (!detailSubtasksList) return;
@@ -1532,6 +1581,18 @@ window.TaskitatorComponents = Object.freeze({
             const directChildren = host.tasks.getAll().filter(t => t.parent_id === parentId && t.status !== 'trash');
             const sortedChildren = host.tasks.sort([...directChildren]);
             const parentDone = liveTask(parentId)?.status === 'completed';
+            setupSortTools();
+            {
+                const tools = document.getElementById('detailSortTools'), manual = document.getElementById('detailManualSortBtn');
+                if (tools) tools.hidden = sortedChildren.length < 2;
+                if (sortedChildren.length < 2) manualSort = false;
+                if (manual) {
+                    manual.setAttribute('aria-pressed', String(manualSort));
+                    manual.classList.toggle('is-on', manualSort);
+                    const lbl = document.getElementById('detailManualSortLabel');
+                    if (lbl) lbl.textContent = manualSort ? 'Done' : 'Arrange';
+                }
+            }
 
             if (sortedChildren.length === 0) {
                 detailSubtasksList.innerHTML = '<li style="font-size: 0.825rem; color: var(--text-muted); padding: 4px 0;">No subtasks yet.</li>';
@@ -1546,6 +1607,24 @@ window.TaskitatorComponents = Object.freeze({
                 const color = priorityColor(child);
                 if (color) sLi.style?.setProperty?.('--pc', color);
 
+                if (manualSort) {
+                    // Arrange mode: the completion circle gives way to up/down arrows in the priority colour.
+                    const idx = sortedChildren.indexOf(child);
+                    const mv = document.createElement('div');
+                    mv.className = 'detail-sub-move';
+                    for (const [dir, glyph, label] of [[-1, '▲', 'Move up'], [1, '▼', 'Move down']]) {
+                        const b = document.createElement('button');
+                        b.type = 'button';
+                        b.className = 'detail-sub-arrow';
+                        b.textContent = glyph;
+                        b.setAttribute('aria-label', label);
+                        b.title = label;
+                        b.disabled = dir < 0 ? idx === 0 : idx === sortedChildren.length - 1;
+                        b.addEventListener('click', e => { e.stopPropagation(); moveSubtask(child.id, dir); });
+                        mv.appendChild(b);
+                    }
+                    sLi.appendChild(mv);
+                } else {
                 const check = document.createElement('button');
                 check.type = 'button';
                 check.className = 'check-circle detail-sub-check';
@@ -1555,6 +1634,7 @@ window.TaskitatorComponents = Object.freeze({
                 if (!saved) check.title = 'Save the task first';
                 check.addEventListener('click', e => { e.stopPropagation(); panelToggle(child.id, check, sLi); });
                 sLi.appendChild(check);
+                }
 
                 let cBadges = '';
                 if (child.is_bonus) cBadges += '<span class="bonus-badge"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus</span> ';
@@ -1634,6 +1714,7 @@ window.TaskitatorComponents = Object.freeze({
             if (!task) return;
             activeDetailTaskId = taskId;
             detailOrigin = opts?.origin || null;
+            manualSort = false;
             window.TaskitatorRecurrenceUI?.bindTask(taskId);
 
             const isBypassActive = host.rules.bypassActive();
@@ -3226,6 +3307,7 @@ window.TaskitatorComponents = Object.freeze({
                     await window.TaskitatorRecurrenceUI?.applyEdit(task);
                     if(removeEditReference){if(task.ai_locked&&!isBypassActive){window.TaskitatorNotify('Emergency Bypass is required to remove this reference.');return;}await window.ExemplarStore?.deleteExemplar(task.id);delete task.reference_inline_data;delete task.reference_id;}
 
+                    if (orderChanged() && !(await window.TaskitatorConfirm({ title: 'Save subtask order?', message: 'The subtasks of this task will be saved in the order you set. Subtasks you add later go to the end.', confirmLabel: 'Save order' }))) return;
                     if(!commitDraft())return;
                     window.TaskitatorDrafts?.removeEdit(task.id); refreshDraftBadges();
                     if (taskDetailModal) taskDetailModal.classList.remove('open');

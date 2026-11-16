@@ -1597,6 +1597,8 @@ export function checkTaskGraph(tasks) {
         for (const f of ['title', 'raw_title', 'proof_criteria', 'raw_proof_criteria', 'original_proof_criteria', 'description', 'notes']) {
             if (typeof t[f] === 'string' && t[f].length > MAX_TEXT_CHARS) throw new HTTPError(413, `Task ${f} is too long.`);
         }
+        // Phase 4.1: a custom subtask order is a small whole number; anything else is refused instead of stored.
+        if (t.order !== undefined && t.order !== null && !(Number.isInteger(t.order) && Math.abs(t.order) <= 1000000)) throw new HTTPError(400, 'Task order must be a whole number.');
         byId.set(t.id, t);
     }
     // Linear depth/cycle check: each task's depth is computed once and memoized.

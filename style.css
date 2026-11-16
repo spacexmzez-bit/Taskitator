@@ -5874,3 +5874,18 @@ ul#detailSubtasksList .detail-sub-row{display:flex;align-items:center;gap:10px;p
 .cal-row-openable{cursor:pointer}
 .study-summary-pill{margin-inline-start:6px}
 .detail-title-lock[hidden],.detail-undo-btn[hidden]{display:none}
+
+/* ===== Phase 4.1: subtask order (Sort once / Arrange by hand) ===== */
+.subtask-sort-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px}
+.subtask-sort-tools[hidden],.subtask-sort-menu[hidden]{display:none}
+.subtask-sort-wrap{position:relative}
+.subtask-sort-btn{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;padding:5px 10px}
+.subtask-sort-btn.is-on{background:var(--primary);border-color:var(--primary);color:#fff}
+.subtask-sort-ic{width:16px;height:16px;flex:0 0 auto}
+.subtask-sort-menu{position:absolute;inset-inline-start:0;top:calc(100% + 4px);z-index:5;min-width:220px;display:flex;flex-direction:column;padding:4px;border-radius:10px;background:var(--card-bg);border:1px solid var(--border-color);box-shadow:0 10px 28px rgba(0,0,0,.45)}
+.subtask-sort-menu button{background:none;border:0;color:var(--text-color);font:inherit;font-size:.84rem;text-align:start;padding:8px 10px;border-radius:7px;cursor:pointer}
+.subtask-sort-menu button:hover,.subtask-sort-menu button:focus-visible{background:var(--card-subtle)}
+.detail-sub-move{display:flex;flex-direction:column;gap:2px;flex:0 0 auto}
+.detail-sub-arrow{width:26px;height:16px;padding:0;display:grid;place-items:center;font-size:.62rem;line-height:1;border-radius:5px;border:1.5px solid var(--pc,var(--border-color));background:transparent;color:var(--pc,var(--text-color));cursor:pointer}
+.detail-sub-arrow:disabled{opacity:.3;cursor:default}
+.detail-sub-arrow:not(:disabled):active{background:var(--pc,var(--primary));color:#fff}

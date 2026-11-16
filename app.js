@@ -1708,6 +1708,13 @@ window.TaskitatorApp = (() => {
 
         const mode = localStorage.getItem('taskitator_sort_mode') || 'priority';
         return tasksArray.sort((a, b) => {
+            // Phase 4.1: siblings with a saved custom `order` keep it (it beats the list sort mode). Ordered subtasks come
+            // first; subtasks added later have no order yet and follow, sorted the normal way.
+            if (a.parent_id && a.parent_id === b.parent_id) {
+                const oa = Number.isFinite(a.order), ob = Number.isFinite(b.order);
+                if (oa && ob && a.order !== b.order) return a.order - b.order;
+                if (oa !== ob) return oa ? -1 : 1;
+            }
             if (mode === 'alpha') return String(a.title||'').localeCompare(String(b.title||''), undefined, {sensitivity:'base', numeric:true});
             if (mode === 'required' && !!a.is_bonus !== !!b.is_bonus) return a.is_bonus ? 1 : -1;
             const rA = getRank((dynamicPriority.get(a.id) ?? a.priority_id));

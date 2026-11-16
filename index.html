@@ -16,7 +16,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="icon/icon-192.png">
 
-    <link rel="stylesheet" href="style.css?v=phase-4-0">
+    <link rel="stylesheet" href="style.css?v=phase-4-1">
     <style>
         .page-title-section {
             padding: 10px 0 8px 0;
@@ -2521,6 +2521,25 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
             </div>
 
             <div id="detailConsecutiveNotice" class="pro-consecutive-notice" style="display: none;" role="status" aria-live="polite"></div>
+            <!-- Phase 4.1: subtask order. Sort = apply once (rewrites each subtask's order). Arrange = move one at a time. -->
+            <div class="subtask-sort-tools" id="detailSortTools" hidden>
+                <div class="subtask-sort-wrap">
+                    <button type="button" class="icon-btn subtask-sort-btn" id="detailAutoSortBtn" aria-haspopup="true" aria-expanded="false" title="Sort subtasks once">
+                        <svg class="subtask-sort-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4v16M8 4 4 8M8 4l4 4M16 20V4M16 20l-4-4M16 20l4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <span>Sort</span>
+                    </button>
+                    <div class="subtask-sort-menu" id="detailSortMenu" role="menu" hidden>
+                        <button type="button" role="menuitem" data-sort="alpha">A to Z</button>
+                        <button type="button" role="menuitem" data-sort="priority">By priority</button>
+                        <button type="button" role="menuitem" data-sort="required">Required first, then priority</button>
+                        <button type="button" role="menuitem" data-sort="default">Default order</button>
+                    </div>
+                </div>
+                <button type="button" class="icon-btn subtask-sort-btn" id="detailManualSortBtn" aria-pressed="false" title="Arrange subtasks by hand">
+                    <svg class="subtask-sort-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11m0-1V4.5a1.5 1.5 0 0 1 3 0V11m0-.5V6a1.5 1.5 0 0 1 3 0v6m0-3a1.5 1.5 0 0 1 3 0v5c0 4-2.5 7-6.5 7-2.6 0-4-1-5.5-3L4.5 14.5a1.6 1.6 0 0 1 2.4-2L8 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span id="detailManualSortLabel">Arrange</span>
+                </button>
+            </div>
             <!-- Inline Sequential Quick-Subtask Field (Todoist Style: Enter commits & keeps focus) -->
             <div style="margin-bottom: 10px;">
                 <div class="quick-subtask-row"><button type="button" class="icon-btn quick-subtask-add" id="detailAddQuickSubtaskBtn" aria-label="Add subtask" title="Add subtask">+</button><input type="text" id="detailQuickSubtaskInput" placeholder="+ Add quick subtask (press Enter)... Use $$ for bonus" style="width: 100%; padding: 8px 12px; border: 1.5px solid var(--border-color); border-radius: 8px; background: var(--card-subtle); color: var(--text-color); font-size: 0.88rem; outline: none;" autocomplete="off"></div>
@@ -2646,7 +2665,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
     <script type="text/taskitator-script" src="components.js"></script>
     <script type="text/taskitator-script" src="root-completion.js"></script>
     <script type="text/taskitator-script" src="uni/focus-timer.js"></script>
-    <script type="text/taskitator-script" src="app.js?v=phase-4-0"></script>
+    <script type="text/taskitator-script" src="app.js?v=phase-4-1"></script>
     <script type="text/taskitator-script" src="views/projects.js"></script>
     <script type="text/taskitator-script" src="views/calendar.js"></script>
     <script type="text/taskitator-script" src="views/stats.js"></script>
