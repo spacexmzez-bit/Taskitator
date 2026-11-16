@@ -225,27 +225,16 @@ function buildAgendaNode(task, depth, allChildrenMap, matchMap, descMatchMap) {
 
     const checkBtn = document.createElement('button');
     checkBtn.className = 'check-circle';
+    checkBtn.type = 'button';
+    checkBtn.setAttribute('aria-label', 'Complete it from Today or General');
+    // Phase 4.0: tasks are never completed from the calendar. Proof, prerequisites, recurrence and the 10 s undo all
+    // live in the Today and General lists, so the calendar only explains where to go.
     checkBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        loadData();
-        const current = tasks.find(item => item.id === task.id && item.status === 'active');
-        if (!current) { refreshCalendar(); return; }
-        const branch = TaskitatorRecurrence.subtree(tasks, current.id);
-        if (branch.some(t=>t.ai_locked || t.strict_prerequisites || t.recurrence_series_id)) {
-            alert('Complete this protected or recurring task from Today / General Tasks so proof, prerequisites, and recurrence are handled safely.');
-            window.location.hash = '#general'; return;
-        }
-        // Inside the app shell, use the shared completion rules (root rules, 10 s undo).
-        if (window.TaskitatorApp?.handleTaskCompletion) {
-            TaskitatorApp.loadStorage?.();
-            TaskitatorApp.handleTaskCompletion(current.id, refreshCalendar);
-            return;
-        }
-        current.status = 'completed';
-        current.completed_at = new Date().toISOString();
-        saveDataAndSync();
-        refreshCalendar();
+        showCalendarCompleteNote();
     });
+    row.classList.add('cal-row-openable');
+    row.addEventListener('click', () => openFromCalendar(task.id));
     window.TaskitatorIcons?.decorateTask?.({ li, row, checkBtn, task, depth });
     main.appendChild(checkBtn);
 
@@ -282,6 +271,23 @@ function buildAgendaNode(task, depth, allChildrenMap, matchMap, descMatchMap) {
     }
 
     return li;
+}
+
+const calTr = (k, v) => window.TaskitatorI18n?.t ? window.TaskitatorI18n.t(k, v) : k;
+function showCalendarCompleteNote() {
+    const note = document.getElementById('calendarCompleteNote');
+    if (!note) return;
+    const text = note.querySelector('[data-cal-note-text]');
+    if (text) text.textContent = calTr('Tasks can\u2019t be completed from the calendar. Complete it from Today or General.');
+    note.hidden = false;
+    window.TaskitatorFX?.deny?.();
+}
+function openFromCalendar(taskId) {
+    loadData();
+    if (!tasks.some(t => t.id === taskId && t.status !== 'trash')) { refreshCalendar(); return; }
+    if (!window.TaskitatorApp?.openTaskDetailModal) return;
+    TaskitatorApp.loadStorage?.();
+    TaskitatorApp.openTaskDetailModal(taskId, refreshCalendar, { origin: 'calendar' });
 }
 
 function renderUnscheduledBacklog() {
@@ -371,6 +377,7 @@ function refreshCalendar() {
 window.addEventListener('taskitator-synced', () => {
     if (window.TaskitatorShell?.current() === 'calendar') refreshCalendar();
 });
+document.getElementById('calendarCompleteNoteClose')?.addEventListener('click', () => { const n = document.getElementById('calendarCompleteNote'); if (n) n.hidden = true; });
 document.querySelector('[data-cal-action-0]')?.addEventListener('click', function(){toggleUnscheduledCard()});
 window.renderCalendarView = refreshCalendar;
 })();

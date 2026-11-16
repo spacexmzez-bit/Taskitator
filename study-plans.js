@@ -191,7 +191,7 @@ function planPreview(plan, parent) {
     line(tr('Study days'), plan.days + (plan.start ? ' · ' + fmtDate(plan.start) + ' – ' + fmtDate(plan.end) : ''));
     if (plan.chapter) line(tr('Chapter labels'), plan.chapter.label + ' · ' + tr('every {n} units', { n: plan.chapter.size }));
     line(tr('AI criteria'), plan.audited ? tr('On · {n} unit(s)', { n: plan.audited }) : tr('Off'));
-    line(tr('Smart Study'), plan.early ? tr('{n} early appearance(s)', { n: plan.early }) : tr('Off'));
+    line(tr('Early Appearance'), plan.early ? tr('{n} early appearance(s)', { n: plan.early }) : tr('Off'));
     // Phase 3.7.5: the same read-only Calendar/List as the builder's Summary, from the saved plan's own tasks.
     const PC = window.TaskitatorPlanCalendar, calBox = el('div', undefined, box, 'plan-sum-cal');
     let state = previewState.get(plan.id); if (!state) { state = { view: 'cal', month: null, sel: null }; previewState.set(plan.id, state); }

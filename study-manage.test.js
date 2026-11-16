@@ -116,7 +116,7 @@ test('re-plan: modes, weekdays and per-date counts (Option A keeps the total)',(
 });
 test('re-plan: Smart Study plans are refused; early dates that would fall on or after the new date are cleared',()=>{
  const smart=build().map(t=>t.id==='study_plan_manage_1_unit_6'?{...t,smart_early_date:'2026-11-09'}:t);
- assert.throws(()=>M.replan(smart,ID,opts()),/Smart Study/);
+ assert.throws(()=>M.replan(smart,ID,opts()),/Early Appearance/);
  const early=build().map(t=>t.id==='study_plan_manage_1_unit_1'?{...t,early_date:'2026-11-25'}:t.id==='study_plan_manage_1_unit_2'?{...t,early_date:'2026-11-15'}:t);
  const r=new Map(M.replan(early,ID,opts()).tasks.map(t=>[t.id,t]));
  assert.equal(r.get('study_plan_manage_1_unit_1').early_date,undefined);assert.equal(r.get('study_plan_manage_1_unit_2').early_date,'2026-11-15');

@@ -207,7 +207,9 @@
   }
   const audited=()=>{const sp=unitSpec(sched.state().options);const ex=exclude.value.trim()?parseSkips(exclude.value,sp.first,sp.total,sp.skipped):[];return {sp,exclude:ex};};
   let smartEnabled=false,smartMode='original',smartDates=new Set(),smartAppearances=new Map(),plan=null,planError='';
-  const smartPanel=node('details',undefined,panels.sched,'study-collapse');node('summary','Smart Study Recurrence · Pro',smartPanel);
+  // Phase 4.0: shown as "Early Appearance" with the same PRO pill as Consecutive and Dynamic Priority. Internal names stay smart*.
+  const smartSummary=p=>{const s=node('summary','Early Appearance',p);node('span','PRO',s,'pro-feature-pill study-summary-pill');return s;};
+  const smartPanel=node('details',undefined,panels.sched,'study-collapse');smartSummary(smartPanel);
   for(const e of [title,unit,desc])e.addEventListener('input',()=>refresh());
   total.addEventListener('input',()=>{bonusPer=null;sched.invalidate();});bonus.addEventListener('input',()=>{bonusPer=null;sched.rerender();refresh();});
   audit.onchange=()=>{aiBody.hidden=!audit.checked;validation=null;refresh();};criteria.oninput=()=>{validation=null;validationText.textContent='Criteria changed. Validate again.';refresh();};exclude.addEventListener('input',()=>refresh());
@@ -230,7 +232,7 @@
   const weekdayOf=date=>new Date(date+'T12:00:00Z').getUTCDay(),shortWd=i=>isoDay('2023-01-0'+(i+1),{weekday:'short'});
   const smartRemember=()=>{smartUndo.push(new Map(smartAppearances));if(smartUndo.length>20)smartUndo.shift();};
   function renderSmart(){
-   const wasOpen=smartPanel.open;smartPanel.replaceChildren();node('summary','Smart Study Recurrence · Pro',smartPanel);smartPanel.open=wasOpen;const body=node('div',undefined,smartPanel,'study-collapse-body');
+   const wasOpen=smartPanel.open;smartPanel.replaceChildren();smartSummary(smartPanel);smartPanel.open=wasOpen;const body=node('div',undefined,smartPanel,'study-collapse-body');
    const enable=field('Enable early bonus opportunities',false,'checkbox',body);enable.checked=smartEnabled;enable.onchange=()=>{smartEnabled=enable.checked;renderSmart();sched.rerender();};
    node('p','Only tasks in this recurrence can be shown early or rearranged. Each opportunity expires at the end of its chosen study day. Unfinished work stays required on its original date.',body,'study-hint');
    if(!smartEnabled)return;if(!plan){node('p','Preview a balanced schedule first.',body,'study-hint');return;}
@@ -326,7 +328,7 @@
     line('Required per day',sch.map(r=>r.count).join(' / '));
     if(plan.bonus)line('Bonus per day',sch.map(r=>r.bonus).join(' / '));
     if(plan.chapter_size)line('Chapter labels',plan.chapter_label+' every '+plan.chapter_size+' units');
-    line('Smart Study',smartEnabled&&smartAppearances.size?smartAppearances.size+' early appearance(s)':'Off');
+    line('Early Appearance',smartEnabled&&smartAppearances.size?smartAppearances.size+' early appearance(s)':'Off');
     line('AI criteria',auditOn?'On':'Off');
     return;
    }

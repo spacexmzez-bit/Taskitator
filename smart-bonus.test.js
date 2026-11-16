@@ -74,7 +74,7 @@ test('plans without Smart Study behave exactly as before', () => {
 test('the check refuses a moved unit that kept its early date, and an unmoved unit that lost it', () => {
     const before = make(), r = M.bonusSlide(before, ID, day(1));
     const kept = r.tasks.map(t => t.parent_id && num(t) === 8 ? { ...t, smart_early_date: day(1) } : t);
-    assert.match(M.bonusCheck(before, kept, ID, 'slide', day(1)), /kept its Smart Study early date/);
+    assert.match(M.bonusCheck(before, kept, ID, 'slide', day(1)), /kept its Early Appearance date/);
     const lost = r.tasks.map(t => { if (!(t.parent_id && num(t) === 4)) return t; const n = { ...t }; delete n.smart_early_date; return n; });
     assert.match(M.bonusCheck(before, lost, ID, 'slide', day(1)), /changed beyond its day/);
     const forged = r.tasks.map(t => t.parent_id && num(t) === 7 ? { ...t, smart_early_date: day(1) } : t);
@@ -91,12 +91,12 @@ test('Worker: the bonus change is pinned by its grant, which also lets the clear
     assert.doesNotThrow(() => S.guard({ tasks: before }, { tasks: after }, granted));
     await g.guardSync(tx, 'u', { tasks: before }, { tasks: after });
     // The same change without a grant is refused twice over.
-    assert.throws(() => S.guard({ tasks: before }, { tasks: after }), /Smart Study schedule changed/);
+    assert.throws(() => S.guard({ tasks: before }, { tasks: after }), /Early Appearance schedule changed/);
     assert.equal((await g.studyReplanGrants(store(), 'u', { tasks: before }, { tasks: after })).size, 0);
     // A grant for this plan never covers Smart fields of another plan.
     const other = C.build({ ...cfg, bonus: 0, smart: { mode: 'original', dates: [], appearances: [{ unit: 3, date: day(0) }] } }, 'other_plan', CREATED, false, '');
     const tampered = other.map(t => { const n = { ...t }; delete n.smart_early_date; return n; });
-    assert.throws(() => S.guard({ tasks: [...before, ...other] }, { tasks: [...after, ...tampered] }, granted), /Smart Study schedule changed/);
+    assert.throws(() => S.guard({ tasks: [...before, ...other] }, { tasks: [...after, ...tampered] }, granted), /Early Appearance schedule changed/);
     for (const [op, count, today, cleared] of [['add', 4, day(0), 3], ['remove', 4, day(0), 1]]) {
         const t2 = store(), r = await g.authorizeStudyBonus(t2, 'u', { tasks: before, settings: {} }, ID, { op, count }, today);
         assert.equal(r.early_cleared, cleared, op);
@@ -106,8 +106,8 @@ test('Worker: the bonus change is pinned by its grant, which also lets the clear
 
 test('re-plan and soft reschedule stay off while a plan has live early appearances', () => {
     const noBonus = C.build({ ...cfg, bonus: 0, smart: { mode: 'original', dates: [], appearances: [{ unit: 3, date: day(0) }] } }, ID, CREATED, false, '');
-    assert.throws(() => M.replan(noBonus, ID, { rev: 'aaaa1', start: day(5), mode: 'perDay', per: 3, weekdays: [] }), /Smart Study early dates/);
-    assert.throws(() => M.softReschedule(noBonus, ID, { rev: 'abcd', mode: 'today' }, day(2)), /Smart Study/);
+    assert.throws(() => M.replan(noBonus, ID, { rev: 'aaaa1', start: day(5), mode: 'perDay', per: 3, weekdays: [] }), /Early Appearance dates/);
+    assert.throws(() => M.softReschedule(noBonus, ID, { rev: 'abcd', mode: 'today' }, day(2)), /Early Appearance/);
     const m = src('pro/study-manage.js');
     assert.ok(m.includes('It cannot be re-planned.') && m.includes('It cannot be rescheduled.'));
 });

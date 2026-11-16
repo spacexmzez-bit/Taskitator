@@ -8,7 +8,7 @@ function nextWeekend(day,start=5,end=6){
 }
 function normalize(s,rows){
  if(!s)return null;
- if(!['original','weekend','dates'].includes(s.mode)||!Array.isArray(s.appearances)||!s.appearances.length||s.appearances.length>1000)throw Error('Choose a Smart Study option and at least one future unit.');
+ if(!['original','weekend','dates'].includes(s.mode)||!Array.isArray(s.appearances)||!s.appearances.length||s.appearances.length>1000)throw Error('Choose an Early Appearance option and at least one future unit.');
  // Only required units can be shown early: a plan's own bonus units (the last ones of a day) are optional already.
  const units=new Map(rows.flatMap(r=>r.numbers.slice(0,r.count??r.numbers.length).map(n=>[n,r.date]))),dates=new Set(rows.map(r=>r.date)),seen=new Set();
  if(s.appearances.some(a=>a&&!units.has(a.unit)&&rows.some(r=>r.numbers.includes(a.unit))))throw Error('Bonus units are optional already and cannot be shown early. Choose required units.');
@@ -48,9 +48,9 @@ function apply(snapshot,previous,now=Date.now(),approval=null){
 function guard(previous,next,exempt=new Set()){
  const map=new Map((next.tasks||[]).map(t=>[t.id,t]));
  for(const old of previous?.tasks||[]){const t=map.get(old.id);if(!t)continue;if(old.study_plan_id&&exempt.has(old.study_plan_id))continue;
-  for(const k of new Set([...Object.keys(old),...Object.keys(t)].filter(k=>k.startsWith('smart_'))))if(JSON.stringify(old[k])!==JSON.stringify(t[k]))throw Error('Smart Study schedule changed elsewhere. Sync and retry.');
+  for(const k of new Set([...Object.keys(old),...Object.keys(t)].filter(k=>k.startsWith('smart_'))))if(JSON.stringify(old[k])!==JSON.stringify(t[k]))throw Error('Early Appearance schedule changed elsewhere. Sync and retry.');
  }
- for(const t of next.tasks||[])if(!previous?.tasks?.some(o=>o.id===t.id)&&!t.study_plan_id&&Object.keys(t).some(k=>k.startsWith('smart_')))throw Error('Smart Study requires an authorized study recurrence.');
+ for(const t of next.tasks||[])if(!previous?.tasks?.some(o=>o.id===t.id)&&!t.study_plan_id&&Object.keys(t).some(k=>k.startsWith('smart_')))throw Error('Early Appearance requires an authorized study recurrence.');
 }
 // Bulk tools (Phase 3.6.1). They only choose early appearances (unit -> earlier date); every unit stays required on its own date.
 // rows: [{date, numbers}] in any order. current: Map(unit -> date). o.scope: Set of dates the tool may fill (null = every date).
@@ -89,7 +89,7 @@ function bulk(rows,tool,o={},current=new Map()){
   const count=Number(o.count);if(!Number.isSafeInteger(count)||count<1||count>1000)throw Error('Use a whole number of tasks from 1 to 1,000.');
   const got=take(from,count);if(!got.length)notes.push({date:o.from,why:'empty'});
   for(const n of got){out.set(n,o.to);added++;}
- }else throw Error('Unknown Smart Study tool.');
+ }else throw Error('Unknown Early Appearance tool.');
  return {appearances:out,added,notes};
 }
 root.TaskitatorSmartStudy={normalize,decorate,apply,guard,nextWeekend,bulk};

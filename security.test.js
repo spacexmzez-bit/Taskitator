@@ -1901,27 +1901,29 @@ test('Dynamic Priority: entitlement lost between the pre-transaction check and c
     assert.equal(r.status,403);assert.equal(r.body.code,'PRO_REQUIRED');assert.equal((await f.call('/sync/pull',a.token)).body.empty,true);
 });
 
-test('Dynamic Priority: can be enabled in the same save as an AI lock or shield, then cannot change',async()=>{
+test('Dynamic Priority (Phase 4.0): an AI lock or shield no longer freezes it; it can change with Pro',async()=>{
     for(const protection of [{ai_locked:true,proof_criteria:'The saved required artifact'},{strict_prerequisites:true}]){
         const {f,a}=await dpFixture();
         assert.equal((await dpSave(f,a,[dpTask('t')])).status,200);
         assert.equal((await dpSave(f,a,[dpTask('t',{...protection,dynamic_priority_target:'prio_low'})])).status,200);
-        const saved=(await dpStored(f,a))[0],again=extra=>dpSave(f,a,[{...saved,...extra}]);
-        assert.equal((await again({description:'ordinary edit'})).status,200);
-        for(const change of [{dynamic_priority_target:'prio_med'},{dynamic_priority_target:null},{dynamic_priority_target:undefined}]){
-            const r=await again(change);assert.equal(r.status,403,JSON.stringify(change));assert.equal(r.body.code,'DYNAMIC_PRIORITY_LOCKED');
-        }
-        assert.equal((await dpStored(f,a))[0].dynamic_priority_target,'prio_low');
+        let saved=(await dpStored(f,a))[0];
+        assert.equal((await dpSave(f,a,[{...saved,dynamic_priority_target:'prio_med'}])).status,200);
+        assert.equal((await dpStored(f,a))[0].dynamic_priority_target,'prio_med');
+        saved=(await dpStored(f,a))[0];
+        assert.equal((await dpSave(f,a,[{...saved,dynamic_priority_target:null}])).status,200);
+        assert.equal((await dpStored(f,a))[0].dynamic_priority_target,null);
     }
 });
 
-test('Dynamic Priority: a locked or shielded task without it cannot add it later; new tasks may be created with both',async()=>{
+test('Dynamic Priority (Phase 4.0): a locked or shielded task can add it later with Pro, never without',async()=>{
     for(const protection of [{ai_locked:true,proof_criteria:'The saved required artifact'},{strict_prerequisites:true}]){
-        const {f,a}=await dpFixture();
+        let {f,a}=await dpFixture();
+        assert.equal((await dpSave(f,a,[dpTask('t',protection)])).status,200);
+        assert.equal((await dpSave(f,a,[dpTask('t',{...protection,dynamic_priority_target:'prio_low'})])).status,200);
+        ({f,a}=await dpFixture({none:true}));
         assert.equal((await dpSave(f,a,[dpTask('t',protection)])).status,200);
         const r=await dpSave(f,a,[dpTask('t',{...protection,dynamic_priority_target:'prio_low'})]);
-        assert.equal(r.status,403);assert.equal(r.body.code,'DYNAMIC_PRIORITY_LOCKED');
-        assert.equal((await dpSave(f,a,[dpTask('t',protection),dpTask('new',{...protection,dynamic_priority_target:'prio_low'})])).status,200);
+        assert.equal(r.status,403);assert.equal(r.body.code,'PRO_REQUIRED');
     }
 });
 

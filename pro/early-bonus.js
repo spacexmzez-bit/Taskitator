@@ -10,7 +10,7 @@ function dueOf(by,task){let n=task;for(let i=0;n&&i<100;i++){if(date(n.due_date)
 function reason(by,task,early,today){
  if(!task||task.status!=='active')return 'Only active tasks can be shown early.';
  if(task.recurrence_series_id)return 'Recurring tasks cannot be shown early.';
- if(task.smart_early_date)return 'Already shown early by Smart Study.';
+ if(task.smart_early_date)return 'Already shown early by Early Appearance.';
  if(!date(early))return 'Choose a valid date.';
  if(early<today)return 'The early date cannot be in the past.';
  const due=dueOf(by,task);
@@ -66,7 +66,7 @@ function guard(previous,next){
   if(!date(t.early_date))throw Error('Choose a valid early date.');
   if(t.status!=='active')throw Error('Only active tasks can be shown early.');
   if(t.recurrence_series_id)throw Error('Recurring tasks cannot be shown early.');
-  if(t.smart_early_date)throw Error('A task already shown early by Smart Study cannot get another early date.');
+  if(t.smart_early_date)throw Error('A task already shown early by Early Appearance cannot get another early date.');
   const due=dueOf(by,t);
   if(!due||t.early_date>=due)throw Error('The early date must be before the due date.');
  }

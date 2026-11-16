@@ -624,3 +624,9 @@ html:not([data-family]) #focusTimerTag:has(> .tk-ic)::before { content: "\23F1";
 
 html[data-family="nature"] .copilot-standby-icon .tk-ic.copilot-standby-art { width: 110px; height: 55px; color: var(--tk-soft); }
 html[data-family="nature"] .copilot-standby-card .tk-ic.copilot-standby-art { width: 80px; height: 40px; }
+/* Phase 4.0: completion circles inside the task editor follow the same look as the list. */
+html[data-family="nature"] .check-circle.is-done { background: var(--pc, var(--success)); color: var(--tk-bg1); border: 0; }
+html[data-family="nature"] .check-circle.is-done::after { content: none; }
+html[data-family="nature"][data-fx-off~="animals"] .check-circle.is-done::after { content: "✓"; font-size: 15px; font-weight: 800; color: var(--tk-bg1); }
+html[data-family="nature"] .detail-sub-row .check-circle { --btn: 28px; width: 28px; height: 28px; }
+html[data-family="nature"] .detail-title-row .check-circle { --btn: 34px; }

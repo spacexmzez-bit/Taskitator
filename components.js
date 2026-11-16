@@ -727,6 +727,9 @@ window.TaskitatorComponents = Object.freeze({
         let pendingAuditTaskId = null;
         const pendingProofApprovals=new Map();
         let activeDetailTaskId = null;
+        // Where the open editor came from. 'calendar' blocks completion inside the panel (Phase 4.0).
+        let detailOrigin = null;
+        let graceTicker = null;
         const liveHost=host;
         let draft=null,editBaseline='',removeEditReference=false;
         // The Pro check for consecutive numbering runs once, when the box is ticked. Its result is held here (as a
@@ -791,7 +794,6 @@ window.TaskitatorComponents = Object.freeze({
             (async()=>{
                 const ent=await dpEntitlement();
                 if(gen!==dpGeneration[p]||!box.isConnected)return;
-                if(locked){box.disabled=true;sel.disabled=true;show('Locked: Dynamic Priority cannot change once an AI lock or shield is saved.');return;}
                 if(ent.allowed){box.disabled=false;sel.disabled=false;return;}
                 // Not entitled: new settings are blocked, but an existing one can always be turned off.
                 box.disabled=!target;sel.disabled=true;show(dpMessage(ent));
@@ -801,7 +803,7 @@ window.TaskitatorComponents = Object.freeze({
         // Returns false (after telling the user) when a requested change cannot be made.
         async function dpCommit(p,task,locked,had){
             const want=dpValue(p),current=had??null;
-            if(!dpEls(p).box || !dpEls(p).sel || want===current||locked)return true;
+            if(!dpEls(p).box || !dpEls(p).sel || want===current)return true;
             
             if(want===null){delete task.dynamic_priority_target;return true;}
             const ent=await dpEntitlement();
@@ -1416,37 +1418,169 @@ window.TaskitatorComponents = Object.freeze({
         // =========================================================================
         // Task Detail / Edit Modal Engine
         // =========================================================================
+        // ---- Phase 4.0: completion inside the editor --------------------------------------------------------
+        // The panel never has its own completion rules: it calls the list's handleTaskCompletion / undoTaskCompletion
+        // (audit proof, prerequisites, strict mode, root rules, the 10 s grace timer). Afterwards the open editor's
+        // draft is rebased on the live tasks so a later Save keeps the new status and the user's unsaved edits.
+        const App = () => window.TaskitatorApp;
+        const liveTask = id => liveHost.tasks.getAll().find(t => t.id === id);
+        const graceEnd = id => App()?.graceEndsAt?.(id) ?? null;
+        function rebaseDraft() {
+            if (!draft) return;
+            const live = liveHost.tasks.getAll(), original = JSON.parse(draft.originalTasks);
+            const orig = new Map(original.map(t => [t.id, t])), mine = new Map(draft.tasks.map(t => [t.id, t])), liveIds = new Set(live.map(t => t.id));
+            const next = [];
+            for (const lt of live) {
+                const o = orig.get(lt.id), d = mine.get(lt.id);
+                if (!d || !o) { next.push(d || copy(lt)); continue; }
+                const merged = copy(lt);
+                for (const k of new Set([...Object.keys(o), ...Object.keys(d)])) {
+                    if (JSON.stringify(o[k]) === JSON.stringify(d[k])) continue; // not edited here: the live value wins
+                    if (d[k] === undefined) delete merged[k]; else merged[k] = copy(d[k]);
+                }
+                next.push(merged);
+            }
+            for (const d of draft.tasks) if (!liveIds.has(d.id) && !orig.has(d.id)) next.push(d); // created in this editor, not saved yet
+            draft.tasks.splice(0, draft.tasks.length, ...next);
+            draft.originalTasks = JSON.stringify(live);
+        }
+        function setCompletedLock(on) {
+            const box = document.querySelector?.('#taskDetailModal .modal-box');
+            if (!box) return;
+            const keep = new Set(['editTitleGroup', 'editDescGroup', 'editSubtasksGroup']);
+            const parts = [...box.querySelectorAll(':scope > .form-group, :scope > fieldset, :scope > .ai-audit-card, :scope > #recurrenceTaskControls')].filter(e => !keep.has(e.id));
+            const sub = document.getElementById('editSubtasksGroup');
+            for (const sel of ['.subtask-head-tools', '.quick-subtask-row', '#detailConsecutiveNotice']) { const e = sub?.querySelector(sel); if (e) parts.push(e); }
+            for (const e of parts) { e.inert = on; e.classList.toggle('done-locked', on); }
+            box.classList.toggle('is-done-locked', on);
+            const note = document.getElementById('detailDoneNote');
+            if (note) note.hidden = !on;
+        }
+        function blockedHere() {
+            if (detailOrigin !== 'calendar') return false;
+            window.TaskitatorNotify('Tasks can’t be completed from the calendar. Complete it from Today or General.');
+            window.TaskitatorFX?.deny?.();
+            return true;
+        }
+        function afterPanelStatus() {
+            rebaseDraft();
+            updateDetailCompletionUI();
+            const r = document.getElementById('taskDetailModal')?._customRenderFn;
+            if (typeof r === 'function') r(); else liveHost.view.refresh();
+        }
+        async function panelToggle(taskId, btn, row) {
+            if (blockedHere()) return;
+            const app = App();
+            if (!app?.handleTaskCompletion) return;
+            const live = liveTask(taskId);
+            if (!live) return;
+            if (graceEnd(taskId)) { window.TaskitatorFX?.tap?.(); app.undoTaskCompletion(taskId, afterPanelStatus); return; }
+            const done = live.status === 'completed';
+            const bypass = liveHost.rules.bypassActive();
+            if ((done && live.ai_locked && !bypass) || (!done && app.isCompletionBlocked?.(taskId))) {
+                app.handleTaskCompletion(taskId, afterPanelStatus);
+                window.TaskitatorFX?.shake?.(row || btn);
+                return;
+            }
+            if (!done && !live.ai_locked && window.TaskitatorFX?.complete) await window.TaskitatorFX.complete(btn, row);
+            else window.TaskitatorFX?.tap?.();
+            btn?.classList.remove('is-completing'); row?.classList.remove('is-completing');
+            app.handleTaskCompletion(taskId, afterPanelStatus);
+        }
+        function priorityColor(task) {
+            const p = (liveHost.catalogs.priorities() || []).find(x => x.id === task?.priority_id);
+            return p?.color ? TaskitatorSafety.cssColor(p.color) : '';
+        }
+        function dressCheck(btn, task, done) {
+            btn.classList.toggle('is-done', done);
+            btn.classList.toggle('is-ai-locked', Boolean(task?.ai_locked));
+            btn.textContent = '';
+            if (window.TaskitatorIcons && task) btn.appendChild(window.TaskitatorIcons.animal(window.TaskitatorIcons.animalForId(task.id)));
+            btn.setAttribute?.('aria-label', done ? 'Mark "' + (task?.title || '') + '" as not done' : 'Complete "' + (task?.title || '') + '"');
+        }
+        function tickGrace() {
+            const box = document.getElementById('taskDetailModal');
+            const els = [...(box?.querySelectorAll('[data-grace-for]') || [])].filter(e => !e.hidden);
+            if (!els.length || !box.classList.contains('open')) { clearInterval(graceTicker); graceTicker = null; return; }
+            for (const e of els) { const end = graceEnd(e.dataset.graceFor), sec = e.querySelector('[data-grace-sec]'); if (sec && end) sec.textContent = String(Math.max(0, Math.ceil((end - Date.now()) / 1000))); }
+        }
+        function startGraceTicker() { tickGrace(); if (!graceTicker) graceTicker = setInterval(tickGrace, 250); }
+        function updateDetailCompletionUI() {
+            const id = activeDetailTaskId, task = id && liveTask(id);
+            const circle = document.getElementById('detailCompleteCircle'), row = document.getElementById('detailTitleRow'), undo = document.getElementById('detailUndoBtn');
+            if (!task) return;
+            const done = task.status === 'completed', pending = done && graceEnd(id);
+            if (row) { row.style?.setProperty?.('--pc', priorityColor(task) || ''); row.style?.setProperty?.('--d', '0'); }
+            if (circle) { circle.classList.remove('is-completing'); dressCheck(circle, task, done); circle.classList.toggle('is-blocked-here', detailOrigin === 'calendar'); }
+            if (undo) { undo.hidden = !pending; undo.dataset.graceFor = id; }
+            setCompletedLock(done);
+            refreshDetailSubtaskList(id, document.getElementById('taskDetailModal')?._customRenderFn);
+            if (pending) startGraceTicker();
+        }
+        function setupDetailCompletion(task) {
+            const circle = document.getElementById('detailCompleteCircle'), undo = document.getElementById('detailUndoBtn'), row = document.getElementById('detailTitleRow');
+            if (circle) circle.onclick = e => { e.preventDefault(); if (activeDetailTaskId) panelToggle(activeDetailTaskId, circle, row); };
+            if (undo) undo.onclick = e => { e.preventDefault(); const id = activeDetailTaskId; if (id && graceEnd(id)) App()?.undoTaskCompletion(id, afterPanelStatus); };
+            updateDetailCompletionUI();
+        }
+
         function refreshDetailSubtaskList(parentId, triggerRenderFn) {
             const detailSubtasksList = document.getElementById('detailSubtasksList');
-            const taskDetailModal = document.getElementById('taskDetailModal');
             if (!detailSubtasksList) return;
-            
+
             detailSubtasksList.innerHTML = '';
             const directChildren = host.tasks.getAll().filter(t => t.parent_id === parentId && t.status !== 'trash');
             const sortedChildren = host.tasks.sort([...directChildren]);
+            const parentDone = liveTask(parentId)?.status === 'completed';
 
             if (sortedChildren.length === 0) {
                 detailSubtasksList.innerHTML = '<li style="font-size: 0.825rem; color: var(--text-muted); padding: 4px 0;">No subtasks yet.</li>';
-            } else {
-                sortedChildren.forEach(child => {
-                    const sLi = document.createElement('li');
-                    sLi.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;';
-
-                    let cBadges = '';
-                    if (child.is_bonus) cBadges += '<span class="bonus-badge"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus</span> ';
-                    if (child.ai_locked) cBadges += '<span class="ai-badge"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg> AI</span> ';
-                    if (child.strict_prerequisites) cBadges += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-shield"></use></svg></span>';
-
-                    sLi.innerHTML = `
-                        <span>${child.status === 'completed' ? '✓ ' : ''}${TaskitatorSafety.escapeHtml(child.title)} ${cBadges}</span>
-                        <button type="button" class="icon-btn" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
-                    `;
-                    sLi.querySelector('button').addEventListener('click', () => {
-                        openTaskDetailModal(child.id, triggerRenderFn);
-                    });
-                    detailSubtasksList.appendChild(sLi);
-                });
+                return;
             }
+            let anyPending = false;
+            sortedChildren.forEach(child => {
+                const live = liveTask(child.id), saved = Boolean(live);
+                const done = (live || child).status === 'completed', pending = done && graceEnd(child.id);
+                const sLi = document.createElement('li');
+                sLi.className = 'detail-sub-row' + (done ? ' is-done' : '') + (pending ? ' is-pending' : '');
+                const color = priorityColor(child);
+                if (color) sLi.style?.setProperty?.('--pc', color);
+
+                const check = document.createElement('button');
+                check.type = 'button';
+                check.className = 'check-circle detail-sub-check';
+                dressCheck(check, child, done);
+                // A subtask that exists only in this editor (not saved yet) or sits under a completed parent can't be ticked here.
+                check.disabled = !saved || parentDone;
+                if (!saved) check.title = 'Save the task first';
+                check.addEventListener('click', e => { e.stopPropagation(); panelToggle(child.id, check, sLi); });
+                sLi.appendChild(check);
+
+                let cBadges = '';
+                if (child.is_bonus) cBadges += '<span class="bonus-badge"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus</span> ';
+                if (child.ai_locked) cBadges += '<span class="ai-badge"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-lock"></use></svg> AI</span> ';
+                if (child.strict_prerequisites) cBadges += '<span class="ai-badge" style="background:#451a03; color:#fde68a; border-color:#78350f;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-shield"></use></svg></span>';
+                const open = document.createElement('button');
+                open.type = 'button';
+                open.className = 'detail-sub-open';
+                open.innerHTML = `<span class="detail-sub-title">${TaskitatorSafety.escapeHtml(child.title)}</span> ${cBadges}`;
+                open.title = 'Open subtask';
+                open.addEventListener('click', () => openTaskDetailModal(child.id, triggerRenderFn, { origin: detailOrigin }));
+                sLi.appendChild(open);
+
+                if (pending) {
+                    anyPending = true;
+                    const u = document.createElement('button');
+                    u.type = 'button';
+                    u.className = 'undo-grace-btn detail-undo-btn';
+                    u.dataset.graceFor = child.id;
+                    u.innerHTML = 'Undo (<span data-grace-sec>10</span>s)';
+                    u.addEventListener('click', e => { e.stopPropagation(); if (graceEnd(child.id)) App()?.undoTaskCompletion(child.id, afterPanelStatus); });
+                    sLi.appendChild(u);
+                }
+                detailSubtasksList.appendChild(sLi);
+            });
+            if (anyPending) startGraceTicker();
         }
 
         // Phase 2.5: edit an AI-locked task's criteria. One request: the Worker validates the new text and compares it with the
@@ -1491,7 +1625,7 @@ window.TaskitatorComponents = Object.freeze({
             d.addEventListener('close',()=>d.remove());document.body.append(d);d.showModal();
         }
 
-        async function openTaskDetailModal(taskId, triggerRenderFn) {
+        async function openTaskDetailModal(taskId, triggerRenderFn, opts = {}) {
             if(draft&&!liveHost.tasks.getAll().some(t=>t.id===taskId)){window.TaskitatorNotify('Save this draft before opening its new subtask.');return;}
             if(draft&&!discardDraft())return;
             draft={tasks:copy(liveHost.tasks.getAll()),originalTasks:JSON.stringify(liveHost.tasks.getAll()),recurrence:copy(window.TaskitatorRecurrenceUI?.state()||{series:[],history:[]}),session:localStorage.getItem('taskitator_session_id')};
@@ -1499,6 +1633,7 @@ window.TaskitatorComponents = Object.freeze({
             const task = host.tasks.getAll().find(t => t.id === taskId);
             if (!task) return;
             activeDetailTaskId = taskId;
+            detailOrigin = opts?.origin || null;
             window.TaskitatorRecurrenceUI?.bindTask(taskId);
 
             const isBypassActive = host.rules.bypassActive();
@@ -1601,7 +1736,8 @@ window.TaskitatorComponents = Object.freeze({
             }
             window.TaskitatorStatusCountUI?.setup('edit', task, null);
 
-            dpSetup('edit',{target:task.dynamic_priority_target||null,locked:(Boolean(task.ai_locked||task.require_ai_proof||task.strict_prerequisites))&&!isBypassActive});
+            // Phase 4.0: a shield or AI lock no longer freezes Dynamic Priority. Pro is still required to turn it on or change it.
+            dpSetup('edit',{target:task.dynamic_priority_target||null});
 
             renderModalTagCloud('editTagCloud', editModalSelectedTags);
             renderModalPriorityCloud('editPriorityCloud', true);
@@ -1701,7 +1837,8 @@ window.TaskitatorComponents = Object.freeze({
             if (editFileWrapper) editFileWrapper.style.display = cannotModifyLocked ? 'none' : 'block';
             if (editActionsBar) editActionsBar.style.display = cannotModifyLocked ? 'none' : 'flex';
 
-            if (editTaskTitle) editTaskTitle.contentEditable = cannotModifyLocked ? 'false' : 'true';
+            if (editTaskTitle) { editTaskTitle.contentEditable = cannotModifyLocked ? 'false' : 'true'; if (editTaskTitle.tagName === 'INPUT') editTaskTitle.readOnly = cannotModifyLocked; }
+            { const n = document.getElementById('detailTitleLockNote'); if (n) n.hidden = !cannotModifyLocked; }
             if (editTaskDueDate) editTaskDueDate.disabled = cannotModifyLocked;
             if (editTaskCriteria) {
                 editTaskCriteria.disabled = cannotModifyLocked;
@@ -1732,11 +1869,10 @@ window.TaskitatorComponents = Object.freeze({
                 detailLockStatusBadge.innerHTML = statusHtml;
             }
 
-            refreshDetailSubtaskList(taskId, triggerRenderFn);
-
             if (taskDetailModal) {
                 taskDetailModal._customRenderFn = triggerRenderFn;
                 taskDetailModal.classList.add('open');
+                setupDetailCompletion(task);
                 draft.tags=JSON.stringify([...editModalSelectedTags]);draft.priority=editModalSelectedPriority;draft.project=editModalSelectedProject;draft.bonus=editModalIsBonus;editBaseline=controls();
                 refreshEditDraftBanner(taskId);
                 void refreshConsecutive();
@@ -2932,11 +3068,15 @@ window.TaskitatorComponents = Object.freeze({
                     }
 
                     const isBypassActive = host.rules.bypassActive();
-                    // Judged on the stored task, before this save changes anything: a lock/shield saved in the SAME
-                    // save as Dynamic Priority is allowed; an already-saved one blocks changes (except Emergency Bypass).
-                    const dpLocked = Boolean(task.ai_locked || task.require_ai_proof || task.strict_prerequisites) && !isBypassActive;
+                    // All-or-nothing: an AI-audited title can't change without Emergency Bypass, so refuse the whole save
+                    // with a message instead of silently dropping the title and saving the rest.
+                    if (task.ai_locked && !isBypassActive) {
+                        const typed = String(NLPEngine.extractCleanTitle('editTaskTitle') || '').replace(/\$\$/g, '').replace(/\s+/g, ' ').trim();
+                        const stored = String(task.raw_title !== undefined ? task.raw_title : (task.title || '')).replace(/\$\$/g, '').replace(/\s+/g, ' ').trim();
+                        if (typed && typed !== stored) { window.TaskitatorNotify('The title of an AI-audited task can’t be changed without Emergency Bypass. Nothing was saved.'); return; }
+                    }
                     const dpHad = task.dynamic_priority_target || null;
-                    if (!(await dpCommit('edit', task, dpLocked, dpHad))) return;
+                    if (!(await dpCommit('edit', task, false, dpHad))) return;
                     const willBeAiLocked = Boolean(document.getElementById('editAiLockCheckbox')?.checked);
                     let willBeStrict = Boolean(document.getElementById('editStrictPrereqCheckbox')?.checked);
                     const editedCriteriaRaw = document.getElementById('editTaskCriteria')?.value.trim() || '';
@@ -3203,6 +3343,7 @@ window.TaskitatorComponents = Object.freeze({
                             await window.TaskitatorPro.batchConfirm({jobId:result.job_id,taskIds:[auditedId],batch:false});
                             pendingProofApprovals.delete(auditedId);
                             host.tasks.reload();host.effects.auditSuccess();
+                            if(draft&&activeDetailTaskId){liveHost.tasks.reload();rebaseDraft();updateDetailCompletionUI();}
                             if(auditModal)auditModal.classList.remove('open');
                             pendingAuditTaskId=null;host.view.refresh();
                         } catch(error){

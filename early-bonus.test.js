@@ -64,7 +64,7 @@ test('early: study units can use it; Smart Study never moves an early-dated unit
  const tasks=C.build({...cfg,smart:{mode:'dates',dates:['2026-11-05'],appearances:[{unit:3,date:'2026-11-02'}]}},'plan_abcdefgh','2026-11-01T00:00:00Z');
  const unit=tasks.find(t=>t.title==='Chapter.7'),smartUnit=tasks.find(t=>t.title==='Chapter.3');
  const r=E.set(tasks,[unit.id,smartUnit.id],'2026-11-02','2026-11-02');
- assert.deepEqual(r.set,[unit.id]);assert.match(r.skipped[0].reason,/Smart Study/);
+ assert.deepEqual(r.set,[unit.id]);assert.match(r.skipped[0].reason,/Early Appearance/);
  const run=withEarly=>{const before=clone(tasks),next=clone(tasks);next.find(t=>t.id===smartUnit.id).status='completed';const u=next.find(t=>t.title==='Chapter.7');if(withEarly)u.early_date='2026-11-03';S.apply({tasks:next,settings:{}},{tasks:before},Date.parse('2026-11-02T12:00Z'));return next.filter(t=>t.smart_moved_from);};
  assert.equal(run(false).length,1); // control: Smart Study does move a unit into the freed slot
  assert.ok(run(true).every(t=>t.title!=='Chapter.7'));

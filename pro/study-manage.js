@@ -197,7 +197,7 @@ function adjustCounts(counts,index,delta){
 }
 function replan(tasks,id,options){
  const o=replanOptions(options),plan=forPlan(tasks,id);
- if(plan.units.some(u=>u.status==='active'&&Object.keys(u).some(k=>k.startsWith('smart_'))))throw Error('This plan uses Smart Study early dates, which are fixed. It cannot be re-planned.');
+ if(plan.units.some(u=>u.status==='active'&&Object.keys(u).some(k=>k.startsWith('smart_'))))throw Error('This plan uses Early Appearance dates, which are fixed. It cannot be re-planned.');
  if(plan.units.some(u=>u.status==='active'&&u.is_bonus))throw Error('This plan has bonus units. Complete the plan or convert its bonus units to required before re-planning it.');
  const {keep,drop}=replanUnits(plan,o);
  if(!keep.length)throw Error('No unfinished units are left to schedule. Delete the plan instead.');
@@ -290,7 +290,7 @@ function softDays(plan,today){
 function softReschedule(tasks,id,options,today){
  const o=softOptions(options);if(!dateOK(today))throw Error('Invalid date.');
  const plan=forPlan(tasks,id);
- if(plan.units.some(u=>u.status==='active'&&Object.keys(u).some(k=>k.startsWith('smart_'))))throw Error('This plan uses Smart Study early dates, which are fixed. It cannot be rescheduled.');
+ if(plan.units.some(u=>u.status==='active'&&Object.keys(u).some(k=>k.startsWith('smart_'))))throw Error('This plan uses Early Appearance dates, which are fixed. It cannot be rescheduled.');
  const by=new Map(tasks.map(t=>[t.id,t])),due=t=>dueOf(by,t),overdue=softOverdue(tasks,id,today),days=softDays(plan,today),dates=[...days.keys()].sort();
  if(!overdue.length)throw Error('Nothing is overdue in this plan.');
  const placed=new Map();let counts=null;
@@ -572,7 +572,7 @@ function bonusCheck(before,after,id,op,today,count=0){
    if(shifted&&SMART_CLEAR.includes(f)&&n[f]===undefined)continue; // an early appearance cleared because the unit changed day
    return 'A unit changed beyond its day.';
   }
-  if(shifted&&SMART_CLEAR.some(f=>n[f]!==undefined))return 'A unit changed day and kept its Smart Study early date.';
+  if(shifted&&SMART_CLEAR.some(f=>n[f]!==undefined))return 'A unit changed day and kept its Early Appearance date.';
   if(u.status!=='active'&&(u.parent_id!==n.parent_id||Boolean(u.is_bonus)!==Boolean(n.is_bonus)||(u.due_date||'')!==(n.due_date||'')))return 'A finished unit moved.';
  }
  const added=[...a.keys()].filter(k=>!b.has(k));

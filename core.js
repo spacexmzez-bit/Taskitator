@@ -881,7 +881,7 @@ const SyncEngine = {
         'taskitator_collapsed_nodes', 'taskitator_distraction_notes', 'taskitator_archived_notes',
         'taskitator_emergency_state', 'taskitator_local_revision', 'taskitator_sync_dirty',
         'taskitator_remote_version', 'taskitator_version_pending', 'taskitator_pending_rotation', 'taskitator_auto_sync_deadline',
-        'taskitator_pending_sync_download', 'taskitator_recurrence_state'
+        'taskitator_pending_sync_download', 'taskitator_recurrence_state', 'taskitator_pending_grace'
     ],
     sessionId: null,
     pushQueue: Promise.resolve(),
@@ -2182,7 +2182,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-phase3-v41');
+                    resolve(event.data?.version === 'taskitator-phase4-v42');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });

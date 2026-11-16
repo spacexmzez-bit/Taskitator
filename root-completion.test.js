@@ -106,5 +106,8 @@ test('wiring: shell loads the module, views hide expired roots, Projects shows c
     assert.match(projects, /hiddenCompletedIds/);
     const app = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
     assert.match(app, /if \(expired\.has\(t\.id\)\) return false;/);
-    assert.match(fs.readFileSync(new URL('./views/calendar.js', import.meta.url), 'utf8'), /TaskitatorApp\.handleTaskCompletion\(current\.id/);
+    // Phase 4.0: the calendar never completes tasks; it opens the editor and points to Today / General.
+    const cal = fs.readFileSync(new URL('./views/calendar.js', import.meta.url), 'utf8');
+    assert.doesNotMatch(cal, /handleTaskCompletion/);
+    assert.match(cal, /openTaskDetailModal\(taskId, refreshCalendar, \{ origin: 'calendar' \}\)/);
 });

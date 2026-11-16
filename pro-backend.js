@@ -747,7 +747,7 @@ export class TaskProtection {
             }
             if(shielded&&current&&!old.is_bonus&&current.is_bonus)throw fail(403,'SHIELD_REQUIRED','Required work protected by a shield cannot become bonus work.');
             if(shielded&&current&&old.parent_id!==current.parent_id)throw fail(403,'SHIELD_REQUIRED','Shielded subtasks must remain with their parent.');
-            if(old.smart_early_date&&current&&current.due_date!==old.due_date)throw fail(403,'SMART_DATE_LOCKED','Smart Study dates are fixed. An unfinished early opportunity expires automatically.');
+            if(old.smart_early_date&&current&&current.due_date!==old.due_date)throw fail(403,'SMART_DATE_LOCKED','Early Appearance dates are fixed. An unfinished early opportunity expires automatically.');
             if(protectedTask(old)&&old.status!=='trash'){
                 if(!current || current.status!==old.status || !protectedTask(current))throw fail(403,'PROOF_REQUIRED','Protected task completion, removal or reopening requires server authorization or Emergency Bypass.');
                 const locked=['title','raw_title','due_date','proof_criteria','raw_proof_criteria','original_proof_criteria','reference_id','reference_inline_data','ai_locked','require_ai_proof'];
@@ -776,8 +776,8 @@ export class TaskProtection {
     // the effective priority is derived and never written, so completions, AI audits, recurrence and Smart Study
     // never touch it. This guard covers every way the field can change in a pushed snapshot.
     //  - Adding or changing it needs verified Pro (fail closed). Removing it never does.
-    //  - It cannot change once the task is already AI-locked or shielded, unless Emergency Bypass is active.
-    //    A lock/shield saved in the same snapshot is allowed because the check uses the PREVIOUS stored task.
+    //  - Phase 4.0: an AI lock or shield no longer freezes it. Dynamic priority is derived, never stored as the real
+    //    priority, so phone blocking and audits are unaffected.
     //  - Unchanged values always pass, so a lapsed Pro plan keeps existing configuration intact.
     async guardDynamic(tx,account,previous,next,refreshError=null,client='web'){
         const raw=t=>t&&t[DYNAMIC_FIELD]!==undefined?t[DYNAMIC_FIELD]:null;
@@ -790,13 +790,10 @@ export class TaskProtection {
         const oldTemplates=templates(previous);
         for(const [key,now] of templates(next))if(!same(oldTemplates.get(key)??null,now))changes.push({old:null,now});
         if(!changes.length)return;
-        const bypass=await this.bypass(tx,account);
         const priorities=next.settings?.custom_priorities;
         const valid=new Set(Array.isArray(priorities)?priorities.map(p=>p?.id):['prio_high','prio_med','prio_low']);
         let checked=false;
         for(const {old,now} of changes){
-            if(old&&old.status!=='trash'&&(protectedTask(old)||old.strict_prerequisites)&&!bypass)
-                throw fail(403,'DYNAMIC_PRIORITY_LOCKED','Dynamic Priority cannot be changed after an AI lock or shield is saved. Enable it before saving the lock or shield, or use Emergency Bypass.');
             if(now===null)continue;
             if(typeof now!=='string'||!now||now.length>64||!valid.has(now))
                 throw fail(400,'INVALID_DYNAMIC_PRIORITY','Dynamic Priority must target one of your existing priorities.');

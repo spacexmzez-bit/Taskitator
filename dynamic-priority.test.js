@@ -83,8 +83,10 @@ test('UI: create and edit forms mark the feature Pro, offer real priorities, def
     assert.ok(html.indexOf('editDynamicPriorityContainer') > html.indexOf('id="editBonusTaskCheckbox"'));
     assert.match(components, /sel\.value=target\|\|lowest\|\|''/);
     assert.match(components, /host\.catalogs\.priorities\(\)/);
-    assert.match(components, /Locked: Dynamic Priority cannot change once an AI lock or shield is saved/);
-    assert.match(components, /dpLocked = Boolean\(task\.ai_locked \|\| task\.require_ai_proof \|\| task\.strict_prerequisites\) && !isBypassActive/);
+    // Phase 4.0: a shield or AI lock no longer freezes Dynamic Priority (Pro is still required).
+    assert.doesNotMatch(components, /Locked: Dynamic Priority cannot change/);
+    assert.doesNotMatch(components, /dpLocked = /);
+    assert.match(components, /dpCommit\('edit', task, false, dpHad\)/);
     assert.match(fs.readFileSync(new URL('./core.js', import.meta.url), 'utf8'), /dynamic_priority_schema: 1/);
 });
 

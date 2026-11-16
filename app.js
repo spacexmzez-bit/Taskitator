@@ -922,6 +922,34 @@ window.TaskitatorApp = (() => {
     let emergencyTimerInterval = null;
 
     const pendingGraceCompletions = new Map();
+    // Phase 4.0: the ids inside an undo window are also kept in storage. A completion is already saved when the window
+    // opens; only the finalize step (stats ledger) waits. If the page closes first, the next open finalizes it.
+    const PENDING_GRACE_KEY = 'taskitator_pending_grace';
+    function pendingGraceStored() { try { const v = JSON.parse(localStorage.getItem(PENDING_GRACE_KEY) || '[]'); return Array.isArray(v) ? v.filter(x => typeof x === 'string') : []; } catch (e) { return []; } }
+    function setPendingGraceStored(ids) { try { if (ids.length) localStorage.setItem(PENDING_GRACE_KEY, JSON.stringify([...new Set(ids)])); else localStorage.removeItem(PENDING_GRACE_KEY); } catch (e) {} }
+    function forgetPendingGrace(id) { setPendingGraceStored(pendingGraceStored().filter(x => x !== id)); }
+    function resumePendingGrace() {
+        const ids = pendingGraceStored().filter(id => !pendingGraceCompletions.has(id));
+        if (!ids.length) return;
+        for (const id of ids) {
+            if (tasks.some(t => t.id === id && t.status === 'completed')) finalizeTaskCompletion(id);
+            else forgetPendingGrace(id);
+        }
+    }
+    // Closing the page while an undo window is open: ask first (the browser shows its own box), then finalize.
+    window.addEventListener('beforeunload', e => {
+        if (!pendingGraceCompletions.size) return;
+        e.preventDefault();
+        e.returnValue = '';
+    });
+    window.addEventListener('pagehide', () => {
+        for (const [id, grace] of pendingGraceCompletions) {
+            clearTimeout(grace.timerId);
+            clearInterval(grace.intervalId);
+            finalizeTaskCompletion(id);
+        }
+        pendingGraceCompletions.clear();
+    });
 
     // Multi-Selection State
     let isSelectionModeActive = false;
@@ -1835,7 +1863,7 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     async function finalizeTaskCompletion(taskId) {
         const task = tasks.find(t => t.id === taskId);
-        if (!task || task.status !== 'completed') return;
+        if (!task || task.status !== 'completed') { forgetPendingGrace(taskId); return; }
 
         let hasExemplar = false;
         if (window.ExemplarStore) {
@@ -1887,6 +1915,7 @@ window.TaskitatorApp = (() => {
         }
 
         localStorage.setItem(AUDIT_LEDGER_KEY, JSON.stringify(ledger));
+        forgetPendingGrace(taskId);
         if (task.recurrence_series_id) {
             delete task.recurrence_hold_until;
             saveStorageAndPush();
@@ -1926,6 +1955,7 @@ window.TaskitatorApp = (() => {
         }, 10000);
 
         pendingGraceCompletions.set(taskId, { timerId, intervalId, remainingSec: remaining, endsAt });
+        setPendingGraceStored([...pendingGraceStored(), taskId]);
     }
 
     function undoTaskCompletion(taskId, triggerRenderFn) {
@@ -1935,6 +1965,7 @@ window.TaskitatorApp = (() => {
             clearInterval(grace.intervalId);
             pendingGraceCompletions.delete(taskId);
         }
+        forgetPendingGrace(taskId);
 
         cascadeTaskStatus(taskId, 'active', null);
         saveStorageAndPush();
@@ -3660,6 +3691,7 @@ window.TaskitatorApp = (() => {
         if (syncStatusButton && syncInfoModal) syncStatusButton.addEventListener('click', () => syncInfoModal.classList.add('open'));
         initSyncIndicator();
         loadStorage();
+        resumePendingGrace();
         BreakUI.init();
         window.TaskitatorPro?.emergencyStatus().then(()=>updateEmergencyUI()).catch(()=>{});
         DistractionDumpEngine.garbageCollect();
@@ -4383,6 +4415,8 @@ window.TaskitatorApp = (() => {
         openTaskDetailModal,
         sortTasks,
         handleTaskCompletion,
+        isCompletionBlocked,
+        graceEndsAt: id => pendingGraceCompletions.get(id)?.endsAt ?? null,
         isHiddenCompleted,
         hiddenCompletedIds: () => window.TaskitatorRootCompletion?.hiddenNow(tasks, id => pendingGraceCompletions.has(id)) || new Set(),
         deleteTask,
