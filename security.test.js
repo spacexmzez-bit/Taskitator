@@ -2513,3 +2513,18 @@ test('soft reschedule: when today is not a study day nothing lands on today unle
  assert.equal(layout(r.body.tasks)[dayOf(0)].length,6,'stacked on a new day for today');
  assert.equal((await push(merge(await pull(),'plan_soft_off',r.body.tasks))).status,200,'the new day parent syncs with the grant');
 });
+
+test('Phase 4.2: a task with unfinished AI-audited work cannot leave its parent; adding load and bypass are fine',async()=>{
+    const audited={ai_locked:true,proof_criteria:'The saved required artifact'};
+    const base=()=>[dpTask('P'),dpTask('Q'),dpTask('R',audited),dpTask('C',{parent_id:'P',...audited}),dpTask('N',{parent_id:'P'}),dpTask('G',{parent_id:'P'}),dpTask('GC',{parent_id:'G',...audited})];
+    const {f,a}=await dpFixture();
+    assert.equal((await dpSave(f,a,base())).status,200);
+    const move=(id,parent)=>dpSave(f,a,base().map(t=>t.id===id?{...t,parent_id:parent}:t));
+    for(const [id,parent] of [['C','Q'],['C',null],['G','Q'],['G',null]]){ // the audited task itself, and a plain task whose branch holds one
+        const r=await move(id,parent);assert.equal(r.status,403,id+'->'+parent);assert.equal(r.body.code,'REQUIREMENTS_LOCKED');
+    }
+    assert.equal((await dpSave(f,a,base().map(t=>t.id==='N'?{...t,parent_id:'Q'}:t))).status,200); // a plain task moves freely
+    assert.equal((await dpSave(f,a,base().map(t=>t.id==='N'?{...t,parent_id:'Q'}:t.id==='R'?{...t,parent_id:'P'}:t))).status,200); // an audited root task moving under a parent adds load
+    assert.equal((await f.call('/pro/emergency',a.token,'POST',{})).status,200);
+    assert.equal((await move('C','Q')).status,200); // Emergency Bypass lifts it
+});

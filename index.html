@@ -16,7 +16,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="icon/icon-192.png">
 
-    <link rel="stylesheet" href="style.css?v=phase-4-1">
+    <link rel="stylesheet" href="style.css?v=phase-4-2">
     <style>
         .page-title-section {
             padding: 10px 0 8px 0;
@@ -1886,6 +1886,14 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
             Show matching tasks. Parent tasks remain visible for context.
         </p>
 
+        <div class="filter-section-title">Match</div>
+        <div class="filter-logic-row">
+            <select id="filterLogic" aria-label="Match all or any filter">
+                <option value="and">AND: all chosen filters must match</option>
+                <option value="or">OR: any chosen filter can match</option>
+            </select>
+        </div>
+
         <div class="filter-section-title">Projects</div>
         <div id="filterProjectCloud" class="tag-select-cloud"></div>
 
@@ -2364,11 +2372,15 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
                 <span>Hierarchy / Parent Task</span>
                 <span id="moveShieldWarningBadge" style="display: none; font-size: 0.72rem; color: #fde68a; background: #451a03; padding: 2px 6px; border-radius: 4px; border: 1px solid #78350f;"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-shield"></use></svg> Shielded Parent</span>
             </label>
-            <select id="editTaskParentSelect" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1.5px solid var(--border-color); background: var(--card-subtle); color: var(--text-color); font-size: 0.88rem; outline: none;">
+            <button type="button" class="icon-btn parent-pick-btn" id="editParentPickBtn" aria-haspopup="dialog">
+                <span class="parent-pick-label" id="editParentPickLabel">(Root Level - No Parent)</span>
+                <span class="parent-pick-action">Change</span>
+            </button>
+            <select id="editTaskParentSelect" hidden style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1.5px solid var(--border-color); background: var(--card-subtle); color: var(--text-color); font-size: 0.88rem; outline: none;">
                 <option value="">(Root Level - No Parent)</option>
             </select>
             <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px;">
-                Move this task under another task. Descendants move along with their parent.
+                Pick a new parent from your task tree. Descendants move along with their parent.
             </small>
         </div>
 
@@ -2662,10 +2674,11 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
     <script type="text/taskitator-script" src="pro/study-schedule.js"></script>
     <script type="text/taskitator-script" src="task-drafts.js"></script>
     <script type="text/taskitator-script" src="saved-criteria.js"></script>
+    <script type="text/taskitator-script" src="parent-picker.js"></script>
     <script type="text/taskitator-script" src="components.js"></script>
     <script type="text/taskitator-script" src="root-completion.js"></script>
     <script type="text/taskitator-script" src="uni/focus-timer.js"></script>
-    <script type="text/taskitator-script" src="app.js?v=phase-4-1"></script>
+    <script type="text/taskitator-script" src="app.js?v=phase-4-2"></script>
     <script type="text/taskitator-script" src="views/projects.js"></script>
     <script type="text/taskitator-script" src="views/calendar.js"></script>
     <script type="text/taskitator-script" src="views/stats.js"></script>

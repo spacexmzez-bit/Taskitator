@@ -199,6 +199,15 @@ function planPreview(plan, parent) {
     const draw = () => { calBox.replaceChildren(); PC.render(calBox, PC.group(PC.fromPlan(plan)), state, draw, { fmtDay: fmtDate, fmtMonth: ym => new Date(ym + '-01T12:00:00Z').toLocaleDateString(lang, { month: 'long', year: 'numeric', timeZone: 'UTC' }) }); };
     draw();
 }
+function exportPlanJson(plan) {
+    try {
+        const data = M.exportPlan(plan), name = String(plan.base || 'study-plan').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'study-plan';
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = url; a.download = name + '.json'; document.body.append(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        window.TaskitatorNotify?.(tr('Plan exported as {name}.json', { name }), 'info');
+    } catch (e) { window.TaskitatorNotify?.(e.message); }
+}
 function card(plan, parent) {
     const list = M.prioritiesOf(settings), isOpen = current === plan.id;
     const c = el('section', undefined, parent, 'plan-card');
@@ -217,6 +226,9 @@ function card(plan, parent) {
     const previewing = previews.has(plan.id);
     const prev = el('button', previewing ? tr('Hide preview') : tr('Preview plan'), actions, 'icon-btn'); prev.type = 'button'; prev.dataset.act = 'preview';
     prev.addEventListener('click', () => { if (previews.has(plan.id)) previews.delete(plan.id); else previews.add(plan.id); render(); });
+    // Phase 4.2: download this plan (its own content only) as a JSON file.
+    const exp = el('button', tr('Export JSON'), actions, 'icon-btn'); exp.type = 'button'; exp.dataset.act = 'export';
+    exp.addEventListener('click', () => exportPlanJson(plan));
     if (previewing) planPreview(plan, c);
     if (plan.ready) {
         const fin = el('button', tr('Complete'), actions, 'icon-btn'); fin.type = 'button'; fin.disabled = busy; fin.dataset.act = 'bonus-finish';

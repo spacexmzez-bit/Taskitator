@@ -1526,6 +1526,65 @@ window.TaskitatorComponents = Object.freeze({
             updateDetailCompletionUI();
         }
 
+        // ---- Phase 4.2: parent picker --------------------------------------------------------------------
+        // The hidden #editTaskParentSelect still holds the chosen parent (the save handler reads it); the popup only sets it.
+        const trT = (k, v) => (window.TaskitatorI18n?.t ? window.TaskitatorI18n.t(k, v) : String(k).replace(/\{(\w+)\}/g, (_, x) => (v || {})[x] ?? ''));
+        const isAudited = t => Boolean(t && (t.ai_locked || t.require_ai_proof));
+        // Reducing load is not allowed while an audit is open: a task whose branch holds unfinished AI-audited work cannot
+        // leave its current parent (the parent is waiting on it) without Emergency Bypass. Moving a root task under a
+        // parent adds load and is always fine. The Worker enforces the same rule.
+        function auditMoveReason(task, targetId, all = host.tasks.getAll()) {
+            if (!task || !task.parent_id || (targetId || null) === task.parent_id || host.rules.bypassActive()) return null;
+            const unfinished = TaskitatorRecurrence.subtree(all, task.id).some(t => t.status === 'active' && isAudited(t));
+            return unfinished ? trT('A task with unfinished AI-audited work can’t leave its parent without Emergency Bypass.') : null;
+        }
+        function moveBlockReason(task, targetId) {
+            const all = host.tasks.getAll(), by = new Map(all.map(t => [t.id, t])), bypass = host.rules.bypassActive();
+            const sub = TaskitatorRecurrence.subtree(all, task.id), ids = new Set(sub.map(t => t.id));
+            const same = (targetId || null) === (task.parent_id || null);
+            if (targetId && ids.has(targetId)) return trT('Inside the task being moved');
+            if (targetId) {
+                let depth = 0; for (let n = by.get(targetId); n && depth < 200; n = n.parent_id ? by.get(n.parent_id) : null) depth++;
+                let height = 1; for (const t of sub) { let h = 0; for (let n = t; n && n.id !== task.id && h < 200; n = n.parent_id ? by.get(n.parent_id) : null) h++; height = Math.max(height, h + 1); }
+                if (depth + height > 64) return trT('Too deep: tasks can be nested at most 64 levels.');
+                if (sub.some(t => t.recurrence_series_id)) {
+                    const seen = new Set();
+                    for (let n = by.get(targetId); n && !seen.has(n.id); n = n.parent_id ? by.get(n.parent_id) : null) {
+                        seen.add(n.id);
+                        if (n.recurrence_series_id && n.recurrence_series_id !== task.recurrence_series_id) return trT('Recurring branches cannot be nested.');
+                    }
+                }
+            }
+            if (task.recurrence_series_id && !same) {
+                const series = TaskitatorRecurrence.seriesFor(window.TaskitatorRecurrenceUI?.state?.() || { series: [], history: [] }, task);
+                if (series?.current_root_id !== task.id) return trT('A child must stay inside its recurring branch.');
+            }
+            if (!same && !bypass && host.tasks.shieldedAncestor(task.id)) return trT('Shielded tasks can’t be moved out of their parent.');
+            return auditMoveReason(task, targetId, all);
+        }
+        function parentPickLabel() {
+            const sel = document.getElementById('editTaskParentSelect'), label = document.getElementById('editParentPickLabel');
+            if (!sel || !label) return;
+            const t = sel.value ? host.tasks.getAll().find(x => x.id === sel.value) : null;
+            label.textContent = t ? t.title : trT('Root level (no parent)');
+        }
+        async function pickParent() {
+            const task = host.tasks.getAll().find(t => t.id === activeDetailTaskId), sel = document.getElementById('editTaskParentSelect');
+            const App = window.TaskitatorApp;
+            if (!task || !sel || !window.TaskitatorParentPicker || !App) return;
+            const result = await window.TaskitatorParentPicker.open({
+                task, tasks: host.tasks.getAll(), currentParentId: sel.value || null,
+                projects: host.catalogs.projects(), priorities: host.catalogs.priorities(), tags: host.catalogs.tags(),
+                sortMode: localStorage.getItem('taskitator_sort_mode') || 'priority', today: host.clock.today(),
+                blockReason: id => moveBlockReason(task, id), active: App.filtersActive, match: App.taskMatchesFilters,
+                sort: (list, mode) => App.sortTasks(list, mode)
+            });
+            if (!result) return;
+            if (![...sel.options].some(o => o.value === (result.parentId || ''))) return;
+            sel.value = result.parentId || '';
+            parentPickLabel();
+        }
+
         // ---- Phase 4.1: subtask order ---------------------------------------------------------------------
         // Order lives in each subtask's `order` number (1..n). It is written into the editor's draft, so it is saved,
         // confirmed and synced exactly like any other edit. Nothing here runs a persistent "auto" mode.
@@ -1854,6 +1913,9 @@ window.TaskitatorComponents = Object.freeze({
                 if (!task.parent_id) {
                     editTaskParentSelect.value = '';
                 }
+                const pickBtn = document.getElementById('editParentPickBtn');
+                if (pickBtn) { pickBtn.disabled = editTaskParentSelect.disabled; pickBtn.title = editTaskParentSelect.title; pickBtn.onclick = () => { void pickParent(); }; }
+                parentPickLabel();
             }
 
             // Sibling Criteria Inheritance
@@ -2183,7 +2245,7 @@ window.TaskitatorComponents = Object.freeze({
             if (writable('editTaskTitle')) setField('editTaskTitle', d.title);
             if (writable('editTaskDesc')) setField('editTaskDesc', d.description);
             if (writable('editTaskDueDate')) setField('editTaskDueDate', d.due_date);
-            if (writable('editTaskParentSelect') && [...document.getElementById('editTaskParentSelect').options].some(o => o.value === d.parent_id)) setField('editTaskParentSelect', d.parent_id);
+            if (writable('editTaskParentSelect') && [...document.getElementById('editTaskParentSelect').options].some(o => o.value === d.parent_id)) { setField('editTaskParentSelect', d.parent_id); parentPickLabel(); }
             if (writable('editTaskCriteria')) setField('editTaskCriteria', d.criteria);
             editModalSelectedTags.clear();
             const tags = host.catalogs.tags();
@@ -3201,6 +3263,8 @@ window.TaskitatorComponents = Object.freeze({
                         window.TaskitatorNotify('Change recurring proof criteria through Recurrence & future criteria. The current occurrence keeps its original requirements.'); return;
                     }
                     if (targetParentId !== task.parent_id) {
+                        const auditWhy = auditMoveReason(task, targetParentId);
+                        if (auditWhy) { window.TaskitatorNotify(auditWhy); return; }
                         const shieldedAncestor = host.tasks.shieldedAncestor(task.id);
                         if (shieldedAncestor && !isBypassActive) {
                             window.TaskitatorNotify("Shielded task can't be moved out of their parents.");

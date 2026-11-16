@@ -747,6 +747,11 @@ export class TaskProtection {
             }
             if(shielded&&current&&!old.is_bonus&&current.is_bonus)throw fail(403,'SHIELD_REQUIRED','Required work protected by a shield cannot become bonus work.');
             if(shielded&&current&&old.parent_id!==current.parent_id)throw fail(403,'SHIELD_REQUIRED','Shielded subtasks must remain with their parent.');
+            // Phase 4.2: reducing load is not allowed while an audit is open. A task whose branch holds unfinished AI-audited work
+            // cannot leave its parent (the parent is waiting on it) without Emergency Bypass. Moving a root task under a parent is fine.
+            if(current&&current.status!=='trash'&&old.status==='active'&&old.parent_id&&(current.parent_id??null)!==old.parent_id&&prevMap.has(old.parent_id)&&
+               branch(previous.tasks,old.id).some(c=>c.status==='active'&&protectedTask(c)))
+                throw fail(403,'REQUIREMENTS_LOCKED','A task with unfinished AI-audited work cannot leave its parent without Emergency Bypass.');
             if(old.smart_early_date&&current&&current.due_date!==old.due_date)throw fail(403,'SMART_DATE_LOCKED','Early Appearance dates are fixed. An unfinished early opportunity expires automatically.');
             if(protectedTask(old)&&old.status!=='trash'){
                 if(!current || current.status!==old.status || !protectedTask(current))throw fail(403,'PROOF_REQUIRED','Protected task completion, removal or reopening requires server authorization or Emergency Bypass.');

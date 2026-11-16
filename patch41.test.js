@@ -8,7 +8,7 @@ const read = f => fs.readFileSync(new URL('./' + f, import.meta.url), 'utf8');
 const app = read('app.js'), comp = read('components.js'), html = read('index.html');
 
 function sorter() {
-    const src = app.slice(app.indexOf('    function sortTasks(tasksArray) {'), app.indexOf('    function getAllDescendants('));
+    const src = app.slice(app.indexOf('    function sortTasks(tasksArray, modeOverride) {'), app.indexOf('    function getAllDescendants('));
     const ctx = { getGlobalPriorities: () => [{ id: 'h', rank: 1 }, { id: 'l', rank: 3 }], window: {}, localStorage: { getItem: () => null } };
     vm.runInNewContext(src + '\nthis.sortTasks = sortTasks;', ctx);
     return a => JSON.parse(JSON.stringify(ctx.sortTasks(a))).map(t => t.id);

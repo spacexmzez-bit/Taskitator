@@ -12,7 +12,7 @@ const body = source.slice(a, b) + 'return {roots: rootTasks.map(t => t.id), path
 const today = '2026-11-05';
 function run(tasks, view = 'today') {
     const ctx = { tasks, currentView: view, todayStr: today, activeFilters: { tags: new Set(), priorities: new Set(), projects: new Set() },
-        dynamicPriority: new Map(), isTaskVisuallyActive: t => t.status === 'active', Map, Set };
+        dynamicPriority: new Map(), isTaskVisuallyActive: t => t.status === 'active', filtersActive: () => false, taskMatchesFilters: () => true, Map, Set };
     const r = vm.runInNewContext('(() => {' + body + '})()', ctx);
     const plain = v => JSON.parse(JSON.stringify(v));
     return { roots: plain(r.roots), paths: plain(r.paths), kids: id => plain(r.kids(id)) };

@@ -959,8 +959,23 @@ window.TaskitatorApp = (() => {
     let batchSelectedPriority = null;
 
     // Active Filter State (Tags, Priorities, Projects)
-    const activeFilters = { tags: new Set(), priorities: new Set(), projects: new Set(), date: { mode: '', from: '', to: '' } };
-    const draftFilters = { tags: new Set(), priorities: new Set(), projects: new Set(), date: { mode: '', from: '', to: '' } };
+    const activeFilters = { tags: new Set(), priorities: new Set(), projects: new Set(), date: { mode: '', from: '', to: '' }, logic: 'and' };
+    const draftFilters = { tags: new Set(), priorities: new Set(), projects: new Set(), date: { mode: '', from: '', to: '' }, logic: 'and' };
+
+    // Phase 4.2: one matcher for the main list and the parent picker. `logic` is 'and' (every chosen filter must match,
+    // the original behaviour) or 'or' (any one chosen filter is enough). Filters left empty are ignored in both modes.
+    function filtersActive(f) {
+        return f.tags.size > 0 || f.priorities.size > 0 || f.projects.size > 0 || !!globalThis.TaskitatorDateFilter?.active(f.date);
+    }
+    function taskMatchesFilters(t, f, ctx = {}) {
+        const checks = [];
+        if (f.tags.size > 0) checks.push(Boolean(t.tags && t.tags.some(tag => f.tags.has(tag))));
+        if (f.priorities.size > 0) checks.push(f.priorities.has((ctx.dynamicPriority?.get(t.id) ?? t.priority_id)));
+        if (f.projects.size > 0) checks.push(f.projects.has(t.project_id || 'inbox'));
+        if (globalThis.TaskitatorDateFilter?.active(f.date)) checks.push(Boolean(globalThis.TaskitatorDateFilter.matches(t, ctx.index, ctx.today, f.date)));
+        if (!checks.length) return true;
+        return f.logic === 'or' ? checks.some(Boolean) : checks.every(Boolean);
+    }
 
     // Host API v1 is the only connection to the task-editor implementation.
     let components = null;
@@ -1697,7 +1712,7 @@ window.TaskitatorApp = (() => {
     // =========================================================================
     // Hierarchy, Shielding, & Sorting Algorithms (Cycle-Safe & Bonus Aware)
     // =========================================================================
-    function sortTasks(tasksArray) {
+    function sortTasks(tasksArray, modeOverride) {
         const priorities = getGlobalPriorities();
         // Dynamic Priority: rank by the derived effective priority; stored priority_id is never altered.
         const dynamicPriority = window.TaskitatorPriority?.effectiveMap(tasks, priorities) ?? new Map();
@@ -1706,7 +1721,7 @@ window.TaskitatorApp = (() => {
             return p ? p.rank : 9999;
         };
 
-        const mode = localStorage.getItem('taskitator_sort_mode') || 'priority';
+        const mode = modeOverride || localStorage.getItem('taskitator_sort_mode') || 'priority';
         return tasksArray.sort((a, b) => {
             // Phase 4.1: siblings with a saved custom `order` keep it (it beats the list sort mode). Ordered subtasks come
             // first; subtasks added later have no order yet and follow, sorted the normal way.
@@ -2949,18 +2964,14 @@ window.TaskitatorApp = (() => {
         }
 
         const dateFilterOn = !!globalThis.TaskitatorDateFilter?.active(activeFilters.date);
-        const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0 || activeFilters.projects.size > 0 || dateFilterOn;
+        const hasFilters = filtersActive(activeFilters);
         const filterIndex = dateFilterOn ? new Map(tasks.map(t => [t.id, t])) : null;
         const matchMap = new Map();
         const descMatchMap = new Map();
 
         if (hasFilters) {
             tasks.forEach(t => {
-                const tagMatch = activeFilters.tags.size === 0 || (t.tags && t.tags.some(tag => activeFilters.tags.has(tag)));
-                const prioMatch = activeFilters.priorities.size === 0 || activeFilters.priorities.has((dynamicPriority.get(t.id) ?? t.priority_id));
-                const projMatch = activeFilters.projects.size === 0 || activeFilters.projects.has(t.project_id || 'inbox');
-                const dateMatch = !dateFilterOn || globalThis.TaskitatorDateFilter.matches(t, filterIndex, todayStr, activeFilters.date);
-                matchMap.set(t.id, tagMatch && prioMatch && projMatch && dateMatch);
+                matchMap.set(t.id, taskMatchesFilters(t, activeFilters, { dynamicPriority, index: filterIndex, today: todayStr }));
             });
 
             function checkDesc(nodeId, visited = new Set()) {
@@ -2987,7 +2998,7 @@ window.TaskitatorApp = (() => {
             if (hasFilters) {
                 const m = matchMap.get(t.id);
                 const d = descMatchMap.get(t.id);
-                if (!m && d) return false;
+                if (!m && !d) return false;
             }
             return isTaskVisuallyActive(t) || hasVisibleDescendant(t.id);
         });
@@ -4248,10 +4259,14 @@ window.TaskitatorApp = (() => {
 
         const dateModeEl = document.getElementById('filterDateMode'), dateFromEl = document.getElementById('filterDateFrom'), dateToEl = document.getElementById('filterDateTo'), dateRangeEl = document.getElementById('filterDateRange');
         function syncDateFilterInputs() {
+            syncLogicInput();
             if (!dateModeEl) return;
             dateModeEl.value = draftFilters.date.mode; dateFromEl.value = draftFilters.date.from; dateToEl.value = draftFilters.date.to;
             dateRangeEl.hidden = draftFilters.date.mode !== 'range';
         }
+        const logicEl = document.getElementById('filterLogic');
+        const syncLogicInput = () => { if (logicEl) logicEl.value = draftFilters.logic === 'or' ? 'or' : 'and'; };
+        logicEl?.addEventListener('change', () => { draftFilters.logic = logicEl.value === 'or' ? 'or' : 'and'; });
         dateModeEl?.addEventListener('change', () => { draftFilters.date.mode = dateModeEl.value; dateRangeEl.hidden = dateModeEl.value !== 'range'; });
         dateFromEl?.addEventListener('change', () => { draftFilters.date.from = dateFromEl.value; });
         dateToEl?.addEventListener('change', () => { draftFilters.date.to = dateToEl.value; });
@@ -4261,6 +4276,7 @@ window.TaskitatorApp = (() => {
                 draftFilters.priorities = new Set(activeFilters.priorities);
                 draftFilters.projects = new Set(activeFilters.projects);
                 draftFilters.date = { ...activeFilters.date };
+                draftFilters.logic = activeFilters.logic;
                 syncDateFilterInputs();
                 renderFilterClouds();
                 filterModal.classList.add('open');
@@ -4277,6 +4293,7 @@ window.TaskitatorApp = (() => {
                 draftFilters.priorities.clear();
                 draftFilters.projects.clear();
                 draftFilters.date = { mode: '', from: '', to: '' };
+                draftFilters.logic = 'and';
                 syncDateFilterInputs();
                 renderFilterClouds();
             });
@@ -4287,8 +4304,9 @@ window.TaskitatorApp = (() => {
                 activeFilters.priorities = new Set(draftFilters.priorities);
                 activeFilters.projects = new Set(draftFilters.projects);
                 activeFilters.date = { ...draftFilters.date };
+                activeFilters.logic = draftFilters.logic === 'or' ? 'or' : 'and';
 
-                const hasFilters = activeFilters.tags.size > 0 || activeFilters.priorities.size > 0 || activeFilters.projects.size > 0 || !!window.TaskitatorDateFilter?.active(activeFilters.date);
+                const hasFilters = filtersActive(activeFilters);
                 const dot = document.getElementById('filterActiveDot');
                 if (dot) dot.style.display = hasFilters ? 'block' : 'none';
 
@@ -4421,6 +4439,8 @@ window.TaskitatorApp = (() => {
         openTaskCreationModal,
         openTaskDetailModal,
         sortTasks,
+        filtersActive,
+        taskMatchesFilters,
         handleTaskCompletion,
         isCompletionBlocked,
         graceEndsAt: id => pendingGraceCompletions.get(id)?.endsAt ?? null,

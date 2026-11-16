@@ -32,6 +32,21 @@ function plans(tasks){
    finished:units.length>0&&units.every(u=>u.status==='completed'),parents,units,group};
  }).sort((a,b)=>(b.end||'').localeCompare(a.end||''));
 }
+// Phase 4.2: a plan as a plain JSON object. Only this plan's own content: no ids, no account data, no reference files.
+function exportPlan(plan,now=new Date().toISOString()){
+ if(!plan||!Array.isArray(plan.parents))throw Error('Choose a study plan to export.');
+ const unitsOf=p=>plan.units.filter(u=>u.parent_id===p.id).sort((a,b)=>(unitNumber(a)??1e9)-(unitNumber(b)??1e9)||String(a.title).localeCompare(String(b.title)));
+ const days=[...plan.parents].sort((a,b)=>String(a.due_date||'').localeCompare(String(b.due_date||''))||String(a.title).localeCompare(String(b.title))).map(p=>({
+  title:p.title,date:p.due_date||null,description:p.description||'',priority:p.priority_id||null,status:p.status,
+  units:unitsOf(p).map(u=>({number:unitNumber(u),title:u.title,status:u.status,bonus:Boolean(u.is_bonus),ai_audited:isAudited(u),priority:u.priority_id||null,
+   early_date:(!u.smart_adjusted&&u.smart_early_date)||u.early_date||null,completed_at:u.completed_at||null}))}));
+ const criteria=[...new Set(plan.units.filter(isAudited).map(u=>u.raw_proof_criteria||u.proof_criteria).filter(Boolean))];
+ return {format:'taskitator-study-plan',version:1,exported_at:now,
+  plan:{title:plan.base||'',unit:plan.unit||'',plural:plan.plural||'',chapter:plan.chapter||null,study_days:plan.parents.length,start:plan.start,end:plan.end,
+   required_units:plan.total,required_done:plan.done,bonus_units:plan.bonus,bonus_done:plan.bonusDone,ai_audited_units:plan.audited,early_appearances:plan.early,finished:Boolean(plan.finished),
+   ai_criteria:criteria},
+  days};
+}
 const copy=tasks=>tasks.map(t=>({...t}));
 const forPlan=(tasks,id)=>{const plan=plans(tasks).find(p=>p.id===id);if(!plan)throw Error('This study plan no longer exists.');return plan;};
 
@@ -659,5 +674,5 @@ function currentSchedule(plan,today,fallbackWeekdays=[]){
  return out;
 }
 
-root.TaskitatorStudyManage={setChapters,currentSchedule,auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,bonusAdd,bonusRemove,bonusMissed,bonusWaiting,bonusSlide,bonusConvert,bonusFinish,bonusCheck,configOf,unitNumber,plans,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
+root.TaskitatorStudyManage={setChapters,currentSchedule,auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,bonusAdd,bonusRemove,bonusMissed,bonusWaiting,bonusSlide,bonusConvert,bonusFinish,bonusCheck,configOf,unitNumber,plans,exportPlan,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
 })(typeof window==='undefined'?globalThis:window);
