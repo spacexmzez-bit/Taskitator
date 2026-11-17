@@ -61,13 +61,14 @@
         try { localStorage.setItem(KEY, JSON.stringify(app)); } catch {}
     }
 
-    // Universe keeps its legacy look: the family layer is parked while it is open.
+    // Universe has its own family (space): the personal family layer is switched off while it is open.
     const universeOpen = () => Boolean(document.body && document.body.classList.contains('universe-active'));
     function apply(app) {
         const theme = reg.byId(app.effective) || reg.byId(reg.DEFAULT_THEME);
         html.dataset.palette = theme.palette;
         html.dataset.theme = theme.id;
-        if (universeOpen()) delete html.dataset.family; else html.dataset.family = theme.family;
+        const space = universeOpen() ? reg.FAMILIES.space : null;
+        html.dataset.family = space ? space.id : theme.family;
         const off = ANIM_KEYS.filter(k => k !== 'reduce' && !app.anim[k]);
         if (app.anim.reduce) off.push('particles', 'clouds', 'bird', 'parallax');
         if (off.length) html.dataset.fxOff = [...new Set(off)].join(' '); else delete html.dataset.fxOff;
@@ -77,7 +78,7 @@
         if (!meta && document.head) {
             meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta);
         }
-        if (meta) meta.content = theme.metaThemeColor;
+        if (meta) meta.content = space ? space.metaThemeColor : theme.metaThemeColor;
     }
 
     // ----- Allowed themes (product gate) -----

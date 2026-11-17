@@ -12,7 +12,10 @@
     const DEFAULT_THEME = 'blue';
 
     const FAMILIES = Object.freeze({
-        nature: Object.freeze({ id: 'nature', sprite: 'image/nature_sprites/sprite.svg', sceneSet: 'nature' })
+        nature: Object.freeze({ id: 'nature', sprite: 'image/nature_sprites/sprite.svg', sceneSet: 'nature' }),
+        // Universe only: applied by theme-boot.js while a Universe is open. It has no selectable theme row;
+        // its palette is fixed in uni/universe.css and its sprite is loaded by uni/universe-space.js.
+        space: Object.freeze({ id: 'space', sprite: 'image/space_sprites/sprite.svg', sceneSet: null, metaThemeColor: '#0a0716' })
     });
 
     // tier: 'free' | 'pro'. status: 'live' | 'hidden' (hidden = kept but never offered).

@@ -133,33 +133,5 @@ html[data-palette="green"] {
     --sc-glow: #e8b96a;
 }
 
-/* Universe is not part of this redesign. Its view keeps today's exact token values
-   (from style.css :root before the redesign). #universeWorkspace still applies its own
-   galaxy palette on top, exactly as before. theme-boot.js also parks the family layer
-   (removes html[data-family]) while Universe is open. Guarded by themes.test.js. */
-html[data-palette] body.universe-active {
-    --bg-color: #081226;
-    --card-bg: #0f1d3a;
-    --card-subtle: #14264b;
-    --text-color: #f0f7ff;
-    --text-muted: #8bb3e8;
-    --border-color: #1e3a6e;
-    --border-hover: #2d5599;
-    --primary: #3b82f6;
-    --primary-hover: #60a5fa;
-    --accent: #60a5fa;
-    --accent-light: #172554;
-    --danger: #ef4444;
-    --danger-hover: #dc2626;
-    --success: #22c55e;
-    --tag-bg: #0c4a6e;
-    --tag-text: #7dd3fc;
-    --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-    --depth: #050d1f;
-    --depth-primary: #1d4ed8;
-    --depth-danger: #991b1b;
-    --focus-ring: 0 0 0 3px rgba(59, 130, 246, 0.45);
-    --tk-acc: #3b82f6;
-    --tk-acc-2: #60a5fa;
-    --tk-acc-3: #93c5fd;
-}
+/* Universe has its own space palette in uni/universe.css (body.universe-active, #universeWorkspace).
+   theme-boot.js switches html[data-family] to "space" while a Universe is open. */

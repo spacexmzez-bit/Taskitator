@@ -602,8 +602,9 @@ The exact allowed methods/fields are validated in their handlers; this table loc
 
 ## Styles, tutorials, data, and assets
 
-- **`style.css`:** Main theme tokens, typography, responsive layout, task rows/priority indicators, forms/modals, navigation, Copilot, settings, feedback/animations, timer and legacy Universe styling. Later rules can override earlier ones. Taskitator's active layout depends on CSS selectors matching the controller's classes/IDs.
-- **`uni/universe.css`:** Collaborative-workspace theme, shell/tabs/cards, project/task/detail/editor panels, assignments, sheets, mobile layouts, skeleton/toast/status/feedback. It overrides applicable broad legacy Universe/mobile rules in `style.css`.
+- **`style.css`:** Main theme tokens, typography, responsive layout, task rows/priority indicators, forms/modals, navigation, Copilot, settings, feedback/animations, timer styling. Universe styling lives only in `uni/universe.css`. Later rules can override earlier ones. Taskitator's active layout depends on CSS selectors matching the controller's classes/IDs.
+- **`uni/universe.css`:** Universe space theme. One token block at the top holds every colour; rules below use tokens only (`themes.test.js` enforces this). Covers the starfield background, shell/tabs/cards, project/task/detail/editor panels, celestial completion circles (stars shine), completed-root styling, list sort/date tools, assignments, sheets, mobile layouts, skeleton/toast/status/feedback. `theme-boot.js` sets `html[data-family="space"]` while a Universe is open, which switches the personal nature layer off.
+- **`uni/universe-space.js` + `image/space_sprites/sprite.svg`:** Universe space kit. The sprite holds celestial bodies (`sp-b-*`, traced from the space sheet) and line icons (`sp-i-*`). The script injects it and exposes `UniverseSpace`: `bodyFor(id)` (stable per task), `body()`, `icon()`, and `label(kind, value)`, which turns server values (roles, states, audit modes, activity kinds) into readable, translatable text.
 - **`tutorial-spotlight.js`:** `start`/`stop` own one active tour. `findTarget`, `rich`, `buildVisual`, positioning/render/step navigation and finish handlers handle optional/missing targets, safe bold/code fragments, keyboard navigation, asynchronous step preparation, reduced motion and focus restoration. It refuses to cover an existing modal/sign-in overlay.
 - **`tutorial-integration.js`:** Defines account, breaks, AI, phone, Pro and role-aware Universe tours. `state`, `progress`, `mark` store progress in synced settings; tab helpers select/recover Settings context; onboarding and help-hub logic starts/replays tours while avoiding immediate restart loops. Universe tours switch panes and retain per-Universe completion keys.
 - **`tutorial-spotlight.css`:** Tour veil/ring/arrow/card/step controls/visuals, responsive and reduced-motion rules; `.tt-universe` supplies the collaborative theme.
@@ -832,7 +833,9 @@ Paths are relative to the repository root. This is the complete inspected file l
 | [`uni/universe-tasks.js`](uni/universe-tasks.js) | UniverseTasks server layer: relational work/evidence/human review and R2 cleanup. |
 | [`uni/universe-ui.js`](uni/universe-ui.js) | Universe browser entry: group picker, authenticated API/retry wrappers, feature mounting. |
 | [`uni/universe-widgets.js`](uni/universe-widgets.js) | Shared Universe overlays/focus/viewport, feedback, skeletons and error messages. |
-| [`uni/universe.css`](uni/universe.css) | Collaborative workspace theme, task/editor/shell/mobile/motion styling. |
+| [`uni/universe.css`](uni/universe.css) | Universe space theme (single token block), task/editor/shell/mobile/motion styling. |
+| [`uni/universe-space.js`](uni/universe-space.js) | Space kit: sprite loader, celestial completion bodies, Universe icons, labels for server values. |
+| [`image/space_sprites/sprite.svg`](image/space_sprites/sprite.svg) | Space sprite: celestial bodies and Universe line icons. |
 | [`worker.js`](worker.js) | Cloudflare entry, auth/verification/deletion/vault/AI, personal sync/status/sleep/study router. |
 | [`wrangler.toml`](wrangler.toml) | Worker entry, public variables, Durable Object migration and KV/D1/R2 bindings. |
 

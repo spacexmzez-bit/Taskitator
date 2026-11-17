@@ -3181,22 +3181,7 @@ html.is-offline [data-requires-online] {
 .quick-subtask-row input { flex:1; min-width:0; }
 .quick-subtask-add { flex:none; min-width:44px; min-height:44px; font-size:1.3rem; }
 
-.universe-workspace {max-width:900px;margin:auto;padding:16px}
-.universe-workspace form,.universe-workspace li {padding:16px;margin:12px 0;border:1px solid #64748b;border-radius:12px}
-.universe-workspace label {display:block;margin:10px 0}
-.universe-workspace input,.universe-workspace select {display:block;width:100%;padding:10px;color:inherit;background:var(--bg-card,#182338);border:1px solid #64748b;border-radius:6px;box-sizing:border-box}
-.universe-workspace button {padding:10px 14px;margin:5px;min-height:44px;border-radius:8px;cursor:pointer}
-.universe-workspace :focus-visible {outline:3px solid var(--tk-acc-2);outline-offset:2px}
-.universe-workspace ul {padding:0;list-style:none}.universe-workspace li {overflow-wrap:anywhere}
-@media(max-width:600px){.universe-workspace{padding:8px}.universe-workspace button{width:100%;margin:5px 0}}
-/* Universe projects, task forms and proof history. */
-#universeWorkspace section { margin-block: 1rem; padding: .8rem; border: 1px solid #64748b; border-radius: .6rem; }
-#universeWorkspace label { display: block; margin-block: .7rem; }
-#universeWorkspace input:not([type=checkbox]), #universeWorkspace textarea, #universeWorkspace select { display: block; width: 100%; max-width: 100%; box-sizing: border-box; padding: .6rem; }
-#universeWorkspace input[type=checkbox] { width: auto; margin-inline: .5rem; }
-#universeWorkspace button { margin: .3rem; min-height: 44px; white-space: normal; }
-#universeWorkspace textarea { min-height: 6rem; }
-#universeWorkspace article { border-block-end: 1px solid #64748b; padding-block: .8rem; overflow-wrap: anywhere; }
+/* Universe styles live in uni/universe.css (single source since the space update). */
 
 /* Task visibility, phone access, and drawer fixes. */
 .phone-status{padding:14px 16px;border:1px solid;border-radius:10px;line-height:1.6;margin:12px 0;overflow-wrap:anywhere}.phone-status.active{background:#052e24;color:#b7f7d7;border-color:#208657}.phone-status.inactive{background:#450e19;color:#fecdd3;border-color:#d44558}.phone-status.unknown{background:#422b09;color:#fde68a;border-color:#a97718}

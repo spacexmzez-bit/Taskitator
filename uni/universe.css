@@ -1,28 +1,49 @@
-/* Universe presentation (galaxy theme). Personal screens keep their existing styles.
-   Layout language follows style.css: bordered cards, priority stripes, tactile buttons, pills. */
+/* Universe presentation (space theme). Personal screens keep their existing styles.
+   Layout language follows style.css: bordered cards, priority stripes, tactile buttons, pills.
+   Colours: every colour is a token in section 1. Rules below never use a raw hex or rgb() value
+   (themes.test.js checks this), so the whole look can be re-tuned from one block. */
 
 /* 1. Tokens and base */
-#universeWorkspace {
-  /* Galaxy palette: same variable names as style.css, so shared rules keep working. */
-  --bg-color: #0a0716; --card-bg: #130e26; --card-subtle: #1b1438;
+/* Sky tokens live on :root because the page background is painted on <body>, also on the
+   "Your Universes" list where the personal header is still shown. */
+:root {
+  --uni-sky: #0a0716; --uni-scrim: #040210;
+  --uni-star: #ffffff; --uni-star-violet: #c4b5fd; --uni-star-pink: #f5d0fe;
+  --uni-glow-a: #8b5cf6; --uni-glow-b: #e879f9;
+}
+/* Space palette: same variable names as style.css, so shared rules and shared components
+   (toasts, focus timer) keep working. theme-boot.js sets html[data-family="space"] while a
+   Universe is open, which also switches the personal nature layer off. */
+body.universe-active, #universeWorkspace {
+  --bg-color: var(--uni-sky); --card-bg: #130e26; --card-subtle: #1b1438; --card-raise: #17102f; --card-sink: #1a0f3a;
   --border-color: #2f2358; --border-hover: #4d3b8f;
-  --text-color: #f3efff; --text-muted: #a99fcf;
+  --text-color: #f3efff; --text-muted: #a99fcf; --on-primary: #ffffff;
   --primary: #8b5cf6; --primary-fill: #7c3aed; --primary-hover: #a78bfa;
-  --accent: #a78bfa; --accent-light: #261a52; --nebula: #e879f9;
-  --success: #22c55e; --warning: #fbbf24; --danger: #ef4444;
+  --accent: #a78bfa; --accent-light: #261a52; --nebula: #e879f9; --nebula-soft: #f0abfc;
+  --success: #22c55e; --success-text: #4ade80; --success-soft: #86efac; --success-border: #166534; --success-bg: #052e16;
+  --warning: #fbbf24; --warning-deep: #f59e0b; --warning-soft: #fde68a;
+  --saving: #facc15; --saving-border: #854d0e; --saving-bg: #422006;
+  --danger: #ef4444; --danger-hover: #dc2626; --danger-text: #f87171; --danger-soft: #fca5a5; --danger-strong: #991b1b; --danger-border: #7f1d1d; --danger-edge: #5b1a1a; --danger-bg: #2a1215;
+  --offline: #475569; --offline-text: #94a3b8;
   --tag-bg: #3b1d6e; --tag-text: #d8b4fe;
-  --card-shadow: 0 4px 16px rgba(0, 0, 0, .4);
-  --depth: #06030f; --depth-primary: #4c1d95; --depth-danger: #450a0a;
-  --focus-ring: 0 0 0 3px rgba(139, 92, 246, .45);
+  --shadow-color: #000000;
+  --card-shadow: 0 4px 16px color-mix(in srgb, var(--shadow-color) 40%, transparent);
+  --depth: #06030f; --depth-primary: #4c1d95; --depth-danger: #450a0a; --depth-success: #14532d;
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary) 45%, transparent);
+  --tk-acc: var(--primary); --tk-acc-2: var(--primary-hover); --tk-acc-3: var(--uni-star-violet);
   --radius-s: 8px; --radius-m: 10px; --radius-l: 14px;
   --dur-fast: 120ms; --dur-med: 200ms; --dur-slow: 320ms;
   --uni-ease: cubic-bezier(.16, 1, .3, 1);
   --uni-spring: cubic-bezier(.34, 1.56, .64, 1);
+}
+#universeWorkspace {
   color: var(--text-color); font: inherit; min-width: 0; isolation: isolate;
-  max-width: none; padding: 0; /* overrides the legacy .universe-workspace box in style.css */
+  max-width: none; padding: 0; margin: 0;
 }
 #universeWorkspace * { box-sizing: border-box; }
 #universeWorkspace [hidden] { display: none !important; }
+#universeWorkspace article { border-block-end: 1px solid var(--border-color); padding-block: .8rem; overflow-wrap: anywhere; }
+#universeWorkspace ul { padding: 0; list-style: none; }
 #universeWorkspace :focus-visible { outline: 2px solid var(--primary-hover); outline-offset: 2px; }
 #universeWorkspace section { margin: 0; padding: 0; border: 0; background: none; }
 #universeWorkspace h2, #universeWorkspace h3, #universeWorkspace h4 { color: var(--text-color); line-height: 1.3; letter-spacing: -.02em; }
@@ -33,21 +54,23 @@
 #universeWorkspace button, #universeWorkspace a { font: inherit; -webkit-tap-highlight-color: transparent; }
 #universeWorkspace a { color: var(--text-muted); font-size: 12px; text-decoration: none; transition: color var(--dur-fast); }
 #universeWorkspace a:hover { color: var(--text-color); }
-body.universe-active, body:has(#universeWorkspace.uni-selection) {
-  background:
-    radial-gradient(900px 480px at 78% -120px, rgba(139, 92, 246, .2), transparent 70%),
-    radial-gradient(700px 420px at -10% 110%, rgba(232, 121, 249, .09), transparent 70%),
-    #0a0716 fixed;
-}
+/* Sky: one fixed layer behind the page (no seam while scrolling). Static on purpose: the only
+   motion in the theme is the shine on star-type completion circles. */
+body.universe-active, body:has(#universeWorkspace.uni-selection) { background: var(--uni-sky); }
 body.universe-active::before, body:has(#universeWorkspace.uni-selection)::before {
-  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .5;
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background-image:
-    radial-gradient(1px 1px at 22px 34px, rgba(255,255,255,.6), transparent),
-    radial-gradient(1px 1px at 140px 160px, rgba(255,255,255,.45), transparent),
-    radial-gradient(1.5px 1.5px at 260px 70px, rgba(196,181,253,.8), transparent),
-    radial-gradient(1px 1px at 330px 250px, rgba(255,255,255,.4), transparent),
-    radial-gradient(1px 1px at 80px 290px, rgba(245,208,254,.6), transparent);
-  background-size: 360px 320px;
+    radial-gradient(1px 1px at 22px 34px, color-mix(in srgb, var(--uni-star) 55%, transparent), transparent),
+    radial-gradient(1px 1px at 140px 160px, color-mix(in srgb, var(--uni-star) 40%, transparent), transparent),
+    radial-gradient(1.5px 1.5px at 260px 70px, color-mix(in srgb, var(--uni-star-violet) 70%, transparent), transparent),
+    radial-gradient(1px 1px at 330px 250px, color-mix(in srgb, var(--uni-star) 35%, transparent), transparent),
+    radial-gradient(1px 1px at 80px 290px, color-mix(in srgb, var(--uni-star-pink) 50%, transparent), transparent),
+    radial-gradient(2px 2px at 410px 120px, color-mix(in srgb, var(--uni-star) 30%, transparent), transparent),
+    radial-gradient(1px 1px at 190px 400px, color-mix(in srgb, var(--uni-star-violet) 45%, transparent), transparent),
+    radial-gradient(900px 480px at 78% -120px, color-mix(in srgb, var(--uni-glow-a) 20%, transparent), transparent 70%),
+    radial-gradient(700px 420px at -10% 110%, color-mix(in srgb, var(--uni-glow-b) 9%, transparent), transparent 70%);
+  background-size: 360px 320px, 360px 320px, 360px 320px, 360px 320px, 360px 320px, 520px 460px, 520px 460px, 100% 100%, 100% 100%;
+  background-repeat: repeat, repeat, repeat, repeat, repeat, repeat, repeat, no-repeat, no-repeat;
 }
 body.universe-active .app-container { width: 100%; max-width: none; margin: 0; padding: 0; overflow: visible; }
 body.universe-active .top-navbar, body.universe-active > header, body.universe-active #sidebarDrawer, body.universe-active #drawerBackdrop, body.universe-active .components-subnav, body.universe-active #openDrawerBtn, body.universe-active #componentPageTitle { display: none !important; }
@@ -66,16 +89,16 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace button:hover { border-color: var(--primary); color: var(--primary-hover); background: var(--accent-light); transform: translateY(-1px); box-shadow: 0 4px 0 var(--depth); }
 #universeWorkspace button:active { transform: translateY(3px); box-shadow: 0 0 0 var(--depth); }
 #universeWorkspace button:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
-#universeWorkspace button.btn-primary, #universeWorkspace button[type=submit] { color: #fff; background: var(--primary-fill); border-color: var(--primary-hover); box-shadow: 0 3px 0 var(--depth-primary); }
-#universeWorkspace button.btn-primary:hover, #universeWorkspace button[type=submit]:hover { background: var(--primary); color: #fff; box-shadow: 0 4px 0 var(--depth-primary); }
+#universeWorkspace button.btn-primary, #universeWorkspace button[type=submit] { color: var(--on-primary); background: var(--primary-fill); border-color: var(--primary-hover); box-shadow: 0 3px 0 var(--depth-primary); }
+#universeWorkspace button.btn-primary:hover, #universeWorkspace button[type=submit]:hover { background: var(--primary); color: var(--on-primary); box-shadow: 0 4px 0 var(--depth-primary); }
 #universeWorkspace button.btn-primary:active, #universeWorkspace button[type=submit]:active { box-shadow: 0 0 0 var(--depth-primary); }
-#universeWorkspace button.uni-danger, #universeWorkspace .uni-danger-zone button { color: #f87171; background: #2a1215; border-color: #7f1d1d; box-shadow: 0 3px 0 var(--depth-danger); }
-#universeWorkspace button.uni-danger:hover, #universeWorkspace .uni-danger-zone button:hover { color: #fca5a5; background: #450a0a; border-color: var(--danger); box-shadow: 0 4px 0 var(--depth-danger); }
+#universeWorkspace button.uni-danger, #universeWorkspace .uni-danger-zone button { color: var(--danger-text); background: var(--danger-bg); border-color: var(--danger-border); box-shadow: 0 3px 0 var(--depth-danger); }
+#universeWorkspace button.uni-danger:hover, #universeWorkspace .uni-danger-zone button:hover { color: var(--danger-soft); background: var(--depth-danger); border-color: var(--danger); box-shadow: 0 4px 0 var(--depth-danger); }
 /* Busy and done feedback, set by run() on the button that started the action. */
 #universeWorkspace button.is-busy { pointer-events: none; color: transparent !important; }
 #universeWorkspace button.is-busy::after { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; border: 2px solid var(--text-color); border-inline-end-color: transparent; border-radius: 50%; animation: uni-spin .7s linear infinite; }
-#universeWorkspace button.btn-primary.is-busy::after, #universeWorkspace button[type=submit].is-busy::after { border-color: #fff; border-inline-end-color: transparent; }
-#universeWorkspace button.is-done { border-color: var(--success); box-shadow: 0 3px 0 #14532d, 0 0 0 3px rgba(34, 197, 94, .25); }
+#universeWorkspace button.btn-primary.is-busy::after, #universeWorkspace button[type=submit].is-busy::after { border-color: var(--on-primary); border-inline-end-color: transparent; }
+#universeWorkspace button.is-done { border-color: var(--success); box-shadow: 0 3px 0 var(--depth-success), 0 0 0 3px color-mix(in srgb, var(--success) 25%, transparent); }
 #universeWorkspace button.is-failed { animation: uni-shake .32s var(--uni-ease); border-color: var(--danger); }
 @keyframes uni-spin { to { transform: rotate(360deg); } }
 @keyframes uni-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
@@ -87,7 +110,7 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 /* 3. Shell: header, sync badge, tabs, sidebar */
 #universeWorkspace .uni-shell { min-height: 100dvh; }
 #universeWorkspace .uni-header, #universeWorkspace .uni-tabs, #universeWorkspace .uni-content, #universeWorkspace .uni-footer { width: min(900px, calc(100% - 32px)); margin-inline: auto; }
-#universeWorkspace .uni-header { position: sticky; top: 0; z-index: 110; display: flex; align-items: center; gap: 10px; min-height: 60px; padding-block: calc(10px + env(safe-area-inset-top, 0px)) 10px; background: rgba(10, 7, 22, .88); backdrop-filter: blur(12px); border-bottom: 2px solid var(--border-color); }
+#universeWorkspace .uni-header { position: sticky; top: 0; z-index: 110; display: flex; align-items: center; gap: 10px; min-height: 60px; padding-block: calc(10px + env(safe-area-inset-top, 0px)) 10px; background: color-mix(in srgb, var(--uni-sky) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 2px solid var(--border-color); }
 #universeWorkspace .uni-brand { flex: 1; min-width: 0; }
 #universeWorkspace .uni-brand small { display: block; font-size: 10px; font-weight: 800; letter-spacing: .1em; color: var(--primary-hover); }
 #universeWorkspace .uni-brand h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; font-weight: 800; }
@@ -97,30 +120,30 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-icon-button { display: inline-grid; place-items: center; flex-shrink: 0; width: 38px; height: 38px; min-height: 38px; padding: 0; }
 #universeWorkspace .uni-icon-button svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; transition: transform .6s var(--uni-ease); }
 #universeWorkspace .uni-sync.is-busy svg, #universeWorkspace .uni-sync:active svg { transform: rotate(360deg); }
-#universeWorkspace .uni-connection { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 3px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 700; border: 1px solid #166534; background: #052e16; color: #4ade80; transition: all var(--dur-med); }
+#universeWorkspace .uni-connection { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 3px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 700; border: 1px solid var(--success-border); background: var(--success-bg); color: var(--success-text); transition: all var(--dur-med); }
 #universeWorkspace .uni-connection::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-#universeWorkspace .uni-connection[data-state=saving] { color: #facc15; border-color: #854d0e; background: #422006; }
+#universeWorkspace .uni-connection[data-state=saving] { color: var(--saving); border-color: var(--saving-border); background: var(--saving-bg); }
 #universeWorkspace .uni-connection[data-state=saving]::before { animation: uni-pulse 1s infinite; }
-#universeWorkspace .uni-connection[data-state=offline] { color: #94a3b8; border-color: #475569; background: rgba(71, 85, 105, .15); }
-#universeWorkspace .uni-connection[data-state=attention] { color: #f87171; border-color: #991b1b; background: #450a0a; }
+#universeWorkspace .uni-connection[data-state=offline] { color: var(--offline-text); border-color: var(--offline); background: color-mix(in srgb, var(--offline) 15%, transparent); }
+#universeWorkspace .uni-connection[data-state=attention] { color: var(--danger-text); border-color: var(--danger-strong); background: var(--depth-danger); }
 @keyframes uni-pulse { 50% { opacity: .3; } }
 #universeWorkspace .uni-header > a, #universeWorkspace .uni-header > button:last-child { min-height: 36px; padding: 6px 10px; font-size: 12px; white-space: nowrap; }
 #universeWorkspace .uni-header > a { border-radius: var(--radius-s); }
 #universeWorkspace .uni-header > a:hover { background: var(--accent-light); }
 
-#universeWorkspace .uni-tabs { position: sticky; top: var(--uni-header-height, 60px); z-index: 105; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-block: 10px; background: rgba(10, 7, 22, .88); backdrop-filter: blur(12px); }
+#universeWorkspace .uni-tabs { position: sticky; top: var(--uni-header-height, 60px); z-index: 105; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-block: 10px; background: color-mix(in srgb, var(--uni-sky) 88%, transparent); backdrop-filter: blur(12px); }
 #universeWorkspace .uni-tabs::-webkit-scrollbar { display: none; }
 #universeWorkspace .uni-tabs button { z-index: 1; flex: 0 0 auto; min-height: 36px; padding: 0 14px; border-radius: var(--radius-s); background: var(--card-bg); color: var(--text-muted); font-size: 13px; white-space: nowrap; box-shadow: none; }
 #universeWorkspace .uni-tabs button:hover { transform: none; box-shadow: none; color: var(--text-color); background: var(--card-subtle); }
 #universeWorkspace .uni-tabs button:active { transform: scale(.96); }
-#universeWorkspace .uni-tabs .selected, #universeWorkspace .uni-tabs [aria-selected=true] { color: #fff; background: transparent; border-color: transparent; }
-#universeWorkspace .uni-tabs .selected:hover, #universeWorkspace .uni-tabs [aria-selected=true]:hover { background: transparent; color: #fff; }
+#universeWorkspace .uni-tabs .selected, #universeWorkspace .uni-tabs [aria-selected=true] { color: var(--on-primary); background: transparent; border-color: transparent; }
+#universeWorkspace .uni-tabs .selected:hover, #universeWorkspace .uni-tabs [aria-selected=true]:hover { background: transparent; color: var(--on-primary); }
 #universeWorkspace .uni-tab-indicator { position: absolute; top: 10px; left: 0; z-index: 0; height: 36px; width: 0; border-radius: var(--radius-s); background: var(--primary-fill); box-shadow: 0 3px 0 var(--depth-primary); pointer-events: none; transition: transform var(--dur-slow) var(--uni-ease), width var(--dur-slow) var(--uni-ease); }
 /* Picker tabs have no sliding indicator: selected pill is filled directly. */
 #universeWorkspace.uni-selection > .uni-tabs [aria-selected=true] { background: var(--primary-fill); border-color: var(--primary-hover); box-shadow: 0 3px 0 var(--depth-primary); }
-#universeWorkspace .uni-tabs .uni-count { margin-inline-start: 6px; padding: 0 7px; border-radius: 999px; background: rgba(255, 255, 255, .12); font-size: 11px; }
+#universeWorkspace .uni-tabs .uni-count { margin-inline-start: 6px; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--uni-star) 12%, transparent); font-size: 11px; }
 
-#universeWorkspace .uni-sidebar { position: fixed; top: calc(var(--uni-header-height, 60px) + 6px); inset-inline-start: max(8px, calc((100vw - 900px) / 2)); z-index: 150; width: 264px; max-width: calc(100vw - 16px); padding: 8px; border: 1.5px solid var(--border-color); border-radius: var(--radius-l); background: var(--card-bg); box-shadow: 0 16px 40px rgba(0, 0, 0, .6); animation: uni-drop var(--dur-med) var(--uni-ease); }
+#universeWorkspace .uni-sidebar { position: fixed; top: calc(var(--uni-header-height, 60px) + 6px); inset-inline-start: max(8px, calc((100vw - 900px) / 2)); z-index: 150; width: 264px; max-width: calc(100vw - 16px); padding: 8px; border: 1.5px solid var(--border-color); border-radius: var(--radius-l); background: var(--card-bg); box-shadow: 0 16px 40px color-mix(in srgb, var(--shadow-color) 60%, transparent); animation: uni-drop var(--dur-med) var(--uni-ease); }
 #universeWorkspace .uni-sidebar button, #universeWorkspace .uni-sidebar a { display: flex; justify-content: flex-start; width: 100%; min-height: 44px; padding: 10px 14px; text-align: start; border: 0; background: none; box-shadow: none; border-radius: var(--radius-s); font-size: 14px; font-weight: 600; color: var(--text-color); }
 #universeWorkspace .uni-sidebar button:hover, #universeWorkspace .uni-sidebar a:hover { transform: none; box-shadow: none; background: var(--accent-light); color: var(--primary-hover); }
 #universeWorkspace .uni-sidebar button.selected { background: var(--accent-light); color: var(--primary-hover); }
@@ -149,24 +172,24 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-pill { min-height: 32px; padding: 0 12px; border-radius: var(--radius-s); background: var(--card-subtle); color: var(--text-muted); font-size: 12px; box-shadow: none; }
 #universeWorkspace .uni-pill:hover { transform: none; box-shadow: none; }
 #universeWorkspace .uni-pill:active { transform: scale(.95); }
-#universeWorkspace .uni-pill[aria-pressed=true] { background: var(--primary-fill); color: #fff; border-color: var(--primary-hover); }
+#universeWorkspace .uni-pill[aria-pressed=true] { background: var(--primary-fill); color: var(--on-primary); border-color: var(--primary-hover); }
 #universeWorkspace .uni-filterbar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 12px; margin-bottom: 16px; padding: 4px 16px; border: 1.5px solid var(--border-color); border-radius: var(--radius-l); background: var(--card-bg); animation: uni-drop var(--dur-med) var(--uni-ease); }
 #universeWorkspace .uni-filterbar label:first-child { grid-column: 1 / -1; }
 #universeWorkspace .uni-group { display: flex; align-items: center; gap: 8px; margin: 18px 0 8px; font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); }
 #universeWorkspace .uni-group span { padding: 0 8px; border-radius: 999px; background: var(--card-subtle); color: var(--primary-hover); }
-#universeWorkspace .uni-group[data-bucket=overdue] { color: #f87171; }
-#universeWorkspace .uni-group[data-bucket=overdue] span { background: rgba(239, 68, 68, .14); color: #fca5a5; }
+#universeWorkspace .uni-group[data-bucket=overdue] { color: var(--danger-text); }
+#universeWorkspace .uni-group[data-bucket=overdue] span { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger-soft); }
 
 /* 5. Task cards (main-site layout: card, 6px priority stripe) */
 #universeWorkspace .task-node { padding: 0; margin: 0 0 8px; border: 0; background: none; overflow: visible; animation: uni-enter var(--dur-slow) var(--uni-ease) both; }
 #universeWorkspace .task-row { position: relative; display: flex; align-items: flex-start; gap: 8px; min-height: 52px; padding: 11px 12px; border: 1.5px solid var(--border-color); border-inline-start: 6px solid var(--priority-color, var(--primary)); border-radius: var(--radius-m); background: var(--card-bg); box-shadow: var(--card-shadow); transition: transform var(--dur-fast) var(--uni-ease), border-color var(--dur-fast), background var(--dur-fast); }
-#universeWorkspace .task-row:hover { border-color: var(--border-hover); border-inline-start-color: var(--priority-color, var(--primary)); background: #17102f; transform: translateY(-1px); }
+#universeWorkspace .task-row:hover { border-color: var(--border-hover); border-inline-start-color: var(--priority-color, var(--primary)); background: var(--card-raise); transform: translateY(-1px); }
 #universeWorkspace .task-main { display: flex; flex: 1; gap: 10px; align-items: flex-start; flex-wrap: nowrap; min-width: 0; }
 #universeWorkspace .collapse-toggle, #universeWorkspace .collapse-spacer { width: 24px; min-height: 24px; height: 24px; padding: 0; border: 0; background: none; box-shadow: none; color: var(--primary-hover); flex-shrink: 0; }
 #universeWorkspace .collapse-toggle:hover, #universeWorkspace .collapse-toggle:active { transform: none; box-shadow: none; background: var(--accent-light); }
 #universeWorkspace .collapse-toggle svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--dur-med) var(--uni-ease); }
 #universeWorkspace .collapse-toggle[aria-expanded=false] svg { transform: rotate(-90deg); }
-#universeWorkspace .check-circle { width: 24px; height: 24px; min-height: 24px; padding: 0; flex-shrink: 0; border: 2px solid var(--priority-color, var(--primary)); border-radius: 50%; background: transparent; box-shadow: none; color: #fff; font-size: 12px; font-weight: 800; transition: transform var(--dur-fast) var(--uni-spring), background var(--dur-fast); }
+#universeWorkspace .check-circle { width: 24px; height: 24px; min-height: 24px; padding: 0; flex-shrink: 0; border: 2px solid var(--priority-color, var(--primary)); border-radius: 50%; background: transparent; box-shadow: none; color: var(--on-primary); font-size: 12px; font-weight: 800; transition: transform var(--dur-fast) var(--uni-spring), background var(--dur-fast); }
 #universeWorkspace .check-circle::after { content: ''; position: absolute; inset: -9px; }
 #universeWorkspace .check-circle:hover { background: var(--accent-light); transform: scale(1.08); box-shadow: none; border-color: var(--priority-color, var(--primary)); }
 #universeWorkspace .check-circle:active { transform: scale(.82); }
@@ -179,30 +202,29 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .task-title.uni-title-button::before { content: ''; position: absolute; inset: 0; z-index: 0; }
 #universeWorkspace .task-row .collapse-toggle, #universeWorkspace .task-row .check-circle, #universeWorkspace .task-row .uni-state { position: relative; z-index: 1; }
 #universeWorkspace .task-node.completed > .task-row .uni-title-button { text-decoration: line-through; color: var(--text-muted); }
-#universeWorkspace .task-node.is-overdue > .task-row .uni-title-button { color: #f87171; font-weight: 600; }
+#universeWorkspace .task-node.is-overdue > .task-row .uni-title-button { color: var(--danger-text); font-weight: 600; }
 #universeWorkspace .task-badges-wrap { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
-#universeWorkspace .task-badges-wrap > span { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 6px; background: rgba(255, 255, 255, .06); font-size: 11.5px; font-weight: 600; line-height: 18px; color: var(--text-muted); white-space: nowrap; }
+#universeWorkspace .task-badges-wrap > span { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 6px; background: color-mix(in srgb, var(--uni-star) 6%, transparent); font-size: 11.5px; font-weight: 600; line-height: 18px; color: var(--text-muted); white-space: nowrap; }
 #universeWorkspace .task-badges-wrap > .uni-meta-date { background: var(--accent-light); color: var(--primary-hover); }
-#universeWorkspace .task-node.is-overdue > .task-row .uni-meta-date { background: rgba(239, 68, 68, .18); color: #fca5a5; }
-#universeWorkspace .task-badges-wrap > .uni-meta-project { border: 1px solid currentColor; background: rgba(0, 0, 0, .2); color: var(--primary-hover); }
+#universeWorkspace .task-node.is-overdue > .task-row .uni-meta-date { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger-soft); }
+#universeWorkspace .task-badges-wrap > .uni-meta-project { border: 1px solid currentColor; background: color-mix(in srgb, var(--shadow-color) 20%, transparent); color: var(--primary-hover); }
 #universeWorkspace .task-badges-wrap > .uni-meta-tag { background: var(--tag-bg); color: var(--tag-text); }
 #universeWorkspace .task-badges-wrap > .uni-meta-review { border: 1px solid var(--primary); background: var(--accent-light); color: var(--primary-hover); border-radius: 12px; }
-#universeWorkspace .task-badges-wrap > .uni-meta-bonus { border: 1px solid rgba(245, 158, 11, .45); background: rgba(245, 158, 11, .18); color: #fde68a; border-radius: 12px; }
-#universeWorkspace .task-badges-wrap > .uni-meta-progress { color: #86efac; background: rgba(34, 197, 94, .1); }
+#universeWorkspace .task-badges-wrap > .uni-meta-bonus { border: 1px solid color-mix(in srgb, var(--warning-deep) 45%, transparent); background: color-mix(in srgb, var(--warning-deep) 18%, transparent); color: var(--warning-soft); border-radius: 12px; }
+#universeWorkspace .task-badges-wrap > .uni-meta-progress { color: var(--success-soft); background: color-mix(in srgb, var(--success) 10%, transparent); }
 #universeWorkspace .uni-child-tree { display: grid; grid-template-rows: 1fr; transition: grid-template-rows var(--dur-med) var(--uni-ease), opacity var(--dur-med); }
 #universeWorkspace .uni-child-tree.uni-collapsed { grid-template-rows: 0fr; opacity: 0; }
 #universeWorkspace .uni-child-inner { min-height: 0; overflow: hidden; margin-inline-start: 19px; padding-block: 8px 0; padding-inline: 14px 0; border-inline-start: 2px dashed var(--border-color); }
 #universeWorkspace .uni-child-tree:not(.uni-collapsed) > .uni-child-inner { overflow: visible; }
 #universeWorkspace .uni-child-tree .uni-child-tree .uni-child-tree .uni-child-inner { margin-inline-start: 4px; }
 #universeWorkspace .uni-state { align-self: center; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--accent-light); color: var(--primary-hover); flex-shrink: 0; white-space: nowrap; }
-#universeWorkspace .uni-state[data-state=pending] { background: rgba(251, 191, 36, .14); color: var(--warning); }
-#universeWorkspace .uni-state[data-state=rejected] { background: rgba(239, 68, 68, .14); color: #fca5a5; }
-#universeWorkspace .uni-fab { position: fixed; inset-inline-end: max(16px, calc((100vw - 900px) / 2)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 100; width: 58px; height: 58px; min-height: 58px; padding: 0; border-radius: 16px; background: var(--primary-fill); border-color: var(--primary-hover); color: #fff; font-size: 28px; font-weight: 400; box-shadow: 0 4px 0 var(--depth-primary), 0 10px 24px rgba(124, 58, 237, .4); }
-#universeWorkspace .uni-fab:hover { background: var(--primary); color: #fff; transform: translateY(-2px); box-shadow: 0 6px 0 var(--depth-primary), 0 14px 28px rgba(124, 58, 237, .5); }
-#universeWorkspace .uni-fab:active { transform: translateY(4px); box-shadow: 0 0 0 var(--depth-primary), 0 4px 10px rgba(124, 58, 237, .4); }
+#universeWorkspace .uni-state[data-state=pending] { background: color-mix(in srgb, var(--warning) 14%, transparent); color: var(--warning); }
+#universeWorkspace .uni-state[data-state=rejected] { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger-soft); }
+#universeWorkspace .uni-fab { position: fixed; inset-inline-end: max(16px, calc((100vw - 900px) / 2)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 100; width: 58px; height: 58px; min-height: 58px; padding: 0; border-radius: 16px; background: var(--primary-fill); border-color: var(--primary-hover); color: var(--on-primary); font-size: 28px; font-weight: 400; box-shadow: 0 4px 0 var(--depth-primary), 0 10px 24px color-mix(in srgb, var(--primary-fill) 40%, transparent); }
+#universeWorkspace .uni-fab:hover { background: var(--primary); color: var(--on-primary); transform: translateY(-2px); box-shadow: 0 6px 0 var(--depth-primary), 0 14px 28px color-mix(in srgb, var(--primary-fill) 50%, transparent); }
+#universeWorkspace .uni-fab:active { transform: translateY(4px); box-shadow: 0 0 0 var(--depth-primary), 0 4px 10px color-mix(in srgb, var(--primary-fill) 40%, transparent); }
 @media (min-width: 768px) {
   #universeWorkspace .uni-fab { width: auto; padding-block: 0 0; padding-inline: 16px 20px; gap: 8px; border-radius: 14px; }
-  #universeWorkspace .uni-fab::after { content: 'New task'; font-size: 15px; font-weight: 700; }
 }
 
 /* 6. Projects */
@@ -216,7 +238,7 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-project-head { margin-bottom: 14px; padding: 16px; border: 1.5px solid var(--border-color); border-radius: var(--radius-l); background: var(--card-bg); box-shadow: var(--card-shadow); animation: uni-enter var(--dur-slow) var(--uni-ease); }
 #universeWorkspace .uni-project-head h3 { margin-bottom: 2px; }
 #universeWorkspace .uni-project-head p { margin: 2px 0 0; }
-#universeWorkspace .uni-progress { height: 6px; margin-top: 12px; border-radius: 3px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+#universeWorkspace .uni-progress { height: 6px; margin-top: 12px; border-radius: 3px; background: color-mix(in srgb, var(--uni-star) 8%, transparent); overflow: hidden; }
 #universeWorkspace .uni-progress i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--primary), var(--nebula)); transition: width .6s var(--uni-ease); }
 #universeWorkspace .uni-progress-label { margin-top: 6px; font-size: 12px; color: var(--text-muted); }
 #universeWorkspace .uni-project-head details { margin-top: 14px; }
@@ -224,14 +246,14 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 /* 7. Forms, chips, accordions */
 #universeWorkspace label { display: block; margin: 14px 0; font-size: 12.5px; font-weight: 700; color: var(--text-color); }
 #universeWorkspace input:not([type=checkbox]):not([type=file]):not([type=color]), #universeWorkspace select, #universeWorkspace textarea { display: block; width: 100%; max-width: 100%; margin-top: 6px; padding: 10px 12px; border: 1.5px solid var(--border-color); border-radius: var(--radius-s); background: var(--card-subtle); color: var(--text-color); font: inherit; font-size: 14px; font-weight: 400; outline: none; transition: border-color var(--dur-fast), box-shadow var(--dur-fast); color-scheme: dark; }
-#universeWorkspace input:focus, #universeWorkspace select:focus, #universeWorkspace textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(139, 92, 246, .25); }
+#universeWorkspace input:focus, #universeWorkspace select:focus, #universeWorkspace textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent); }
 #universeWorkspace input:disabled, #universeWorkspace select:disabled, #universeWorkspace textarea:disabled { opacity: .5; cursor: not-allowed; }
 #universeWorkspace input[type=checkbox] { width: 16px; height: 16px; margin-block: 0 0; margin-inline: 0 8px; accent-color: var(--primary); vertical-align: middle; }
 #universeWorkspace input[type=color] { display: block; width: 54px; height: 42px; margin-top: 6px; padding: 3px; border: 1.5px solid var(--border-color); border-radius: var(--radius-s); background: var(--card-subtle); cursor: pointer; }
 /* File inputs look like the main site's dashed picker. */
-#universeWorkspace input[type=file] { display: block; width: 100%; margin-top: 6px; padding: 12px; border: 1.5px dashed var(--primary); border-radius: var(--radius-s); background: rgba(139, 92, 246, .08); color: var(--text-muted); font: inherit; font-size: 13px; cursor: pointer; transition: background var(--dur-fast), border-style var(--dur-fast); }
-#universeWorkspace input[type=file]:hover { background: rgba(139, 92, 246, .15); border-style: solid; }
-#universeWorkspace input[type=file]::file-selector-button { margin-inline-end: 12px; padding: 7px 12px; border: 1.5px solid var(--primary-hover); border-radius: var(--radius-s); background: var(--primary-fill); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+#universeWorkspace input[type=file] { display: block; width: 100%; margin-top: 6px; padding: 12px; border: 1.5px dashed var(--primary); border-radius: var(--radius-s); background: color-mix(in srgb, var(--primary) 8%, transparent); color: var(--text-muted); font: inherit; font-size: 13px; cursor: pointer; transition: background var(--dur-fast), border-style var(--dur-fast); }
+#universeWorkspace input[type=file]:hover { background: color-mix(in srgb, var(--primary) 15%, transparent); border-style: solid; }
+#universeWorkspace input[type=file]::file-selector-button { margin-inline-end: 12px; padding: 7px 12px; border: 1.5px solid var(--primary-hover); border-radius: var(--radius-s); background: var(--primary-fill); color: var(--on-primary); font: inherit; font-weight: 600; cursor: pointer; }
 #universeWorkspace textarea { min-height: 88px; resize: vertical; }
 #universeWorkspace fieldset { min-width: 0; margin: 12px 0; padding: 0; border: 0; max-height: 280px; overflow: auto; }
 #universeWorkspace legend { margin-bottom: 4px; font-size: 12.5px; font-weight: 700; color: var(--text-color); }
@@ -239,14 +261,14 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace fieldset > label, #universeWorkspace .uni-tag-options label, #universeWorkspace details[style] > label { display: inline-flex; align-items: center; min-height: 34px; margin-block: 6px 0; margin-inline: 0 6px; padding: 0 12px; border: 1.5px solid var(--border-color); border-radius: 17px; background: var(--card-bg); color: var(--text-muted); font-weight: 600; cursor: pointer; transition: all var(--dur-fast); user-select: none; }
 #universeWorkspace fieldset > label:hover, #universeWorkspace details[style] > label:hover { border-color: var(--primary-hover); color: var(--text-color); }
 #universeWorkspace fieldset > label:active, #universeWorkspace details[style] > label:active { transform: scale(.96); }
-#universeWorkspace fieldset > label:has(input:checked), #universeWorkspace details[style] > label:has(input:checked), #universeWorkspace .uni-priority-options button[aria-pressed=true] { border-color: var(--primary-hover); background: var(--primary-fill); color: #fff; }
+#universeWorkspace fieldset > label:has(input:checked), #universeWorkspace details[style] > label:has(input:checked), #universeWorkspace .uni-priority-options button[aria-pressed=true] { border-color: var(--primary-hover); background: var(--primary-fill); color: var(--on-primary); }
 #universeWorkspace fieldset > label input[type=checkbox], #universeWorkspace details[style] > label input[type=checkbox] { position: absolute; opacity: 0; pointer-events: none; }
 #universeWorkspace .uni-priority-options button { margin-block: 6px 0; margin-inline: 0 6px; min-height: 34px; border-radius: 17px; background: var(--card-bg); box-shadow: none; }
 #universeWorkspace .uni-priority-options button::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--uni-dot, var(--primary)); }
 
 #universeWorkspace details { margin: 10px 0; padding: 0 16px; border: 1.5px solid var(--border-color); border-radius: 12px; background: var(--card-bg); box-shadow: var(--card-shadow); interpolate-size: allow-keywords; }
 #universeWorkspace summary { margin-inline: -16px; padding: 14px 16px; font-size: 13.5px; font-weight: 700; list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-radius: 12px; transition: background var(--dur-fast); }
-#universeWorkspace summary:hover { background: rgba(255, 255, 255, .03); }
+#universeWorkspace summary:hover { background: color-mix(in srgb, var(--uni-star) 3%, transparent); }
 #universeWorkspace summary::-webkit-details-marker { display: none; }
 #universeWorkspace summary::after { content: ''; flex: none; width: 8px; height: 8px; margin-inline-end: 4px; border-right: 2px solid var(--primary-hover); border-bottom: 2px solid var(--primary-hover); transform: rotate(45deg) translateY(-2px); transition: transform var(--dur-med) var(--uni-ease); }
 #universeWorkspace details[open] > summary { margin-bottom: 4px; border-radius: 12px 12px 0 0; }
@@ -258,30 +280,28 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace details details { box-shadow: none; background: var(--card-subtle); }
 
 /* 8. Overlays: editor, detail, confirm */
-#universeWorkspace .uni-editor-overlay { position: fixed; inset: 0; z-index: 3100; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(4, 2, 16, .74); backdrop-filter: blur(5px); animation: uni-fade var(--dur-med) ease; }
+#universeWorkspace .uni-editor-overlay { position: fixed; inset: 0; z-index: 3100; display: flex; align-items: center; justify-content: center; padding: 20px; background: color-mix(in srgb, var(--uni-scrim) 74%, transparent); backdrop-filter: blur(5px); animation: uni-fade var(--dur-med) ease; }
 @keyframes uni-fade { from { opacity: 0; } }
-#universeWorkspace form.uni-editor { display: flex; flex-direction: column; width: 680px; max-width: 100%; max-height: 90dvh; padding: 0; margin: 0; border: 1.5px solid var(--border-hover); border-radius: 16px; background: var(--card-bg); overflow: hidden; box-shadow: 0 24px 80px rgba(0, 0, 0, .6); }
+#universeWorkspace form.uni-editor { display: flex; flex-direction: column; width: 680px; max-width: 100%; max-height: 90dvh; padding: 0; margin: 0; border: 1.5px solid var(--border-hover); border-radius: 16px; background: var(--card-bg); overflow: hidden; box-shadow: 0 24px 80px color-mix(in srgb, var(--shadow-color) 60%, transparent); }
 #universeWorkspace .uni-editor-heading { flex: none; padding: 20px 24px 14px; border-bottom: 1.5px solid var(--border-color); }
 #universeWorkspace .uni-editor-heading h3 { margin: 0; font-size: 21px; }
 #universeWorkspace .uni-editor-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 24px 20px; }
 #universeWorkspace .uni-editor details { background: var(--card-subtle); box-shadow: none; }
 #universeWorkspace .uni-editor-actions { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 24px calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1.5px solid var(--border-color); background: var(--card-bg); }
 #universeWorkspace .uni-editor-actions p { margin-block: 0 0; margin-inline: 0 auto; font-size: 12px; display: flex; align-items: center; gap: 6px; }
-#universeWorkspace .uni-editor-actions p.uni-dirty::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--warning); box-shadow: 0 0 0 3px rgba(251, 191, 36, .2); }
-#universeWorkspace .uni-select-all::after { content: 'Select all'; }
-#universeWorkspace .uni-deselect-all::after { content: 'Deselect all'; }
+#universeWorkspace .uni-editor-actions p.uni-dirty::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 20%, transparent); }
 #universeWorkspace .uni-select-all { margin-inline-end: 8px; }
 #universeWorkspace form:not(.uni-editor) { margin: 12px 0; padding: 16px; border: 1.5px solid var(--border-color); border-radius: var(--radius-l); background: var(--card-bg); box-shadow: var(--card-shadow); }
 #universeWorkspace details form:not(.uni-editor), #universeWorkspace .uni-settings-section form:not(.uni-editor) { padding: 0; border: 0; box-shadow: none; background: none; }
 #universeWorkspace form:not(.uni-editor) > button { margin-block: 8px 0; margin-inline: 0 8px; }
 
-#universeWorkspace .uni-detail.modal-box, #universeWorkspace .uni-detail-frame { display: flex; flex-direction: column; width: 780px; max-width: 100%; max-height: min(720px, 90dvh); padding: 0; margin: 0; border: 1.5px solid var(--border-hover); border-radius: 16px; background: var(--card-bg); overflow: hidden; box-shadow: 0 24px 80px rgba(0, 0, 0, .6); }
+#universeWorkspace .uni-detail.modal-box, #universeWorkspace .uni-detail-frame { display: flex; flex-direction: column; width: 780px; max-width: 100%; max-height: min(720px, 90dvh); padding: 0; margin: 0; border: 1.5px solid var(--border-hover); border-radius: 16px; background: var(--card-bg); overflow: hidden; box-shadow: 0 24px 80px color-mix(in srgb, var(--shadow-color) 60%, transparent); }
 #universeWorkspace .uni-dialog-heading { display: flex; flex: none; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 24px 14px; border-bottom: 1.5px solid var(--border-color); }
 #universeWorkspace .uni-dialog-heading h3 { margin: 0; font-size: 20px; overflow-wrap: anywhere; }
 #universeWorkspace .uni-dialog-heading .uni-state { display: inline-flex; margin-bottom: 6px; }
 #universeWorkspace .uni-detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) 240px; min-height: 0; overflow: auto; }
 #universeWorkspace .uni-detail-main { min-width: 0; padding: 18px 24px 24px; }
-#universeWorkspace .uni-properties { min-width: 0; padding: 18px 16px; border-inline-start: 1.5px solid var(--border-color); background: rgba(255, 255, 255, .015); }
+#universeWorkspace .uni-properties { min-width: 0; padding: 18px 16px; border-inline-start: 1.5px solid var(--border-color); background: color-mix(in srgb, var(--uni-star) 1.5%, transparent); }
 #universeWorkspace .uni-properties h4 { margin-top: 0; }
 #universeWorkspace .uni-property { padding: 10px 0; border-bottom: 1px solid var(--border-color); }
 #universeWorkspace .uni-property span { display: block; font-size: 12px; color: var(--text-muted); }
@@ -296,30 +316,30 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-stepper { display: flex; margin: 0 0 16px; padding: 0; list-style: none; }
 #universeWorkspace .uni-stepper li { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; overflow-wrap: normal; position: relative; flex: 1; text-align: center; font-size: 11.5px; font-weight: 600; color: var(--text-muted); }
 #universeWorkspace .uni-stepper li::before { content: ''; position: relative; z-index: 1; display: block; width: 14px; height: 14px; margin: 0 auto 5px; border-radius: 50%; background: var(--card-subtle); border: 2px solid var(--border-color); transition: all var(--dur-slow) var(--uni-ease); }
-#universeWorkspace .uni-stepper li::after { content: ''; position: absolute; top: 6px; right: 50%; width: 100%; height: 2px; background: var(--border-color); }
+#universeWorkspace .uni-stepper li::after { content: ''; position: absolute; top: 6px; inset-inline-end: 50%; width: 100%; height: 2px; background: var(--border-color); }
 #universeWorkspace .uni-stepper li:first-child::after { display: none; }
 #universeWorkspace .uni-stepper li.done { color: var(--text-color); }
-#universeWorkspace .uni-stepper li.done::before { background: var(--primary); border-color: var(--primary-hover); box-shadow: 0 0 0 4px rgba(139, 92, 246, .18); }
+#universeWorkspace .uni-stepper li.done::before { background: var(--primary); border-color: var(--primary-hover); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent); }
 #universeWorkspace .uni-stepper li.done::after { background: var(--primary); }
-#universeWorkspace .uni-stepper li.bad { color: #fca5a5; }
-#universeWorkspace .uni-stepper li.bad::before { background: var(--danger); border-color: #fca5a5; }
+#universeWorkspace .uni-stepper li.bad { color: var(--danger-soft); }
+#universeWorkspace .uni-stepper li.bad::before { background: var(--danger); border-color: var(--danger-soft); }
 
-#universeWorkspace .uni-confirm-overlay { position: fixed; inset: 0; z-index: 4000; display: flex; justify-content: center; align-items: center; padding: 16px; background: rgba(4, 2, 16, .74); backdrop-filter: blur(4px); animation: uni-fade var(--dur-med) ease; }
-#universeWorkspace .uni-confirm-sheet { width: 380px; max-width: 100%; padding: 22px; border: 1.5px solid var(--border-hover); border-radius: 16px; background: var(--card-bg); box-shadow: 0 16px 48px rgba(0, 0, 0, .6); }
+#universeWorkspace .uni-confirm-overlay { position: fixed; inset: 0; z-index: 4000; display: flex; justify-content: center; align-items: center; padding: 16px; background: color-mix(in srgb, var(--uni-scrim) 74%, transparent); backdrop-filter: blur(4px); animation: uni-fade var(--dur-med) ease; }
+#universeWorkspace .uni-confirm-sheet { width: 380px; max-width: 100%; padding: 22px; border: 1.5px solid var(--border-hover); border-radius: 16px; background: var(--card-bg); box-shadow: 0 16px 48px color-mix(in srgb, var(--shadow-color) 60%, transparent); }
 #universeWorkspace .uni-confirm-sheet p { color: var(--text-color); font-size: 15px; margin: 0 0 18px; }
 #universeWorkspace .uni-confirm-sheet textarea { margin-bottom: 16px; }
 #universeWorkspace .uni-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
-#universeWorkspace .uni-confirm-sheet.uni-tone-danger .btn-primary { color: #f87171; background: #2a1215; border-color: #7f1d1d; box-shadow: 0 3px 0 var(--depth-danger); }
+#universeWorkspace .uni-confirm-sheet.uni-tone-danger .btn-primary { color: var(--danger-text); background: var(--danger-bg); border-color: var(--danger-border); box-shadow: 0 3px 0 var(--depth-danger); }
 #universeWorkspace .uni-editor, #universeWorkspace .uni-detail, #universeWorkspace .uni-detail-frame, #universeWorkspace .uni-confirm-sheet { animation: uni-rise var(--dur-slow) var(--uni-ease); }
 @keyframes uni-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes uni-rise { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
 
 /* 9. Controls, settings, members, statistics */
-#universeWorkspace .uni-overwrite-import > button:last-of-type { color: #f87171; background: #2a1215; border-color: #7f1d1d; box-shadow: 0 3px 0 var(--depth-danger); }
+#universeWorkspace .uni-overwrite-import > button:last-of-type { color: var(--danger-text); background: var(--danger-bg); border-color: var(--danger-border); box-shadow: 0 3px 0 var(--depth-danger); }
 #universeWorkspace .uni-subtabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 #universeWorkspace .uni-subpane { animation: uni-enter var(--dur-slow) var(--uni-ease); }
 #universeWorkspace section.uni-settings-section { margin-bottom: 14px; padding: 18px; border: 1.5px solid var(--border-color); border-radius: var(--radius-l); background: var(--card-bg); box-shadow: var(--card-shadow); }
-#universeWorkspace section.uni-settings-section.uni-danger-zone { border-color: #5b1a1a; background: linear-gradient(180deg, rgba(239, 68, 68, .05), transparent 60%), var(--card-bg); }
+#universeWorkspace section.uni-settings-section.uni-danger-zone { border-color: var(--danger-edge); background: linear-gradient(180deg, color-mix(in srgb, var(--danger) 5%, transparent), transparent 60%), var(--card-bg); }
 #universeWorkspace .uni-section-heading { margin-bottom: 12px; }
 #universeWorkspace .uni-section-heading h3 { margin-bottom: 2px; }
 #universeWorkspace .uni-section-heading p { max-width: 65ch; margin: 0; font-size: 13px; }
@@ -327,7 +347,7 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-settings-section > select { margin-bottom: 10px; }
 #universeWorkspace .uni-member-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 #universeWorkspace li.uni-member-row { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 10px 12px; border: 1.5px solid var(--border-color); border-radius: var(--radius-m); background: var(--card-subtle); }
-#universeWorkspace .uni-avatar { display: grid; place-items: center; width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%; background: linear-gradient(135deg, #c4b5fd, #f0abfc); color: #1a0f3a; font-size: 14px; font-weight: 800; }
+#universeWorkspace .uni-avatar { display: grid; place-items: center; width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%; background: linear-gradient(135deg, var(--uni-star-violet), var(--nebula-soft)); color: var(--card-sink); font-size: 14px; font-weight: 800; }
 #universeWorkspace .uni-member-identity { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #universeWorkspace .uni-member-identity strong { font-size: 15px; overflow-wrap: anywhere; }
 #universeWorkspace .uni-member-identity span { padding: 1px 9px; border-radius: 999px; background: var(--accent-light); color: var(--primary-hover); font-size: 11.5px; font-weight: 700; text-transform: capitalize; }
@@ -339,7 +359,7 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-list-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; margin-bottom: 8px; border: 1.5px solid var(--border-color); border-radius: var(--radius-m); background: var(--card-subtle); transition: opacity var(--dur-med), transform var(--dur-med); }
 #universeWorkspace .uni-list-row p { margin: 0; color: var(--text-color); text-transform: capitalize; }
 #universeWorkspace .uni-invite-result:empty { display: none; }
-#universeWorkspace .uni-invite-result { margin-top: 12px; padding: 12px; border: 1.5px dashed var(--primary); border-radius: var(--radius-m); background: rgba(139, 92, 246, .06); animation: uni-enter var(--dur-slow) var(--uni-ease); }
+#universeWorkspace .uni-invite-result { margin-top: 12px; padding: 12px; border: 1.5px dashed var(--primary); border-radius: var(--radius-m); background: color-mix(in srgb, var(--primary) 6%, transparent); animation: uni-enter var(--dur-slow) var(--uni-ease); }
 #universeWorkspace .uni-catalog-row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border-color); }
 #universeWorkspace .uni-catalog-row label { flex: 1; min-width: 130px; margin: 0; }
 #universeWorkspace .uni-catalog-row label:nth-child(2) { flex: 0; min-width: 54px; }
@@ -375,12 +395,12 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
 #universeWorkspace .uni-card .uni-card-actions button { min-height: 32px; font-size: 12px; }
 #universeWorkspace .uni-cards > p, #universeWorkspace .uni-cards > .uni-empty { grid-column: 1 / -1; }
 #universeWorkspace .uni-status:empty { display: none; }
-#universeWorkspace .uni-status, #universeWorkspace .uni-notice { width: min(900px, calc(100% - 32px)); margin: 12px auto; padding: 12px 14px; border: 1px solid rgba(251, 191, 36, .3); border-radius: var(--radius-m); background: rgba(251, 191, 36, .06); color: #fde68a; font-size: 13px; animation: uni-enter var(--dur-med) var(--uni-ease); }
+#universeWorkspace .uni-status, #universeWorkspace .uni-notice { width: min(900px, calc(100% - 32px)); margin: 12px auto; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent); border-radius: var(--radius-m); background: color-mix(in srgb, var(--warning) 6%, transparent); color: var(--warning-soft); font-size: 13px; animation: uni-enter var(--dur-med) var(--uni-ease); }
 #universeWorkspace .uni-pane .uni-notice, #universeWorkspace .uni-settings-section .uni-notice { width: auto; margin: 0 0 14px; }
 #universeWorkspace .uni-empty { text-align: center; padding: 48px 16px; border: 1.5px dashed var(--border-color); border-radius: var(--radius-l); }
 #universeWorkspace .uni-empty h3 { color: var(--primary-hover); margin-bottom: 4px; }
 #universeWorkspace .uni-empty p { margin: 0; }
-#universeWorkspace .uni-toast { position: fixed; bottom: calc(92px + env(safe-area-inset-bottom, 0px)); left: 50%; z-index: 4200; display: flex; align-items: center; gap: 10px; width: min(380px, calc(100% - 32px)); padding: 12px 14px; border: 1.5px solid var(--border-hover); border-inline-start: 4px solid var(--success); border-radius: 12px; background: var(--card-subtle); color: var(--text-color); font-size: 13.5px; font-weight: 600; box-shadow: 0 10px 30px rgba(0, 0, 0, .6); transform: translateX(-50%); animation: uni-toast .38s var(--uni-spring); }
+#universeWorkspace .uni-toast { position: fixed; bottom: calc(92px + env(safe-area-inset-bottom, 0px)); left: 50%; z-index: 4200; display: flex; align-items: center; gap: 10px; width: min(380px, calc(100% - 32px)); padding: 12px 14px; border: 1.5px solid var(--border-hover); border-inline-start: 4px solid var(--success); border-radius: 12px; background: var(--card-subtle); color: var(--text-color); font-size: 13.5px; font-weight: 600; box-shadow: 0 10px 30px color-mix(in srgb, var(--shadow-color) 60%, transparent); transform: translateX(-50%); animation: uni-toast .38s var(--uni-spring); }
 #universeWorkspace .uni-toast[data-tone=error] { border-inline-start-color: var(--danger); }
 #universeWorkspace .uni-toast[data-tone=info] { border-inline-start-color: var(--primary); }
 #universeWorkspace .uni-toast span { flex: 1; }
@@ -427,8 +447,6 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
   #universeWorkspace button:not(.check-circle):not(.uni-title-button):not(.uni-fab):not(.collapse-toggle):not(.uni-card-title) { min-height: 44px; }
   #universeWorkspace .uni-pill, #universeWorkspace .uni-tabs button { min-height: 38px; }
   #universeWorkspace .uni-tab-indicator { height: 38px; }
-  #universeWorkspace .uni-select-all::after { content: 'All'; }
-  #universeWorkspace .uni-deselect-all::after { content: 'None'; }
 }
 @media (prefers-reduced-motion: reduce) {
   #universeWorkspace *, #universeWorkspace *::before, #universeWorkspace *::after { animation: none !important; transition: opacity 80ms linear !important; scroll-behavior: auto !important; }
@@ -444,3 +462,45 @@ body:has(#componentView-universe[style*="block"]) #openProjectTaskAddModalBtn, b
   #universeWorkspace .uni-editor-overlay > .uni-detail,
   #universeWorkspace .uni-editor-overlay > .uni-detail-frame { max-height: calc(100% - max(8px, env(safe-area-inset-top, 0px))); }
 }
+
+/* 15. Space kit: icons, celestial completion circles, completed roots, list tools */
+#universeWorkspace .uni-ic { flex: none; width: 1.15em; height: 1.15em; }
+#universeWorkspace .uni-icon-button .uni-ic, #universeWorkspace .projects-header-strip > button .uni-ic { width: 19px; height: 19px; }
+#universeWorkspace .collapse-toggle .uni-ic { width: 15px; height: 15px; }
+#universeWorkspace .uni-fab .uni-ic { width: 26px; height: 26px; }
+#universeWorkspace .uni-fab-label { display: none; font-size: 15px; font-weight: 700; }
+@media (min-width: 768px) { #universeWorkspace .uni-fab-label { display: inline; } }
+#universeWorkspace .task-badges-wrap > span .uni-ic { width: 12px; height: 12px; margin-inline-end: 4px; }
+
+/* Completion circles: each task keeps one planet or star, tinted with its priority colour. */
+#universeWorkspace .check-circle.has-body { width: 30px; height: 30px; min-height: 30px; margin-block-start: -3px; border: 0; background: none; color: var(--priority-color, var(--primary-hover)); overflow: visible; }
+#universeWorkspace .check-circle.has-body:hover { background: none; transform: scale(1.12) rotate(8deg); }
+#universeWorkspace .uni-body { display: block; width: 100%; height: 100%; }
+#universeWorkspace .task-node.completed > .task-row .check-circle.has-body { background: none; color: var(--success); }
+#universeWorkspace .task-node.completed > .task-row .check-circle.has-body .uni-body { opacity: .5; }
+#universeWorkspace .uni-check-mark { position: absolute; inset-inline-end: -5px; bottom: -4px; width: 16px; height: 16px; padding: 2px; border-radius: 50%; background: var(--success); color: var(--on-primary); }
+/* Stars shine gently. This is the only looping motion in the theme. */
+#universeWorkspace .check-circle .uni-star { animation: uni-shine 3.4s ease-in-out infinite; transform-origin: center; }
+#universeWorkspace .task-node:nth-child(odd) > .task-row .uni-star { animation-delay: -1.3s; }
+#universeWorkspace .task-node.completed > .task-row .uni-star { animation: none; }
+@keyframes uni-shine {
+  0%, 100% { transform: scale(.94); filter: drop-shadow(0 0 0 transparent); }
+  50% { transform: scale(1.06); filter: drop-shadow(0 0 5px currentColor) brightness(1.25); }
+}
+
+/* Completed root: every required assignment is approved. */
+#universeWorkspace .task-node.uni-root-complete > .task-row { border-color: var(--success-border); background: color-mix(in srgb, var(--success) 5%, var(--card-bg)); }
+#universeWorkspace .task-badges-wrap > .uni-meta-rootdone { border: 1px solid var(--success-border); background: var(--success-bg); color: var(--success-text); border-radius: 12px; }
+
+/* Sort and date filter above a project's task list. */
+#universeWorkspace .uni-list-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; margin-bottom: 12px; }
+#universeWorkspace .uni-list-tools label { margin: 0 0 10px; }
+
+/* Decoration */
+#universeWorkspace .uni-empty-art { display: block; order: -1; width: 64px; height: 64px; margin: 0 auto 10px; color: var(--border-hover); }
+#universeWorkspace .uni-empty { display: flex; flex-direction: column; }
+#universeWorkspace .uni-card { position: relative; overflow: hidden; }
+#universeWorkspace .uni-card-art { position: absolute; inset-inline-end: -18px; top: -18px; width: 96px; height: 96px; color: var(--primary); opacity: .16; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) { #universeWorkspace .check-circle .uni-star { animation: none; } }
+html[data-motion="reduce"] #universeWorkspace .check-circle .uni-star { animation: none; }

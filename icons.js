@@ -109,7 +109,8 @@
     let ready = null;
     function sprite() {
         if (ready) return ready;
-        const fam = window.TaskitatorThemes?.FAMILIES?.[family()] || window.TaskitatorThemes?.FAMILIES?.nature;
+        // Families without an icon map here (Universe's space family has its own kit in uni/universe-space.js) use the nature sprite.
+        const fam = (MAPS[family()] && window.TaskitatorThemes?.FAMILIES?.[family()]) || window.TaskitatorThemes?.FAMILIES?.nature;
         const url = fam?.sprite || 'image/nature_sprites/sprite.svg';
         const load = (opts) => fetch(url, opts)
             .then(r => (r.ok ? r.text() : Promise.reject(new Error('sprite ' + r.status))))

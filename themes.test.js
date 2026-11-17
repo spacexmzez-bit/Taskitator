@@ -216,28 +216,71 @@ test('service worker precaches every new theme file and the cache version change
     }
 });
 
-test('Universe keeps today\'s exact token values and the family layer is parked while it is open', () => {
-    const legacy = read('style.css').match(/:root \{([\s\S]*?)\n\}/)[1];
-    const frozen = read('palettes.css').match(/html\[data-palette\] body\.universe-active \{([\s\S]*?)\n\}/)[1];
-    const used = new Set([...read('uni/universe.css').matchAll(/var\((--[a-z0-9-]+)/g)].map(m => m[1]));
-    const universeOwn = new Set([...read('uni/universe.css').match(/#universeWorkspace \{([\s\S]*?)\n\}/)[1].matchAll(/(--[a-z0-9-]+):/g)].map(m => m[1]));
-    const value = (src, name) => src.match(new RegExp(name.replace(/-/g, '\\-') + ':\\s*([^;]+);'))?.[1].trim();
-    for (const name of used) {
-        const original = value(legacy, name);
-        if (!original || universeOwn.has(name)) continue;
-        assert.equal(value(frozen, name), original, name + ' frozen to its legacy value');
-    }
-    for (const [token, hex] of [['--tk-acc', '#3b82f6'], ['--tk-acc-2', '#60a5fa'], ['--tk-acc-3', '#93c5fd']]) assert.equal(value(frozen, token), hex);
-    assert.match(read('theme-boot.js'), /universe-active/);
-    assert.match(read('theme-boot.js'), /delete html\.dataset\.family/);
-    // Universe files are untouched by the redesign.
-    assert.doesNotMatch(read('uni/universe.css'), /tk-|data-family|data-palette/);
+test('Universe space theme: one token block, no raw colours below it, family switches to space while open', () => {
+    const css = read('uni/universe.css');
+    // Tokens are declared once, for the open Universe and the workspace.
+    const start = css.indexOf('body.universe-active, #universeWorkspace {');
+    assert.ok(start > 0, 'space token block');
+    const end = css.indexOf('\n}\n', start);
+    const tokens = css.slice(start, end);
+    for (const name of ['--bg-color', '--card-bg', '--text-color', '--primary', '--danger', '--success', '--tk-acc', '--tk-acc-2', '--tk-acc-3']) assert.match(tokens, new RegExp(name + ':'), name);
+    // Every rule after the token block uses tokens only (single place to re-tune the theme).
+    const rules = css.slice(end).replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.deepEqual(rules.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g) || [], []);
+    // Every var() used resolves to a token declared in this file or a shared base token.
+    const declared = new Set([...css.matchAll(/(--[a-z0-9-]+)\s*:/g)].map(m => m[1]));
+    const setByScript = new Set(['--uni-header-height', '--priority-color', '--uni-dot']); // set per element by the Universe scripts
+    for (const [, name] of css.matchAll(/var\((--[a-z0-9-]+)/g)) assert.ok(declared.has(name) || setByScript.has(name), name + ' is declared in universe.css');
+    // The old freeze is gone: no Universe override in palettes.css, no legacy Universe rules in style.css.
+    assert.doesNotMatch(read('palettes.css'), /body\.universe-active\s*\{/);
+    assert.doesNotMatch(read('style.css'), /\.universe-workspace\s*\{|#universeWorkspace section/);
+    // Physical left/right only where JavaScript positions by offsetLeft (tab indicator) or the shape is symmetric (chevron).
+    const physical = rules.split('\n').filter(l => /[;{ ](left|right):|border-(left|right)|(margin|padding)-(left|right)/.test(l));
+    assert.ok(physical.every(l => /uni-tab-indicator|summary::after|uni-toast/.test(l)), physical.join('\n')); // toast is centred with left: 50%
+    assert.doesNotMatch(read('rtl.css'), /universeWorkspace[^{]*::after\s*\{\s*content/, 'no CSS-drawn Arabic labels for Universe');
+});
+
+test('theme-boot applies the space family and its theme colour while a Universe is open', () => {
+    const R = loadRegistry();
+    assert.equal(R.FAMILIES.space.id, 'space');
+    assert.ok(fs.existsSync(new URL(R.FAMILIES.space.sprite, root)));
+    assert.ok(!R.THEMES.some(t => t.family === 'space'), 'space is not a selectable theme');
+    const boot = read('theme-boot.js');
+    assert.match(boot, /universeOpen\(\) \? reg\.FAMILIES\.space : null/);
+    assert.doesNotMatch(boot, /delete html\.dataset\.family/);
+    // icons.js keeps the nature sprite for families without their own icon map.
+    assert.match(read('icons.js'), /MAPS\[family\(\)\] &&/);
+});
+
+test('space sprite: inert markup, every body and icon the kit names exists', () => {
+    const sprite = read('image/space_sprites/sprite.svg');
+    assert.ok(!/<script|on[a-z]+=|javascript:|<image|href=/i.test(sprite), 'sprite is inert markup');
+    const symbols = new Map([...sprite.matchAll(/<symbol id="([^"]+)" viewBox="([^"]+)">([\s\S]*?)<\/symbol>/g)].map(m => [m[1], m[3]]));
+    for (const [id, body] of symbols) assert.match(body, /<path[^>]+d="M[^"]{8,}"/, id + ' has path data');
+    const ctx = { window: {}, document: undefined, Object, String, Math, Promise, setTimeout };
+    vm.runInNewContext(read('uni/universe-space.js'), ctx);
+    const S = ctx.window.UniverseSpace;
+    for (const b of [...S.BODIES, ...S.DECOR]) assert.ok(symbols.has('sp-b-' + b), 'body ' + b);
+    for (const i of S.ICONS) assert.ok(symbols.has('sp-i-' + i), 'icon ' + i);
+    for (const s of S.STARS) assert.ok(S.BODIES.includes(s), s + ' is a completion body');
+    // Stable pick: same id, same body; different ids spread over the set.
+    assert.equal(S.bodyFor('task-1'), S.bodyFor('task-1'));
+    assert.ok(new Set(Array.from({ length: 200 }, (_, i) => S.bodyFor('t' + i))).size >= S.BODIES.length - 2);
+    // Server values become readable labels; unknown values are shown as words, never dropped.
+    assert.equal(S.label('role', 'owner'), 'Owner');
+    assert.equal(S.label('state', 'pending'), 'In review');
+    assert.equal(S.label('activity', 'review:late'), 'Submission reviewed: late');
+    assert.equal(S.label('activity', 'something_new'), 'Something new');
+    const sw = read('sw.js');
+    assert.match(sw, /'\.\/uni\/universe-space\.js'/); assert.match(sw, /'\.\/image\/space_sprites\/sprite\.svg'/);
+    const page = read('components.html');
+    assert.ok(page.indexOf('uni/universe-space.js') > 0 && page.indexOf('uni/universe-space.js') < page.indexOf('uni/universe-widgets.js'), 'kit loads before the Universe scripts');
 });
 
 test('family CSS is fully scoped to html[data-family="nature"] (apart from icon base and settings cards)', () => {
     const css = read('family-nature.css').replace(/\/\*[\s\S]*?\*\//g, '');
     const selectors = [...css.matchAll(/(^|\})\s*([^{}@]+)\{/g)].map(m => m[2].trim()).filter(s => !/^(from|to|\d+%)/.test(s));
-    const allowedUnscoped = /^(\.tk-|#tk-|#appearanceCard|\.tk-theme|\.tk-swatch|\.tk-pro|html:not\(\[data-family\]\) #focusTimerTag)/;
+    const allowedUnscoped = /^(\.tk-|#tk-|#appearanceCard|\.tk-theme|\.tk-swatch|\.tk-pro|html:not\(\[data-family="nature"\]\) #focusTimerTag)/;
     const split = sel => { const out = []; let depth = 0, cur = ''; for (const ch of sel) { if (ch === '(') depth++; if (ch === ')') depth--; if (ch === ',' && !depth) { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out.map(x => x.trim()).filter(Boolean); };
     for (const sel of selectors) for (const part of split(sel)) {
         assert.ok(part.startsWith('html[data-family="nature"]') || allowedUnscoped.test(part), 'unscoped selector: ' + part);
