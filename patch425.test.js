@@ -23,5 +23,5 @@ test('Phase 4.2.5: the note is cut at 250 words', () => {
   assert.ok(inner.endsWith('w249'));
 });
 test('Phase 4.2.5: the hosted path uses the wrapper', () => {
-  assert.match(pro, /combinedCriteria = this\.wrapCriteria\(criteria, userContext\)/);
+  assert.match(pro, /submitterNote: userContext/);
 });

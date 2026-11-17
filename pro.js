@@ -1204,11 +1204,11 @@ Return strictly valid JSON with this exact schema:
                         if (!check.valid) return { success: false, status: 400, error: check.error };
                         const encodedFiles = [];
                         for (const f of fileList) encodedFiles.push(await this.encodeProofFile(f, 'claude'));
-                        const combinedCriteria = this.wrapCriteria(criteria, userContext);
                         const proRes = await window.TaskitatorPro.reviewProof({
                             taskId: taskId || ('task_' + Date.now()),
                             title: taskTitle,
-                            criteria: combinedCriteria,
+                            criteria,
+                            submitterNote: userContext,
                             files: encodedFiles,
                             exemplar: test && exemplarPart ? {mime_type:(exemplarPart.inline_data || exemplarPart).mime_type, data:(exemplarPart.inline_data || exemplarPart).data} : null,
                             test
@@ -1236,7 +1236,7 @@ Return strictly valid JSON with this exact schema:
                 const provider = this.selection().provider;
                 for (const f of fileList) encoded.push(await this.encodeProofFile(f, provider));
                 const exemplar=exemplarPart?{mime_type:(exemplarPart.inline_data||exemplarPart).mime_type,data:(exemplarPart.inline_data||exemplarPart).data}:null;
-                const result=await window.TaskitatorPro.personalReview(test?{task_id:taskId,task_title:taskTitle,criteria,exemplar,files:encoded,test:true}:{task_id:taskId,files:encoded});
+                const result=await window.TaskitatorPro.personalReview(test?{task_id:taskId,task_title:taskTitle,criteria,exemplar,files:encoded,test:true,submitter_note:userContext}:{task_id:taskId,files:encoded,submitter_note:userContext});
                 return {success:true,approved:result.verdict==='approved',...result};
             } catch(error){return {success:false,status:error.status||0,error:error.message};}
 
@@ -1565,7 +1565,7 @@ window.TaskitatorEngine = TaskitatorEngine;
         /**
          * Submit single or multi-file proof review to hosted Claude Haiku 5.5 gateway.
          */
-        async reviewProof({ taskId, title, criteria, file, files, operationId, exemplar, test = false }) {
+        async reviewProof({ taskId, title, criteria, file, files, operationId, exemplar, submitterNote, test = false }) {
             if (!taskId) throw new Error('taskId is required for proof review.');
             if (!criteria) throw new Error('Criteria must be defined for AI-audited review.');
 
@@ -1575,6 +1575,7 @@ window.TaskitatorEngine = TaskitatorEngine;
                 task_id: taskId,
                 task_title: title || 'Task',
                 criteria,
+                submitter_note: submitterNote || '',
                 operation_id: opId,
                 exemplar: exemplar || null
             };
