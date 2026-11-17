@@ -21,7 +21,7 @@ test('Phase 4.2.2: invalid unit numbers fall back to 1; new tests start at 1', (
 });
 
 test('Phase 4.2.2: validate and test send the filled text; the stored criteria keeps {num}', () => {
-  assert.match(src, /sent = fillNum\(text, rec\.unit\)/);
+  assert.match(src, /sent = prepared\[k\]\.text/);
   assert.match(src, /validateCriteria\(sent,/);
   assert.match(src, /criteria: sent, userContext/);
   assert.match(src, /side\[kind\] = \{ criteria: text,/);

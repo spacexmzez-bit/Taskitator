@@ -997,6 +997,7 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
         };
+        window.TaskitatorSmartCriteria = SmartCriteriaEngine; // the Test lab uses the same title-variable rules
 
         function updateMrStudyRuleDropdown() {
             const container = document.getElementById('mrstudyRuleContainer');

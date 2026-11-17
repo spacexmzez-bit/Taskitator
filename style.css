@@ -5927,3 +5927,11 @@ dialog.parent-picker::backdrop{background:rgba(0,0,0,.6)}
 .pp-tag{border-color:var(--primary);color:var(--primary)}
 .pp-why{flex:1 0 100%;font-size:.72rem;color:var(--text-muted)}
 .pp-foot{display:flex;justify-content:flex-end}
+
+/* Phase 4.2.3: Test lab sections */
+.lab-wrap .lab-section { border: 1.5px solid var(--border-color); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.lab-wrap .lab-section-title { margin: 0; font-size: 1.05rem; }
+.lab-wrap .lab-col-title { margin: 0 0 6px; font-size: 0.95rem; }
+.lab-wrap .lab-boxrow { display: flex; align-items: flex-start; gap: 8px; }
+.lab-wrap .lab-boxrow .lab-field { flex: 1; min-width: 0; margin-bottom: 0; }
+.lab-wrap .lab-copy { margin-block-start: 1.4rem; flex: none; }
