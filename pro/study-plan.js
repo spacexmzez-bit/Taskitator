@@ -185,17 +185,38 @@
   // -- Scheduling --
   const sched=window.TaskitatorStudySchedule.mount(panels.sched,{today,start:initial.start||today,weekdays:initial.weekdays??defaultDays(settings),startUnit:initial.first??1,startUnitHint:1,days:initial.days??5,
    note:'Choose how the units are spread over days.',label:()=>unit.value.trim()||'Unit',units:o=>unitSpec(o).numbers,
-   parentTitle:i=>title.value.trim()+' '+(i+1),disabled:()=>false,onChange:()=>refresh(),assign:rowsSorted=>layout(rowsSorted),bonusStep:(date,v)=>setBonus(date,v),bonusRoom:()=>1000-bonusN(),chip:n=>starred.has(n)?{text:(unit.value.trim()||'Unit')+'.'+n+' ★',cls:'is-bonus'}:null,
+   parentTitle:i=>title.value.trim()+' '+(i+1),disabled:()=>false,onChange:()=>refresh(),assign:rowsSorted=>layout(rowsSorted),bonusStep:(date,v)=>setBonus(date,v),bonusRoom:()=>1000-bonusSum(),bonusCard:()=>bonusCardState(),bonusDismiss:()=>bonusDismiss(),bonusAuto:()=>bonusAuto(),bonusCancel:()=>bonusCancel(),chip:n=>starred.has(n)?{text:(unit.value.trim()||'Unit')+'.'+n+' ★',cls:'is-bonus'}:null,
    early:date=>smartEnabled?[...smartAppearances].filter(([,d])=>d===date).sort((a,b)=>a[0]-b[0]).map(([n])=>({text:(unit.value.trim()||'Unit')+'.'+n})):[]});
   const bonusN=()=>{const n=Number(bonus.value);return Number.isSafeInteger(n)&&n>0?Math.min(n,1000):0;},starred=new Set();
-  // Phase 3.7.3: per-date bonus amounts (date -> count). Valid only while it covers exactly the previewed dates and adds up to the bonus total.
-  let bonusPer=null;
-  function bonusFor(rowsSorted,n){const even=core.bonusSplit(rowsSorted.length,n);if(!bonusPer)return even;const ok=bonusPer.size===rowsSorted.length&&rowsSorted.every(r=>bonusPer.has(r.date))&&[...bonusPer.values()].reduce((a,b)=>a+b,0)===n;if(!ok){bonusPer=null;return even;}return rowsSorted.map(r=>bonusPer.get(r.date));}
-  function setBonus(date,v){const rs=sched.state().sched;if(!rs.some(r=>r.date===date)||!Number.isInteger(v)||v<0)return;const cur=bonusFor(rs,bonusN()),m=new Map(rs.map((r,i)=>[r.date,cur[i]]));m.set(date,v);const sum=[...m.values()].reduce((a,b)=>a+b,0);if(sum>1000)return;bonusPer=m;bonus.value=String(sum);sched.rerender();refresh();}
+  // Phase 3.7.3: per-date bonus amounts (date -> count). Phase 6.0: an edit no longer changes the bonus total. It is staged, the total
+  // stays at what was set up (the target), and a purple card shows the surplus or missing amount until it is settled:
+  // Dismiss keeps the new total, Cancel restores the amounts from before the edit, Auto redistribute (confirmed) levels the other
+  // dates back to the target, and editing other dates by hand until the difference is 0 settles it too.
+  let bonusPer=null,bonusSnap=null,bonusEdited=new Set(),bonusError='';
+  const bonusSum=()=>bonusPer?[...bonusPer.values()].reduce((a,b)=>a+b,0):bonusN();
+  function bonusReset(){bonusPer=null;bonusSnap=null;bonusEdited=new Set();bonusError='';}
+  function bonusFor(rowsSorted,n){const even=core.bonusSplit(rowsSorted.length,n);if(!bonusPer)return even;const ok=bonusPer.size===rowsSorted.length&&rowsSorted.every(r=>bonusPer.has(r.date));if(!ok){bonusReset();return even;}return rowsSorted.map(r=>bonusPer.get(r.date));}
+  function bonusCardState(){const st=sched.state();if(!bonusPer||!st.hasPreview)return null;bonusFor(st.sched,bonusN());if(!bonusPer)return null;const target=bonusN(),total=bonusSum();return total===target?null:{balance:total-target,total,target,error:bonusError};}
+  function setBonus(date,v){
+   const st=sched.state(),rs=st.sched;if(!rs.some(r=>r.date===date)||!Number.isInteger(v)||v<0||st.balance!==0)return;
+   const cur=bonusFor(rs,bonusN()),m=new Map(rs.map((r,i)=>[r.date,cur[i]])),open=bonusCardState();
+   m.set(date,v);const sum=[...m.values()].reduce((a,b)=>a+b,0);if(sum>1000)return;
+   if(!open){bonusSnap=bonusPer?new Map(bonusPer):null;bonusEdited=new Set();}
+   bonusPer=m;bonusEdited.add(date);bonusError='';
+   if(sum===bonusN()){bonusSnap=null;bonusEdited=new Set();}
+   sched.rerender();refresh();
+  }
+  function bonusDismiss(){bonus.value=String(bonusSum());bonusSnap=null;bonusEdited=new Set();bonusError='';sched.rerender();refresh();}
+  function bonusCancel(){bonusPer=bonusSnap;bonusSnap=null;bonusEdited=new Set();bonusError='';sched.rerender();refresh();}
+  function bonusAuto(){
+   const st=sched.state(),cur=bonusFor(st.sched,bonusN()),r=window.TaskitatorStudySchedule.redistributeBonus(st.sched.map((x,k)=>({date:x.date,count:cur[k]})),bonusN(),bonusEdited,today);
+   if(r.error)bonusError=r.error;else{bonusPer=new Map(r.rows.map(x=>[x.date,x.count]));bonusSnap=null;bonusEdited=new Set();bonusError='';}
+   sched.rerender();refresh();
+  }
   // Preview numbering with the bonus units placed at the end of each day.
   function layout(rowsSorted){
-   const sp=unitSpec(sched.state().options),n=bonusN(),nums=[...sp.numbers],skip=new Set(sp.skipped);for(let k=(nums.at(-1)||sp.first-1)+1;nums.length<sp.total+n;k++)if(!skip.has(k))nums.push(k);
-   const extra=bonusFor(rowsSorted,n),out=new Map();let i=0;starred.clear();
+   const sp=unitSpec(sched.state().options),extra=bonusFor(rowsSorted,bonusN()),n=bonusPer?extra.reduce((a,b)=>a+b,0):bonusN(),nums=[...sp.numbers],skip=new Set(sp.skipped);for(let k=(nums.at(-1)||sp.first-1)+1;nums.length<sp.total+n;k++)if(!skip.has(k))nums.push(k);
+   const out=new Map();let i=0;starred.clear();
    rowsSorted.forEach(({date,count},j)=>{const take=count+extra[j],list=nums.slice(i,i+take);out.set(date,list);list.slice(count).forEach(x=>starred.add(x));i+=take;});
    return out;
   }
@@ -211,7 +232,7 @@
   const smartSummary=p=>{const s=node('summary','Early Appearance',p);node('span','PRO',s,'pro-feature-pill study-summary-pill');return s;};
   const smartPanel=node('details',undefined,panels.sched,'study-collapse');smartSummary(smartPanel);
   for(const e of [title,unit,desc])e.addEventListener('input',()=>refresh());
-  total.addEventListener('input',()=>{bonusPer=null;sched.invalidate();});bonus.addEventListener('input',()=>{bonusPer=null;sched.rerender();refresh();});
+  total.addEventListener('input',()=>{bonusReset();sched.invalidate();});bonus.addEventListener('input',()=>{bonusReset();sched.rerender();refresh();});
   audit.onchange=()=>{aiBody.hidden=!audit.checked;validation=null;refresh();};criteria.oninput=()=>{validation=null;validationText.textContent='Criteria changed. Validate again.';refresh();};exclude.addEventListener('input',()=>refresh());
   button('Validate reusable criteria',aiBody,async()=>{
    if(!audit.checked)throw Error('Enable audits first.');if(!criteria.value.trim())throw Error('Enter the criteria for the units.');
@@ -222,7 +243,7 @@
   const stampOf=()=>{try{const sp=unitSpec(sched.state().options);return JSON.stringify([criteria.value,title.value.trim(),unit.value.trim(),sp.total,sp.first,sp.skipped]);}catch{return '';}};
   const strict=settings.strict_criteria_validation!==false;
   function buildPlan(){
-   planError='';const st=sched.state();if(!st.hasPreview||st.stale||st.balance!==0||!st.sched.length)return null;
+   planError='';const st=sched.state();if(!st.hasPreview||st.stale||st.balance!==0||!st.sched.length||bonusCardState())return null;
    try{const {sp,exclude:ex}=audited();return normalize({title:title.value,unit:unit.value,plural:pluralOf(),parent_priority:parentPrio.value||null,unit_priority:unitPrio.value||null,total:sp.total,bonus:bonusN(),...(bonusN()&&bonusFor(st.sched,bonusN())&&bonusPer?{bonus_counts:st.sched.map(x=>bonusPer.get(x.date))}:{}),chapter_size:chapOn.checked?chapSize.value||null:null,chapter_label:chapLabel.value,days:st.sched.length,counts:st.sched.map(x=>x.count),dates:st.sched.map(x=>x.date),first:sp.first,start:st.sched[0].date,weekdays:st.options.weekdays,skipped:sp.skipped,description:desc.value,...(audit.checked&&ex.length?{exclude:ex}:{})});}
    catch(e){planError=e.message;return null;}
   }
@@ -356,6 +377,7 @@
    else if(!st.hasPreview)msg='Preview a schedule to create the plan.';
    else if(st.stale)msg='Preview the new schedule again to create the plan.';
    else if(st.balance!==0)msg=(st.balance>0?'Settle '+st.balance+' surplus unit(s) first.':'Settle '+(-st.balance)+' missing unit(s) first.');
+   else if(bonusCardState())msg=bonusCardState().balance>0?'Settle '+bonusCardState().balance+' bonus surplus unit(s) first.':'Settle '+(-bonusCardState().balance)+' missing bonus unit(s) first.';
    else if(audit.checked&&!criteria.value.trim())msg='Enter the criteria for the units.';
    else if(audit.checked&&strict&&!(validation?.passed&&validationStamp===stampOf()))msg='Validate the criteria (7/10 or higher) before creating.';
    else if(!plan)msg=planError||'Check the plan settings.';

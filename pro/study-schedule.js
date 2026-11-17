@@ -35,6 +35,26 @@ function redistributeCounts(sched,total,edited,today){
  }
  return {sched:rows.filter(x=>x.count>0)};
 }
+// Bonus balance (Phase 6.0): rows are [{date,count}] of bonus places per date, target is the bonus total the plan was set up with.
+// Same rule as redistributeCounts: one unit at a time over the dates not edited by hand, first to last. Dates with 0 stay in the list.
+function redistributeBonus(rows,target,edited,today){
+ const list=rows.map(x=>({date:x.date,count:x.count})).sort((a,b)=>a.date.localeCompare(b.date)),skip=edited instanceof Set?edited:new Set(edited||[]);
+ let bal=list.reduce((a,x)=>a+x.count,0)-target;
+ if(bal===0)return {rows:list};
+ const eligible=()=>list.filter(x=>x.date>=today&&!skip.has(x.date)&&(bal<0||x.count>0));
+ if(!eligible().length)return {error:tr('Auto redistribute needs at least one date whose bonus you have not edited by hand. Edit the dates yourself or press Cancel.')};
+ while(bal!==0){
+  const pool=eligible();
+  if(!pool.length)return {error:tr('Not enough bonus on the dates you have not edited to remove the surplus. Remove the rest by hand.')};
+  for(const x of pool){if(bal===0)break;if(bal>0){x.count--;bal--;}else{x.count++;bal++;}}
+ }
+ return {rows:list};
+}
+// Every redistribute asks first. No confirm available means no redistribute.
+async function confirmAction(title,message,label){
+ try{if(root.TaskitatorConfirm)return Boolean(await root.TaskitatorConfirm({title,message,confirmLabel:label}));}catch(e){return false;}
+ return typeof confirm==='function'?Boolean(confirm(message)):false;
+}
 function mount(parent,ctx){
  const startRates=()=>{const r={};for(const [k,v]of Object.entries(ctx.rates||{}))if(/^[0-6]$/.test(k)&&Number.isSafeInteger(Number(v))&&Number(v)>0)r[k]=Number(v);return r;};
  const st={start:ctx.start,mode:ctx.mode==='per'?'per':'cal',days:Math.max(1,Number(ctx.days)||4),per:Number(ctx.per)||2,rates:startRates(),weekdays:new Set(ctx.weekdays||[]),startUnit:ctx.startUnit??'',skipText:'',
@@ -114,11 +134,31 @@ function mount(parent,ctx){
  // ---- preview ----
  const sorted=()=>st.sched.filter(x=>x.count>0).sort((a,b)=>a.date.localeCompare(b.date));
  const balance=()=>st.sched.reduce((a,x)=>a+x.count,0)-st.units.length;
+ // Main and bonus edits never overlap (Phase 6.0): while either side has an unsettled balance, the other side's edit buttons are off for every date.
+ const bonusOpen=()=>Boolean(ctx.bonusCard?.());
+ const mainOpen=()=>Boolean(st.sched)&&balance()!==0;
+ function bonusCard(parent){
+  const b=ctx.bonusCard?.();if(!b)return;
+  const bal=b.balance,card=el('div',undefined,parent,'ss-balance is-bonus');card.setAttribute('role','status');card.setAttribute('data-ss-bonus-card','');
+  el('b',bal>0?tr('Bonus surplus: {n}',{n:bal}):tr('Bonus missing: {n}',{n:-bal}),card);
+  el('span',' '+tr('The bonus total is {now} instead of {target}.',{now:b.total,target:b.target})+' '+tr('Main edits are off until you settle this. Dismiss keeps {now}, Cancel goes back to {target}, or auto redistribute.',{now:b.total,target:b.target}),card);
+  const row=el('div',undefined,card,'ss-card-actions');
+  const dis=el('button',tr('Dismiss'),row,'ss-auto-btn');dis.type='button';dis.setAttribute('data-ss-key','bonus-dismiss');dis.addEventListener('click',()=>ctx.bonusDismiss?.());
+  const auto=el('button',tr('Auto redistribute'),row,'ss-auto-btn');auto.type='button';auto.setAttribute('data-ss-key','bonus-auto');
+  auto.title=bal>0?tr('Remove one bonus unit from each date you have not edited, first to last, until the surplus is settled.'):tr('Add one bonus unit to each date you have not edited, first to last, until nothing is missing.');
+  auto.addEventListener('click',async()=>{
+   if(!await confirmAction(tr('Auto redistribute bonus?'),tr('One bonus unit is {verb} each date whose bonus you have not edited by hand, first to last, until the bonus total is back to {target}. Nothing is saved until you create the plan.',{verb:bal>0?tr('removed from'):tr('added to'),target:b.target}),tr('Auto redistribute')))return;
+   ctx.bonusAuto?.();
+  });
+  const cancel=el('button',tr('Cancel'),row,'ss-auto-btn ss-cancel-btn');cancel.type='button';cancel.setAttribute('data-ss-key','bonus-cancel');cancel.addEventListener('click',()=>ctx.bonusCancel?.());
+  if(b.error){const e=el('p',b.error,card,'ss-note ss-warn');e.setAttribute('role','alert');}
+ }
  // Auto redistribute: settle the balance one unit at a time across the dates the person has not edited, from the first
  // date (never before today) to the last, then round again. Surplus removes a unit; missing adds one.
  // Dates edited by hand are never touched. The result is a new preview to review; nothing is saved.
- function redistribute(){
+ async function redistribute(){
   st.redistError='';
+  if(!await confirmAction(tr('Auto redistribute?'),tr('One unit is {verb} each date you have not edited by hand, first to last, until the balance is 0. Dates you edited stay as they are. Nothing is saved until you create the plan.',{verb:balance()>0?tr('removed from'):tr('added to')}),tr('Auto redistribute')))return;
   const r=redistributeCounts(st.sched,st.units.length,st.edited,ctx.today);
   if(r.error)st.redistError=r.error;else{st.sched=r.sched;st.previewed=true;st.touched=true;}
   renderPreview();ctx.onChange?.();
@@ -153,6 +193,7 @@ function mount(parent,ctx){
    const auto=el('button',tr('Auto redistribute'),banner,'ss-auto-btn');auto.type='button';auto.setAttribute('data-ss-key','auto');
    auto.title=bal>0?tr('Remove one unit from each date you have not edited, first to last, until the surplus is settled.'):tr('Add one unit to each date you have not edited, first to last, until nothing is missing.');
    auto.addEventListener('click',redistribute);}
+  bonusCard(previewBox);
   if(st.redistError){const e=el('p',st.redistError,previewBox,'ss-note ss-warn');e.setAttribute('role','alert');}
   for(const n of ctx.notes?.(api.state())||[])el('p',n.text,previewBox,'ss-note'+(n.warn?' ss-warn':''));
   let assigned=new Map();if(ctx.assign)assigned=ctx.assign(sorted());else{let i=0;for(const {date,count}of sorted()){assigned.set(date,st.units.slice(i,i+count));i+=count;}}
@@ -203,23 +244,24 @@ function mount(parent,ctx){
   // The plan's own count for this date is the main amount; anything the layout adds on top of it is bonus. The stepper edits main only.
   const main=st.sched.find(x=>x.date===date)?.count||0,extra=Math.max(0,nums.length-main);
   const step=el('div',undefined,d,'ss-step');el('span',tr('Main tasks'),step,'ss-hint');
-  const minus=el('button','−',step,'ss-step-btn');minus.type='button';minus.setAttribute('data-ss-key','minus');minus.setAttribute('aria-label',tr('Remove one unit'));minus.disabled=!main;minus.addEventListener('click',()=>setCount(date,main-1));
+  const minus=el('button','−',step,'ss-step-btn');minus.type='button';minus.setAttribute('data-ss-key','minus');minus.setAttribute('aria-label',tr('Remove one unit'));minus.disabled=!main||bonusOpen();minus.addEventListener('click',()=>setCount(date,main-1));
   const mainB=el('b',String(main),step);mainB.setAttribute('data-ss-main','');
-  const plus=el('button','+',step,'ss-step-btn');plus.type='button';plus.setAttribute('data-ss-key','plus');plus.setAttribute('aria-label',tr('Add one unit'));plus.addEventListener('click',()=>setCount(date,main+1));
+  const plus=el('button','+',step,'ss-step-btn');plus.type='button';plus.setAttribute('data-ss-key','plus');plus.setAttribute('aria-label',tr('Add one unit'));plus.disabled=bonusOpen();plus.addEventListener('click',()=>setCount(date,main+1));
   // Bonus = the plan's own bonus units on this date plus units of later dates that Smart Study shows early here (Phase 3.6.2).
   const early=ctx.early?.(date)||[];
   const bon=el('div',undefined,d,'ss-step');el('span',tr('Bonus tasks'),bon,'ss-hint');
   // Phase 3.7.3: the plan's own bonus for this date has its own stepper. It never changes the main amount or the balance.
   if(ctx.bonusStep){
-   const bm=el('button','−',bon,'ss-step-btn');bm.type='button';bm.setAttribute('data-ss-key','bonus-minus');bm.setAttribute('aria-label',tr('Remove one bonus unit'));bm.disabled=!extra;bm.addEventListener('click',()=>ctx.bonusStep(date,extra-1));
+   const bm=el('button','−',bon,'ss-step-btn');bm.type='button';bm.setAttribute('data-ss-key','bonus-minus');bm.setAttribute('aria-label',tr('Remove one bonus unit'));bm.disabled=!extra||mainOpen();bm.addEventListener('click',()=>ctx.bonusStep(date,extra-1));
    var bonB=el('b',String(extra+early.length),bon);
-   const bp=el('button','+',bon,'ss-step-btn');bp.type='button';bp.setAttribute('data-ss-key','bonus-plus');bp.setAttribute('aria-label',tr('Add one bonus unit'));bp.disabled=(ctx.bonusRoom?.()??1)<=0;bp.addEventListener('click',()=>ctx.bonusStep(date,extra+1));
+   const bp=el('button','+',bon,'ss-step-btn');bp.type='button';bp.setAttribute('data-ss-key','bonus-plus');bp.setAttribute('aria-label',tr('Add one bonus unit'));bp.disabled=(ctx.bonusRoom?.()??1)<=0||mainOpen();bp.addEventListener('click',()=>ctx.bonusStep(date,extra+1));
   }else var bonB=el('b',String(extra+early.length),bon);
   bonB.setAttribute('data-ss-bonus','');
+  if(ctx.bonusStep&&mainOpen())el('p',tr('Bonus edits are off until the main balance is 0.'),d,'ss-hint ss-lock-note');
   const tot=el('div',undefined,d,'ss-step');el('span',tr('Day total'),tot,'ss-hint');el('b',String(main+extra+early.length),tot).setAttribute('data-ss-total','');
   if(early.length){el('span',tr('({plan} plan, {early} early)',{plan:extra,early:early.length}),bon,'ss-hint');const c=el('div',undefined,d,'ss-chips');for(const x of early)el('span',tr('Early')+' · '+x.text,c,'ss-chip is-early');}
   el('p',tr('Changing a date does not move other dates. It creates a surplus or a missing amount that you settle yourself.'),d,'ss-hint');
-  if(nums.length){const rm=el('button',tr('Remove this date'),d,'ss-remove');rm.type='button';rm.setAttribute('data-ss-key','remove');rm.addEventListener('click',()=>setCount(date,0));}
+  if(nums.length){const rm=el('button',tr('Remove this date'),d,'ss-remove');rm.type='button';rm.setAttribute('data-ss-key','remove');rm.disabled=bonusOpen();rm.addEventListener('click',()=>setCount(date,0));}
  }
  function setDisabled(flag){
   if(flag){for(const e of box.querySelectorAll('input,button,select,textarea'))e.disabled=true;return;}
@@ -275,5 +317,5 @@ function mount(parent,ctx){
  paintMode();syncRates();paintButton();setDisabled(off());
  return api;
 }
-root.TaskitatorStudySchedule={mount,redistributeCounts};
+root.TaskitatorStudySchedule={mount,redistributeCounts,redistributeBonus};
 })(typeof window==='undefined'?globalThis:window);
