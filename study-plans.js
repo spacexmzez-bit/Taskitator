@@ -313,6 +313,10 @@ function aiTab(plan, d, panel, edit) {
     const fs = el('fieldset', undefined, panel, 'plan-fs'); fs.disabled = !edit; fs.style.cssText = 'border:0;padding:0;margin:0;min-width:0';
     const criteria = field(tr('Proof criteria for the units. Use {num} for each unit number.'), fs, d.ai.criteria, 'textarea'); criteria.maxLength = 4000; criteria.rows = 4;
     const ex = field(tr('Exclude units from the criteria (optional)'), fs, d.ai.exclude); ex.placeholder = '8, 10-12'; ex.dir = 'ltr'; ex.inputMode = 'numeric';
+    const example = field(tr('Example unit number for checking (optional)'), fs, d.ai.example || '', 'number');
+    example.min = '1'; example.max = '1000000'; example.step = '1'; example.placeholder = String(open[0] || 1);
+    el('p', tr('Leave blank to use the first included unit. This example is only for checking the criteria.'), fs, 'plan-hint');
+    example.addEventListener('input', () => { d.ai.example = example.value; check.textContent = ''; });
     el('p', tr('Every unfinished unit gets the criteria unless you list it here. Finished units are never included.'), fs, 'plan-hint');
     const chips = el('div', undefined, fs, 'plan-chips'), note = el('p', '', fs, 'plan-hint'), check = el('p', '', fs, 'plan-hint');
     if (plan.audited) el('p', tr('Units that already have criteria stay locked: they cannot be excluded or changed here. Use the task editor to edit their criteria.'), fs, 'plan-hint warn');
@@ -331,14 +335,17 @@ function aiTab(plan, d, panel, edit) {
         b.addEventListener('click', async () => { try { const v = await validateCriteria(plan, d); check.textContent = v.score + '/10 · ' + v.critique; } catch (e) { check.textContent = e.message; } });
     }
 }
-const stamp = (plan, d) => JSON.stringify([d.ai.criteria, plan.id]);
+const stamp = (plan, d) => JSON.stringify([d.ai.criteria, plan.id, d.ai.exclude, d.ai.example || '']);
 async function validateCriteria(plan, d) {
     if (!d.ai.criteria.trim()) throw Error(tr('Enter audit criteria, up to 4,000 characters.'));
+    const targets = M.auditTargets(plan, d.ai.exclude).numbers;
+    const example = d.ai.example === undefined || d.ai.example === '' ? targets[0] : Number(d.ai.example);
+    if (!Number.isSafeInteger(example) || example < 1 || example > 1000000) throw Error(tr('Enter a whole example unit number between 1 and 1000000.'));
     const key = stamp(plan, d); if (validated.has(key)) return validated.get(key);
     const choice = window.TaskitatorEngine.AuditEngine.selection();
     checking = true; chrome();
     try {
-        const result = await TaskitatorAuth.api('/study-plan', { method: 'POST', body: JSON.stringify({ action: 'validate', config: M.configOf(plan), criteria: d.ai.criteria, provider: choice.provider, model: choice.primary, key_version: choice.keyVersion }) });
+        const result = await TaskitatorAuth.api('/study-plan', { method: 'POST', body: JSON.stringify({ action: 'validate', config: M.configOf(plan), criteria: d.ai.criteria, example_unit: example, provider: choice.provider, model: choice.primary, key_version: choice.keyVersion }) });
         validated.set(key, result); return result;
     } finally { checking = false; chrome(); }
 }
