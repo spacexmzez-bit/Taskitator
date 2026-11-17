@@ -172,3 +172,27 @@ test('Audit F06: worst-case cost is held before forwarding; timeouts keep the ho
     await rejects(h.ask(),503);
     assert.equal(await spend(),HOSTED_AI.dailySpend - 1);
 }));
+
+// ---- Audit M5: one monthly ceiling across all accounts ----
+test('audit M5: hosted Copilot spend is mirrored in the all-accounts monthly total and stops at the ceiling', () => run(async h => {
+    const key = 'ai-hosted-global:'+periods().month;
+    await h.activate(); await h.activate('user_B');
+    await h.ask();
+    const one = 1200*100 + 300*500; // reported usage at Haiku prices
+    assert.equal(await h.storage.get(key), one, 'settled to actual cost');
+    assert.equal(await h.counter('spend'), one);
+    // A provider refusal releases the hold from the total as well.
+    h.provider.mode = 'error'; await rejects(h.ask(), 503); h.provider.mode = 'ok';
+    assert.equal(await h.storage.get(key), one);
+    // Ceiling reached: refused for every account, before any provider generation, and no daily slot is used.
+    h.ai.service.env = {HOSTED_AI_MONTHLY_SPEND_NANODOLLARS:String(one + 1000)};
+    const calls = () => h.provider.calls.filter(c => c.href.endsWith('/v1/messages')).length, before = calls();
+    await rejects(h.ask(undefined, 'user_B'), 503, new RegExp(UNAVAILABLE));
+    await rejects(h.ask('criteria'), 503, new RegExp(UNAVAILABLE));
+    assert.equal(calls(), before); assert.equal(await h.storage.get(key), one);
+    assert.equal(await h.counter('copilot', 'user_B'), undefined);
+    // Raising the ceiling restores service.
+    h.ai.service.env = {HOSTED_AI_MONTHLY_SPEND_NANODOLLARS:String(10_000_000_000)};
+    await h.ask(undefined, 'user_B');
+    assert.equal(await h.storage.get(key), one * 2);
+}));

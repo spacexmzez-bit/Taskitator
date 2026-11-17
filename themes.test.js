@@ -283,3 +283,23 @@ test('sidebar: same order on every page (Drafts only where the editor exists); S
   assert.deepEqual(ref,['Today','General Tasks','Calendar','Projects','Stats','Trash','Drafts','Universe','Sleep Lock','Study plans','Test lab','Help','Settings']);
   for(const p of pages)assert.notEqual(p.find(i=>i.label==='Study plans').icon,p.find(i=>i.label==='Help').icon);
 });
+
+test('audit M3: inside another site\'s frame the page hides itself and tries to leave the frame; top-level pages are untouched', () => {
+    const run = (top, sameOrigin = true) => {
+        const style = new Map(), moved = [];
+        const self = { location: { href: 'https://taskitator.mazendev.com/index.html' } };
+        const window = { self, document: { documentElement: { dataset: {}, style: { setProperty: (k, v, p) => style.set(k, v + (p ? ' !' + p : '')) } } } };
+        self.document = window.document;
+        const topWindow = top === 'self' ? self : { location: { replace: href => { if (!sameOrigin) throw new Error('blocked'); moved.push(href); } } };
+        Object.defineProperty(window, 'top', { get() { if (top === 'throws') throw new Error('cross-origin'); return topWindow; } });
+        vm.runInNewContext(read('theme-boot.js'), { window, document: window.document, localStorage: { getItem: () => null, setItem() {} } });
+        return { display: style.get('display'), moved };
+    };
+    assert.equal(run('self').display, undefined);
+    assert.deepEqual(run('other'), { display: 'none !important', moved: ['https://taskitator.mazendev.com/index.html'] });
+    assert.deepEqual(run('other', false), { display: 'none !important', moved: [] });
+    assert.equal(run('throws').display, 'none !important');
+    // It must be the first thing the file does, before the theme registry check can return early.
+    const src = read('theme-boot.js');
+    assert.ok(src.indexOf('window.top !== window.self') < src.indexOf('TaskitatorThemes'));
+});

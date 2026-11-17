@@ -1,0 +1,8 @@
+{
+  "name": "taskitator-security-review-tooling",
+  "private": true,
+  "description": "Locked install of the CI security review tool. Used only by .github/workflows/deploy-worker-security.yml.",
+  "devDependencies": {
+    "@sentry/warden": "0.52.0"
+  }
+}

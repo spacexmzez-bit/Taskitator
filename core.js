@@ -456,12 +456,16 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             }
             const domain = atob(config.publishableKey.split('_')[2]).replace(/\$$/, '');
             if (!/^[a-zA-Z0-9.-]+$/.test(domain) || !domain.includes('.')) throw new Error('The Clerk publishable key is invalid.');
-            const clerkJs = 'https://' + domain + '/npm/@clerk/clerk-js@6/dist/clerk.browser.js';
+            // Audit L1: exact Clerk versions, not "latest 6.x": a new Clerk release runs here only after this line is changed
+            // and the sign-in pages are retested. Update both together (they are released as a pair) and check Clerk's
+            // changelog for security fixes regularly.
+            const CLERK_JS_VERSION = '6.43.1', CLERK_UI_VERSION = '1.42.6';
+            const clerkJs = 'https://' + domain + '/npm/@clerk/clerk-js@' + CLERK_JS_VERSION + '/dist/clerk.browser.js';
             // Fetch both Clerk bundles at once; they still run one after the other.
             const hint = document.createElement('link');
             hint.rel = 'preload'; hint.as = 'script'; hint.href = clerkJs; hint.crossOrigin = 'anonymous';
             document.head.append(hint);
-            await loadScript('https://' + domain + '/npm/@clerk/ui@1/dist/ui.browser.js');
+            await loadScript('https://' + domain + '/npm/@clerk/ui@' + CLERK_UI_VERSION + '/dist/ui.browser.js');
             await loadScript(clerkJs,
                 { 'data-clerk-publishable-key': config.publishableKey });
             // Arabic UI: the Clerk widget gets its own Arabic text (display only; sign-in works the same).
@@ -1936,16 +1940,21 @@ window.addEventListener('storage', event => {
         phrase.addEventListener('beforeinput',event=>{
             if (['insertFromPaste','insertFromDrop'].includes(event.inputType)) event.preventDefault();
         });
-        const match = /^#delete-verification=([a-f0-9]{64})$/.exec(location.hash);
+        // The part after the dot is a one-time secret from the Google step. It is sent back only by the browser tab
+        // that started this confirmation (the id it saved must match), so a link opened elsewhere confirms nothing.
+        const match = /^#delete-verification=([a-f0-9]{64})(?:\.([a-f0-9]{64}))?$/.exec(location.hash);
         if (match) {
             history.replaceState(null,'',location.pathname+location.search);
             open();
-            proofId = match[1];
             try {
+                if (sessionStorage.getItem('taskitator_deletion_verification') !== match[1])
+                    throw new Error('That Google sign-in was for a different session. Please start again.');
+                proofId = match[1];
                 const result = await window.TaskitatorAuth.api('/auth/verification/status',{
-                    method:'POST',body:JSON.stringify({verification_id:proofId})});
+                    method:'POST',body:JSON.stringify({verification_id:proofId,completion:match[2]})});
                 verified = result.verified;
                 feedback(verified ? 'Google identity confirmed. Check the blocker confirmation and manually type the phrase.' :
+                    result.reason === 'google-session-old' ? 'Your Google sign-in is too old to confirm this. Sign out of Google and sign in again, then retry, or use your password instead.' :
                     'Google confirmation failed or was cancelled. Use the Google account already connected to this login and try again.');
             } catch (error) { feedback(error.message); }
             update();
@@ -2182,7 +2191,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-phase4-v46');
+                    resolve(event.data?.version === 'taskitator-phase4-v49');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });

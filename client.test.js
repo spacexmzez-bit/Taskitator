@@ -362,7 +362,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase4-v46'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase4-v49'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -726,13 +726,24 @@ test('Google callback with wrong pending session or provider never enables confi
     }
 });
 test('Google deletion callback only verifies identity and resets manual deletion gates',async()=>{
-    const f=deletionClient(),requests=[];f.context.location.hash='#delete-verification='+'a'.repeat(64);
+    const f=deletionClient(),requests=[];f.context.location.hash='#delete-verification='+'a'.repeat(64)+'.'+'b'.repeat(64);
+    f.context.sessionStorage.setItem('taskitator_deletion_verification','a'.repeat(64));
     f.element('deletionPhrase').value='Macrodroid disabled';f.element('deletionBlockerDisabled').checked=true;
     f.auth.api=async(path)=>{requests.push(path);return {verified:true}};
     await f.events.get('taskitator-auth-ready')();
     assert.deepEqual(requests,['/auth/verification/status']);assert.equal(f.element('accountDeletionDialog').open,true);
     assert.equal(f.element('deletionPhrase').value,'');assert.equal(f.element('deletionBlockerDisabled').checked,false);
     assert.equal(f.element('confirmAccountDeletionBtn').disabled,true);
+});
+
+test('audit M6: a Google deletion link opened in a browser that did not start it confirms nothing',async()=>{
+    for(const stored of [null,'c'.repeat(64)]){
+        const f=deletionClient(),requests=[];f.context.location.hash='#delete-verification='+'a'.repeat(64)+'.'+'b'.repeat(64);
+        if(stored)f.context.sessionStorage.setItem('taskitator_deletion_verification',stored);
+        f.auth.api=async(path)=>{requests.push(path);return {verified:true}};
+        await f.events.get('taskitator-auth-ready')();
+        assert.deepEqual(requests,[]);assert.equal(f.element('confirmAccountDeletionBtn').disabled,true);
+    }
 });
 
 test('empty batch review uses CSP-compatible close handlers for both dismissal buttons',async()=>{

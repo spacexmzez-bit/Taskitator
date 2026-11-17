@@ -683,10 +683,19 @@ async function startGoogle(f,token,action='delete-account',provider='gemini') {
     const id=started.body.verification_id,record=await f.storage.get('action-proof:'+await sha256(id));
     return {id,record,url:started.body.authorization_url};
 }
+// The Google callback hands a one-time completion secret to the returning browser (audit M6). This plays that browser:
+// it reads the secret from the redirect and presents it with the starting session.
+async function finishGoogle(f,google,token,action,code='test-code') {
+    const callback=await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code='+code));
+    const match=/=([a-f0-9]{64})\.([a-f0-9]{64})$/.exec(callback.headers.get('Location')||'');
+    assert.ok(match,'callback must return a completion secret');assert.equal(match[1],google.id);
+    const status=await f.call('/auth/verification/status',token,'POST',{verification_id:google.id,action,completion:match[2]});
+    return {callback,completion:match[2],status};
+}
 test('linked Google confirmation reveals only the selected Claude key once',async()=>{
     const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a,'sk-ant-google-confirmed-key','claude');
     const google=await startGoogle(f,a.token,'api-key-reveal','claude');f.setGoogleToken(await googleIdToken(google.record.nonce));
-    const response=await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code=test-code'));assert.equal(response.status,303);
+    const response=(await finishGoogle(f,google,a.token,'api-key-reveal')).callback;assert.equal(response.status,303);
     const body={provider:'claude',verification_id:google.id};
     assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',{...body,provider:'gemini'})).status,403);
     assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',body)).body.key,'sk-ant-google-confirmed-key');
@@ -695,8 +704,8 @@ test('linked Google confirmation reveals only the selected Claude key once',asyn
 test('Google confirmation authorizes the selected key action once, without granting deletion',async()=>{
     const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
     const google=await startGoogle(f,a.token,'api-key-reveal');f.setGoogleToken(await googleIdToken(google.record.nonce));
-    const callback=await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code=test-code'));
-    assert.equal(callback.headers.get('Location'),origin+'/settings.html#key-verification='+google.id);
+    const {callback,completion}=await finishGoogle(f,google,a.token,'api-key-reveal');
+    assert.equal(callback.headers.get('Location'),origin+'/settings.html#key-verification='+google.id+'.'+completion);
     assert.equal((await f.call('/auth/account',a.token,'DELETE',{verification_id:google.id,receipt:'e'.repeat(64),blocker_disabled:true,phrase:'Macrodroid disabled'})).status,403);
     assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',{verification_id:google.id})).body.key,'AIza-test-secret-123456789');
     assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',{verification_id:google.id})).status,403);
@@ -706,9 +715,9 @@ test('Google confirmation validates signed identity and grants only the original
     const url=new URL(google.url);assert.equal(url.searchParams.get('scope'),'openid');
     assert.equal(url.searchParams.get('prompt'),'select_account');assert.equal(url.searchParams.get('code_challenge_method'),'S256');
     f.setGoogleToken(await googleIdToken(google.record.nonce));
-    const callback=await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code=test-code'));
-    assert.equal(callback.status,303);assert.equal(callback.headers.get('Location'),origin+'/settings.html#delete-verification='+google.id);
-    const status=await f.call('/auth/verification/status',a.token,'POST',{verification_id:google.id});assert.equal(status.body.verified,true);
+    const {callback,completion,status}=await finishGoogle(f,google,a.token);
+    assert.equal(callback.status,303);assert.equal(callback.headers.get('Location'),origin+'/settings.html#delete-verification='+google.id+'.'+completion);
+    assert.equal(status.body.verified,true);
     const replay=await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code=test-code'));
     assert.equal(replay.status,403);
     const record=await f.storage.get('action-proof:'+await sha256(google.id));
@@ -796,7 +805,7 @@ test('legacy bypass grants cannot authorize status, callbacks, deletion or any k
 test('Google key approvals reject other sessions, accounts and actions without consuming the original approval',async()=>{
     const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
     const google=await startGoogle(f,a.token,'api-key-reveal');f.setGoogleToken(await googleIdToken(google.record.nonce));
-    await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code=test'));
+    await finishGoogle(f,google,a.token,'api-key-reveal','test');
     f.sessionOwners.set('sess_Alternate','user_A');
     const otherSession=await jwt('user_A',{sid:'sess_Alternate'});
     const otherUser=(await create(f,'user_B')).token;
@@ -986,7 +995,7 @@ test('account deletion removes licensing, previews, grants and emergency state w
         const name=prefix==='pro:binding:'?'fingerprint':'user_A';await f.storage.put(prefix+name,{account_id:'user_A'});
     }
     await f.storage.put('pro:entitlement:user_B',await activeLicense('user_B'));
-    const deleted=[];f.env.TASKITATOR_DB={prepare:sql=>({bind:id=>({run:async()=>{deleted.push({sql,id})}})})};
+    const deleted=[];f.env.TASKITATOR_DB={prepare:sql=>({all:async()=>({results:[]}),bind:id=>({run:async()=>{deleted.push({sql,id})}})})};
     const body=await verifiedDeletion(f,a.token);assert.equal((await f.call('/auth/account',body.token,'DELETE',body)).status,200);
     await finishDeletion(f);assert.equal((await f.service.deletion.status(body.receipt)).complete,true);
     assert.equal(await f.storage.get('pro:entitlement:user_A'),undefined);assert.equal(await f.storage.get('pro:binding:fingerprint'),undefined);
@@ -2527,4 +2536,89 @@ test('Phase 4.2: a task with unfinished AI-audited work cannot leave its parent;
     assert.equal((await dpSave(f,a,base().map(t=>t.id==='N'?{...t,parent_id:'Q'}:t.id==='R'?{...t,parent_id:'P'}:t))).status,200); // an audited root task moving under a parent adds load
     assert.equal((await f.call('/pro/emergency',a.token,'POST',{})).status,200);
     assert.equal((await move('C','Q')).status,200); // Emergency Bypass lifts it
+});
+
+// Audit H3: account deletion also removes the account's identifying Universe content in other members' Universes.
+test('Universe: account deletion purge removes username, comment/proof text, review reasons and operation results; other accounts are untouched',async()=>{
+    const u=await universeFixture(),svc=u.f.service.universe;
+    // Base schema only: nothing to purge yet, and missing later-phase tables are not an error.
+    await svc.purgeAccount('user_Gone');
+    for(const file of ['universe-phase2.sql','universe-phase3.sql','universe-phase5.sql','universe-phase6-7.sql'])u.db.sql.exec(readFileSync(new URL('./uni/'+file,import.meta.url),'utf8'));
+    const run=(sql,...v)=>u.db.sql.prepare(sql).run(...v),get=(sql,...v)=>u.db.sql.prepare(sql).get(...v);
+    u.db.sql.exec('PRAGMA foreign_keys=OFF');
+    for(const id of ['user_Gone','user_Stay']){
+        run('INSERT INTO universe_accounts(account_id,joined_limit,created_at) VALUES(?,2,1)',id);
+        run('INSERT INTO universe_profiles VALUES(?,?)',id,'name_'+id);
+        run('INSERT INTO universe_comments(id,group_id,actor_id,body,reason,created_at,updated_at) VALUES(?,?,?,?,?,1,1)','c_'+id,'g1',id,'private words','why');
+        run('INSERT INTO universe_submissions(id,group_id,assignment_id,actor_id,task_revision,data,created_at,disputed,retain_until) VALUES(?,?,?,?,1,?,1,1,NULL)','s_'+id,'g1','a1',id,'{"text":"my proof"}');
+        run('INSERT INTO universe_operations VALUES(?,?,?,?,?,1)',id,'op_'+id+'_12345678','scope','hash','{"x":1}');
+    }
+    run("UPDATE universe_submissions SET reviewer_id='user_Gone',reason='reviewer note' WHERE id='s_user_Stay'");
+    await svc.purgeAccount('user_Gone');await svc.purgeAccount('user_Gone'); // repeatable
+    assert.equal(get("SELECT 1 x FROM universe_profiles WHERE account_id='user_Gone'"),undefined);
+    assert.deepEqual({...get("SELECT body,reason FROM universe_comments WHERE id='c_user_Gone'")},{body:'',reason:null});
+    assert.deepEqual({...get("SELECT data,disputed,retain_until FROM universe_submissions WHERE id='s_user_Gone'")},{data:'{}',disputed:0,retain_until:0});
+    assert.equal(get("SELECT 1 x FROM universe_operations WHERE actor_id='user_Gone'"),undefined);
+    // The other account keeps everything except the deleted reviewer's free-text reason.
+    assert.equal(get("SELECT username FROM universe_profiles WHERE account_id='user_Stay'").username,'name_user_Stay');
+    assert.equal(get("SELECT body FROM universe_comments WHERE id='c_user_Stay'").body,'private words');
+    assert.deepEqual({...get("SELECT data,reason FROM universe_submissions WHERE id='s_user_Stay'")},{data:'{"text":"my proof"}',reason:''});
+    assert.equal(get("SELECT result FROM universe_operations WHERE actor_id='user_Stay'").result,'{"x":1}');
+});
+
+test('audit M6: a Google return alone verifies nothing; only the starting session with the completion secret does',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);
+    const google=await startGoogle(f,a.token,'api-key-reveal');f.setGoogleToken(await googleIdToken(google.record.nonce));
+    const callback=await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code=test-code'));
+    const completion=/\.([a-f0-9]{64})$/.exec(callback.headers.get('Location'))[1];
+    // Whoever started the flow knows the id but not the secret: the proof stays unusable.
+    assert.equal((await f.call('/auth/verification/status',a.token,'POST',{verification_id:google.id,action:'api-key-reveal'})).body.verified,false);
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',{verification_id:google.id})).status,403);
+    for(const wrong of ['f'.repeat(64),'short',123])
+        assert.equal((await f.call('/auth/verification/status',a.token,'POST',{verification_id:google.id,action:'api-key-reveal',completion:wrong})).body.verified,false);
+    // Another session of the same user cannot complete it, even with the secret.
+    f.sessionOwners.set('sess_Alternate','user_A');
+    assert.equal((await f.call('/auth/verification/status',await jwt('user_A',{sid:'sess_Alternate'}),'POST',{verification_id:google.id,action:'api-key-reveal',completion})).status,403);
+    const record=await f.storage.get('action-proof:'+await sha256(google.id));
+    assert.equal(record.status,'returned');assert.notEqual(record.completion,completion);
+    assert.equal((await f.call('/auth/verification/status',a.token,'POST',{verification_id:google.id,action:'api-key-reveal',completion})).body.verified,true);
+    assert.equal((await f.storage.get('action-proof:'+await sha256(google.id))).completion,undefined);
+    assert.equal((await f.call('/ai/keys/reveal',a.token,'POST',{verification_id:google.id})).status,200);
+});
+test('audit M6: a failed Google return carries no completion secret',async()=>{
+    const f=fixture(),a=await create(f),google=await startGoogle(f,a.token);
+    f.setGoogleToken(await googleIdToken(google.record.nonce,{sub:'other_google'}));
+    const callback=await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code=test-code'));
+    assert.equal(callback.headers.get('Location'),origin+'/settings.html#delete-verification='+google.id);
+});
+test('audit M6: optional Google session-age limit requests auth_time and rejects an old or missing sign-in time',async()=>{
+    const now=Math.floor(Date.now()/1000);
+    for(const [auth_time,ok] of [[now-30,true],[now-900,false],[undefined,false]]){
+        const f=fixture(),a=await create(f);f.env.GOOGLE_VERIFICATION_MAX_AUTH_AGE_SECONDS='300';
+        const google=await startGoogle(f,a.token);
+        assert.deepEqual(JSON.parse(new URL(google.url).searchParams.get('claims')),{id_token:{auth_time:{essential:true}}});
+        f.setGoogleToken(await googleIdToken(google.record.nonce,auth_time===undefined?{}:{auth_time}));
+        const callback=await f.service.fetch(new Request('https://worker.test/auth/verification/google/callback?state='+google.id+'&code=test-code'));
+        assert.equal(/\.[a-f0-9]{64}$/.test(callback.headers.get('Location')),ok);
+        const status=await f.call('/auth/verification/status',a.token,'POST',{verification_id:google.id});
+        if(!ok){assert.equal(status.body.verified,false);assert.equal(status.body.reason,'google-session-old');}
+    }
+    // Unset or invalid: no claims request and no limit.
+    for(const value of [undefined,'','0','30','abc','999999']){
+        const f=fixture(),a=await create(f);if(value!==undefined)f.env.GOOGLE_VERIFICATION_MAX_AUTH_AGE_SECONDS=value;
+        const google=await startGoogle(f,a.token);
+        assert.equal(new URL(google.url).searchParams.get('claims'),null,String(value));
+    }
+});
+
+test('audit L4: the legacy KV purge tool refuses to run before the migration deadline and reads the namespace from wrangler.toml',async()=>{
+    const {purgeBlocked,namespaceId,PREFIXES}=await import('./tools/purge-legacy-kv.mjs');
+    const now=Date.parse('2026-11-16T00:00:00Z');
+    for(const bad of [undefined,'','soon'])assert.match(purgeBlocked(bad,now),/--until/);
+    assert.match(purgeBlocked('2026-12-31',now),/still open/);
+    assert.equal(purgeBlocked('2026-11-15',now),null);
+    assert.deepEqual(PREFIXES,['user_reg:','user_data:']);
+    const fs=await import('node:fs');
+    assert.match(namespaceId(fs.readFileSync(new URL('./wrangler.toml',import.meta.url),'utf8')),/^[a-f0-9]{32}$/);
+    assert.equal(namespaceId('[[kv_namespaces]]\nbinding = "OTHER"\nid = "'+'a'.repeat(32)+'"'),null);
 });

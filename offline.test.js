@@ -276,3 +276,13 @@ test('Pro activation, phone token and Sleep Lock setup need a connection or a Ma
     assert.match(sleep, /TaskitatorAuth\.api\('\/auth\/phone'\);phoneMissing=!phone\.active/);
     assert.match(sleep, /\|\|phoneMissing;/);
 });
+
+test('audit L8: an offline Pro token is never valid for more than 7 days, whatever the subscription expiry', async () => {
+    const { privateJwk } = await keys(), env = { OFFLINE_PRO_PRIVATE_JWK: privateJwk }, now = Date.now();
+    const claims = async exp => JSON.parse(Buffer.from((await signOfflineEntitlement(env, 'user_1', exp, now)).split('.')[1], 'base64url').toString());
+    assert.equal(OFFLINE_PRO_NO_EXPIRY_MS, 7 * DAY);
+    assert.equal((await claims(now + 365 * DAY)).valid_until, now + 7 * DAY);
+    assert.equal((await claims(now + 365 * DAY)).exp, now + 365 * DAY, 'the real expiry is still reported');
+    assert.equal((await claims(null)).valid_until, now + 7 * DAY);
+    assert.equal((await claims(now + 2 * DAY)).valid_until, now + 2 * DAY, 'a sooner expiry still wins');
+});

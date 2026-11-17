@@ -1,16 +1,24 @@
 name: Deploy Taskitator security Worker
+# The Worker deploys only after the GitHub Pages deployment of main succeeds, so the new pages are live first.
+# A failed Pages deployment means no Worker deployment. A manual run (workflow_dispatch) deploys immediately.
 on:
-  push:
+  workflow_run:
+    workflows: ["pages-build-deployment"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       # Actions pinned to reviewed commits (v4.4.0). Update deliberately, not by tag drift.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Deploy exactly the commit that Pages just published, not a newer push.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'

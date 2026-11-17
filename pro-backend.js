@@ -23,7 +23,9 @@ export async function liveAccount(store, accountId) {
 }
 
 // Hosted proof accounting only. Prices checked 2026-10-21 against Anthropic pricing
-// (Claude Haiku 5.5: $0.10/$0.50 per million tokens up to 100K input tokens).
+// (Claude Haiku 5.5: $0.10/$0.50 per million tokens up to 100K input tokens). Audit L9: rechecked 2026-11-16, unchanged.
+// Hosted requests are capped far below 100K input tokens (maxInput here, HOSTED_AI.maxInput), so the higher tier never applies.
+// If Anthropic changes the price, change inputPrice/outputPrice here: every spend cap is computed from them.
 // Integer nanodollars prevent floating point drift in provider-spend accounting.
 // Pro hosted credit allowances come only from verified Keyo d_allow/m_allow parameters.
 export const POLICY = Object.freeze({
@@ -61,6 +63,50 @@ export function periods(now = Date.now()) {
 }
 export function fail(status, code, message) {
     return Object.assign(new Error(message), { status, code });
+}
+// Audit M4: every account shares one Durable Object, so request bodies from all users sit in the same memory.
+// Bodies of 1 MiB or more are counted here. One large body is always admitted (whatever its size); more are
+// admitted only while their total stays within the budget. The rest get 429 and can retry.
+// A body that declares no Content-Length is counted at its route's maximum once it passes 1 MiB.
+export const LargeBodies = {
+    floor: MiB, budget: 32 * MiB, inFlight: 0, held: new WeakMap(),
+    reserve(request, bytes) {
+        if (!(bytes >= this.floor)) return;
+        const had = this.held.get(request) || 0;
+        if (bytes <= had) return;
+        const others = this.inFlight - had;
+        if (others > 0 && others + bytes > this.budget)
+            throw fail(429,'UPLOAD_BUSY','Taskitator is handling other large uploads. Retry in a few seconds.');
+        this.inFlight = others + bytes;
+        this.held.set(request, bytes);
+    },
+    // Counts a body as it is read: the declared length when there is one, else the route maximum.
+    track(request, declared, read, max) {
+        this.reserve(request, declared > 0 ? Math.max(declared, read) : read >= this.floor ? max : 0);
+    },
+    release(request) {
+        const had = this.held.get(request);
+        if (!had) return;
+        this.inFlight = Math.max(0, this.inFlight - had);
+        this.held.delete(request);
+    }
+};
+// Audit M5: one ceiling for everything spent on Taskitator's own Anthropic key in an Asia/Riyadh calendar month,
+// across all accounts (Copilot, notes clean-up, criteria checks and hosted proof reviews). When it is reached, hosted AI
+// stops for everyone until the next month or until the operator raises HOSTED_AI_MONTHLY_SPEND_NANODOLLARS.
+// The per-account limits are unchanged and still apply first.
+export const HOSTED_GLOBAL_MONTHLY = 50_000_000_000; // nanodollars ($50) when the variable is not set
+export const hostedCeiling = env => {
+    const raw = env?.HOSTED_AI_MONTHLY_SPEND_NANODOLLARS;
+    return raw != null && /^\d{1,15}$/.test(String(raw).trim()) ? Number(String(raw).trim()) : HOSTED_GLOBAL_MONTHLY;
+};
+export const hostedGlobalKey = month => 'ai-hosted-global:' + month;
+// Call inside a storage transaction. A positive amount with enforce=true is refused (false) when it would pass the ceiling.
+export async function hostedGlobalAdd(tx, env, key, amount, enforce = false) {
+    const used = (await tx.get(key)) || 0;
+    if (enforce && amount > 0 && used + amount > hostedCeiling(env)) return false;
+    await tx.put(key, Math.max(0, used + amount));
+    return true;
 }
 export async function digest(value, largeProof = false) {
     let bytes;
@@ -1112,8 +1158,11 @@ export class HostedAudits {
             await tx.put(b.dayKey,this.round(b.daily+rec.reservedCredits));
             await tx.put(b.monthKey,this.round(b.monthly+rec.reservedCredits));
             await tx.put(b.spendKey,b.spend+rec.reservedCost);
+            const globalKey = hostedGlobalKey(periods().month);
+            if (!await hostedGlobalAdd(tx,this.env,globalKey,rec.reservedCost,true))
+                throw fail(503,'HOSTED_UNAVAILABLE','Taskitator AI is temporarily unavailable. Nothing was charged. Try again later.');
             // Settlement uses these exact keys, never the period or epoch current at settlement.
-            current.ledger = {dayKey:b.dayKey,monthKey:b.monthKey,spendKey:b.spendKey,limits:b.limits};
+            current.ledger = {dayKey:b.dayKey,monthKey:b.monthKey,spendKey:b.spendKey,limits:b.limits,globalKey};
             const currentTask=await this.protection.bind(tx,account,body,batch);
             if(await digest(currentTask.bindings)!==await digest(bindings))throw fail(409,'TASK_CHANGED','Your task changed before the review started. Request a new preview.');
             current.state='pending'; current.submitted_at=Date.now(); rec.submitted_at=current.submitted_at; await tx.put(opKey,current);
@@ -1161,6 +1210,7 @@ export class HostedAudits {
             const monthly=this.round(Math.max(0,b.monthly-rec.reservedCredits+charged));
             await tx.put(b.dayKey,daily); await tx.put(b.monthKey,monthly);
             await tx.put(b.spendKey,Math.max(0,b.spend-rec.reservedCost+actualCost));
+            if (current.ledger?.globalKey) await hostedGlobalAdd(tx,this.env,current.ledger.globalKey,actualCost-rec.reservedCost);
             if (result) {
                 result.credits_remaining={daily:Math.max(0,this.round(keys.limits.daily-daily)),monthly:Math.max(0,this.round(keys.limits.monthly-monthly))};
                 if(body.test===true){result.test=true;result.job_id=null;}
@@ -1264,6 +1314,7 @@ async function readProJSON(request,max=8192,checkSize=()=>{}) {
     const declared = Number(request.headers.get('Content-Length'));
     if (declared > max) throw fail(413,'PAYLOAD_TOO_LARGE','This request exceeds the supported size.');
     checkSize(declared);
+    LargeBodies.track(request, declared, 0, max);
     const reader = request.body?.getReader();
     if (!reader) throw fail(400,'INVALID_INPUT','A JSON request is required.');
     const decoder = new TextDecoder();
@@ -1299,6 +1350,7 @@ async function readProJSON(request,max=8192,checkSize=()=>{}) {
             size += value.byteLength;
             if (size > max) throw fail(413,'PAYLOAD_TOO_LARGE','This request exceeds the supported size.');
             checkSize(size);
+            LargeBodies.track(request, declared, size, max);
             append(decoder.decode(value,{stream:true}));
         }
         append(decoder.decode(), true);
@@ -1316,9 +1368,11 @@ async function readProJSON(request,max=8192,checkSize=()=>{}) {
 
 // Offline Pro entitlement: an ES256 compact JWS the browser verifies with a public key baked into
 // the site (offlineProPublicKey). It binds the account, the subscription expiry and the issue time.
-// A subscription with a fixed expiry works offline until that date; one without gets 30 days.
+// Audit L8: a token cannot be revoked once issued, so none is valid offline for more than 7 days, whatever the
+// subscription expiry. The app gets a new token each time it is online, so only a device that stays offline for
+// more than 7 days loses offline Pro, and a refunded or revoked license stops working offline within 7 days.
 // Returns null (offline Pro stays off) until OFFLINE_PRO_PRIVATE_JWK is configured as a secret.
-export const OFFLINE_PRO_NO_EXPIRY_MS = 30 * 86400000;
+export const OFFLINE_PRO_NO_EXPIRY_MS = 7 * 86400000;
 export async function signOfflineEntitlement(env, accountId, expiresAt, now = Date.now()) {
     const raw = env?.OFFLINE_PRO_PRIVATE_JWK;
     if (!raw || !accountId) return null;
@@ -1326,7 +1380,7 @@ export async function signOfflineEntitlement(env, accountId, expiresAt, now = Da
         const jwk = typeof raw === 'string' ? JSON.parse(raw) : raw;
         const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
         const exp = Number.isFinite(expiresAt) ? expiresAt : null;
-        const claims = { v: 1, sub: accountId, plan: 'pro', iat: now, exp, valid_until: exp === null ? now + OFFLINE_PRO_NO_EXPIRY_MS : exp };
+        const claims = { v: 1, sub: accountId, plan: 'pro', iat: now, exp, valid_until: Math.min(exp === null ? Infinity : exp, now + OFFLINE_PRO_NO_EXPIRY_MS) };
         const base64url = data => btoa(String.fromCharCode(...new Uint8Array(data))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
         const encode = value => base64url(new TextEncoder().encode(JSON.stringify(value)));
         const head = encode({ alg: 'ES256', typ: 'TKOP' }), body = encode(claims);
@@ -1378,6 +1432,9 @@ export class ProGateway {
 
         // Route: POST /pro/activate
         if (method === 'POST' && path === '/pro/activate') {
+            // Audit L11: each attempt calls the licensing service, so guessing is limited per account as well as per IP.
+            try { await this.parent.rateBucket?.('activate:'+accountId, 5); }
+            catch (e) { if (e?.status === 429) throw fail(429,'RATE_LIMITED','Too many activation attempts. Wait one minute and try again.'); throw e; }
             const body = await readProJSON(request);
             return await this.activateLicense(accountId, body);
         }
@@ -1618,6 +1675,7 @@ export class ProGateway {
             return json(result.body,result.status);
         } finally {
             if (large) this.largeProofInFlight = false;
+            LargeBodies.release(request); // the Durable Object releases too; doing it here covers direct callers
         }
     }
 
@@ -1810,6 +1868,29 @@ export class UniverseService {
             if(this.env.UNIVERSE_FOUNDATION_ENABLED!=='true' && /no such table: (?:main\.)?universe_accounts/i.test(error.message)) return;
             throw universeError(503,'UNAVAILABLE','Universe access could not be blocked. Retry account deletion.');
         }
+    }
+    // Account deletion: remove what identifies the deleted account inside Universes it did not own.
+    // (Universes it owned are scrubbed by the group cleanup that blockAccount queues; its files by the file cleanup.)
+    // Removes the username, the text of its comments, submissions and review reasons, and its stored operation results.
+    // Kept on purpose: the blocked universe_accounts row and bare account IDs on events and rows other members' records
+    // point to. Those are random identifiers with no name or content, and the privacy policy says so.
+    // Repeatable, and independent of the feature switch like blockAccount. Tables arrive in later phases: only existing ones are touched.
+    async purgeAccount(accountId) {
+        if(!this.env.TASKITATOR_DB || typeof accountId!=='string' || !accountId) return;
+        const db=this.database();
+        let tables;
+        try {
+            tables=new Set((await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN('universe_profiles','universe_comments','universe_submissions','universe_operations')").all()).results.map(r=>r.name));
+        } catch { throw universeError(503,'UNAVAILABLE','Universe data could not be cleaned up. Account deletion is retrying.'); }
+        const writes=[
+            tables.has('universe_profiles')&&this.statement(db,'DELETE FROM universe_profiles WHERE account_id=?',accountId),
+            tables.has('universe_comments')&&this.statement(db,"UPDATE universe_comments SET body='',reason=NULL WHERE actor_id=? AND (body<>'' OR reason IS NOT NULL)",accountId),
+            tables.has('universe_submissions')&&this.statement(db,"UPDATE universe_submissions SET data='{}',disputed=0,retain_until=0 WHERE actor_id=?",accountId),
+            tables.has('universe_submissions')&&this.statement(db,"UPDATE universe_submissions SET reason='' WHERE reviewer_id=? AND reason IS NOT NULL AND reason<>''",accountId),
+            tables.has('universe_operations')&&this.statement(db,'DELETE FROM universe_operations WHERE actor_id=?',accountId)].filter(Boolean);
+        if(!writes.length) return;
+        try { await db.batch(writes); }
+        catch { throw universeError(503,'UNAVAILABLE','Universe data could not be cleaned up. Account deletion is retrying.'); }
     }
     input(body, allowed) {
         if(!body || typeof body!=='object' || Array.isArray(body) || Object.keys(body).some(k=>!allowed.includes(k)))

@@ -708,7 +708,8 @@ window.TaskitatorSafety = {
                 busy=false;render();
             }
         });
-        const match=/^#key-verification=([a-f0-9]{64})$/.exec(location.hash);
+        // The part after the dot is a one-time secret from the Google step. Only the browser that started this confirmation sends it back.
+        const match=/^#key-verification=([a-f0-9]{64})(?:\.([a-f0-9]{64}))?$/.exec(location.hash);
         if(match){
             history.replaceState(null,'',location.pathname+location.search);
             try{
@@ -717,9 +718,9 @@ window.TaskitatorSafety = {
                 const provider=pending.provider||'gemini';if(!Object.hasOwn(models,provider))throw new Error('Something went wrong with that confirmation. Please start again.');
                 viewedProvider=provider;metadata=providers[provider]||{ready:false,saved:false,pending:[]};render();
                 open(pending.kind,pending.stageId);proofId=match[1];
-                const result=await api('/auth/verification/status',{verification_id:proofId,action:action()});
+                const result=await api('/auth/verification/status',{verification_id:proofId,action:action(),completion:match[2]});
                 verified=result.verified && (!result.context || result.context.provider===provider);
-                dialogMessage(verified?'Google sign-in confirmed. Finish within 5 minutes. If you\'re adding a key, paste it now.':'Google sign-in was cancelled or failed. Try again with the Google account linked to this login.');
+                dialogMessage(verified?'Google sign-in confirmed. Finish within 5 minutes. If you\'re adding a key, paste it now.':result.reason==='google-session-old'?'Your Google sign-in is too old to confirm this. Sign out of Google and sign in again, then retry, or use your password instead.':'Google sign-in was cancelled or failed. Try again with the Google account linked to this login.');
                 updateDialog();
             }catch(error){status(error.message);}
         }

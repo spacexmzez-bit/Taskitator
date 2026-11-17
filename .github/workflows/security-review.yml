@@ -49,4 +49,6 @@ jobs:
             echo 'The previous commit is unavailable; the change cannot be reviewed.' >&2
             exit 1
           fi
-          npx --yes @sentry/warden@0.52.0 "$base..HEAD" --git --skill security-review --fail-on high --no-color
+          # Exact tool and dependency versions from tools/security-review/package-lock.json; no install scripts.
+          npm ci --ignore-scripts --no-audit --no-fund --prefix tools/security-review
+          tools/security-review/node_modules/.bin/warden "$base..HEAD" --git --skill security-review --fail-on high --no-color

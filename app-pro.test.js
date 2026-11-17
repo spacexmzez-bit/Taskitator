@@ -238,3 +238,19 @@ test('a Keyo failure never blocks app Pro: app skips Keyo, website with app Pro 
     const entitlement = UniverseService.prototype.entitlement.bind({service:{pro:h.gateway,storage:h.storage}});
     assert.equal(await entitlement(WEB),true); assert.equal(calls,0);
 }));
+
+// ---- Audit L11 ----
+test('audit L11: license activation is throttled per account before the licensing service is called', async () => withHarness(async h => {
+    const buckets = [];
+    h.parent.rateBucket = async (key, max) => { buckets.push([key, max]); if (buckets.length > 5) throw Object.assign(new Error('Too many attempts. Wait one minute and try again.'), {status:429, code:'RATE'}); };
+    let keyoCalls = 0; const inner = globalThis.fetch;
+    globalThis.fetch = async (...a) => { keyoCalls++; return inner(...a); };
+    try {
+        for (let i = 0; i < 5; i++) assert.equal((await h.call(APP,'/pro/activate','POST',{key:'A1B2C3D4E5F6G7H8'})).status,200);
+        const before = keyoCalls;
+        const refused = await h.call(APP,'/pro/activate','POST',{key:'A1B2C3D4E5F6G7H8'});
+        assert.equal(refused.status,429); assert.equal(refused.body.code,'RATE_LIMITED');
+        assert.equal(keyoCalls, before, 'a throttled attempt never reaches the licensing service');
+        assert.deepEqual(buckets[0], ['activate:user_A', 5]);
+    } finally { globalThis.fetch = inner; }
+}));

@@ -1,6 +1,6 @@
 // ============================================================================
 // Taskitator Consolidated Build & CSP Utility (build.mjs)
-// Usage: node build.mjs [--csp]
+// Usage: node build.mjs [--csp] [--dev]
 // ============================================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,7 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const hosts = 'https://*.clerk.accounts.dev https://*.clerk.accounts.com https://*.clerk.com https://*.mazendev.com https://challenges.cloudflare.com';
+// Audit M2: only the Clerk host on mazendev.com is trusted, not every subdomain. Clerk development instances
+// (*.clerk.accounts.dev) are allowed only in a build made with --dev; never publish such a build.
+const dev = process.argv.includes('--dev');
+const hosts = (dev ? 'https://*.clerk.accounts.dev ' : '') + 'https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com';
 
 export function rebuildCsp() {
     for (const file of fs.readdirSync(root).filter(name => name.endsWith('.html'))) {
@@ -22,9 +25,11 @@ export function rebuildCsp() {
             "default-src 'self'",
             "script-src 'self' " + [...new Set(hashes)].join(' ') + ' ' + hosts,
             "script-src-attr 'none'",
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-            "img-src 'self' data: blob: https:",
-            "font-src 'self' data: https://fonts.gstatic.com " + hosts,
+            // Audit L10: images only from the site itself and Clerk's avatar host; no external font hosts (none are used).
+            // style-src keeps 'unsafe-inline': the pages rely on inline styles.
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: blob: https://img.clerk.com",
+            "font-src 'self' data: " + hosts,
             "connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com " + hosts,
             "frame-src " + hosts,
             "worker-src 'self' blob:",

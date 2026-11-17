@@ -8,6 +8,17 @@
    - effective  = what is applied now (falls back to the free default when Pro lapses)
    It is not in SyncEngine.ACCOUNT_KEYS, SNAPSHOT_KEYS, cleanSettings or backups, so it
    never syncs and it survives sign-out. "Clear this browser" (localStorage.clear) resets it. */
+/* Audit M3: clickjacking defence. The site is served by GitHub Pages, which cannot send frame-ancestors or
+   X-Frame-Options, so the check is done here, in the first script of every page. Inside another site's frame the
+   page is hidden and cannot be clicked. A frame that blocks scripts gets no working app at all (everything needs scripts). */
+(function () {
+    'use strict';
+    let framed = true;
+    try { framed = window.top !== window.self; } catch { framed = true; }
+    if (!framed) return;
+    document.documentElement.style.setProperty('display', 'none', 'important');
+    try { window.top.location.replace(window.self.location.href); } catch { /* sandboxed frame: stay hidden */ }
+})();
 (function () {
     'use strict';
     const KEY = 'taskitator_appearance';

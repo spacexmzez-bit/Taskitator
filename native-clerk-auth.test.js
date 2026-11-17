@@ -42,7 +42,8 @@ async function status(jwt, origin = null) {
     const headers = {};
     if (origin !== null) headers.Origin = origin;
     try {
-        const identity = await verifySession(new Request('https://worker.test/auth/me', { headers }), env, jwt);
+        // /auth/ routes always ask Clerk (fresh=true), exactly as the Worker calls it for this path.
+        const identity = await verifySession(new Request('https://worker.test/auth/me', { headers }), env, jwt, true);
         assert.equal(identity.userId, 'user_ABC');
         return 200;
     } catch (e) {
@@ -94,4 +95,27 @@ test('native path preserves JWT signature, issuer, expiry, status and active-ses
     assert.equal(await status(good), 401);
     sessionOwner = 'user_ABC';
     assert.equal(await status(good), 200);
+});
+
+test('audit L2: ordinary requests reuse the Clerk session answer for 30 seconds; sensitive requests always ask Clerk', async () => {
+    const before = globalThis.fetch, own = { ...env };
+    let calls = 0, live = 'active';
+    globalThis.fetch = async () => { calls++; return Response.json({ status: live, user_id: 'user_ABC', created_at: 5 }); };
+    const check = async (fresh, jwt) => { try { return (await verifySession(new Request('https://worker.test/pull'), own, jwt, fresh)).sessionCreatedAt; } catch (e) { return e.status; } };
+    try {
+        const jwt = await token({ azp: undefined });
+        assert.equal(await check(false, jwt), 5); assert.equal(await check(false, jwt), 5); assert.equal(calls, 1);
+        // The token itself is still verified every time.
+        assert.equal(await check(false, await token({ azp: undefined, exp: 0 })), 401);
+        assert.equal(await check(false, await token({ azp: undefined, sub: 'user_Other' })), 401, 'a cached session never vouches for another user');
+        // Revoked: sensitive requests see it at once; ordinary ones after the cached answer is dropped.
+        live = 'revoked'; calls = 0;
+        assert.equal(await check(true, jwt), 401); assert.equal(calls, 1);
+        assert.equal(await check(false, jwt), 401, 'a failed live check drops the cached answer');
+        // A different Worker environment never shares the cache.
+        live = 'active'; assert.equal(await check(false, jwt), 5);
+        live = 'revoked'; calls = 0;
+        try { await verifySession(new Request('https://worker.test/pull'), { ...env }, jwt); assert.fail('must ask Clerk'); } catch (e) { assert.equal(e.status, 401); }
+        assert.equal(calls, 1);
+    } finally { globalThis.fetch = before; }
 });

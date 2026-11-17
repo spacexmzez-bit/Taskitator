@@ -11,7 +11,7 @@ import './saved-criteria.js';
 // Combines: recurrence-core, break-core, auth, ai-models, verification,
 // deletion, vault, ai-gateway, and worker router.
 // ============================================================================
-import { ProGateway, TaskProtection, liveAccount, POLICY, planOf, periods, entitlementFor, clientOf, refreshKeyo } from './pro-backend.js';
+import { ProGateway, TaskProtection, liveAccount, POLICY, planOf, periods, entitlementFor, clientOf, refreshKeyo, LargeBodies, hostedGlobalKey, hostedGlobalAdd } from './pro-backend.js';
 import { BreakSystems } from './break-systems.js';
 import { proofRequestBody } from './pro-proof-payload.js';
 
@@ -396,7 +396,14 @@ export async function clerkAPI(env, path) {
 // Android app packages allowed as a Clerk authorized party (bare package, or the SDK's callback URLs).
 export const NATIVE_PACKAGES = ['com.mazendev.taskitator', 'com.aistudio.taskitator.mvptsk'];
 export const NATIVE_PARTIES = NATIVE_PACKAGES.flatMap(name => [name, 'clerk://' + name + '.callback', 'clerk://' + name + '.oauth']);
-export async function verifySession(request, env, token) {
+// Audit L2: the "is this session still active" answer from Clerk is reused for 30 seconds per session, so a burst of
+// requests does not become a burst of Clerk Backend API calls (Clerk's rate limit would then fail every user).
+// The signed token is still verified on every request. Sensitive requests pass fresh=true and always ask Clerk.
+// Effect on sign-out or revocation: ordinary requests can keep working for up to 30 more seconds.
+export const SESSION_CACHE_MS = 30000;
+const sessionCaches = new WeakMap(); // per env object, so separate Workers (and tests) never share entries
+const sessionCache = env => { let m = sessionCaches.get(env); if (!m) sessionCaches.set(env, m = new Map()); return m; };
+export async function verifySession(request, env, token, fresh = false) {
     if (!env.CLERK_JWT_KEY || !env.CLERK_ISSUER || !env.CLERK_SECRET_KEY) {
         throw new SecurityError(503, 'Authentication setup is incomplete.');
     }
@@ -438,9 +445,16 @@ export async function verifySession(request, env, token) {
         (claims.sts !== undefined && claims.sts !== 'active')) {
         throw new SecurityError(401, 'Session is invalid or expired. Sign in again.');
     }
-    const session = await clerkAPI(env, 'sessions/' + encodeURIComponent(claims.sid));
-    if (session.status !== 'active' || session.user_id !== claims.sub) {
-        throw new SecurityError(401, 'Session is no longer active. Sign in again.');
+    const cache = sessionCache(env), cached = fresh ? null : cache.get(claims.sid);
+    let session = cached && cached.until > Date.now() && cached.user_id === claims.sub ? cached : null;
+    if (!session) {
+        cache.delete(claims.sid);
+        session = await clerkAPI(env, 'sessions/' + encodeURIComponent(claims.sid));
+        if (session.status !== 'active' || session.user_id !== claims.sub) {
+            throw new SecurityError(401, 'Session is no longer active. Sign in again.');
+        }
+        if (cache.size >= 5000) cache.clear();
+        cache.set(claims.sid, { status: 'active', user_id: session.user_id, created_at: session.created_at, until: Date.now() + SESSION_CACHE_MS });
     }
     // `native` is true only for app tokens: no Origin header and no website authorized party.
     return { userId: claims.sub, sessionId: claims.sid, factorAge: claims.fva,
@@ -471,6 +485,15 @@ export const VERIFICATION_MS = 5 * 60000;
 export const randomSecret = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
 const base64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const decodeVerifyB64 = value => Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+// Audit M6. Google cannot be asked to make the user sign in again, so by default an existing Google session passes.
+// Optional limit: set GOOGLE_VERIFICATION_MAX_AUTH_AGE_SECONDS (60 to 86400) and the confirmation is accepted only when
+// the user signed in to Google within that many seconds. Google sends the sign-in time (auth_time) only to a published,
+// verified OAuth app with "Session age claims" turned on; setting the variable without that makes every Google
+// confirmation fail. Unset: no limit, as before.
+export const googleMaxAuthAge = env => {
+    const raw = String(env?.GOOGLE_VERIFICATION_MAX_AUTH_AGE_SECONDS ?? '').trim();
+    return /^\d{2,5}$/.test(raw) && Number(raw) >= 60 && Number(raw) <= 86400 ? Number(raw) : 0;
+};
 export async function verifyGoogleToken(token, env, nonce, subject) {
     let parts, header, claims;
     try {
@@ -488,6 +511,10 @@ export async function verifyGoogleToken(token, env, nonce, subject) {
         !Number.isFinite(claims.iat) || claims.iat > now + 5 || now - claims.iat > 300 ||
         claims.nonce !== nonce || claims.sub !== subject) {
         throw new SecurityError(401, 'Select the Google account already connected to this Taskitator account.');
+    }
+    const maxAge = googleMaxAuthAge(env);
+    if (maxAge && (!Number.isFinite(claims.auth_time) || claims.auth_time > now + 5 || now - claims.auth_time > maxAge)) {
+        throw Object.assign(new SecurityError(401, 'Your Google sign-in is too old for this confirmation.'), { staleGoogle: true });
     }
     const res = await fetch('https://www.googleapis.com/oauth2/v3/certs', { signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new SecurityError(503, 'Google verification is temporarily unavailable.');
@@ -552,7 +579,8 @@ export class ActionVerification {
             url.search = new URLSearchParams({ client_id:this.env.GOOGLE_OAUTH_CLIENT_ID,
                 redirect_uri:this.env.GOOGLE_VERIFICATION_REDIRECT_URI, response_type:'code', scope:'openid',
                 state:id, nonce:record.nonce, code_challenge:challenge, code_challenge_method:'S256',
-                prompt:'select_account', access_type:'online' }).toString();
+                prompt:'select_account', access_type:'online',
+                ...(googleMaxAuthAge(this.env) ? {claims:JSON.stringify({id_token:{auth_time:{essential:true}}})} : {}) }).toString();
             authorizationUrl = url.href;
         }
         await this.storage.put('action-proof:'+await sha256(id), record);
@@ -613,6 +641,21 @@ export class ActionVerification {
         });
         return { verified:true };
     }
+    // Status check. For a Google proof that came back from Google, a matching completion secret makes it verified.
+    async complete(id, identity, action, completion) {
+        let record = await this.get(id, identity, action);
+        if (record.method === 'google' && record.status === 'returned' && typeof completion === 'string' && /^[a-f0-9]{64}$/.test(completion)) {
+            const key = 'action-proof:'+await sha256(id), offered = await sha256(completion);
+            record = await this.storage.transaction(async tx => {
+                const current = await tx.get(key);
+                if (!current || current.version !== VERIFICATION_VERSION || current.status !== 'returned' || current.expires <= Date.now() ||
+                    current.sessionId !== identity.sessionId || current.completion !== offered) return current || record;
+                current.status = 'verified'; delete current.completion;
+                await tx.put(key, current); return current;
+            });
+        }
+        return record;
+    }
     async callback(request) {
         const url = new URL(request.url), id = url.searchParams.get('state');
         if (!id || !/^[a-f0-9]{64}$/.test(id)) throw new SecurityError(400, 'Invalid Google verification request.');
@@ -624,7 +667,7 @@ export class ActionVerification {
             }
             current.status = 'checking'; await tx.put(key,current); return current;
         });
-        let success = false;
+        let success = false, stale = false;
         try {
             if (url.origin+url.pathname !== this.env.GOOGLE_VERIFICATION_REDIRECT_URI || url.searchParams.has('error')) throw new Error();
             const code = url.searchParams.get('code'); if (!code || code.length > 4096) throw new Error();
@@ -642,16 +685,25 @@ export class ActionVerification {
                 !user.external_accounts?.some(account => ['oauth_google','google'].includes(account.provider) &&
                     account.verification?.status === 'verified' && String(account.provider_user_id) === record.subject)) throw new Error();
             success = true;
-        } catch { /* Never return provider tokens, secrets, or detailed errors in URLs. */ }
+        } catch (err) { stale = err?.staleGoogle === true; /* Never return provider tokens, secrets, or detailed errors in URLs. */ }
+        // Audit M6: the Google step does not verify the proof by itself. It hands a one-time completion secret to the
+        // browser that came back from Google (in the URL fragment). The proof becomes usable only when a page holding
+        // the starting session presents that secret (complete()). Someone who started the flow and got another person to
+        // click the Google link never receives the secret.
+        const completion = randomSecret();
+        let returned = false;
         await this.storage.transaction(async tx => {
             const current = await tx.get(key);
             if (!current || current.version !== VERIFICATION_VERSION || current.status !== 'checking') return;
-            current.status = success && current.expires > Date.now() ? 'verified' : 'failed';
+            returned = success && current.expires > Date.now();
+            current.status = returned ? 'returned' : 'failed';
+            if (returned) current.completion = await sha256(completion);
+            else if (stale) current.reason = 'google-session-old';
             delete current.verifier; delete current.nonce; delete current.subject;
             await tx.put(key,current);
         });
         const fragment = record.action === 'delete-account' ? 'delete-verification' : 'key-verification';
-        return new Response(null, {status:303,headers:{Location:record.origin+'/settings.html#'+fragment+'='+id,
+        return new Response(null, {status:303,headers:{Location:record.origin+'/settings.html#'+fragment+'='+id+(returned?'.'+completion:''),
             'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
     }
 }
@@ -787,6 +839,9 @@ export class AccountDeletion {
                     else if (job.stage==='ai-hosted') next=await this.page(job,'ai-hosted:'+job.userId+':');
                     else if (job.stage==='legacy') {await this.storage.delete('sleep-lock:'+job.userId);await this.service.breaks.remove(this.storage,job.userId);next=await this.page(job,'sleep-delay:'+job.userId+':')&&await this.legacy(job);}
                     else if (job.stage==='clerk') {
+                        // Audit H3: the deleted account's username, comment/proof text and review reasons in other members'
+                        // Universes go before the login does. Repeatable, so a later failure in this stage simply runs it again.
+                        await this.service.universe.purgeAccount(job.userId);
                         if(this.env.TASKITATOR_DB){
                             try{await this.env.TASKITATOR_DB.prepare('DELETE FROM entitlements WHERE account_id = ?').bind(job.userId).run();}
                             catch(error){if(!/no such table: entitlements/i.test(error.message||''))throw error;}
@@ -1325,8 +1380,10 @@ export class AIGateway {
         forward.max_tokens=Math.min(Number(forward.max_tokens)||HOSTED_AI.maxOutput,HOSTED_AI.maxOutput);
         await this.service.rateBucket('ai-user:'+account,30);
         this.claim(identity);
-        let reserved=false,held=0;const day=periods().day,countKey=hostedKey(account,day,bucket),spendKey=hostedKey(account,day,'spend');
-        const addSpend=delta=>storage.transaction(async tx=>{await tx.put(spendKey,Math.max(0,((await tx.get(spendKey))||0)+delta));});
+        let reserved=false,held=0;const {day,month}=periods(),countKey=hostedKey(account,day,bucket),spendKey=hostedKey(account,day,'spend');
+        // Audit M5: every hold and adjustment is mirrored in the all-accounts monthly total.
+        const globalKey=hostedGlobalKey(month),env=this.service.env;
+        const addSpend=delta=>storage.transaction(async tx=>{await tx.put(spendKey,Math.max(0,((await tx.get(spendKey))||0)+delta));await hostedGlobalAdd(tx,env,globalKey,delta);});
         try{
             const input=await countInputTokens('claude',HOSTED_AI.model,forward,key);
             if(input>HOSTED_AI.maxInput)throw new SecurityError(413,'This request is too long. Start a new conversation or shorten the text.');
@@ -1336,6 +1393,7 @@ export class AIGateway {
             await storage.transaction(async tx=>{
                 const used=(await tx.get(countKey))||0,spend=(await tx.get(spendKey))||0;
                 if(used>=HOSTED_AI.daily[bucket] || spend+estimate>HOSTED_AI.dailySpend)throw new SecurityError(503,UNAVAILABLE);
+                if(!await hostedGlobalAdd(tx,env,globalKey,estimate,true))throw new SecurityError(503,UNAVAILABLE);
                 await tx.put(countKey,used+1);
                 await tx.put(spendKey,spend+estimate);
             });
@@ -1548,10 +1606,12 @@ const chunkKey = (user, index) => `snapshot:${encodeURIComponent(user)}:${index}
 const cleanToken = token => /^[a-fA-F0-9]{64}$/.test(token) ? token.toLowerCase() : token;
 
 async function readJson(request, maxBytes = MAX_BODY_BYTES) {
-    if (Number(request.headers.get('Content-Length')) > maxBytes) {
+    const declared = Number(request.headers.get('Content-Length'));
+    if (declared > maxBytes) {
         throw new HTTPError(413, 'Request payload is too large.');
     }
     if (!request.body) throw new HTTPError(400, 'JSON body required.');
+    LargeBodies.track(request, declared, 0, maxBytes); // Audit M4: shared memory budget for large bodies
     const reader = request.body.getReader(), decoder = new TextDecoder();
     let size = 0, text = '';
     try {
@@ -1563,6 +1623,8 @@ async function readJson(request, maxBytes = MAX_BODY_BYTES) {
                 await reader.cancel();
                 throw new HTTPError(413, 'Request payload is too large.');
             }
+            try { LargeBodies.track(request, declared, size, maxBytes); }
+            catch (err) { await reader.cancel(); throw err; }
             text += decoder.decode(value, { stream: true });
         }
         text += decoder.decode();
@@ -2059,7 +2121,9 @@ export class TaskitatorSync {
                 if (slot < 0 || (slot >= PHONE_LIMITS.free && slot >= await this.phoneLimit(phones.owner)))
                     throw new HTTPError(401, 'Phone access was revoked or is invalid.');
             } else {
-                identity = await verifySession(request, this.env, token);
+                // Account, verification, key and Pro licence routes, and every DELETE, always check the live session (audit L2).
+                identity = await verifySession(request, this.env, token,
+                    method === 'DELETE' || path.startsWith('/auth/') || path.startsWith('/ai/keys') || path === '/ai/provider' || emergencyRoute || path === '/pro/activate');
                 if (universeRoute) {
                     await this.rateLimit(request,'universe:'+identity.userId,60);
                     const upload=/^\/universe\/groups\/[A-Za-z0-9_-]+\/work\/files\/[A-Za-z0-9_-]+\/upload$/.test(path);
@@ -2090,8 +2154,9 @@ export class TaskitatorSync {
                 }
                 if (proofStatus) {
                     const body=await readJson(request,8192);
-                    const record = await this.verification.get(body.verification_id,identity,body.action);
-                    return json({verified:record.status==='verified',status:record.status,action:record.action,context:record.context,expires_at:record.expires});
+                    const record = await this.verification.complete(body.verification_id,identity,body.action,body.completion);
+                    return json({verified:record.status==='verified',status:record.status,action:record.action,context:record.context,expires_at:record.expires,
+                        ...(record.reason?{reason:record.reason}:{})});
                 }
                 if (connect) return await this.connectAccount(request, identity);
                 const account = await this.accountFor(identity);
@@ -2356,6 +2421,6 @@ export class TaskitatorSync {
         } catch (err) {
             return json({ code:err.code, ...(Array.isArray(err.rejected)?{rejected:err.rejected.map(r=>({id:r.id,code:r.code,message:r.message,related:r.related}))}:{}), error: (err instanceof HTTPError || err instanceof SecurityError || (Number.isInteger(err.status) && typeof err.code==='string')) ? err.message : 'Cloud storage request failed. Retry with the same operation ID.' },
                 (err instanceof HTTPError || err instanceof SecurityError || (Number.isInteger(err.status) && typeof err.code==='string')) ? err.status : 503);
-        }
+        } finally { LargeBodies.release(request); }
     }
 }

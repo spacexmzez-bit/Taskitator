@@ -1334,10 +1334,14 @@ test('Tri-State Token Policy: incomplete verdict halves real usage, then any par
 // ============================================================================
 
 test("CSP policies allow clerk.mazendev.com and all inline HTML scripts compile cleanly without syntax errors", () => {
-    for (const page of ["index.html", "components.html", "settings.html", "login.html"]) {
+    for (const page of ["index.html", "components.html", "settings.html", "login.html", "legal.html"]) {
         const html = readConsolidatedSource(page);
         const csp = html.match(/http-equiv="Content-Security-Policy" content="([^"]*)"/)?.[1] || "";
-        assert.ok(csp.includes("https://*.mazendev.com"), page + " CSP must allow clerk.mazendev.com via https://*.mazendev.com");
+        assert.ok(csp.includes("https://clerk.mazendev.com"), page + " CSP must allow clerk.mazendev.com");
+        // Audit L10: images only from the site and Clerk's avatar host; no external font hosts.
+        assert.ok(csp.includes("img-src 'self' data: blob: https://img.clerk.com;") && !csp.includes("fonts.g"), page + " CSP must not allow any https image or Google font hosts");
+        // Audit M2: no wildcard over mazendev.com subdomains and no Clerk development instances in the published pages.
+        assert.ok(!csp.includes("*.mazendev.com") && !csp.includes("clerk.accounts.dev"), page + " CSP must not trust every mazendev.com subdomain or Clerk dev instances");
         assert.ok(csp.includes("https://*.clerk.accounts.com"), page + " CSP must allow https://*.clerk.accounts.com");
         for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)) {
             if (/\bsrc=/.test(match[1]) || !match[2].trim()) continue;
@@ -1579,7 +1583,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-phase4-v46'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-phase4-v49'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);
@@ -2238,4 +2242,60 @@ test('auth bootstrap downloads gated scripts in parallel but keeps execution ord
     assert.ok(boot.indexOf("rel = 'preload'; hint.as = 'script'")>boot.indexOf('if (publicComponentView)'));
     assert.match(boot,/script\.async = false;\s*batch\.push/);
     assert.match(boot,/else \{ await flush\(\); script\.textContent/);
+});
+
+// ---- Audit M4 / M5 ----
+import { LargeBodies, hostedCeiling, hostedGlobalKey, hostedGlobalAdd, HOSTED_GLOBAL_MONTHLY, periods as riyadhPeriods } from './pro-backend.js';
+
+test('audit M4: large request bodies share one memory budget; one is always admitted, small ones are never counted', () => {
+    const MiB = 1024 * 1024, req = () => ({});
+    assert.equal(LargeBodies.inFlight, 0, 'nothing may be left reserved by earlier tests');
+    const small = req(), a = req(), b = req(), c = req(), huge = req();
+    LargeBodies.track(small, 500_000, 0, 20 * MiB); assert.equal(LargeBodies.inFlight, 0);
+    LargeBodies.track(a, 20 * MiB, 0, 20 * MiB); LargeBodies.track(b, 10 * MiB, 0, 20 * MiB);
+    assert.equal(LargeBodies.inFlight, 30 * MiB);
+    assert.throws(() => LargeBodies.track(c, 5 * MiB, 0, 20 * MiB), e => e.status === 429 && e.code === 'UPLOAD_BUSY');
+    LargeBodies.track(a, 20 * MiB, 20 * MiB, 20 * MiB); assert.equal(LargeBodies.inFlight, 30 * MiB, 'reading does not count twice');
+    LargeBodies.release(a); LargeBodies.release(a); assert.equal(LargeBodies.inFlight, 10 * MiB);
+    LargeBodies.track(c, 5 * MiB, 0, 20 * MiB);
+    // No declared length: counted at the route maximum once 1 MiB has been read.
+    const chunked = req();
+    LargeBodies.track(chunked, NaN, 0, 20 * MiB); LargeBodies.track(chunked, NaN, MiB - 1, 20 * MiB); assert.equal(LargeBodies.inFlight, 15 * MiB);
+    assert.throws(() => LargeBodies.track(chunked, NaN, MiB, 20 * MiB), e => e.status === 429);
+    for (const r of [b, c, chunked]) LargeBodies.release(r);
+    assert.equal(LargeBodies.inFlight, 0);
+    // A single body larger than the budget is still admitted when nothing else is in flight.
+    LargeBodies.track(huge, 56 * MiB, 0, 56 * MiB); assert.equal(LargeBodies.inFlight, 56 * MiB);
+    assert.throws(() => LargeBodies.track(req(), 2 * MiB, 0, 20 * MiB), e => e.status === 429);
+    LargeBodies.release(huge); assert.equal(LargeBodies.inFlight, 0);
+});
+
+test('audit M5: the all-accounts monthly ceiling is configurable, has a default, and refuses only what would pass it', async () => {
+    assert.equal(hostedCeiling({}), HOSTED_GLOBAL_MONTHLY); assert.equal(hostedCeiling(undefined), HOSTED_GLOBAL_MONTHLY);
+    for (const bad of ['', 'abc', '-5', '1.5', '1e9']) assert.equal(hostedCeiling({HOSTED_AI_MONTHLY_SPEND_NANODOLLARS:bad}), HOSTED_GLOBAL_MONTHLY, bad);
+    assert.equal(hostedCeiling({HOSTED_AI_MONTHLY_SPEND_NANODOLLARS:'0'}), 0);
+    assert.equal(hostedCeiling({HOSTED_AI_MONTHLY_SPEND_NANODOLLARS:' 2500 '}), 2500);
+    const store = new KeyoTestStorage(), env = {HOSTED_AI_MONTHLY_SPEND_NANODOLLARS:'1000'}, key = hostedGlobalKey('2026-11');
+    assert.equal(key, 'ai-hosted-global:2026-11');
+    assert.equal(await hostedGlobalAdd(store, env, key, 600, true), true);
+    assert.equal(await hostedGlobalAdd(store, env, key, 401, true), false); assert.equal(await store.get(key), 600);
+    assert.equal(await hostedGlobalAdd(store, env, key, 400, true), true);
+    assert.equal(await hostedGlobalAdd(store, env, key, -2000), true); assert.equal(await store.get(key), 0, 'never negative');
+    assert.equal(await hostedGlobalAdd(store, env, key, 5000), true, 'settlement adjustments are never refused');
+});
+
+test('audit M5: hosted proof reviews count toward the all-accounts ceiling and stop, uncharged, when it is reached', async () => {
+    const key = hostedGlobalKey(riyadhPeriods().month);
+    await withHarness(async h => {
+        const done = await h.review(single('m5_ok')); assert.equal(done.status, 200);
+        assert.equal(await h.storage.get(key), 1000 * POLICY.inputPrice + 200 * POLICY.outputPrice, 'settled to the actual provider cost');
+    });
+    await withHarness(async h => {
+        const before = providerCalls(h).length, keys = await hostedKeys(h.storage);
+        const refused = await h.review(single('m5_refused'));
+        assert.equal(refused.status, 503); assert.equal(refused.body.code, 'HOSTED_UNAVAILABLE');
+        assert.equal(providerCalls(h).length, before, 'nothing is sent to the provider');
+        assert.equal((await h.storage.get(keys.dayKey)) || 0, 0); assert.equal((await h.storage.get(keys.spendKey)) || 0, 0);
+        assert.equal((await h.storage.get(key)) || 0, 0);
+    }, {env:{HOSTED_AI_MONTHLY_SPEND_NANODOLLARS:'0'}});
 });
