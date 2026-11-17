@@ -5,14 +5,15 @@
   const element = (tag, text) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; return n; };
   const focusable = root => [...root.querySelectorAll('button, a[href], input, select, textarea, [tabindex]')]
     .filter(n => !n.disabled && n.tabIndex !== -1 && !n.closest('[hidden]') && n.getClientRects().length);
-  function layer(overlay, { close, initial } = {}) {
+  // fit: false keeps the overlay's own size (used for a native <dialog> that centres itself).
+  function layer(overlay, { close, initial, fit = true } = {}) {
     const returnTo = document.activeElement;
     if (!layers.length) { previousOverflow = document.documentElement.style.overflow; document.documentElement.style.overflow = 'hidden'; }
     const item = { overlay, close, closing: false };
     layers.push(item);
     const updateViewport = () => {
       const v = window.visualViewport;
-      if (!v) return;
+      if (!v || !fit) return;
       overlay.style.top = v.offsetTop + 'px';
       overlay.style.height = v.height + 'px';
       overlay.style.bottom = 'auto';

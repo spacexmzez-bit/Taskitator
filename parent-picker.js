@@ -8,7 +8,9 @@
     const newFilters = () => ({ tags: new Set(), priorities: new Set(), projects: new Set(), date: { mode: '', from: '', to: '' }, logic: 'and' });
 
     // opts: { task, tasks, currentParentId, projects[], priorities[], tags[], sortMode, blockReason(id|null) -> string|null,
-    //         active(filters), match(task, filters, ctx), sort(list, mode), today }
+    //         active(filters), match(task, filters, ctx), sort(list, mode), today,
+    //         creating: true when the task does not exist yet (Universe task panel): nothing moves, so there is no
+    //         "move" wording and no confirmation step. }
     function open(opts) {
         return new Promise(resolve => {
             const tasks = (opts.tasks || []).filter(t => t && t.status === 'active');
@@ -33,7 +35,7 @@
             const head = el('div', undefined, dlg, 'pp-head');
             el('h3', tr('Choose a parent task'), head);
             const close = el('button', '✕', head, 'icon-btn pp-close'); close.type = 'button'; close.setAttribute('aria-label', tr('Close'));
-            el('p', tr('Moving "{task}". Its subtasks move with it.', { task: opts.task.title }), dlg, 'pp-hint');
+            el('p', opts.creating ? tr('Choose where the new task will sit.') : tr('Moving "{task}". Its subtasks move with it.', { task: opts.task.title }), dlg, 'pp-hint');
 
             const bar = el('div', undefined, dlg, 'pp-bar');
             const sortSel = el('select', undefined, bar, 'pp-sort'); sortSel.setAttribute('aria-label', tr('Sort'));
@@ -93,7 +95,8 @@
                 const message = id
                     ? tr('Move "{task}" under "{parent}"? Its subtasks move with it.', { task: opts.task.title, parent: title })
                     : tr('Move "{task}" to the root level? Its subtasks move with it.', { task: opts.task.title });
-                const ok = await window.TaskitatorConfirm({ title: tr('Move task?'), message, confirmLabel: tr('Move') });
+                // A task that is still being created has nothing to move, so there is nothing to confirm.
+                const ok = opts.creating || await window.TaskitatorConfirm({ title: tr('Move task?'), message, confirmLabel: tr('Move') });
                 if (ok) finish({ parentId: id || null });
             }
 

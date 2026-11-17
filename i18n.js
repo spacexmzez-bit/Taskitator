@@ -156,7 +156,7 @@
         '.dump-note-body', '.dump-note-header', '.undo-grace-title', '.archive-item-title', '.archive-item-body', '.trash-title',
         '.nlp-chip', '.pro-batch-task-row label', '.pro-file-chip', '.uni-comment', '.uni-card-title', '.uni-member-identity',
         '.uni-title-button', '.uni-meta-tag', '.uni-meta-project', '.uni-identity', '.uni-avatar',
-        '.uni-catalog-row', '#auditTaskTitle', '.username-display', 'option[value]:not([value=""]):is(select[id*="roject"] option, select[id*="ibling"] option, select[id*="arent"] option, select[id*="ule"] option)'].join(',');
+        '#auditTaskTitle', '.username-display', 'option[value]:not([value=""]):is(select[id*="roject"] option, select[id*="ibling"] option, select[id*="arent"] option, select[id*="ule"] option)'].join(',');
     // Cached per element for one batch of work (DOM can change between batches, so the cache is reset).
     let skipCache = new WeakMap();
     function skipped(el) {

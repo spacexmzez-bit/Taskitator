@@ -15,7 +15,7 @@
   const BODIES = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'moon', 'ceres', 'eris', 'io', 'titan', 'betelgeuse', ...STARS];
   // Not round: decoration only (empty states, completed roots).
   const DECOR = ['comet', 'pluto-charon', 'vesta', 'alpha-centauri', 'phobos-deimos'];
-  const ICONS = ['menu', 'sync', 'filter', 'chevron', 'plus', 'close', 'check', 'up', 'down', 'back', 'shield', 'review', 'bonus', 'sort', 'calendar', 'people'];
+  const ICONS = ['menu', 'sync', 'filter', 'chevron', 'plus', 'close', 'check', 'up', 'down', 'back', 'shield', 'review', 'bonus', 'sort', 'calendar', 'people', 'task', 'tree', 'spark', 'person', 'ban'];
 
   function bodyFor(id) {
     let h = 2166136261;

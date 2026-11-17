@@ -43,45 +43,213 @@
    for(const [label,value]of [['Project',project?.title||'Project'],['Assignees',Array.isArray(t.members)?t.members.map(id=>names.get(id)||'Member').join(', ')||'Unassigned':'Private assignment list'],['Due date',effectiveDue?(t.due_at?'':'Inherited · ')+(window.TaskitatorI18n?.dateTime(effectiveDue, {timeZone:'Asia/Riyadh'}, 'en-GB') ?? new Date(effectiveDue).toLocaleString('en-GB',{timeZone:'Asia/Riyadh'})):'No date'],['Priority',priority?.title||'Not set'],['Tags',tags||'None'],['Review',({none:'No audit',human:'Human only',ai:'AI only',either:'AI or human',both:'AI then human'})[t.audit_mode]||'No audit'],['Shield',t.shield?'Enabled':'Off'],['Bonus',t.bonus?'Yes':'No']]){const row=node('div');row.className='uni-property';row.append(node('span',label),node('strong',value));aside.append(row);}
    return aside;
   }
+  // ---- Task panel (create and edit) -------------------------------------------------------------
+  // The panel is laid out as boxed sections. Every value still lives in the same native control as
+  // before (some are hidden behind custom buttons), so the saved payload is unchanged.
+  const ASSIGNMENT_TYPES=[
+   ['everyone','Everyone’s','Each assignee completes their own copy.','Every selected member gets a separate assignment and submits their own work. The task counts as complete when the completion requirement in Auditing is met. Late entries can be allowed.','people'],
+   ['shared','Shared','One completion counts for all assignees.','The selected members share a single assignment. Any one of them can complete it, and that completion counts for everyone. Completion requirements and late entries do not apply.','task']];
+  const AUDIT_TYPES=[
+   ['none','No audit','Marked complete without a review.','The assignee completes the task directly. Nobody checks proof.','ban'],
+   ['human','Human only','A reviewer checks the proof.','The assignee submits proof. An assigned reviewer approves it or asks for changes. Review criteria guide the reviewer.','person'],
+   ['ai','AI only','AI checks the proof against the criteria.','The assignee submits proof and the AI audit decides using the review criteria. Clear criteria are needed, and this Universe may require them to be validated at 7/10 or higher before saving. AI reviews use credits.','spark'],
+   ['either','AI or human','The member chooses who reviews.','With each submission the assignee picks the AI audit or a human reviewer. Write criteria that work for both.','review'],
+   ['both','AI then human','AI first, then a reviewer confirms.','The AI audit checks the proof first. Once it approves, an assigned reviewer makes the final decision.','check']];
+  const DATES_HELP='Opens is when work can start. Due is the deadline; a subtask without its own due date uses its parent’s. With late entries allowed, assignees can still submit after the due time, up to the late cutoff if you set one. All times are Riyadh time.';
+  function box(parent,title,key){const s=node('section');s.className='uni-box';const h=node('h4',title);h.className='uni-box-title';lead(h,key);s.append(h);parent.append(s);return s;}
+  function subBox(parent,title){const s=node('div');s.className='uni-subbox';const h=node('h5',title);h.className='uni-subbox-title';s.append(h);parent.append(s);return s;}
+  // A small round "?" or "!" button that shows or hides one explanation.
+  function helpButton(glyph,name,note,text){const b=node('button',glyph);b.type='button';b.className='uni-help';b.setAttribute('aria-label',name);b.setAttribute('aria-expanded','false');b.addEventListener('click',()=>{const same=!note.hidden&&note.dataset.topic===name;note.hidden=same;note.dataset.topic=name;if(!same)note.textContent=text;for(const other of note.parentElement?.querySelectorAll?.('.uni-help')||[])other.setAttribute('aria-expanded','false');b.setAttribute('aria-expanded',String(!same));});return b;}
+  function helpNote(){const p=node('p');p.className='uni-help-text';p.hidden=true;p.setAttribute('role','note');return p;}
+  // Square choice buttons that set a native select. The select stays the single source of the value.
+  function choiceBar(parent,control,choices,name,glyph,onPick){
+   const wrap=node('div');wrap.className='uni-choice-group';const bar=node('div');bar.className='uni-choices';bar.setAttribute('role','radiogroup');bar.setAttribute('aria-label',name);const note=helpNote(),picks=[];
+   for(const [value,title,short,long,key]of choices){
+    const card=node('div');card.className='uni-choice';const pick=node('button');pick.type='button';pick.className='uni-choice-pick';pick.setAttribute('role','radio');const ic=space()?.icon(key);if(ic)pick.append(ic);pick.append(node('strong',title),node('span',short));
+    pick.addEventListener('click',()=>{if(control.disabled||control.value===value)return;control.value=value;sync();onPick?.();});
+    card.append(pick,helpButton(glyph,'About '+title,note,long));bar.append(card);picks.push([value,pick,card]);
+   }
+   function sync(){for(const [value,pick,card]of picks){const on=control.value===value;pick.setAttribute('aria-checked',String(on));pick.disabled=!!control.disabled&&!on;card.classList.toggle('selected',on);}}
+   sync();wrap.append(bar,note);parent.append(wrap);
+   // Bring the chosen card into view inside the bar only (the panel itself does not scroll).
+   if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>{const card=picks.find(([value])=>control.value===value)?.[2];if(!card?.getBoundingClientRect)return;const a=card.getBoundingClientRect(),b=bar.getBoundingClientRect();if(a.left<b.left)bar.scrollLeft+=a.left-b.left-12;else if(a.right>b.right)bar.scrollLeft+=a.right-b.right+12;});
+   return {sync};
+  }
   function editor(data,t,parentTask=null){
    const previous=panel.querySelector?.('.uni-editor');if(previous){previous.scrollIntoView?.();return;}
-   const overlay=node('div');overlay.className='uni-editor-overlay';const f=node('form');f.className='uni-editor modal-box';f.setAttribute('role','dialog');f.setAttribute('aria-modal','true');f.setAttribute('aria-label',t?'Edit Universe task':'Create Universe task');overlay.append(f);panel.append(overlay);f.append(node('h3',t?'Edit task':'Create task'));let validation=null;const childValidations=new Map();
-   const project=select(f,'Project',data.projects.map(p=>[p.id,p.title]),t?.project_id??parentTask?.project_id??selectedProject);project.disabled=!!t||!!parentTask;
-   const parentChoice=select(f,'Parent task (optional)',[['','Top-level task'],...data.tasks.filter(x=>x.project_id===project.value).map(x=>[x.id,x.title])],t?.parent_id??parentTask?.id??'');parentChoice.disabled=!!t||!!parentTask;project.addEventListener('change',()=>{parentChoice.replaceChildren();for(const [id,title]of [['','Top-level task'],...data.tasks.filter(x=>x.project_id===project.value).map(x=>[x.id,x.title])]){const o=node('option',title);o.value=id;parentChoice.append(o);}});
-   const title=input(f,'Title',t?.title??''),description=input(f,'Work description',t?.description??'','textarea',8000),criteria=input(f,'Review criteria',t?.criteria??'','textarea',4000);
-   const mode=select(f,'Assignment type',[['everyone','Everyone’s — separate assignments'],['shared','Shared — one completion']],t?.mode);mode.disabled=!!t;
-   const audit=select(f,'Audit mode',[['none','No audit'],['human','Human only'],['ai','AI only'],['either','AI or human — member chooses'],['both','AI then human']],t?.audit_mode??'none');
-   const shield=input(f,'Shield','','checkbox'),bonus=input(f,'Bonus','','checkbox');shield.checked=t?.shield??false;bonus.checked=t?.bonus??false;
-   if(t&&g.role!=='owner'){criteria.disabled=true;audit.disabled=true;shield.disabled=true;bonus.disabled=true;}
-   const start=input(f,'Opens (Riyadh)',date(t?.start_at),'datetime-local'),due=input(f,'Due (Riyadh)',date(t?.due_at),'datetime-local'),late=input(f,'Allow late entries','','checkbox'),cutoff=input(f,'Late entry cutoff (Riyadh, optional)',date(t?.late_until),'datetime-local');late.checked=t?.allow_late??false;function lateView(){late.parentElement.hidden=mode.value==='shared';cutoff.parentElement.hidden=mode.value==='shared'||!late.checked;}late.addEventListener('change',lateView);mode.addEventListener('change',lateView);lateView();button(f,'Clear late cutoff',()=>{cutoff.value='';markDirty();});
-   const tags=node('fieldset');tags.className='uni-tag-options';tags.append(node('legend','Central tags'));f.append(tags);const chosenTags=[];for(const c of (data.catalog||[]).filter(c=>c.kind==='tag')){const box=input(tags,c.title,'','checkbox');box.checked=t?.tags?.includes(c.id)??false;chosenTags.push([c.id,box]);}
-   const priorities=(data.catalog||[]).filter(c=>c.kind==='priority').sort((a,b)=>b.rank-a.rank);const priority=select(f,'Priority',priorities.length?priorities.map(c=>[c.id,c.title]):[['','No priorities configured']],t?.priority_id??priorities[0]?.id??'');
-   const priorityPills=node('fieldset');priorityPills.className='uni-priority-options';priorityPills.append(node('legend','Priority'));priority.parentElement.hidden=true;const priorityButtons=[];for(const c of priorities){const pill=button(priorityPills,c.title,()=>{priority.value=c.id;for(const [id,b]of priorityButtons)b.setAttribute('aria-pressed',String(id===c.id));markDirty();});pill.style.setProperty('--uni-dot',c.color||'#a78bfa');pill.setAttribute('aria-pressed',String(priority.value===c.id));priorityButtons.push([c.id,pill]);}if(!priorities.length)priorityPills.append(node('p','Create priorities in Controls.'));
-   const group=node('fieldset'),outside=node('details');group.append(node('legend','Project assignees'));outside.append(node('summary','Members outside this project'));outside.style.cssText='max-height:240px;overflow:auto';f.append(group,outside);const selected=[];
-   for(const m of members){const box=input(group,m.username||'Member','','checkbox');box.checked=t?.members?.includes(m.account_id)??false;selected.push([m.account_id,box,box.parentElement]);}
-   function projectMembers(initial){const p=data.projects.find(p=>p.id===project.value);for(const [id,box,label]of selected){(p?.members?.includes(id)?group:outside).append(label);if(initial)box.checked=p?.members?.includes(id)??false;}}
-   projectMembers(!t);project.addEventListener('change',()=>projectMembers(true));const all=button(f,'Select all',()=>{selected.forEach(([,c])=>c.checked=true);markDirty();}),none=button(f,'Deselect all',()=>{selected.forEach(([,c])=>c.checked=false);markDirty();});all.className='uni-select-all';none.className='uni-deselect-all';all.setAttribute('aria-label','Select all assignees');none.setAttribute('aria-label','Deselect all assignees');
-   const reviewers=[],r=node('fieldset');r.append(node('legend','Assigned reviewers'));f.append(r);for(const m of members.filter(m=>['reviewer','admin','owner'].includes(m.role))){const box=input(r,m.username||'Member','','checkbox');box.checked=t?t.reviewers?.includes(m.account_id):data.projects.find(p=>p.id===project.value)?.reviewers?.includes(m.account_id);reviewers.push([m.account_id,box]);}
-   const requirement=node('details');requirement.append(node('summary','Completion requirements — this task only'));f.append(requirement);const rule=select(requirement,'Requirement',[['all','All assignees'],['count','At least X assignees'],['specific','Specific assignees']],t?.requirement?.type??'all'),count=input(requirement,'X',t?.requirement?.count??1,'number'),required=[];count.min=1;
-   const requiredGroup=node('div');requirement.append(requiredGroup);for(const m of members){const box=input(requiredGroup,m.username||'Member','','checkbox');box.checked=t?.requirement?.members?.includes(m.account_id)??false;required.push([m.account_id,box]);}function ruleView(){count.parentElement.hidden=rule.value!=='count';requiredGroup.hidden=rule.value!=='specific';requirement.hidden=mode.value==='shared';}rule.addEventListener('change',ruleView);mode.addEventListener('change',ruleView);ruleView();
-   const validationStatus=node('p');f.append(validationStatus);const validateButton=button(f,'Validate AI criteria',async()=>{const selection=window.TaskitatorEngine.AuditEngine.selection();validation=await send('/universe/groups/'+g.id+'/validate',{title:title.value,description:description.value,criteria:criteria.value,provider:selection.provider,model:selection.primary,key_version:selection.keyVersion});validationStatus.textContent=validation.score+'/10 · '+validation.critique;for(const childTitle of quick.value.split('\n').map(x=>x.trim()).filter(Boolean)){const result=await send('/universe/groups/'+g.id+'/validate',{title:childTitle,description:'',criteria:criteria.value,provider:selection.provider,model:selection.primary,key_version:selection.keyVersion});childValidations.set(JSON.stringify([childTitle,criteria.value]),result);validationStatus.textContent+=' · '+childTitle+': '+result.score+'/10';}});
-   function auditView(){validateButton.hidden=!['ai','either','both'].includes(audit.value);}audit.addEventListener('change',auditView);auditView();for(const field of [title,description,criteria])field.addEventListener('input',()=>{validation=null;childValidations.clear();validationStatus.textContent='';});
-   function section(title,elements){const d=node('details');d.append(node('summary',title));for(const e of elements)if(e)d.append(e);f.append(d);return d;}
-   const wrap=e=>e?.parentElement;
-   section('Task details',[wrap(project),wrap(parentChoice),wrap(title),wrap(description),wrap(mode)]).open=true;
-   section('Tags and priority',[tags,wrap(priority),priorityPills]);
-   section('Dates and late entries',[wrap(start),wrap(due),wrap(late),wrap(cutoff),[...f.querySelectorAll('button')].find(b=>b.textContent==='Clear late cutoff')]);
-   section('Assignees',[all,none,group,outside]);section('Reviewers and audits',[wrap(audit),wrap(criteria),r,validateButton,validationStatus]);
-   section('Shield and bonus',[wrap(shield),wrap(bonus)]);f.append(requirement);
-   const quickSection=section('Quick subtasks (one title per line)',[]);const quick=input(quickSection,'Subtask titles','','textarea',8000);quickSection.hidden=!!t;
-   const actions=node('div');actions.className='uni-editor-actions';f.append(actions);const saveStatus=node('p');actions.append(saveStatus);const submit=node('button','Save');submit.type='submit';submit.className='btn-primary';actions.append(submit);const closeEditor=async()=>{if(f.dataset.saving==='true')return;if(!dirty||await ask('Discard unsaved changes?')){dirty=false;f.dataset.dirty='false';releaseEditor?.();overlay.remove();}};button(actions,'Cancel',closeEditor);let createdId=null,childIndex=0,childTitles=null,releaseEditor=null;
-   const editorBody=node('div');editorBody.className='uni-editor-body';const heading=node('div');heading.className='uni-editor-heading';heading.append(f.children[0]);for(const child of [...f.children])if(child!==actions)editorBody.append(child);f.replaceChildren(heading,editorBody,actions);
-   let dirty=false;function showDirty(){if(f.dataset.saving!=='true'){saveStatus.textContent='Unsaved changes';saveStatus.className='uni-dirty';}}function markDirty(){dirty=true;f.dataset.dirty='true';showDirty();}f.addEventListener('universe-discard',()=>{dirty=false;f.dataset.dirty='false';releaseEditor?.();overlay.remove();});f.addEventListener('input',()=>{dirty=true;f.dataset.dirty='true';showDirty();});const unload=e=>{if(dirty){e.preventDefault();e.returnValue='';}};window.addEventListener('beforeunload',unload);if(window.MutationObserver){const observer=new MutationObserver(()=>{if(!f.isConnected){window.removeEventListener('beforeunload',unload);observer.disconnect();}});observer.observe(panel,{childList:true,subtree:true});}
+   const overlay=node('div');overlay.className='uni-editor-overlay';const f=node('form');f.className='uni-editor modal-box';f.setAttribute('role','dialog');f.setAttribute('aria-modal','true');f.setAttribute('aria-label',t?'Edit Universe task':'Create Universe task');overlay.append(f);panel.append(overlay);
+   const heading=node('div');heading.className='uni-editor-heading';heading.append(node('h3',t?'Edit task':'Create task'));const editorBody=node('div');editorBody.className='uni-editor-body';const actions=node('div');actions.className='uni-editor-actions';f.append(heading,editorBody,actions);
+   let validation=null;const childValidations=new Map();
+   let dirty=false;const saveStatus=node('p');actions.append(saveStatus);
+   function showDirty(){if(f.dataset.saving!=='true'){saveStatus.textContent='Unsaved changes';saveStatus.className='uni-dirty';}}
+   function markDirty(){dirty=true;f.dataset.dirty='true';showDirty();}
+
+   // 1. Task details
+   const details=box(editorBody,'Task details','task');
+   const project=select(details,'Project',data.projects.map(p=>[p.id,p.title]),t?.project_id??parentTask?.project_id??selectedProject);project.disabled=!!t||!!parentTask;
+   const parentOptions=()=>[['','Top-level task'],...data.tasks.filter(x=>x.project_id===project.value).map(x=>[x.id,x.title])];
+   const parentChoice=select(details,'Parent task (optional)',parentOptions(),t?.parent_id??parentTask?.id??'');parentChoice.disabled=!!t||!!parentTask;
+   // Parent: the same tree picker as personal tasks. Without it (or when the parent is fixed) the plain list stays.
+   const parentRow=node('div');parentRow.className='uni-parent';const parentName=node('strong');parentName.setAttribute('translate','no');const parentLabel=node('span','Parent task');parentRow.append(parentLabel,parentName);details.append(parentRow);
+   const showParent=()=>{const chosen=data.tasks.find(x=>x.id===parentChoice.value);parentName.textContent=chosen?chosen.title:'';parentName.hidden=!chosen;parentLabel.textContent=chosen?'Parent task':'Top-level task (no parent)';};
+   const picker=()=>window.TaskitatorParentPicker;
+   const tagCatalog=(data.catalog||[]).filter(c=>c.kind==='tag'),priorities=(data.catalog||[]).filter(c=>c.kind==='priority').sort((a,b)=>b.rank-a.rank);
+   if(picker()&&!parentChoice.disabled){parentChoice.parentElement.hidden=true;button(parentRow,'Choose parent',async()=>{
+    const tagName=new Map(tagCatalog.map(c=>[c.id,c.title])),rank=new Map(priorities.map(c=>[c.id,c.rank])),today=dayOf(Date.now()),DF=window.TaskitatorDateFilter;
+    const pool=data.tasks.filter(x=>x.project_id===project.value).map(x=>({id:x.id,title:x.title,parent_id:x.parent_id||null,status:'active',project_id:x.project_id,priority_id:x.priority_id||null,tags:(x.tags||[]).map(id=>tagName.get(id)).filter(Boolean),due_date:x.due_at?dayOf(x.due_at):''}));
+    const by=new Map(pool.map(x=>[x.id,x]));
+    const opening=picker().open({task:{title:title.value.trim()||'New task'},tasks:pool,currentParentId:parentChoice.value||null,creating:true,projects:[],priorities:priorities.map(c=>({id:c.id,name:c.title,color:c.color})),tags:tagCatalog.map(c=>c.title),sortMode:'priority',today,
+     blockReason:id=>id&&data.progress?.[id]?.complete?'This task is complete. Choose an open task.':null,
+     active:fl=>!!(fl.tags.size||fl.priorities.size||fl.date.mode),
+     match:(x,fl)=>{const checks=[];if(fl.tags.size)checks.push(x.tags.some(name=>fl.tags.has(name)));if(fl.priorities.size)checks.push(fl.priorities.has(x.priority_id));if(fl.date.mode)checks.push(DF?DF.matches(x,by,today,fl.date):true);return fl.logic==='or'?checks.some(Boolean):checks.every(Boolean);},
+     sort:(rows,mode)=>rows.sort((a,b)=>mode==='alpha'?String(a.title).localeCompare(String(b.title)):(rank.get(a.priority_id)??Infinity)-(rank.get(b.priority_id)??Infinity)||String(a.title).localeCompare(String(b.title)))});
+    // The picker is a native dialog outside this panel: register it as the top layer so focus and Escape stay with it.
+    const dialog=document.querySelector?.('dialog.parent-picker'),release=dialog&&window.UniverseUX?.layer(dialog,{fit:false,close:()=>dialog.querySelector('.pp-close')?.click()});
+    let choice;try{choice=await opening;}finally{release?.();}
+    if(choice){parentChoice.value=choice.parentId||'';showParent();markDirty();}
+   });}else if(!parentChoice.disabled)parentRow.hidden=true;
+   showParent();
+   project.addEventListener('change',()=>{parentChoice.replaceChildren();for(const [id,text]of parentOptions()){const o=node('option',text);o.value=id;parentChoice.append(o);}parentChoice.value='';showParent();});
+   const title=input(details,'Title',t?.title??''),description=input(details,'Work description',t?.description??'','textarea',8000);
+   const tags=node('fieldset');tags.className='uni-tag-options';tags.append(node('legend','Tags'));details.append(tags);const chosenTags=[];
+   for(const c of tagCatalog){const tagBox=input(tags,c.title,'','checkbox');tagBox.checked=t?.tags?.includes(c.id)??false;tagBox.parentElement.style.setProperty('--uni-dot',c.color||'');tagBox.parentElement.setAttribute('translate','no');chosenTags.push([c.id,tagBox]);}
+   if(!tagCatalog.length)tags.append(node('p','Create tags in Controls.'));
+   const priority=select(details,'Priority',priorities.length?priorities.map(c=>[c.id,c.title]):[['','No priorities configured']],t?.priority_id??priorities[0]?.id??'');
+   const priorityPills=node('fieldset');priorityPills.className='uni-priority-options';priorityPills.append(node('legend','Priority'));priority.parentElement.hidden=true;details.append(priorityPills);const priorityButtons=[];
+   for(const c of priorities){const pill=button(priorityPills,c.title,()=>{priority.value=c.id;for(const [id,b]of priorityButtons)b.setAttribute('aria-pressed',String(id===c.id));markDirty();});pill.style.setProperty('--uni-dot',c.color||'');pill.setAttribute('translate','no');pill.setAttribute('aria-pressed',String(priority.value===c.id));priorityButtons.push([c.id,pill]);}
+   if(!priorities.length)priorityPills.append(node('p','Create priorities in Controls.'));
+
+   // 2. Assignment: type, then assignees in one collapsible block
+   const assignmentBox=box(editorBody,'Assignment','people');
+   const mode=select(assignmentBox,'Assignment type',[['everyone','Everyone’s — separate assignments'],['shared','Shared — one completion']],t?.mode);mode.disabled=!!t;mode.parentElement.hidden=true;
+   choiceBar(assignmentBox,mode,ASSIGNMENT_TYPES,'Assignment type','?',()=>{lateView();ruleView();markDirty();});
+   if(t)assignmentBox.append(Object.assign(node('p','The assignment type cannot change after the task is created.'),{className:'uni-hint'}));
+   const assignees=node('details');assignees.className='uni-assignees';const assigneeSummary=node('summary','Assignees');assignees.append(assigneeSummary);assignmentBox.append(assignees);
+   const group=node('fieldset'),outside=node('details');group.append(node('legend','Project assignees'));outside.append(node('summary','Members outside this project'));outside.className='uni-outside';const selected=[];
+   const countAssignees=()=>{const n=selected.filter(([,c])=>c.checked).length;assigneeSummary.textContent=n?'Assignees · '+n+' selected':'Assignees · none selected';};
+   const all=button(assignees,'Select all',()=>{selected.forEach(([,c])=>c.checked=true);countAssignees();markDirty();}),none=button(assignees,'Deselect all',()=>{selected.forEach(([,c])=>c.checked=false);countAssignees();markDirty();});all.className='uni-select-all';none.className='uni-deselect-all';all.setAttribute('aria-label','Select all assignees');none.setAttribute('aria-label','Deselect all assignees');assignees.append(group,outside);
+   for(const m of members){const memberBox=input(group,m.username||'Member','','checkbox');memberBox.checked=t?.members?.includes(m.account_id)??false;memberBox.parentElement.setAttribute('translate','no');memberBox.addEventListener('change',countAssignees);selected.push([m.account_id,memberBox,memberBox.parentElement]);}
+   function projectMembers(initial){const p=data.projects.find(p=>p.id===project.value);for(const [id,memberBox,label]of selected){(p?.members?.includes(id)?group:outside).append(label);if(initial)memberBox.checked=p?.members?.includes(id)??false;}outside.hidden=!outside.querySelectorAll('label').length;countAssignees();}
+   projectMembers(!t);project.addEventListener('change',()=>projectMembers(true));assignees.open=!t;
+
+   // 3. Auditing: audit type, criteria, reviewers, completion requirement, dates
+   const auditing=box(editorBody,'Auditing','review');
+   const audit=select(auditing,'Audit mode',[['none','No audit'],['human','Human only'],['ai','AI only'],['either','AI or human — member chooses'],['both','AI then human']],t?.audit_mode??'none');audit.parentElement.hidden=true;
+   const criteria=input(auditing,'Review criteria',t?.criteria??'','textarea',4000);
+   if(t&&g.role!=='owner'){criteria.disabled=true;audit.disabled=true;}
+   const criteriaLabel=criteria.parentElement;choiceBar(auditing,audit,AUDIT_TYPES,'Audit type','!',()=>{auditView();markDirty();});auditing.append(criteriaLabel);
+   if(t&&g.role!=='owner')auditing.append(Object.assign(node('p','Only the owner can change the audit type and criteria of an existing task.'),{className:'uni-hint'}));
+   // Criteria helpers: ready-made templates and the criteria saved from personal tasks (text only).
+   const criteriaTools=node('div');criteriaTools.className='uni-criteria-tools';const criteriaList=node('div');criteriaList.className='uni-criteria-list';criteriaList.hidden=true;auditing.append(criteriaTools,criteriaList);
+   const useCriteria=async text=>{if(criteria.value.trim()&&criteria.value.trim()!==text.trim()&&!await ask('Replace the current review criteria?'))return;criteria.value=text;validation=null;childValidations.clear();validationStatus.textContent='';criteriaList.hidden=true;markDirty();criteria.focus?.();};
+   const offer=(heading,rows,empty)=>{criteriaList.replaceChildren(node('h5',heading));if(!rows.length)criteriaList.append(node('p',empty));let section=null;for(const row of rows){if(row.category&&row.category!==section){section=row.category;const h=node('p',section);h.className='uni-criteria-category';criteriaList.append(h);}const b=button(criteriaList,row.label,()=>useCriteria(row.text));b.className='uni-criteria-pick';b.title=row.text;if(row.own)b.setAttribute('translate','no');}button(criteriaList,'Close',()=>{criteriaList.hidden=true;}).className='uni-criteria-close';criteriaList.hidden=false;};
+   let templates=null;
+   const templatesButton=button(criteriaTools,'Templates',async()=>{if(!templates){const response=await fetch('./CRITERIA_TEMPLATES.json');if(!response.ok)throw Error('Templates could not load. Check your connection and retry.');templates=await response.json();}offer('Criteria templates',templates.map(x=>({label:x.label,text:x.template,category:x.category})),'No templates available.');});
+   const savedButton=button(criteriaTools,'Saved criteria',()=>{let saved=[];try{saved=JSON.parse(localStorage.getItem('taskitator_saved_criteria')||'[]');}catch{}offer('Your saved criteria',(Array.isArray(saved)?saved:[]).filter(x=>x&&typeof x.criteria==='string'&&x.criteria.trim()).map(x=>({label:String(x.title||x.criteria).slice(0,60),text:x.criteria,own:true})),'No saved criteria yet. Criteria you save on personal tasks appear here. Only the text is used; exemplar files stay with personal tasks.');});
+   templatesButton.disabled=savedButton.disabled=criteria.disabled;
+   const validationStatus=node('p');validationStatus.className='uni-validation';validationStatus.setAttribute('role','status');
+   const validateButton=button(criteriaTools,'Validate AI criteria',async()=>{addQuick();const selection=window.TaskitatorEngine.AuditEngine.selection();validation=await send('/universe/groups/'+g.id+'/validate',{title:title.value,description:description.value,criteria:criteria.value,provider:selection.provider,model:selection.primary,key_version:selection.keyVersion});validationStatus.textContent=validation.score+'/10 · '+validation.critique;for(const childTitle of quick.value.split('\n').map(x=>x.trim()).filter(Boolean)){const result=await send('/universe/groups/'+g.id+'/validate',{title:childTitle,description:'',criteria:criteria.value,provider:selection.provider,model:selection.primary,key_version:selection.keyVersion});childValidations.set(JSON.stringify([childTitle,criteria.value]),result);validationStatus.textContent+=' · '+childTitle+': '+result.score+'/10';}});
+   auditing.append(validationStatus);
+   function auditView(){validateButton.hidden=!['ai','either','both'].includes(audit.value);}
+   const reviewers=[],reviewerBox=node('fieldset');reviewerBox.append(node('legend','Assigned reviewers'));auditing.append(reviewerBox);
+   for(const m of members.filter(m=>['reviewer','admin','owner'].includes(m.role))){const reviewerCheck=input(reviewerBox,m.username||'Member','','checkbox');reviewerCheck.checked=t?t.reviewers?.includes(m.account_id):data.projects.find(p=>p.id===project.value)?.reviewers?.includes(m.account_id);reviewerCheck.parentElement.setAttribute('translate','no');reviewers.push([m.account_id,reviewerCheck]);}
+   const requirement=subBox(auditing,'Completion requirement');requirement.append(Object.assign(node('p','Applies to this task only.'),{className:'uni-hint'}));
+   const rule=select(requirement,'Requirement',[['all','All assignees'],['count','At least X assignees'],['specific','Specific assignees']],t?.requirement?.type??'all'),count=input(requirement,'X',t?.requirement?.count??1,'number'),required=[];count.min=1;
+   const requiredGroup=node('div');requiredGroup.className='uni-required-group';requirement.append(requiredGroup);for(const m of members){const requiredCheck=input(requiredGroup,m.username||'Member','','checkbox');requiredCheck.checked=t?.requirement?.members?.includes(m.account_id)??false;requiredCheck.parentElement.setAttribute('translate','no');required.push([m.account_id,requiredCheck]);}
+   function ruleView(){count.parentElement.hidden=rule.value!=='count';requiredGroup.hidden=rule.value!=='specific';requirement.hidden=mode.value==='shared';}rule.addEventListener('change',ruleView);
+   const dates=subBox(auditing,'Dates and late entries'),datesNote=helpNote();dates.children[0].append(helpButton('?','About dates and late entries',datesNote,DATES_HELP));dates.append(datesNote);
+   const dateGrid=node('div');dateGrid.className='uni-date-grid';dates.append(dateGrid);
+   const start=input(dateGrid,'Opens (Riyadh)',date(t?.start_at),'datetime-local'),due=input(dateGrid,'Due (Riyadh)',date(t?.due_at),'datetime-local'),late=input(dates,'Allow late entries','','checkbox'),cutoff=input(dates,'Late entry cutoff (Riyadh, optional)',date(t?.late_until),'datetime-local');late.checked=t?.allow_late??false;
+   const clearCutoff=button(dates,'Clear late cutoff',()=>{cutoff.value='';markDirty();});
+   function lateView(){late.parentElement.hidden=mode.value==='shared';cutoff.parentElement.hidden=clearCutoff.hidden=mode.value==='shared'||!late.checked;}late.addEventListener('change',lateView);
+   lateView();ruleView();auditView();
+   for(const field of [title,description,criteria])field.addEventListener('input',()=>{validation=null;childValidations.clear();validationStatus.textContent='';});
+
+   // 4. Shield and bonus: unchanged for now. The redesigned section is planned for Phase 2.
+   const protection=box(editorBody,'Shield and bonus','shield');
+   const shield=input(protection,'Shield','','checkbox'),bonus=input(protection,'Bonus','','checkbox');shield.checked=t?.shield??false;bonus.checked=t?.bonus??false;
+   if(t&&g.role!=='owner'){shield.disabled=true;bonus.disabled=true;}
+
+   // 5. Quick subtasks: type a title, press Enter or +, keep typing. The textarea holds the list that is saved.
+   const quickBox=box(editorBody,'Quick subtasks','tree');quickBox.append(Object.assign(node('p',t?'New subtasks are added under this task and copy its assignment and auditing settings.':'Subtasks are created with this task and copy its assignment and auditing settings.'),{className:'uni-hint'}));
+   const quickRow=node('div');quickRow.className='uni-quick-row';quickBox.append(quickRow);const quickTitle=node('input');quickTitle.type='text';quickTitle.maxLength=200;quickTitle.placeholder='Subtask title';quickTitle.setAttribute('aria-label','Subtask title');quickRow.append(quickTitle);
+   const quickList=node('ul');quickList.className='uni-quick-list';quickBox.append(quickList);const quick=input(quickBox,'Subtask titles','','textarea',8000);quick.parentElement.hidden=true;const quickItems=[];
+   function drawQuick(){quickList.replaceChildren();for(const [i,text]of quickItems.entries()){const li=node('li'),name=node('span',text);name.setAttribute('translate','no');li.append(name);const remove=button(li,'Remove',()=>{quickItems.splice(i,1);drawQuick();markDirty();});remove.className='uni-icon-button';remove.setAttribute('aria-label','Remove subtask '+text);iconOnly(remove,'close');quickList.append(li);}quick.value=quickItems.join('\n');validation=null;childValidations.clear();validationStatus.textContent='';}
+   const addQuick=()=>{const text=quickTitle.value.replace(/\s+/g,' ').trim();if(!text)return;quickItems.push(text);quickTitle.value='';drawQuick();markDirty();quickTitle.focus?.();};
+   quickTitle.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addQuick();}});
+   const quickAdd=button(quickRow,'Add',addQuick);quickAdd.className='uni-icon-button uni-quick-add';quickAdd.setAttribute('aria-label','Add subtask');iconOnly(quickAdd,'plus');
+
+   const submit=node('button','Save');submit.type='submit';submit.className='btn-primary';actions.append(submit);
+   let createdId=null,childIndex=0,childTitles=null,releaseEditor=null;
+   const closeEditor=async()=>{if(f.dataset.saving==='true')return;if(!dirty||await ask('Discard unsaved changes?')){dirty=false;f.dataset.dirty='false';releaseEditor?.();overlay.remove();}};button(actions,'Cancel',closeEditor);
+   f.addEventListener('universe-discard',()=>{dirty=false;f.dataset.dirty='false';releaseEditor?.();overlay.remove();});f.addEventListener('input',()=>{dirty=true;f.dataset.dirty='true';showDirty();});const unload=e=>{if(dirty){e.preventDefault();e.returnValue='';}};window.addEventListener('beforeunload',unload);if(window.MutationObserver){const observer=new MutationObserver(()=>{if(!f.isConnected){window.removeEventListener('beforeunload',unload);observer.disconnect();}});observer.observe(panel,{childList:true,subtree:true});}
    releaseEditor=window.UniverseUX?.layer(overlay,{close:closeEditor,initial:title});
-   f.addEventListener('submit',e=>{e.preventDefault();return run(async()=>{f.dataset.saving='true';try{const payload={project_id:project.value,parent_id:t?.parent_id??parentTask?.id??(parentChoice.value||null),title:title.value,description:description.value,criteria:criteria.value,mode:mode.value,members:selected.filter(([,c])=>c.checked).map(([id])=>id),reviewers:reviewers.filter(([,c])=>c.checked).map(([id])=>id),audit_mode:audit.value,tags:chosenTags.filter(([,c])=>c.checked).map(([id])=>id),priority_id:priority.value||null,shield:shield.checked,bonus:bonus.checked,start_at:start.value?Date.parse(start.value+'+03:00'):null,due_at:due.value?Date.parse(due.value+'+03:00'):null,allow_late:late.checked,late_until:cutoff.value?Date.parse(cutoff.value+'+03:00'):null,requirement:rule.value==='all'?{type:'all'}:rule.value==='count'?{type:'count',count:Number(count.value)}:{type:'specific',members:required.filter(([,c])=>c.checked).map(([id])=>id)},validation_id:validation?.id??null,...(t?{revision:t.revision}:{})};
-    if(!createdId&&['ai','either','both'].includes(audit.value)&&quick.value.trim()&&!validation){const settings=await api('/universe/groups/'+g.id+'/settings');if(settings.validate_criteria)throw Error('Validate the AI criteria for the task and quick subtasks before saving.');}if(!createdId){const result=await send(base+'/tasks'+(t?'/'+t.id+'/edit':''),payload);createdId=result.id||t?.id;childTitles=t?[]:quick.value.split('\n').map(x=>x.trim()).filter(Boolean);if(childTitles.length&&!createdId)throw Error('Saved task ID unavailable. Refresh before adding children.');for(const control of f.querySelectorAll('input,select,textarea'))control.disabled=true;}
-    for(;childIndex<childTitles.length;childIndex++){saveStatus.className='';saveStatus.textContent='Parent saved. Saving subtask '+(childIndex+1)+' of '+childTitles.length;await send(base+'/tasks',{...payload,parent_id:createdId,title:childTitles[childIndex],description:'',validation_id:childValidations.get(JSON.stringify([childTitles[childIndex],criteria.value]))?.id??null});}
+   f.addEventListener('submit',e=>{e.preventDefault();return run(async()=>{f.dataset.saving='true';try{if(quickTitle.value.trim()&&!createdId)addQuick();const payload={project_id:project.value,parent_id:t?.parent_id??parentTask?.id??(parentChoice.value||null),title:title.value,description:description.value,criteria:criteria.value,mode:mode.value,members:selected.filter(([,c])=>c.checked).map(([id])=>id),reviewers:reviewers.filter(([,c])=>c.checked).map(([id])=>id),audit_mode:audit.value,tags:chosenTags.filter(([,c])=>c.checked).map(([id])=>id),priority_id:priority.value||null,shield:shield.checked,bonus:bonus.checked,start_at:start.value?Date.parse(start.value+'+03:00'):null,due_at:due.value?Date.parse(due.value+'+03:00'):null,allow_late:late.checked,late_until:cutoff.value?Date.parse(cutoff.value+'+03:00'):null,requirement:rule.value==='all'?{type:'all'}:rule.value==='count'?{type:'count',count:Number(count.value)}:{type:'specific',members:required.filter(([,c])=>c.checked).map(([id])=>id)},validation_id:validation?.id??null,...(t?{revision:t.revision}:{})};
+    if(!createdId&&['ai','either','both'].includes(audit.value)&&quick.value.trim()&&!validation){const settings=await api('/universe/groups/'+g.id+'/settings');if(settings.validate_criteria)throw Error('Validate the AI criteria for the task and quick subtasks before saving.');}if(!createdId){const result=await send(base+'/tasks'+(t?'/'+t.id+'/edit':''),payload);createdId=t?.id||result.id;childTitles=quick.value.split('\n').map(x=>x.trim()).filter(Boolean);if(childTitles.length&&!createdId)throw Error('Saved task ID unavailable. Refresh before adding children.');for(const control of f.querySelectorAll('input,select,textarea'))control.disabled=true;}
+    // Subtasks are new tasks: they never carry the edited task's revision.
+    const {revision:_parentRevision,...childBase}=payload;
+    for(;childIndex<childTitles.length;childIndex++){saveStatus.className='';saveStatus.textContent='Parent saved. Saving subtask '+(childIndex+1)+' of '+childTitles.length;await send(base+'/tasks',{...childBase,parent_id:createdId,title:childTitles[childIndex],description:'',validation_id:childValidations.get(JSON.stringify([childTitles[childIndex],criteria.value]))?.id??null});}
     dirty=false;f.dataset.dirty='false';releaseEditor?.();overlay.remove();await list();toast(t?'Task saved':'Task created');}finally{f.dataset.saving='false';}},e.submitter||submit);});
+  }
+  // ---- Labels (Controls) ------------------------------------------------------------------------
+  // Tags and priorities are edited in place. Nothing is sent until the Universe Save bar is used:
+  // each changed row is handed to tools.stage() as one named change.
+  const PRESET_COLORS=['#b58cfa','#7aa2ff','#5eead4','#86efac','#fde047','#fdba74','#f87171','#f9a8d4'];
+  const hex=value=>{const m=/^#?([0-9a-f]{6})$/i.exec(String(value??'').trim());return m?'#'+m[1].toLowerCase():null;};
+  let labelDraft=null,labelSeed=0;
+  // Swatch button that opens presets, the browser's color picker and a hex field.
+  function colorControl(get,set){
+   const wrap=node('div');wrap.className='uni-color';const swatch=node('button');swatch.type='button';swatch.className='uni-swatch';swatch.setAttribute('aria-label','Change color');swatch.setAttribute('aria-expanded','false');
+   const choices=node('div');choices.className='uni-color-panel';choices.hidden=true;const native=node('input');native.type='color';native.setAttribute('aria-label','Custom color');const code=node('input');code.type='text';code.maxLength=7;code.className='uni-hex';code.placeholder='#b58cfa';code.setAttribute('aria-label','Hex color code');code.setAttribute('translate','no');
+   const paint=keepCode=>{const value=get();swatch.style.setProperty('--uni-dot',value||PRESET_COLORS[0]);native.value=value||PRESET_COLORS[0];if(!keepCode){code.value=value||'';code.setAttribute('aria-invalid','false');}};
+   const pick=(value,keepCode)=>{set(value);paint(keepCode);};
+   for(const preset of PRESET_COLORS){const b=node('button');b.type='button';b.className='uni-swatch';b.style.setProperty('--uni-dot',preset);b.setAttribute('aria-label',preset);b.title=preset;b.addEventListener('click',()=>pick(preset));choices.append(b);}
+   native.addEventListener('input',()=>pick(hex(native.value)||get()));
+   code.addEventListener('input',()=>{const value=hex(code.value);code.setAttribute('aria-invalid',String(!value&&!!code.value.trim()));if(value)pick(value,true);});
+   swatch.addEventListener('click',()=>{choices.hidden=!choices.hidden;swatch.setAttribute('aria-expanded',String(!choices.hidden));});
+   choices.append(native,code);wrap.append(swatch);paint();return {wrap,choices,paint};
+  }
+  function labels(host,data){
+   const stage=tools.stage||(()=>{}),canEdit=writable;
+   let catalog=host.querySelector('.uni-catalog');if(!catalog){catalog=node('div');catalog.className='uni-catalog';host.append(catalog);}
+   // Rows waiting for Save survive a task-list refresh; otherwise the list restarts from the server's copy.
+   if(!labelDraft||!labelDraft.some(r=>r.isNew||r.removed||r.changed))labelDraft=(data.catalog||[]).map(c=>({key:c.id,id:c.id,kind:c.kind,title:c.title,color:hex(c.color),rank:c.rank,was:{title:c.title,color:hex(c.color),rank:c.rank}}));
+   const of=kind=>labelDraft.filter(r=>r.kind===kind).sort((a,b)=>a.rank-b.rank);
+   const word=kind=>kind==='tag'?'Tag':'Priority';
+   function sync(row){
+    row.changed=!row.isNew&&!row.removed&&(row.title.trim()!==row.was.title||row.color!==row.was.color||row.rank!==row.was.rank);
+    const body=()=>{if(!row.title.trim())throw Error('Enter a name.');return {kind:row.kind,title:row.title.trim(),rank:row.rank,...(row.color?{color:row.color}:{})};};
+    const label=word(row.kind)+' “'+(row.title.trim()||row.was?.title||'')+'”';
+    // done() runs after the server accepts a change, so a row saved before a later failure is not sent twice.
+    const settle=result=>{if(row.removed){const at=labelDraft.indexOf(row);if(at>=0)labelDraft.splice(at,1);}else{if(row.isNew){row.isNew=false;row.id=result?.id||row.id;}row.title=row.title.trim();row.was={title:row.title,color:row.color,rank:row.rank};row.changed=false;}draw();};
+    stage('label:'+row.key,row.removed?(row.isNew?null:{label,order:30,done:settle,apply:rev=>send(base+'/catalog/'+row.id+'/delete',{revision:rev,kind:row.kind,rank:row.was.rank})}):row.isNew?{label,order:20,done:settle,apply:rev=>send(base+'/catalog',{revision:rev,...body()})}:row.changed?{label,order:10,done:settle,apply:rev=>send(base+'/catalog/'+row.id+'/edit',{revision:rev,...body()})}:null);
+   }
+   function draw(){
+    catalog.replaceChildren(node('h3','Tags and priorities'));
+    if(!canEdit)catalog.append(Object.assign(node('p','This Universe is read-only.'),{className:'uni-hint'}));
+    for(const kind of ['tag','priority']){
+     const section=node('section');section.className='uni-box uni-label-box';section.append(Object.assign(node('h4',kind==='tag'?'Manage tags':'Manage priorities'),{className:'uni-box-title'}));
+     if(kind==='priority')section.append(Object.assign(node('p','The first priority is the most urgent.'),{className:'uni-hint'}));catalog.append(section);
+     const rows=of(kind);if(!rows.length)section.append(Object.assign(node('p',kind==='tag'?'No tags yet.':'No priorities yet.'),{className:'uni-hint'}));
+     for(const [index,row]of rows.entries()){
+      const line=node('div');line.className='uni-catalog-row';if(row.removed)line.classList.add('is-removed');if(row.isNew||row.changed)line.classList.add('is-staged');section.append(line);
+      const color=colorControl(()=>row.color,value=>{row.color=value;sync(row);line.classList.toggle('is-staged',!!(row.isNew||row.changed));});
+      const name=node('input');name.type='text';name.value=row.title;name.maxLength=100;name.setAttribute('aria-label',kind==='tag'?'Tag name':'Priority name');name.setAttribute('translate','no');name.addEventListener('input',()=>{row.title=name.value;name.setAttribute('aria-invalid',String(!row.title.trim()));sync(row);line.classList.toggle('is-staged',!!(row.isNew||row.changed));});
+      line.append(color.wrap,name);
+      if(kind==='priority')for(const [glyph,key,step,title]of [['↑','up',-1,'Higher urgency'],['↓','down',1,'Lower urgency']]){const b=node('button',glyph);b.type='button';b.className='uni-icon-button';b.setAttribute('aria-label',title);b.title=title;iconOnly(b,key);b.disabled=!rows[index+step]||!!row.removed;b.addEventListener('click',()=>{const other=rows[index+step];if(!other)return;if(row.rank===other.rank){rows.forEach((r,i)=>{r.rank=i;});}const swap=row.rank;row.rank=other.rank;other.rank=swap;for(const r of rows)sync(r);draw();});line.append(b);}
+      const remove=node('button',row.removed?'Undo delete':'Delete');remove.type='button';if(!row.removed){remove.className='uni-icon-button uni-danger';remove.setAttribute('aria-label','Delete');remove.title='Delete';iconOnly(remove,'close');}remove.addEventListener('click',()=>{if(row.isNew){labelDraft.splice(labelDraft.indexOf(row),1);row.removed=true;sync(row);}else{row.removed=!row.removed;sync(row);}draw();});line.append(remove);
+      section.append(color.choices);
+      for(const control of [name,color.wrap.children[0],remove])control.disabled=!canEdit||(control!==remove&&!!row.removed);
+     }
+     if(!canEdit)continue;
+     const fresh={color:PRESET_COLORS[rows.length%PRESET_COLORS.length]},add=node('div');add.className='uni-catalog-row uni-catalog-add';section.append(add);
+     const color=colorControl(()=>fresh.color,value=>{fresh.color=value;}),name=node('input');name.type='text';name.maxLength=100;name.placeholder=kind==='tag'?'New tag name':'New priority name';name.setAttribute('aria-label',name.placeholder);
+     const commit=()=>{const title=name.value.replace(/\s+/g,' ').trim();if(!title)return;const row={key:'new'+(++labelSeed),id:null,kind,title,color:fresh.color,rank:rows.length?Math.max(...rows.map(r=>r.rank))+1:0,isNew:true};labelDraft.push(row);sync(row);draw();};
+     name.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();commit();}});
+     const addButton=node('button',kind==='tag'?'Add tag':'Add priority');addButton.type='button';addButton.addEventListener('click',commit);add.append(color.wrap,name,addButton);section.append(color.choices);
+    }
+   }
+   draw();
   }
   async function assignment(id){
    const d=await api(base+'/assignments/'+id),a=d.assignment,t=d.task;assignmentOverlay?.remove();const overlay=node('div');assignmentOverlay=overlay;overlay.className='uni-editor-overlay';const frame=node('section');frame.className='uni-detail-frame';frame.setAttribute('role','dialog');frame.setAttribute('aria-modal','true');frame.setAttribute('aria-label',t.title);overlay.append(frame);panel.append(overlay);const header=node('div');header.className='uni-dialog-heading';const stateChip=node('span',stateLabels[a.state]||a.state);stateChip.className='uni-state';stateChip.dataset.state=a.state;const titleWrap=node('div');titleWrap.append(stateChip,node('h3',t.title));header.append(titleWrap);let release=null;const close=async(refresh=true)=>{release?.();overlay.remove();assignmentOverlay=null;if(refresh&&assignmentChanged){assignmentChanged=false;await list();}};const back=button(header,'Close',()=>close());frame.append(header);const layout=node('div');layout.className='uni-detail-layout';const body=node('div');body.className='uni-detail-main';layout.append(body,properties(workData,t));frame.append(layout);body.append(stepper(a.state),node('p',t.description||'No description added.'));if(t.criteria)body.append(node('h4','Review criteria'),node('p',t.criteria));release=window.UniverseUX?.layer(overlay,{close:()=>close(),initial:back});
@@ -186,8 +354,7 @@
      if(dated){const keep=new Set();for(const t of projectTasks){if(!dated(t.id))continue;for(let n=t,i=0;n&&!keep.has(n.id)&&i<200;i++){keep.add(n.id);n=n.parent_id?data.tasks.find(x=>x.id===n.parent_id):null;}}shown=data.tasks.filter(t=>keep.has(t.id));if(!keep.size){const empty=node('div');empty.className='uni-empty';{const art=window.UniverseSpace?.body('comet','uni-empty-art');if(art)empty.append(art);}empty.append(node('h3','No tasks match this date filter'),node('p','Choose All dates to see every task in this project.'));projectBody.append(empty);}}}
     for(const t of sorted(shown.filter(t=>t.project_id===p.id&&!t.parent_id)))renderTask(t,projectBody,shown);if(!projectTasks.length){const empty=node('div');empty.className='uni-empty';{const art=window.UniverseSpace?.body('comet','uni-empty-art');if(art)empty.append(art);}empty.append(node('h3','No tasks in this project yet'),node('p',management&&writable?'Use New task to add the first one.':'Tasks appear here when an admin adds them.'));projectBody.append(empty);}
    }drawProject();
-   if(management&&tools.controls){let catalog=tools.controls.querySelector('.uni-catalog');if(!catalog){catalog=node('div');catalog.className='uni-catalog';tools.controls.append(catalog);}catalog.replaceChildren(node('h3','Tags and priorities'));for(const kind of ['tag','priority']){const section=node('details');section.append(node('summary',kind==='tag'?'Manage tags':'Manage priorities'));catalog.append(section);const title=input(section,'Name'),color=input(section,'Color','#b58cfa','color');button(section,'Add '+kind,async()=>{const items=(data.catalog||[]).filter(c=>c.kind===kind);await send(base+'/catalog',{revision:data.revision,kind,title:title.value,color:color.value,rank:items.length?Math.max(...items.map(c=>c.rank))+1:0});await list();toast((kind==='tag'?'Tag':'Priority')+' added');});const items=(data.catalog||[]).filter(c=>c.kind===kind).sort((a,b)=>a.rank-b.rank);for(const [index,c]of items.entries()){const row=node('div');row.className='uni-catalog-row';section.append(row);const label=input(row,'Name',c.title),color=input(row,'Color',c.color||'#b58cfa','color');button(row,'Save',async()=>{await send(base+'/catalog/'+c.id+'/edit',{revision:data.revision,kind,title:label.value,color:color.value,rank:c.rank});await list();});if(kind==='priority'){const move=async direction=>{const other=items[index+direction];if(!other)return;await send(base+'/catalog/'+c.id+'/edit',{revision:data.revision,kind,title:c.title,rank:other.rank+direction});await list();};for(const [glyph,key,direction,name]of [['↑','up',-1,'Higher urgency'],['↓','down',1,'Lower urgency']]){const b=button(row,glyph,()=>move(direction));b.setAttribute('aria-label',name);b.title=name;iconOnly(b,key);}}button(row,'Delete',async()=>{if(await ask('Delete '+c.title+'?')){await send(base+'/catalog/'+c.id+'/delete',{revision:data.revision,kind,rank:c.rank});await list();}});}}
-   }
+   if(management&&tools.controls)labels(tools.controls,data);
    if(management&&writable){const create=()=>{active();if(!data.projects.length)throw Error('Create a project first using ＋.');editor(data);};openCreate=create;fabButton(create);}
 
   }

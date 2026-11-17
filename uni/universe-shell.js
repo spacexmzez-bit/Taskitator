@@ -6,7 +6,9 @@
  // The identity strip is marked as user content (it holds the username), so the role is translated here.
  const roleLabel=role=>{const text=window.UniverseSpace?.label('role',role)??role;return window.TaskitatorI18n?.t?.(text)??text;};
  const icon=(button,path,key)=>{if(key&&kit(button,key))return;if(!document.createElementNS)return;const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg'),p=document.createElementNS(ns,'path');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');p.setAttribute('d',path);svg.append(p);button.replaceChildren(svg);};
- let state='connected',label=null;const dirty=()=>[...document.querySelectorAll('#universeWorkspace form')].some(f=>f.dataset.dirty==='true');
+ let state='connected',label=null;
+ // Forms with unsaved input. The Save bar of Controls and Settings spans every tab, so switching tabs passes bar=false and leaves it alone.
+ const isBar=f=>!!f.classList?.contains?.('uni-savebar'),unsavedForms=bar=>[...document.querySelectorAll('#universeWorkspace form')].filter(f=>f.dataset.dirty==='true'&&(bar||!isBar(f))),dirty=(bar=true)=>unsavedForms(bar).length>0;
  // Accessible action sheets; server decisions still determine the outcome.
  window.UniverseDialog={open(message,{input=false,initial=''}={}){return new Promise(resolve=>{
   const workspace=document.getElementById('universeWorkspace');if(!workspace){resolve(input?null:false);return;}
@@ -19,7 +21,7 @@
  window.UniverseShell={
  connection(s){state=s;if(label){label.dataset.state=s;label.title={connected:'Connected',saving:'Saving…',offline:'Offline',attention:'Attention needed'}[s];label.setAttribute('aria-label',label.title);label.textContent={connected:'Connected',saving:'Saving…',offline:'Offline',attention:'Attention'}[s]||label.title;}},
  // Asks before unsaved form changes are dropped. Uses the Universe action sheet, not the browser's confirm box.
- async leave(){if(!dirty())return true;const ok=window.UniverseDialog&&document.getElementById?.('universeWorkspace')?await window.UniverseDialog.confirm('Discard unsaved changes?'):window.confirm('Discard unsaved changes?');if(!ok)return false;for(const f of document.querySelectorAll('#universeWorkspace form')){f.dataset.dirty='false';f.dispatchEvent(new Event('universe-discard'));}return true;},
+ async leave(bar=true){if(!dirty(bar))return true;const ok=window.UniverseDialog&&document.getElementById?.('universeWorkspace')?await window.UniverseDialog.confirm('Discard unsaved changes?'):window.confirm('Discard unsaved changes?');if(!ok)return false;for(const f of unsavedForms(bar)){f.dataset.dirty='false';f.dispatchEvent(new Event('universe-discard'));}return true;},
  reset(){document.body.classList.remove('universe-active');label=null;},
  create(root,g,username,onExit,onRefresh){
  document.body.classList.add('universe-active');const shell=el('div');shell.className='uni-shell';root.append(shell);
@@ -33,7 +35,7 @@
  if(window.ResizeObserver){const ro=new window.ResizeObserver(()=>{if(!tabs.isConnected){ro.disconnect();return;}place();});ro.observe(tabs);}
  const content=el('main');content.className='uni-content';shell.append(content);const panes={},buttons=[];
  const items=[['dashboard','My dashboard'],['projects','Projects'],['stats','My stats'],...( ['owner','admin'].includes(g.role)?[['controls','Controls']]:[]),['settings','Settings']];
- const show=async id=>{if(!panes[id])return;if(dirty()&&!await this.leave())return;for(const [key,pane]of Object.entries(panes))pane.hidden=key!==id;for(const [key,b]of buttons){b.setAttribute('aria-current',key===id?'page':'false');b.classList.toggle('selected',key===id);if(b.getAttribute?.('role')==='tab'){b.setAttribute('aria-selected',String(key===id));b.tabIndex=key===id?0:-1;}}aside.hidden=true;menu.setAttribute('aria-expanded','false');const pane=panes[id];pane.classList.remove('uni-pane-enter');void pane.offsetWidth;pane.classList.add('uni-pane-enter');requestAnimationFrame(place);const sel=tabs.querySelector('button.selected');sel?.scrollIntoView?.({block:'nearest',inline:'nearest'});};
+ let shown=null;const show=async id=>{if(!panes[id])return;if(dirty(false)&&!await this.leave(false))return;shown=id;for(const [key,pane]of Object.entries(panes))pane.hidden=key!==id;for(const [key,b]of buttons){b.setAttribute('aria-current',key===id?'page':'false');b.classList.toggle('selected',key===id);if(b.getAttribute?.('role')==='tab'){b.setAttribute('aria-selected',String(key===id));b.tabIndex=key===id?0:-1;}}aside.hidden=true;menu.setAttribute('aria-expanded','false');const pane=panes[id];pane.classList.remove('uni-pane-enter');void pane.offsetWidth;pane.classList.add('uni-pane-enter');requestAnimationFrame(place);const sel=tabs.querySelector('button.selected');sel?.scrollIntoView?.({block:'nearest',inline:'nearest'});};
  for(const [id,title]of items){const pane=el('section');pane.className='uni-pane';pane.dataset.pane=id;pane.id='uni-pane-'+id;pane.setAttribute('role','tabpanel');panes[id]=pane;content.append(pane);if(id==='controls'||id==='settings'||id==='stats'){const heading=el('div');heading.className='uni-page-heading';heading.append(el('h2',title),el('p',id==='controls'?'Manage the people and labels in this Universe.':id==='settings'?'Your preferences and Universe settings.':'Your progress, at a glance.'));pane.append(heading);}for(const nav of [aside,tabs]){const b=button(nav,title,()=>show(id));if(nav===tabs){b.setAttribute('role','tab');b.setAttribute('aria-controls',pane.id);}buttons.push([id,b]);}}
  aside.append(el('hr'));link(aside,'Back to Tasks','index.html#today');button(aside,'All Universes',async()=>{if(await this.leave())onExit();});
  const footer=el('footer');footer.className='uni-footer';link(footer,'Back to Tasks','index.html#today');button(footer,'All Universes',async()=>{if(await this.leave())onExit();});shell.append(footer);show('dashboard');
@@ -41,7 +43,7 @@
  tabs.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;const list=[...tabs.querySelectorAll('button')];let i=list.indexOf(document.activeElement);if(i<0)return;e.preventDefault();i=e.key==='Home'?0:e.key==='End'?list.length-1:(i+(e.key==='ArrowRight'?1:-1)+list.length)%list.length;list[i].click();list[i].focus();list[i].scrollIntoView?.({block:'nearest',inline:'nearest'});});
  shell.addEventListener('keydown',e=>{if(e.key==='Escape'&&!aside.hidden){e.preventDefault();aside.hidden=true;menu.setAttribute('aria-expanded','false');menu.focus?.();}});
  shell.addEventListener('click',e=>{const a=e.target.closest('a');if(!a||!dirty())return;e.preventDefault();this.leave().then(ok=>{if(ok)location.href=a.href;});});
- return {panes,show};
+ return {panes,show,current:()=>shown};
  }};
  window.addEventListener('offline',()=>window.UniverseShell.connection('offline'));window.addEventListener('online',()=>window.UniverseShell.connection('attention'));
 })();
