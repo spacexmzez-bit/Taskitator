@@ -1187,6 +1187,12 @@ Return strictly valid JSON with this exact schema:
         },
 
         // test: criteria test (dry run). Same prompt and billing; the server never attests, so nothing completes or locks.
+        // The criteria is binding; the submitter note is context only. Both are escaped so neither can close or open a tag.
+        wrapCriteria(criteria, note) {
+            const esc = t => String(t || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const words = String(note || '').trim().split(/\s+/).filter(Boolean).slice(0, 250).join(' ');
+            return '<criteria>' + esc(criteria) + '</criteria>' + (words ? '\n<submitter_note>' + esc(words) + '</submitter_note>' : '');
+        },
         async verifyProof({ taskId, file, files, taskTitle, criteria, userContext, exemplarPart = null, test = false }) {
             const fileList = Array.isArray(files) && files.length ? files : (file ? [file] : []);
             // Taskitator Pro Hosted Claude Haiku 5.5 Hook (when active Pro & not in BYOK mode)
@@ -1198,7 +1204,7 @@ Return strictly valid JSON with this exact schema:
                         if (!check.valid) return { success: false, status: 400, error: check.error };
                         const encodedFiles = [];
                         for (const f of fileList) encodedFiles.push(await this.encodeProofFile(f, 'claude'));
-                        const combinedCriteria = (criteria || '') + (userContext ? (' - Note: ' + userContext) : '');
+                        const combinedCriteria = this.wrapCriteria(criteria, userContext);
                         const proRes = await window.TaskitatorPro.reviewProof({
                             taskId: taskId || ('task_' + Date.now()),
                             title: taskTitle,
