@@ -3436,6 +3436,22 @@
         "Download": "تنزيل",
         "Delete this file for everyone?": "حذف هذا الملف للجميع؟",
         "File deleted": "حُذف الملف",
+        "Auto redistribute": "إعادة توزيع تلقائية",
+        "Auto redistribute?": "إعادة التوزيع تلقائيًا؟",
+        "removed from": "إزالة وحدة من",
+        "added to": "إضافة وحدة إلى",
+        "One unit is {verb} each date you have not edited by hand, first to last, until the balance is 0. Dates you edited stay as they are. Nothing is saved until you create the plan.": "{verb} كل تاريخ لم تعدّله يدويًا، من الأول إلى الأخير، حتى يصبح الرصيد 0. التواريخ التي عدّلتها تبقى كما هي. لا يُحفظ شيء حتى تنشئ الخطة.",
+        "Auto redistribute bonus?": "إعادة توزيع المهام الإضافية تلقائيًا؟",
+        "One bonus unit is {verb} each date whose bonus you have not edited by hand, first to last, until the bonus total is back to {target}. Nothing is saved until you create the plan.": "{verb} كل تاريخ لم تعدّل مهامه الإضافية يدويًا، من الأول إلى الأخير، حتى يعود إجمالي المهام الإضافية إلى {target}. لا يُحفظ شيء حتى تنشئ الخطة.",
+        "Bonus surplus: {n}": "فائض في المهام الإضافية: {n}",
+        "Bonus missing: {n}": "نقص في المهام الإضافية: {n}",
+        "The bonus total is {now} instead of {target}.": "إجمالي المهام الإضافية {now} بدلًا من {target}.",
+        "Main edits are off until you settle this. Dismiss keeps {now}, Cancel goes back to {target}, or auto redistribute.": "تعديل المهام الأساسية متوقف حتى تسوّي هذا. «إغلاق» يُبقي {now}، و«إلغاء» يعيد {target}، أو أعد التوزيع تلقائيًا.",
+        "Remove one bonus unit from each date you have not edited, first to last, until the surplus is settled.": "أزل وحدة إضافية واحدة من كل تاريخ لم تعدّله، من الأول إلى الأخير، حتى يُسوّى الفائض.",
+        "Add one bonus unit to each date you have not edited, first to last, until nothing is missing.": "أضف وحدة إضافية واحدة إلى كل تاريخ لم تعدّله، من الأول إلى الأخير، حتى لا يبقى نقص.",
+        "Auto redistribute needs at least one date whose bonus you have not edited by hand. Edit the dates yourself or press Cancel.": "تحتاج إعادة التوزيع التلقائية إلى تاريخ واحد على الأقل لم تعدّل مهامه الإضافية يدويًا. عدّل التواريخ بنفسك أو اضغط «إلغاء».",
+        "Not enough bonus on the dates you have not edited to remove the surplus. Remove the rest by hand.": "لا توجد مهام إضافية كافية في التواريخ التي لم تعدّلها لإزالة الفائض. أزل الباقي يدويًا.",
+        "Bonus edits are off until the main balance is 0.": "تعديل المهام الإضافية متوقف حتى يصبح رصيد المهام الأساسية 0.",
         "Return to previous page": "العودة إلى الصفحة السابقة"
     });
     if (typeof module === 'object' && module.exports) module.exports = build();
