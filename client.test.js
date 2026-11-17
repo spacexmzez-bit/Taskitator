@@ -362,7 +362,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase4-v59'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase4-v60'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -1071,8 +1071,71 @@ test('Auto redistribute button settles the balance in the preview without markin
  const cell=()=>f.body.querySelectorAll('button').find(b=>/ss-cell/.test(b.className)&&b.querySelectorAll('small').length);
  cell().handlers.click.forEach(fn=>fn());f.button('+').handlers.click.forEach(fn=>fn());f.button('+').handlers.click.forEach(fn=>fn());
  assert.equal(f.button('Create plan').disabled,true);assert.match(f.body.textContent,/Surplus: 2/);
- f.button('Auto redistribute').handlers.click.forEach(fn=>fn());
+ f.window.TaskitatorConfirm=async()=>false;await Promise.all(f.button('Auto redistribute').handlers.click.map(fn=>fn()));
+ assert.equal(f.button('Create plan').disabled,true,'declining the confirmation changes nothing');assert.match(f.body.textContent,/Surplus: 2/);
+ f.window.TaskitatorConfirm=async()=>true;await Promise.all(f.button('Auto redistribute').handlers.click.map(fn=>fn()));
  assert.equal(f.button('Create plan').disabled,false,'balanced after redistributing');assert.equal(f.button('Auto redistribute'),undefined,'button only shows while unbalanced');
+});
+test('Bonus redistribute (pure): same one-at-a-time rule as main, zero dates stay, edited dates are never touched',()=>{
+ const R=studyUIModule().redistributeBonus,rows=[{date:'2026-10-27',count:2},{date:'2026-10-28',count:5},{date:'2026-10-29',count:2},{date:'2026-10-30',count:2},{date:'2026-10-31',count:2}];
+ assert.deepEqual(R(rows,10,new Set(['2026-10-28']),'2026-10-27').rows.map(x=>x.count),[1,5,1,1,2],'surplus 3 comes one each off the first untouched dates');
+ assert.deepEqual(R(rows.map(x=>({...x,count:x.date==='2026-10-28'?1:2})),11,new Set(['2026-10-28']),'2026-10-27').rows.map(x=>x.count),[3,1,3,2,2],'missing 2 goes one each to the first untouched dates');
+ assert.deepEqual(R([{date:'2026-10-27',count:0},{date:'2026-10-28',count:3}],2,new Set(),'2026-10-27').rows.map(x=>x.count),[0,2],'dates at 0 stay listed and are skipped when removing');
+ assert.match(R(rows,10,new Set(rows.map(x=>x.date)),'2026-10-27').error,/at least one date whose bonus you have not edited/);
+ assert.equal(JSON.stringify(R(rows,13,new Set(),'2026-10-27').rows),JSON.stringify(rows),'already at the target: nothing changes');
+});
+function studyUIModule(){const f=studyUI();return f.window.TaskitatorStudySchedule;}
+async function bonusPreview(){
+ const f=studyUI();await f.window.TaskitatorStudy.open({title:'Math',unit:'Lesson',plural:'Lessons',total:10,days:5,bonus:10});
+ f.button('Preview new schedule').handlers.click.forEach(fn=>fn());
+ const cell=f.body.querySelectorAll('button').find(b=>/ss-cell/.test(b.className)&&b.querySelectorAll('small').length);cell.handlers.click.forEach(fn=>fn());
+ const click=b=>b.handlers.click.forEach(fn=>fn()),all=t=>f.body.querySelectorAll('button').filter(b=>b.textContent===t);
+ return {f,click,all,mainPlus:()=>all('+')[0],bonusPlus:()=>all('+')[1],bonusMinus:()=>all('−')[1],mainMinus:()=>all('−')[0],text:()=>f.body.textContent,
+  bonusInput:()=>f.inputs().find(i=>i.type==='number'&&i.parentElement.textContent.startsWith('Bonus units')),total:()=>Number(f.body.textContent.match(/Bonus here: (\d+)|Bonus tasks\s*[−-]?\s*(\d+)/)?.[1]||0)};
+}
+test('Bonus edit: a date change no longer rewrites the bonus total; a purple card appears and main edits lock',async()=>{
+ const t=await bonusPreview();
+ assert.equal(String(t.bonusInput().value),'10');
+ t.click(t.bonusPlus());
+ assert.match(t.text(),/Bonus surplus: 1/);assert.match(t.text(),/The bonus total is 11 instead of 10/);
+ assert.equal(String(t.bonusInput().value),'10','the configured amount stays 10 until the card is settled');
+ assert.equal(t.f.button('Create plan').disabled,true,'creating is blocked while the card is open');
+ assert.equal(t.mainPlus().disabled,true,'main + is locked');assert.equal(t.mainMinus().disabled,true,'main − is locked');
+ assert.equal(t.f.body.querySelectorAll('button').find(b=>b.textContent==='Remove this date').disabled,true,'removing a date is locked');
+ assert.ok(t.f.button('Dismiss')&&t.f.button('Auto redistribute')&&t.f.button('Cancel'),'the three card buttons show');
+ assert.equal(t.f.button('Cancel').className.includes('ss-cancel-btn'),true,'Cancel is the red one');
+});
+test('Bonus card: Cancel restores the amounts, Dismiss makes the new total the target',async()=>{
+ const t=await bonusPreview();
+ t.click(t.bonusPlus());t.click(t.bonusPlus());t.click(t.bonusPlus());assert.match(t.text(),/Bonus surplus: 3/);
+ t.click(t.f.button('Cancel'));
+ assert.doesNotMatch(t.text(),/Bonus surplus/);assert.equal(String(t.bonusInput().value),'10');assert.equal(t.f.button('Create plan').disabled,false,'back to where it was');assert.equal(t.mainPlus().disabled,false,'main editing unlocked');
+ t.click(t.bonusPlus());t.click(t.bonusPlus());t.click(t.bonusPlus());
+ t.click(t.f.button('Dismiss'));
+ assert.doesNotMatch(t.text(),/Bonus surplus/);assert.equal(String(t.bonusInput().value),'13','the target moves to 13');assert.equal(t.f.button('Create plan').disabled,false);assert.equal(t.mainPlus().disabled,false);
+});
+test('Bonus card: Auto redistribute asks first, then levels the untouched dates back to the target',async()=>{
+ const t=await bonusPreview();
+ t.click(t.bonusPlus());t.click(t.bonusPlus());t.click(t.bonusPlus());
+ t.f.window.TaskitatorConfirm=async()=>false;await Promise.all(t.f.button('Auto redistribute').handlers.click.map(fn=>fn()));
+ assert.match(t.text(),/Bonus surplus: 3/,'declined: nothing changes');
+ let asked=null;t.f.window.TaskitatorConfirm=async o=>{asked=o;return true;};
+ await Promise.all(t.f.button('Auto redistribute').handlers.click.map(fn=>fn()));
+ assert.match(asked.title,/Auto redistribute bonus/);assert.doesNotMatch(t.text(),/Bonus surplus/);assert.equal(String(t.bonusInput().value),'10');assert.equal(t.f.button('Create plan').disabled,false);
+});
+test('Bonus card: settling by hand (a matching minus on another date) closes it',async()=>{
+ const t=await bonusPreview();
+ t.click(t.bonusPlus());assert.match(t.text(),/Bonus surplus: 1/);
+ // pick another date in the calendar, lower its bonus by one: the total is back to 10
+ const cells=t.f.body.querySelectorAll('button').filter(b=>/ss-cell/.test(b.className)&&b.querySelectorAll('small').length);
+ cells[1].handlers.click.forEach(fn=>fn());t.click(t.bonusMinus());
+ assert.doesNotMatch(t.text(),/Bonus surplus/);assert.equal(String(t.bonusInput().value),'10');assert.equal(t.f.button('Create plan').disabled,false);
+});
+test('Main balance locks bonus edits until it is settled',async()=>{
+ const t=await bonusPreview();
+ t.click(t.mainPlus());assert.match(t.text(),/Surplus: 1/);
+ assert.equal(t.bonusPlus().disabled,true,'bonus + is locked');assert.equal(t.bonusMinus().disabled,true,'bonus − is locked');assert.match(t.text(),/Bonus edits are off until the main balance is 0/);
+ t.click(t.mainMinus());assert.equal(t.bonusPlus().disabled,false,'unlocked once main is balanced');
 });
 test('Study plan drafts: a restored create draft refills the form and the preview',async()=>{
  const f=studyUI();f.window.localStorage=f.storage;vm.runInContext(fs.readFileSync(new URL('task-drafts.js',root),'utf8'),vm.createContext(f.window));

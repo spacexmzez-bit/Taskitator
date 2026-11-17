@@ -35,7 +35,7 @@ test('steppers and drafts keep Main and Bonus separate', () => {
     assert.ok(plan.includes('bonusStep:(date,v)=>setBonus(date,v)') && plan.includes('bonus_counts:st.sched.map'));
     assert.ok(plan.includes('bonus_per:bonusPer?[...bonusPer]:[]') && drafts.includes('bonus_per'));
     // typing a new total or bonus drops per-date amounts so they can never disagree with the total
-    assert.ok(plan.includes("total.addEventListener('input',()=>{bonusPer=null;") && plan.includes("bonus.addEventListener('input',()=>{bonusPer=null;"));
+    assert.ok(plan.includes("total.addEventListener('input',()=>{bonusReset();") && plan.includes("bonus.addEventListener('input',()=>{bonusReset();") && plan.includes('function bonusReset(){bonusPer=null;'));
 });
 test('settings page: every section starts hidden, the script hides inactive ones, the stylesheet is re-fetched', () => {
     const h = src('settings.html');
