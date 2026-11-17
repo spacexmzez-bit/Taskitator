@@ -229,7 +229,7 @@ test('Universe space theme: one token block, no raw colours below it, family swi
     assert.deepEqual(rules.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g) || [], []);
     // Every var() used resolves to a token declared in this file or a shared base token.
     const declared = new Set([...css.matchAll(/(--[a-z0-9-]+)\s*:/g)].map(m => m[1]));
-    const setByScript = new Set(['--uni-header-height', '--priority-color', '--uni-dot']); // set per element by the Universe scripts
+    const setByScript = new Set(['--uni-header-height', '--priority-color', '--uni-dot', '--uni-depth']); // set per element by the Universe scripts
     for (const [, name] of css.matchAll(/var\((--[a-z0-9-]+)/g)) assert.ok(declared.has(name) || setByScript.has(name), name + ' is declared in universe.css');
     // The old freeze is gone: no Universe override in palettes.css, no legacy Universe rules in style.css.
     assert.doesNotMatch(read('palettes.css'), /body\.universe-active\s*\{/);

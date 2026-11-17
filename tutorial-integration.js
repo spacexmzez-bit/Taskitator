@@ -126,11 +126,11 @@
     const manager = ['owner', 'admin'].includes(g.role);
     const steps = [
       { selector: '.uni-brand', before: () => uniTab('dashboard'), icon: '🌌', title: 'Your Universe', text: `A shared workspace for your group. ${ROLE_LINE[g.role] || 'Your role decides which actions you see.'}`, why: 'The server checks your role on every action, so a button you can’t see is one you can’t use.' },
-      { selector: '.uni-sync', icon: 'growth', title: 'Sync and connection', text: 'Universe needs an internet connection, and changes are **not** queued offline. Tap sync to pull the latest from other members. The label beside it shows the state:', visual: { type: 'list', items: [
+      { selector: ['.uni-sync-status', '.uni-sync'], icon: 'growth', title: 'Sync and connection', text: 'Universe saves every change on the server straight away and does **not** work offline. The view refreshes by itself every 15 seconds while you are not editing. Tap the status to see when it last checked, sync now or retry anything that did not send:', visual: { type: 'list', items: [
         { icon: 'sprout', text: '**Connected**: up to date' },
         { icon: 'save', text: '**Saving…**: a change is on its way' },
-        { icon: 'phone', text: '**Offline**: reconnect, then retry' },
-        { icon: 'warning', text: '**Attention**: sync again to check' }] } },
+        { icon: 'phone', text: '**Offline**: reconnect; unsent actions are retried while this page stays open' },
+        { icon: 'warning', text: '**Attention**: tap the status to check' }] } },
       { selector: '.uni-tabs', icon: 'earth', title: 'Move around', text: `Switch between My dashboard, Projects, My stats${manager ? ', Controls' : ''} and Settings. The glowing bar follows the tab you’re on. Arrow keys also move between tabs.` },
       { selector: ['.uni-ring', '#uni-pane-dashboard'], before: () => uniTab('dashboard'), icon: 'notes', title: 'Your dashboard', text: 'The ring shows how much of **your** assigned work is done. The date pills under it narrow the list to what’s due soon.' },
       { selector: ['.uni-group', '#uni-pane-dashboard'], before: () => uniTab('dashboard'), icon: 'folder', title: 'Work, grouped by date', text: 'Tasks sit in groups: **Overdue**, **Today**, **Upcoming**, **No date** and **Complete**. The coloured stripe on a card is its priority. Open one to see where it stands:', visual: { type: 'list', items: [
@@ -141,6 +141,8 @@
       { selector: ['.uni-project-head', '.uni-project-tabs', '#uni-pane-projects'], before: () => uniTab('projects'), icon: 'folder', title: 'Projects', text: 'Pick a project to see its progress bar and tasks. Subtasks fold under their parent, so tap a parent to show or hide them.' }
     ];
     if (manager) steps.push({ selector: '#uni-pane-projects .uni-fab', before: () => uniTab('projects'), icon: 'add', title: 'Create work', text: 'Use **＋** to add a task. Task editors pick tags and priorities from your Universe’s labels. If you have no project yet, create one first.', note: 'An unsaved editor shows a small “unsaved” marker, and you’re asked before leaving it.' });
+    if (manager) steps.push({ selector: ['.uni-project-actions', '#uni-pane-projects'], before: () => uniTab('projects'), icon: 'notes', title: 'Outline and batch edit', text: '**Outline to tasks** turns a pasted list into tasks: indent a line to make it a subtask. **Edit tags and priority** changes the labels of many tasks at once.' },
+      { selector: ['.uni-project-head', '#uni-pane-projects'], before: () => uniTab('projects'), icon: 'key', title: 'Shield and bonus', text: 'A **shielded** task cannot be submitted until its required subtasks are done. Admins can turn a shield on; only the owner can turn it off. **Bonus** subtasks are optional and never block their parent.' });
     steps.push({ selector: ['.uni-stat-grid', '#uni-pane-stats'], before: () => uniTab('stats'), icon: 'stats', title: 'My stats', text: 'Counts of your own assignments by state, plus your Universe AI credit use. Only your numbers appear here.' });
     if (manager) steps.push({ selector: ['.uni-subtabs', '#uni-pane-controls'], before: () => uniTab('controls'), icon: 'settings', title: 'Controls', text: 'Three sections: **People** (roles and removal under “Manage”), **Invitations** (single-use links that reserve a seat until accepted, cancelled or expired) and **Labels** (tags and priorities).' });
     steps.push(
@@ -148,7 +150,7 @@
         ? 'Preferences, review standards, ownership transfer and exports. Export and import now live here per Universe. From **All Universes**, the **Backups** button on a Universe you created opens this tab.'
         : 'Your preferences and the Universe options your role allows.' },
       { selector: '.uni-danger-zone', before: () => uniTab('settings'), icon: 'key', title: g.role === 'owner' ? 'Delete Universe' : 'Leave Universe', text: g.role === 'owner'
-        ? 'Deleting removes access for every member, so export first. A red confirmation always asks before anything is deleted.'
+        ? 'Deleting removes access for every member, so export first. A red confirmation always asks before anything is deleted. To leave instead, transfer ownership first.'
         : 'Leaving ends your access and history. A red confirmation always asks first.' },
       { selector: '.uni-tour-replay', before: () => uniTab('settings'), icon: '↻', title: 'Replay this tour', text: 'Run it again here whenever you like. **All Universes** switches Universe, and **Back to Tasks** returns to your day.' }
     );

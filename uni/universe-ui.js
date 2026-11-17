@@ -12,7 +12,31 @@
  const status=node('p');status.className='uni-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
  window.Clerk?.addListener?.(()=>{if(owner!==actor()){window.UniverseShell?.reset();owner=actor();epoch++;pending.clear();root=workspace;workspace.replaceChildren();}});
  async function api(path,body){const a=actor(),rev=epoch;if(body)window.UniverseShell?.connection('saving');let r;try{r=await window.TaskitatorAuth.api(path,body?{method:'POST',body:JSON.stringify(body)}:{});window.UniverseShell?.connection(navigator.onLine===false?'offline':'connected');}catch(e){window.UniverseShell?.connection(navigator.onLine===false?'offline':'attention');throw e;}if(a!==actor()||rev!==epoch)throw new Error('Your session or view changed. Refresh to continue.');return r;}
- async function send(path,body){const key=JSON.stringify([path,body]);if(!pending.has(key))pending.set(key,{...body,operation_id:crypto.randomUUID()});const r=await api(path,pending.get(key));pending.delete(key);return r;}
+ // A send that never reached the server keeps its operation_id, so a retry (by hand or automatic) cannot apply twice.
+ // A send the server answered with an error is dropped: retrying it unchanged would fail the same way.
+ async function send(path,body){const key=JSON.stringify([path,body]);if(!pending.has(key))pending.set(key,{...body,operation_id:crypto.randomUUID()});let r;try{r=await api(path,pending.get(key));}catch(e){if(e?.status)pending.delete(key);throw e;}pending.delete(key);wrote++;return r;}
+ // ---- Sync experience (F1). Universe stays server-authoritative: this refreshes the view and retries unsent sends only.
+ const SYNC_EVERY=15000;let wrote=0,syncNow=null;
+ const editing=()=>{const a=document.activeElement;return !!a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName||'')&&!!workspace.contains?.(a);};
+ const layerOpen=()=>!!workspace.querySelector?.('.uni-editor-overlay:not([hidden]),.uni-confirm-overlay,.uni-sync-pop:not([hidden])')||!!document.querySelector?.('dialog[open]');
+ // Idle: nothing typed, nothing staged, no panel or dialog open. Only then may the view be rebuilt or unsent work be resent.
+ const idle=()=>!busy&&!document.hidden&&navigator.onLine!==false&&!window.UniverseShell?.isDirty?.()&&!unsaved()&&!layerOpen()&&!editing();
+ async function retryUnsent(){let sent=0;for(const [key,body]of [...pending]){const [path]=JSON.parse(key);try{await api(path,body);pending.delete(key);sent++;}catch(e){if(e?.status){pending.delete(key);continue;}break;}}return sent;}
+ function watch(id,known){const view=epoch;let last=Date.now(),checking=false,newer=null,seen=wrote,timer=null;
+  const refresh=()=>run(()=>detail(id,shell?.current?.(),{scroll:window.scrollY||0}));
+  const stop=()=>{clearInterval(timer);if(syncNow===check)syncNow=null;if(window.UniverseShell?.syncInfo===info)window.UniverseShell.syncInfo=null;};
+  const showNewer=()=>{if(newer?.isConnected)return;newer=node('div');newer.className='uni-newer';newer.setAttribute('role','status');newer.append(node('p','This Universe changed. Finish what you are doing, then refresh.'));const b=node('button','Refresh now');b.type='button';b.addEventListener('click',async()=>{if(await window.UniverseShell?.leave?.()??true)refresh();});newer.append(b);(workspace.querySelector('.uni-content')||workspace).prepend(newer);};
+  async function check(){if(view!==epoch||owner!==actor()){stop();return;}if(checking||busy||document.hidden||navigator.onLine===false)return;checking=true;try{
+   if(pending.size&&idle()){const n=await retryUnsent();if(n){toast(n===1?'1 waiting change was sent':n+' waiting changes were sent');refresh();return;}}
+   const latest=(await api('/universe/groups/'+id)).group;if(view!==epoch)return;last=Date.now();
+   // Our own saves also raise the revision; the panels that made them already reloaded, so adopt it instead of rebuilding.
+   if(wrote!==seen){seen=wrote;known=latest.revision;return;}
+   if(latest.revision===known)return;if(idle())refresh();else showNewer();
+  }catch{}finally{checking=false;}}
+  const info=()=>({last,unsent:pending.size,newer:!!newer?.isConnected,retry:async()=>{const n=await retryUnsent();if(n){toast(n===1?'1 waiting change was sent':n+' waiting changes were sent');refresh();}else if(pending.size)toast('Still unable to send. Check your connection.',{tone:'error'});}});
+  timer=setInterval(check,SYNC_EVERY);syncNow=check;if(window.UniverseShell)window.UniverseShell.syncInfo=info;return check;}
+ let lastWake=0;const wake=()=>{if(Date.now()-lastWake<3000)return;lastWake=Date.now();syncNow?.();};
+ window.addEventListener?.('focus',wake);window.addEventListener?.('online',wake);document.addEventListener?.('visibilitychange',()=>{if(!document.hidden)wake();});
  // trigger: optional button that started the action; it only receives visual busy/done feedback.
  async function run(fn,trigger){if(busy)return;busy=true;const fb=window.UniverseUX?.pressFeedback?.(trigger);workspace.setAttribute('aria-busy','true');status.textContent='';try{await fn();fb?.done();}catch(e){const message=window.UniverseUX?.errorMessage(e)||e.message+' Retry the same action if the connection failed.';status.textContent=message;fb?.fail();window.UniverseUX?.toast(message,{tone:'error',duration:6000});}finally{busy=false;workspace.setAttribute('aria-busy','false');clearSkeleton();}}
  function clearSkeleton(){workspace.querySelector(':scope > .uni-skeleton-group')?.remove();}
@@ -41,7 +65,7 @@
   if(current<2)render(current);
 
  }
- async function detail(id,pane){
+ async function detail(id,pane,opts={}){
   start();const g=(await api('/universe/groups/'+id)).group,members=(await api('/universe/groups/'+id+'/members')).members,cap=await api('/universe/capabilities'),viewEpoch=epoch;
   const current=()=>viewEpoch===epoch&&owner===actor(),base='/universe/groups/'+id,manager=['owner','admin'].includes(g.role);
   workspace.classList?.remove('uni-selection');
@@ -96,16 +120,17 @@
   }
   if(manager){const projects=section(ctlLabels,'Projects and tasks','Use Projects to choose a project, edit its settings and review work. Create tasks with the Universe FAB.');if(shell)button(projects,'Open Projects',()=>shell.show('projects'));catalogSlot=section(ctlLabels,'Labels','Create tags and priorities here. Task editors select from this catalog. Changes wait for Save.');}
   await feature(manager?ctlPeople:settings,'membership activity',async slot=>{const events=(await api(base+'/activity')).events;const history=node('details');history.append(node('summary','Recent membership activity'));for(const e of events){const line=node('p',(window.TaskitatorI18n?.dateTime(e.created_at) ?? new Date(e.created_at).toLocaleString())+' · '+(members.find(m=>m.account_id===e.actor_id)?.username||'Member')+' · '+named('activity',e.kind));if(e.label){const tag=node('span',e.label);tag.className='uni-invite-label';tag.setAttribute('translate','no');line.append(tag);}history.append(line);}if(!events.length)history.append(node('p','No recent activity.'));slot.append(history);});
-  if(cap.capabilities?.tasks&&window.UniverseTasksUI){await feature(shell?.panes.projects||workspace,'projects',slot=>window.UniverseTasksUI.mount(slot,g,members,{api,send,run,view:'projects',controls:catalogSlot,current,stage}));if(shell)await feature(dashboard,'assigned tasks',slot=>window.UniverseTasksUI.mount(slot,g,members,{api,send,run,view:'dashboard',onCreate:()=>{shell.show('projects');window.dispatchEvent(new Event('universe-create-task'));},current}));}
+  if(cap.capabilities?.tasks&&window.UniverseTasksUI){await feature(shell?.panes.projects||workspace,'projects',slot=>window.UniverseTasksUI.mount(slot,g,members,{api,send,run,capabilities:cap.capabilities,view:'projects',controls:catalogSlot,current,stage}));if(shell)await feature(dashboard,'assigned tasks',slot=>window.UniverseTasksUI.mount(slot,g,members,{api,send,run,capabilities:cap.capabilities,view:'dashboard',onCreate:()=>{shell.show('projects');window.dispatchEvent(new Event('universe-create-task'));},current}));}
   if(cap.capabilities?.portability&&window.UniverseReleaseUI)await feature(settings,'preferences and exports',slot=>window.UniverseReleaseUI.mount(slot,g,{api,send,run,current,capabilities:cap.capabilities}));
   window.TaskitatorTutorials?.openUniverse(g);
-  const danger=section(settings,g.role==='owner'?'Delete Universe':'Leave Universe',g.role==='owner'?'Permanent deletion removes access for every member. Export first if you need a copy.':'Leaving ends access to this Universe and its history.');
+  const danger=section(settings,g.role==='owner'?'Delete Universe':'Leave Universe',g.role==='owner'?'Permanent deletion removes access for every member. Export first if you need a copy. To leave instead, transfer ownership first.':'Leaving ends access to this Universe and its history.');
   danger.classList.add('uni-danger-zone');
   if(g.role==='owner')button(danger,'Delete Universe',async()=>{if(await ask('Permanently delete this Universe for every member? Save an export first if you need one.'))await change('delete',{confirm:true});});else button(danger,'Leave Universe',async()=>{if(await ask('Leave this Universe and lose access to its history?'))await change('leave');});
   workspace.append(saveBar);
   if(shell)await feature(shell.panes.stats,'my statistics',async slot=>{const work=await api(base+'/work'),me=window.Clerk?.user?.id,mine=work.assignments.filter(a=>a.state!=='cancelled'&&(a.account_id===me||a.account_id===null&&work.tasks.some(t=>t.id===a.task_id&&t.mode==='shared'&&t.members?.includes(me))));const summary=node('div');summary.className='uni-stat-grid';for(const [state,label]of [['open','Open'],['pending','In review'],['approved','Approved'],['rejected','Needs changes']]){const card=node('div');card.className='uni-stat-card';card.append(node('strong',String(mine.filter(a=>a.state===state).length)),node('span',label));summary.append(card);}slot.append(summary,node('p','Only your own assignments and credit usage are shown.'));try{const b=await api(base+'/ai');const credit=section(slot,'My Universe credits','Usage includes active holds.');credit.append(node('p',b.account.daily/1000+' today · '+b.account.monthly/1000+' this month.'));}catch(e){slot.append(node('p','Credit usage unavailable. Refresh to try again.'));}});
   // After Save, Discard or a refresh, return to the tab the person was on.
   if(pane&&shell&&current())await shell.show(pane);
+  if(current()){if(opts.scroll)window.scrollTo?.(0,opts.scroll);watch(id,g.revision);}
  }
  window.addEventListener('taskitator-universe-view',()=>run(list));if(new URLSearchParams(location.search).get('view')==='universe')run(list);
 })();

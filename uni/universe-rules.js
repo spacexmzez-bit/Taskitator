@@ -19,7 +19,7 @@ export class UniverseRules extends UniverseRelease {
  async phase9(db=this.database()){try{return !!await db.prepare('SELECT version FROM universe_phase9 WHERE version=9').first();}catch{return false;}}
  // Phase 10: optional invitation labels (uni/universe-phase10.sql). Everything else works without it.
  async phase10(db=this.database()){try{return !!await db.prepare('SELECT version FROM universe_phase10 WHERE version=10').first();}catch{return false;}}
- async availability(){const a=await super.availability(),ready=a.capabilities.portability&&await this.phase67(),p9=ready&&await this.phase9(),p10=ready&&await this.phase10();return {...a,version:p9?9:ready?7:a.version,schema_version:p9?9:ready?7:a.schema_version,capabilities:{...a.capabilities,rules:ready,trees:ready,overwrite_import:p9,owner_transfer:p9,invitation_labels:p10}};}
+ async availability(){const a=await super.availability(),ready=a.capabilities.portability&&await this.phase67(),p9=ready&&await this.phase9(),p10=ready&&await this.phase10();return {...a,version:p9?9:ready?7:a.version,schema_version:p9?9:ready?7:a.schema_version,capabilities:{...a.capabilities,rules:ready,trees:ready,overwrite_import:p9,owner_transfer:p9,invitation_labels:p10,admin_shield:ready,batch_labels:ready}};}
  state(lapse,unavailable=false){if(!this.rulesEnabled)return super.state(lapse,unavailable);return {lapse_at:lapse,grace_until:null,read_only:false,owner_pro:lapse===null&&!unavailable,can_add_members:lapse===null&&!unavailable,can_rename:lapse===null&&!unavailable,entitlement_unavailable:unavailable};}
  writable(g){if(!this.rulesEnabled)return super.writable(g);/* Existing Universes continue operating independently of Pro. */}
  async expireSolo(db,gid){
@@ -53,6 +53,19 @@ export class UniverseRules extends UniverseRelease {
  async submissionOpen(db,t){if(t.closed||(await this.ancestors(db,t)).some(p=>p.closed))throw error(409,'CLOSED','This task or its parent was completed.');for(const p of await this.ancestors(db,t))if(await this.finished(db,p))throw error(409,'CLOSED','The parent is complete.');if(await this.finished(db,t))throw error(409,'CLOSED','This task is complete.');const due=t.due_at||(await this.ancestors(db,t)).find(p=>p.due_at)?.due_at;const now=Date.now();if(t.start_at&&now<t.start_at||due&&now>due&&(!t.allow_late||t.late_until&&now>t.late_until))throw error(409,'DATES','The submission period is closed.');}
  async assertMembers(db,gid,list,roles){if(!Array.isArray(list)||list.length>21||new Set(list).size!==list.length||list.some(x=>typeof x!=='string'))throw error(400,'MEMBERS','Choose distinct current members.');for(const id of list){const m=await this.statement(db,'SELECT m.role FROM universe_members m JOIN universe_accounts a ON a.account_id=m.account_id WHERE m.group_id=? AND m.account_id=? AND a.blocked=0',gid,id).first();if(!m||roles&&!roles.includes(m.role))throw error(400,'MEMBERS','A selected member or reviewer is unavailable.');}return list;}
  async settings(db,gid){return await this.statement(db,'SELECT * FROM universe_settings WHERE group_id=?',gid).first()||{validate_criteria:1};}
+ // Who set a shield and when is written by the Worker only (clients cannot send these keys). A shield set by a non-owner
+ // is an admin shield: its required subtasks may only be assigned to people already assigned to the shielded task, so an
+ // admin cannot hold a member's task locked behind work only the admin can do.
+ async shieldRules(db,g,d,old,b){
+  const keep=old?.shield&&d.shield;
+  if(keep){for(const k of ['shield_by','shield_at','shield_admin'])if(old[k]!==undefined)d[k]=old[k];}
+  else if(d.shield){d.shield_by=g.actor_id;d.shield_at=Date.now();d.shield_admin=g.role!=='owner';}
+  // An admin who shields a task assigned only to themselves locks only themselves, so the fence does not apply.
+  const fenced=(m,p)=>p.members.every(x=>x===p.shield_by)||m.every(x=>p.members.includes(x));
+  if(d.shield&&d.shield_admin&&!keep&&old){for(const r of await this.rows(db,g.id)){if(r.id===old.id)continue;let c;try{c=await this.task(db,r.id,g.id);}catch{continue;}if(c.bonus||c.closed||await this.finished(db,c))continue;if((await this.ancestors(db,c)).some(p=>p.id===old.id)&&!fenced(c.members,d))throw error(409,'SHIELD_ASSIGNEES','A required subtask is assigned to someone outside this task. Reassign it or mark it as bonus first.');}}
+  // The fence binds admins only, and only when assignees are set (create) or changed (edit), so unrelated edits still work.
+  if(!d.bonus&&g.role!=='owner'&&(!old||!equal(d.members,old.members))){const parent=old?old.parent_id:b.parent_id??null;if(parent){const p=await this.task(db,parent,g.id);for(const a of [p,...await this.ancestors(db,p)])if(a.shield&&a.shield_admin&&!fenced(d.members,a))throw error(409,'SHIELD_ASSIGNEES','Required subtasks of a shield set by an admin can only be assigned to people on the shielded task.');}}
+ }
  async normalized(db,g,b,old){
  const pid=b.project_id??old?.project_id??(await this.statement(db,"SELECT p.id FROM universe_projects p LEFT JOIN universe_project_options o ON o.project_id=p.id WHERE p.group_id=? AND COALESCE(json_extract(o.data,'$.deleted'),0)=0 ORDER BY p.created_at,p.id LIMIT 1",g.id).first())?.id;await this.record(db,'universe_projects',pid,g.id);const po=await this.options(db,pid);if(po.deleted)throw error(404,'PROJECT','This project was deleted.');
  const d={title:b.title??old?.title,description:b.description??old?.description??'',criteria:b.criteria??old?.criteria??'',mode:b.mode??old?.mode??'everyone',members:b.members??old?.members??po.members,reviewers:b.reviewers??old?.reviewers??po.reviewers,audit_mode:b.audit_mode??old?.audit_mode??'none',tags:b.tags??old?.tags??[],priority_id:b.priority_id??old?.priority_id??null,shield:b.shield??old?.shield??false,bonus:b.bonus??old?.bonus??false,start_at:b.start_at===undefined?old?.start_at??null:b.start_at,due_at:b.due_at===undefined?old?.due_at??null:b.due_at,allow_late:b.allow_late??old?.allow_late??false,late_until:b.late_until===undefined?old?.late_until??null:b.late_until,requirement:b.requirement??old?.requirement??{type:'all'}};
@@ -70,11 +83,15 @@ export class UniverseRules extends UniverseRelease {
  if(old){if(pid!==old.project_id||b.parent_id!==undefined&&b.parent_id!==old.parent_id)throw error(409,'MOVE','Tasks cannot move between projects or parents.');if(d.mode!==old.mode)throw error(409,'MODE','Assignment type cannot change after creation.');
  if(g.role!=='owner'){
  if(d.criteria!==old.criteria||d.audit_mode!==old.audit_mode)throw error(403,'PROTECTED','Only the owner may change criteria or audit settings.');
- if(d.shield!==old.shield||d.bonus!==old.bonus)throw error(403,'PROTECTED','Only the owner may change shield or bonus status.');
+ // Shield track: admins may turn a shield on; only the owner may turn it off. Bonus stays owner-only, because marking a
+ // required subtask as bonus removes it from a shield's requirements.
+ if(old.shield&&!d.shield)throw error(403,'PROTECTED','Only the owner may turn a shield off.');
+ if(d.bonus!==old.bonus)throw error(403,'PROTECTED','Only the owner may change bonus status.');
  if(old.shield||old.ai_required){if(old.members.some(m=>!d.members.includes(m))||!old.members.includes(g.actor_id)&&d.members.includes(g.actor_id))throw error(403,'PROTECTED','Admins cannot remove assignees or add themselves to protected tasks.');}
  if(old.shield&&!equal(d.requirement,old.requirement))throw error(403,'PROTECTED','Only the owner may change protected completion requirements.');
  }
  }
+ await this.shieldRules(db,g,d,old,b);
  const changed=!old||d.criteria!==old.criteria||d.title!==old.title||d.description!==old.description||d.audit_mode!==old.audit_mode;
  if(ai&&changed&&(await this.settings(db,g.id)).validate_criteria){const signature=await digest({title:d.title,description:d.description,criteria:d.criteria});const check=await this.statement(db,'SELECT * FROM universe_criteria_checks WHERE id=? AND group_id=? AND signature=? AND score>=7 AND expires_at>?',b.validation_id??'',g.id,signature,Date.now()).first();if(!check)throw error(409,'VALIDATION','Validate these criteria at 7/10 or higher before saving.');}
  return d;
@@ -189,6 +206,8 @@ export class UniverseRules extends UniverseRelease {
  if(tail==='/activity'&&method==='GET'){const r=await super.handle(identity,path,method,b);if(manager(g)&&await this.phase10(db)){const labels=new Map((await this.statement(db,'SELECT invitation_id,label FROM universe_invitation_labels WHERE group_id=?',gid).all()).results.map(x=>[x.invitation_id,x.label]));for(const e of r.events)if(labels.has(e.resource_id))e.label=labels.get(e.resource_id);}return r;}
  if(/^\/invitations\/[^/]+\/cancel$/.test(tail)&&method==='POST'){this.manager(g);this.input(b,['operation_id','revision']);this.checkRevision(g.revision,b.revision);return this.commit(db,identity,g,'cancel-invite:'+tail,b,{},[...(await this.phase10(db)?[this.statement(db,'DELETE FROM universe_invitation_labels WHERE group_id=? AND invitation_id IN(SELECT id FROM universe_invitations WHERE id=? AND group_id=? AND accepted_by IS NULL)',gid,tail.split('/')[2],gid)]:[]),this.statement(db,'DELETE FROM universe_invitations WHERE id=? AND group_id=? AND accepted_by IS NULL',tail.split('/')[2],gid)]);}
  if(tail==='/edit'&&method==='POST'){if(g.role!=='owner')throw error(403,'OWNER','Only the owner can rename the Universe.');await this.requireOwnerPro(db,gid);}
+ // A Universe always has an owner: the owner transfers ownership before leaving (or deletes the Universe).
+ if(tail==='/leave'&&method==='POST'&&g.role==='owner')throw error(409,'OWNER_LEAVE','Transfer ownership before leaving this Universe.');
  if(['/remove','/leave'].includes(tail)&&method==='POST'&&g.role!=='owner'){const who=tail==='/leave'?identity.userId:b.target_id;for(const r of await this.rows(db,gid)){let t;try{t=await this.task(db,r.id,gid);}catch{continue;}if((t.shield||t.ai_required)&&t.members.includes(who))throw error(403,'PROTECTED','Only the owner may remove a member with unfinished protected assignments.');}}
  if(tail==='/locks'&&method==='GET'){const r=await super.handle(identity,path,method,b);for(const a of r.assignments){const t=await this.task(db,a.task_id??(await this.record(db,'universe_assignments',a.id,g.id)).task_id,g.id),parents=await this.ancestors(db,t);a.data=JSON.stringify({...JSON.parse(a.data),due_at:t.due_at||parents.find(p=>p.due_at)?.due_at||null});}return r;}
  if(tail==='/settings'){if(method==='GET')return this.settings(db,gid);if(g.role!=='owner')throw error(403,'OWNER','Only the owner can change Universe settings.');this.input(b,['operation_id','revision','validate_criteria']);this.checkRevision(g.revision,b.revision);if(typeof b.validate_criteria!=='boolean')throw error(400,'INPUT','Choose criteria validation.');return this.commit(db,identity,g,'settings',b,{},[this.statement(db,'INSERT INTO universe_settings VALUES(?,?) ON CONFLICT(group_id) DO UPDATE SET validate_criteria=excluded.validate_criteria',gid,b.validate_criteria?1:0)]);}
@@ -228,11 +247,32 @@ export class UniverseRules extends UniverseRelease {
  let t;if(!id)t=await this.task(db,b.task_id,g.id);else {const f=await this.record(db,'universe_files',id,g.id);t=await this.task(db,f.task_id,g.id);}
  const kind=id?(await this.record(db,'universe_files',id,g.id)).kind:b.kind;
  if(kind==='reference'&&g.role!=='owner'&&(t.shield||t.ai_required))throw error(403,'PROTECTED','Only the owner may change reference evidence on protected tasks.');
- if(kind==='proof'){await this.submissionOpen(db,t);if(t.shield&&!await this.requirements(db,t))throw error(409,'CHILDREN','Complete required subtasks first.');}
+ if(kind==='proof'){await this.submissionOpen(db,t);if(t.shield&&g.role!=='owner'&&!await this.requirements(db,t))throw error(409,'CHILDREN','Complete required subtasks first.');}
  }
  return super.handle(identity,path,method,b);
  }
+ // S3: add or remove tags and set one priority on many tasks under one Universe revision check, in one commit.
+ // Only labels change, so assignments, evidence and reviews stay as they are (same as a label-only edit).
+ async batchLabels(db,identity,g,b,scope){
+  this.manager(g);this.input(b,['operation_id','revision','task_ids','add_tags','remove_tags','priority_id']);this.checkRevision(g.revision,b.revision);
+  const ids=b.task_ids,add=b.add_tags??[],remove=b.remove_tags??[],list=x=>Array.isArray(x)&&x.every(v=>typeof v==='string')&&new Set(x).size===x.length;
+  if(!list(ids)||!ids.length||ids.length>200)throw error(400,'BATCH','Choose between 1 and 200 tasks.');
+  if(!list(add)||!list(remove)||add.some(x=>remove.includes(x))||b.priority_id!==undefined&&b.priority_id!==null&&typeof b.priority_id!=='string'||!add.length&&!remove.length&&b.priority_id===undefined)throw error(400,'BATCH','Choose tags to add or remove, or a priority.');
+  for(const tag of [...add,...remove])if(!await this.statement(db,"SELECT 1 FROM universe_catalog WHERE id=? AND group_id=? AND kind='tag'",tag,g.id).first())throw error(400,'TAGS','Choose an existing tag.');
+  if(b.priority_id&&!await this.statement(db,"SELECT 1 FROM universe_catalog WHERE id=? AND group_id=? AND kind='priority'",b.priority_id,g.id).first())throw error(400,'PRIORITY','Choose an existing priority.');
+  const writes=[];
+  for(const id of ids){const t=await this.task(db,id,g.id);if(t.closed)throw error(409,'CLOSED','A selected task was closed. Refresh and choose again.');
+   if(g.role!=='owner'&&await this.statement(db,"SELECT 1 FROM universe_ai_reviews WHERE group_id=? AND assignment_id IN(SELECT id FROM universe_assignments WHERE task_id=?) AND state IN('running','uncertain')",g.id,id).first())throw error(409,'AI_RUNNING','Wait for the AI review before editing a selected task.');
+   const row=await this.statement(db,'SELECT revision,data FROM universe_tasks WHERE id=? AND group_id=?',id,g.id).first(),data=JSON.parse(row.data);
+   const tags=[...(data.tags||[]).filter(x=>!remove.includes(x)),...add.filter(x=>!(data.tags||[]).includes(x))];
+   const next={...data,tags,priority_id:b.priority_id===undefined?data.priority_id??null:b.priority_id};if(equal(next.tags,data.tags||[])&&next.priority_id===(data.priority_id??null))continue;const revision=row.revision+1;
+   writes.push(this.statement(db,'UPDATE universe_tasks SET revision=?,data=? WHERE id=?',revision,JSON.stringify(next),id),
+    this.statement(db,'UPDATE universe_submissions SET task_revision=? WHERE assignment_id IN(SELECT id FROM universe_assignments WHERE task_id=?) AND task_revision=?',revision,id,row.revision),
+    this.statement(db,'UPDATE universe_ai_attestations SET task_revision=? WHERE submission_id IN(SELECT id FROM universe_submissions WHERE assignment_id IN(SELECT id FROM universe_assignments WHERE task_id=?)) AND task_revision=?',revision,id,row.revision));}
+  return this.commit(db,identity,g,scope,b,{id:'batch',changed:writes.length/3},writes);
+ }
  async taskWrite(db,identity,g,id,action,b,scope){
+ if(id==='batch'&&!action)return this.batchLabels(db,identity,g,b,scope);
  this.manager(g);this.input(b,['operation_id','revision','project_id','parent_id','title','description','criteria','mode','members','reviewers','audit_mode','tags','priority_id','shield','bonus','start_at','due_at','allow_late','late_until','requirement','validation_id','position']);
  const old=id?await this.task(db,id,g.id):null;if(old)this.checkRevision(old.revision,b.revision);
  if(action==='delete'||action==='close'){
@@ -284,7 +324,7 @@ export class UniverseRules extends UniverseRelease {
  if(a.state!=='pending'||!['approved','rejected'].includes(b.decision))throw error(409,'STATE','Choose approve or reject for pending work.');
  if(g.role!=='owner'){
  const proof=JSON.parse(s.data),receipt=await this.statement(db,'SELECT * FROM universe_ai_attestations WHERE submission_id=?',s.id).first();
- if(t.audit_mode==='ai'||t.audit_mode==='either'&&proof.review_path==='ai')throw error(403,'AUDIT','This submission requires an AI decision.');if(t.audit_mode==='both'&&(!receipt||receipt.verdict!=='approved'||receipt.task_revision!==t.revision))throw error(403,'AUDIT','AI approval must precede human review.');if(b.decision==='approved'&&t.shield&&!await this.requirements(db,t))throw error(409,'CHILDREN','Complete required subtasks first.');
+ if(t.audit_mode==='ai'||t.audit_mode==='either'&&proof.review_path==='ai')throw error(403,'AUDIT','This submission requires an AI decision.');if(t.audit_mode==='both'&&(!receipt||receipt.verdict!=='approved'||receipt.task_revision!==t.revision))throw error(403,'AUDIT','AI approval must precede human review.');if(b.decision==='approved'&&t.shield&&g.role!=='owner'&&!await this.requirements(db,t))throw error(409,'CHILDREN','Complete required subtasks first.');
  }
  writes.push(this.statement(db,'UPDATE universe_submissions SET decision=?,reviewer_id=?,reason=?,decided_at=?,retain_until=? WHERE id=?',b.decision,identity.userId,reason,now,now+30*DAY,s.id),this.statement(db,'UPDATE universe_assignments SET state=?,revision=revision+1 WHERE id=?',b.decision,id));
  }else if(action==='reopen'){

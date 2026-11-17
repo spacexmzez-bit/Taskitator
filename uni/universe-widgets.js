@@ -95,7 +95,7 @@
     if (status === 409 || /REVISION|CONFLICT/.test(error?.code || '')) return 'This changed elsewhere. Refresh to load the latest version. Your unsaved draft is still open.';
     if (status === 401) return 'Sign in again to continue. Your draft has not been saved.';
     if (status === 403) return 'Your current role cannot perform this action. Refresh to check your access.';
-    if (navigator.onLine === false) return 'You’re offline. Reconnect, then retry the same action. No offline changes are queued.';
+    if (navigator.onLine === false) return 'You’re offline. Actions that could not be sent are retried when you reconnect, while this page stays open. Universe does not work offline.';
     const text = String(error?.message || '');
     if (text && text.length < 260 && !/SELECT |INSERT |UPDATE |D1_|stack|https?:\/\//i.test(text)) return text;
     return 'Couldn’t finish this action. Check your connection and retry. Your draft has not been cleared.';

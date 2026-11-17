@@ -10,7 +10,7 @@ Every Arabic string in `locales/ar.js` must follow this table. `i18n.test.js` en
 | Copilot / Co-pilot / Focus Copilot (default name) | المساعد الذكي | A user-chosen Copilot name is user input and is shown as typed. |
 | Pro | برو | e.g. "ميزة برو", "ترقية إلى برو". |
 | Max | ماكس | Tier, same treatment as Pro. |
-| Shield | محمي | |
+| Shield | محمي | The setting as a noun (turn the shield on/off, Shielded by…) is الحماية, e.g. "إيقاف الحماية", "حماها {name}". |
 | Bonus (task) | إضافية | Feminine, because the noun is مهمة (مهمة إضافية). Chosen per string in the dictionary, never at runtime. |
 | Scratchpad | خازنة الأفكار | |
 | Sleep Lock | قفل النوم | Plain "Sleep" is النوم. |

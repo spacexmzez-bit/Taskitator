@@ -602,5 +602,46 @@ html[dir="rtl"] #universeWorkspace button.criteria-resize-handle { background: l
 /* The parent picker is a shared dialog outside the workspace: give it the space palette's layer order. */
 body.universe-active dialog.parent-picker { color: var(--text-color); }
 
+/* 17. Phase 2: shield and bonus, sync status, outline to tasks, batch labels */
+#universeWorkspace .uni-protect-row { padding: 10px 0; border-bottom: 1px solid var(--border-color); }
+#universeWorkspace .uni-protect-row:last-of-type { border-bottom: 0; }
+#universeWorkspace .uni-protect-row > label { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--text-color); font-size: 14px; font-weight: 700; }
+#universeWorkspace .uni-protect-row > label svg { flex: none; width: 20px; height: 20px; stroke: var(--primary-hover); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#universeWorkspace .uni-protect-row > label input[type=checkbox] { order: 2; margin-inline-start: auto; }
+#universeWorkspace .uni-protect-row > label button.uni-help { order: 3; }
+#universeWorkspace .uni-protect-row > .uni-hint { margin: 4px 0 0; padding-inline-start: 30px; }
+#universeWorkspace .uni-shield-by { margin: 0 0 6px; padding: 6px 10px; border-inline-start: 3px solid var(--primary); border-radius: var(--radius-s); background: var(--card-subtle); color: var(--text-color); font-size: 12.5px; font-weight: 700; }
+/* Sync status: the badge opens a small panel */
+#universeWorkspace button.uni-sync-status { display: inline-flex; align-items: center; min-height: 0; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; cursor: pointer; }
+#universeWorkspace button.uni-sync-status:hover .uni-connection { border-color: var(--border-hover); }
+#universeWorkspace button.uni-sync-status:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 12px; }
+#universeWorkspace .uni-sync-pop { position: absolute; top: calc(100% + 6px); inset-inline-end: 12px; z-index: 120; width: min(340px, calc(100vw - 24px)); padding: 14px; border: 1.5px solid var(--border-hover); border-radius: var(--radius-l); background: var(--card-bg); color: var(--text-color); box-shadow: 0 18px 40px color-mix(in srgb, var(--uni-scrim) 70%, transparent); animation: uni-enter var(--dur-med) var(--uni-ease); }
+#universeWorkspace .uni-sync-pop p { margin: 0 0 8px; font-size: 13px; }
+#universeWorkspace .uni-sync-pop .uni-sync-state { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
+#universeWorkspace .uni-sync-pop .uni-sync-state::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--success); }
+#universeWorkspace .uni-sync-pop .uni-sync-state[data-state=saving]::before { background: var(--saving); }
+#universeWorkspace .uni-sync-pop .uni-sync-state[data-state=offline]::before { background: var(--offline); }
+#universeWorkspace .uni-sync-pop .uni-sync-state[data-state=attention]::before { background: var(--danger); }
+#universeWorkspace .uni-sync-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#universeWorkspace .uni-sync-actions button, #universeWorkspace .uni-sync-pop > button { margin: 0; }
+#universeWorkspace .uni-newer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 14px; padding: 10px 14px; border: 1.5px solid var(--saving-border); border-radius: var(--radius-m); background: var(--saving-bg); color: var(--text-color); }
+#universeWorkspace .uni-newer p { flex: 1 1 220px; margin: 0; color: var(--text-color); font-size: 13.5px; font-weight: 700; }
+#universeWorkspace .uni-newer button { margin: 0; }
+/* Project actions, outline preview and batch task list */
+#universeWorkspace .uni-project-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+#universeWorkspace .uni-project-actions button { margin: 0; }
+#universeWorkspace textarea.uni-outline-input { min-height: 180px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; white-space: pre; overflow-x: auto; tab-size: 2; }
+#universeWorkspace .uni-outline-preview { max-height: 260px; margin: 0; padding: 8px 10px; overflow-y: auto; list-style: none; border: 1.5px solid var(--border-color); border-radius: var(--radius-m); background: var(--card-sink); }
+#universeWorkspace .uni-outline-preview li { margin: 0; padding: 4px 0; padding-inline-start: calc(var(--uni-depth, 0) * 18px); font-size: 13.5px; overflow-wrap: anywhere; }
+#universeWorkspace .uni-outline-preview li::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-inline-end: 8px; border-radius: 50%; border: 1.5px solid var(--primary-hover); vertical-align: middle; }
+#universeWorkspace .uni-batch-tasks { max-height: 300px; overflow-y: auto; }
+#universeWorkspace .uni-batch-tasks > label { display: flex; width: auto; margin-inline: calc(var(--uni-depth, 0) * 18px) 0; border-radius: var(--radius-s); overflow-wrap: anywhere; }
+#universeWorkspace .uni-batch-select { display: flex; gap: 8px; margin-bottom: 6px; }
+#universeWorkspace .uni-batch-select button { margin: 0; }
+@media (max-width: 560px) {
+  #universeWorkspace button.uni-sync-status { grid-column: 3; grid-row: 1; }
+  #universeWorkspace .uni-sync-pop { inset-inline: 12px; width: auto; }
+}
+
 @media (prefers-reduced-motion: reduce) { #universeWorkspace .check-circle .uni-star { animation: none; } }
 html[data-motion="reduce"] #universeWorkspace .check-circle .uni-star { animation: none; }
