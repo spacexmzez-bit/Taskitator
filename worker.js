@@ -1,4 +1,4 @@
-import { UniverseRules } from './uni/universe-rules.js';
+import { universeCommunity } from './uni/universe-community.js';
 import './pro/smart-study.js';
 import './pro/early-bonus.js';
 import './pro/status-count.js';
@@ -1773,7 +1773,7 @@ export class TaskitatorSync {
         this.ai = new AIGateway(this);
         this.protection = new TaskProtection(this);
         this.pro = new ProGateway(this);
-        this.universe = new UniverseRules(this);
+        this.universe = new (universeCommunity())(this);
         this.breaks = new BreakSystems(this);
     }
 
