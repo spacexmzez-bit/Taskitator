@@ -48,16 +48,12 @@ test('early: Worker apply drops expired, finished and caught-up appearances only
  assert.equal(snap.tasks[0].early_date,'2026-11-10');assert.equal(snap.tasks[1].early_date,undefined);assert.equal(snap.tasks[2].early_date,undefined);assert.equal(snap.tasks[3].early_date,undefined);
  assert.equal(snap.tasks[1].due_date,'2026-11-12');
 });
-test('early: Pro is required to add or change, never to clear',async()=>{
+test('early (Phase 6.1.2): free to add, change or clear; no license check',async()=>{
  const g=new TaskProtection({storage:{}}),prev={tasks:[T('a','2026-11-12',{early_date:'2026-11-10'}),T('b','2026-11-12')]};
- const pro={status:'active',tier:'pro',account_id:'u1',keyo_version:1,signed_token:'x',valid_until:Date.now()+1e6,expires_at:null};
  const tx=e=>({get:async()=>e}),add=clone(prev);add.tasks[1].early_date='2026-11-11';
- await assert.rejects(g.guardEarly(tx(null),'u1',prev,add),{code:'PRO_REQUIRED'});
- await assert.rejects(g.guardEarly(tx({...pro,status:'expired'}),'u1',prev,add),{code:'PRO_REQUIRED'});
- await assert.rejects(g.guardEarly(tx(pro),'u1',prev,add,new Error('keyo down')),{message:'keyo down'});
- await g.guardEarly(tx(pro),'u1',prev,add);
+ await g.guardEarly(tx(null),'u1',prev,add);
+ await g.guardEarly(tx(null),'u1',prev,add,new Error('keyo down'));
  const clear=clone(prev);delete clear.tasks[0].early_date;await g.guardEarly(tx(null),'u1',prev,clear);
- await g.guardEarly(tx(null),'u1',prev,prev);
 });
 test('early: study units can use it; Smart Study never moves an early-dated unit',()=>{
  const cfg={title:'Math',total:8,days:4,start:'2026-11-02',weekdays:[],counts:[2,2,2,2]};

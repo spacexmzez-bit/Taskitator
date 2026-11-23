@@ -838,7 +838,7 @@ test('account deletion removes hosted operations, spending and username claims w
 });
 
 const image={mime_type:'image/png',data:'YWJj'};
-const task=(id='t',extra={})=>({id,title:'Protected '+id,status:'active',ai_locked:true,proof_criteria:'The saved required artifact',...extra});
+const task=(id='t',extra={})=>({id,title:'Protected '+id,status:'active',due_date:'today',ai_locked:true,proof_criteria:'The saved required artifact',...extra});
 async function save(f,a,tasks,extras={}){
     const old=await f.call('/sync/pull',a.token);
     return f.call('/sync/push',a.token,'POST',{tasks,settings:{},recurrence_schema:1,base_version:old.body.version,mutation_id:'mutation_'+crypto.randomUUID(),...extras});
@@ -1075,7 +1075,7 @@ for(const tier of ['Free','active Pro','expired Pro']){
         }
         f.service.pro.handleRequest=()=>{throw Error('Emergency must not use Pro routing')};
         f.service.migrateVault=()=>{throw Error('Emergency must not need an API vault')};
-        const tasks=[{id:'locked',title:'Required task',status:'active',ai_locked:true,proof_criteria:'Saved requirements'}];
+        const tasks=[{id:'locked',title:'Required task',status:'active',due_date:'today',ai_locked:true,proof_criteria:'Saved requirements'}];
         assert.equal((await f.call('/sync/push',a.token,'POST',{tasks,settings:{},base_version:0,mutation_id:'initial_emergency_task'})).status,200);
         assert.equal((await f.call('/status',a.token)).body.device_locked,true);
         for(const path of ['/emergency','/pro/emergency']){
@@ -1193,11 +1193,12 @@ test('Phone blocking: undated subtasks inherit rescheduled parent dates at every
  child.due_date='2026-10-28';assert.equal(evaluateStatus(record,now).device_unlocked,true);
  parent.due_date='2026-10-25';assert.equal(evaluateStatus(record,now).device_unlocked,false);
 });
-test('Phone blocking: inheritance handles missing parents and cycles without hiding undated requirements',()=>{
+test('Phone blocking: inheritance handles missing parents and cycles; undated tasks never lock (Phase 6.1.1)',()=>{
  const tasks=[{id:'a',parent_id:'b',status:'active',due_date:''},{id:'b',parent_id:'a',status:'active',due_date:''}];
- assert.equal(evaluateStatus({tasks,settings:{}}).device_unlocked,false);
- tasks[0].parent_id='missing';assert.equal(evaluateStatus({tasks,settings:{}}).device_unlocked,false);
- assert.equal(evaluateStatus({tasks:[{id:'standalone',status:'active',due_date:''}],settings:{}}).device_unlocked,false);
+ assert.equal(evaluateStatus({tasks,settings:{}}).device_unlocked,true);
+ tasks[0].parent_id='missing';assert.equal(evaluateStatus({tasks,settings:{}}).device_unlocked,true);
+ assert.equal(evaluateStatus({tasks:[{id:'standalone',status:'active',due_date:''}],settings:{}}).device_unlocked,true);
+ tasks[1].due_date='today';assert.equal(evaluateStatus({tasks,settings:{}}).device_unlocked,false,'a dated ancestor still counts');
 });
 test('Phone blocking: syncing a postponed parent releases its undated subtasks for the existing phone token',async()=>{
  const f=fixture(),a=await create(f),phone=(await f.call('/auth/phone',a.token,'POST')).body.token;
@@ -1881,33 +1882,16 @@ test('Dynamic Priority: verified Pro can enable it; configured and original prio
     assert.equal((await dpStored(f,a))[0].dynamic_priority_target,'prio_low');
 });
 
-test('Dynamic Priority: Free, MAX, revoked and expired licenses cannot enable it and nothing is stored',async()=>{
+test('Dynamic Priority (Phase 6.1.1): free, MAX, revoked and expired accounts can enable it without any license check',async()=>{
     const cases={free:{none:true},max:{license:{tier:'MAX'},record:{tier:'max'}},revoked:{record:{status:'revoked'}},
         expired:{license:{issuedAt:Date.now()-2*86400000,validUntil:Date.now()-86400000,expiresAt:Date.now()-3600000}}};
     for(const [name,options] of Object.entries(cases)){
         const {f,a}=await dpFixture(options),r=await dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'})]);
-        assert.equal(r.status,403,name);assert.equal(r.body.code,'PRO_REQUIRED',name);
-        assert.equal((await f.call('/sync/pull',a.token)).body.empty,true,name);
+        assert.equal(r.status,200,name);assert.equal((await dpStored(f,a))[0].dynamic_priority_target,'prio_low',name);
     }
-});
-
-test('Dynamic Priority: unavailable Keyo fails closed without a valid signed cache, and uses a valid cache otherwise',async()=>{
-    const stale={issuedAt:Date.now()-2*86400000,validUntil:Date.now()-86400000,expiresAt:null};
-    let {f,a}=await dpFixture({license:stale});
-    let r=await keyoOffline(()=>dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'})]));
-    assert.equal(r.status,503);assert.equal(r.body.code,'KEYO_NETWORK_ERROR');
-    ({f,a}=await dpFixture({license:{issuedAt:Date.now()-2*3600000,validUntil:Date.now()+22*3600000}}));
-    r=await keyoOffline(()=>dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'})]));assert.equal(r.status,200);
-    // No Keyo lookup at all when a snapshot does not use the feature.
-    ({f,a}=await dpFixture({license:stale}));
-    assert.equal((await keyoOffline(()=>dpSave(f,a,[dpTask('plain')]))).status,200);
-});
-
-test('Dynamic Priority: entitlement lost between the pre-transaction check and commit is caught',async()=>{
-    const {f,a}=await dpFixture(),licenses=f.service.pro.licenses,real=licenses.resolve.bind(licenses);
-    licenses.resolve=async id=>{const result=await real(id);const e=await f.storage.get('pro:entitlement:'+id);await f.storage.put('pro:entitlement:'+id,{...e,status:'revoked'});return result;};
-    const r=await dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'})]);
-    assert.equal(r.status,403);assert.equal(r.body.code,'PRO_REQUIRED');assert.equal((await f.call('/sync/pull',a.token)).body.empty,true);
+    // Keyo being unreachable doesn't matter for Dynamic Priority any more.
+    const {f,a}=await dpFixture({license:{issuedAt:Date.now()-2*86400000,validUntil:Date.now()-86400000,expiresAt:null}});
+    assert.equal((await keyoOffline(()=>dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'})]))).status,200);
 });
 
 test('Dynamic Priority (Phase 4.0): an AI lock or shield no longer freezes it; it can change with Pro',async()=>{
@@ -1924,41 +1908,14 @@ test('Dynamic Priority (Phase 4.0): an AI lock or shield no longer freezes it; i
     }
 });
 
-test('Dynamic Priority (Phase 4.0): a locked or shielded task can add it later with Pro, never without',async()=>{
+test('Dynamic Priority (Phase 6.1.1): a locked or shielded task can add, change or remove it without Pro',async()=>{
     for(const protection of [{ai_locked:true,proof_criteria:'The saved required artifact'},{strict_prerequisites:true}]){
-        let {f,a}=await dpFixture();
+        const {f,a}=await dpFixture({none:true});
         assert.equal((await dpSave(f,a,[dpTask('t',protection)])).status,200);
         assert.equal((await dpSave(f,a,[dpTask('t',{...protection,dynamic_priority_target:'prio_low'})])).status,200);
-        ({f,a}=await dpFixture({none:true}));
-        assert.equal((await dpSave(f,a,[dpTask('t',protection)])).status,200);
-        const r=await dpSave(f,a,[dpTask('t',{...protection,dynamic_priority_target:'prio_low'})]);
-        assert.equal(r.status,403);assert.equal(r.body.code,'PRO_REQUIRED');
+        assert.equal((await dpSave(f,a,[dpTask('t',{...protection,dynamic_priority_target:'prio_med'})])).status,200);
+        assert.equal((await dpSave(f,a,[dpTask('t',{...protection,dynamic_priority_target:null})])).status,200);
     }
-});
-
-test('Dynamic Priority: Emergency Bypass unlocks changes the way it does for other protected fields, but never grants Pro',async()=>{
-    let {f,a}=await dpFixture();
-    const lock={ai_locked:true,proof_criteria:'The saved required artifact'};
-    assert.equal((await dpSave(f,a,[dpTask('t',{...lock,dynamic_priority_target:'prio_low'})])).status,200);
-    assert.equal((await f.call('/pro/emergency',a.token,'POST',{})).status,200);
-    assert.equal((await dpSave(f,a,[dpTask('t',{...lock,dynamic_priority_target:'prio_med'})])).status,200);
-    assert.equal((await dpStored(f,a))[0].dynamic_priority_target,'prio_med');
-    ({f,a}=await dpFixture({none:true}));
-    assert.equal((await dpSave(f,a,[dpTask('t',lock)])).status,200);
-    assert.equal((await f.call('/pro/emergency',a.token,'POST',{})).status,200);
-    assert.equal((await dpSave(f,a,[dpTask('t',{...lock,dynamic_priority_target:'prio_low'})])).body.code,'PRO_REQUIRED');
-});
-
-test('Dynamic Priority: losing Pro keeps existing settings; they can be saved unchanged or removed but not added or changed',async()=>{
-    const {f,a}=await dpFixture();
-    assert.equal((await dpSave(f,a,[dpTask('t',{dynamic_priority_target:'prio_low'}),dpTask('u')])).status,200);
-    await f.storage.put('pro:entitlement:user_A',{...await f.storage.get('pro:entitlement:user_A'),status:'revoked'});
-    const [t,u]=await dpStored(f,a);
-    assert.equal((await dpSave(f,a,[{...t,description:'still fine'},u])).status,200);
-    assert.equal((await dpSave(f,a,[{...t,dynamic_priority_target:'prio_med'},u])).body.code,'PRO_REQUIRED');
-    assert.equal((await dpSave(f,a,[t,{...u,dynamic_priority_target:'prio_low'}])).body.code,'PRO_REQUIRED');
-    assert.equal((await dpSave(f,a,[{...t,dynamic_priority_target:null},u])).status,200);
-    assert.equal((await dpStored(f,a))[0].dynamic_priority_target,null);
 });
 
 test('Dynamic Priority: malformed or tampered targets are rejected, including recurring templates',async()=>{
@@ -1967,11 +1924,13 @@ test('Dynamic Priority: malformed or tampered targets are rejected, including re
         const r=await dpSave(f,a,[dpTask('t',{dynamic_priority_target:bad})]);assert.equal(r.status,400,JSON.stringify(bad));assert.equal(r.body.code,'INVALID_DYNAMIC_PRIORITY');
     }
     assert.equal((await dpSave(f,a,[dpTask('t',{dynamic_priority_target:'custom_1'})],{settings:{custom_priorities:[{id:'custom_1',name:'Later',rank:9}]}})).status,200);
-    // A Free user cannot smuggle the setting in through a recurrence template that the Worker would instantiate later.
+    // Recurrence templates are validated too.
     const free=await dpFixture({none:true}),tasks=[dpTask('t')],state={series:[],history:[]};
     globalThis.TaskitatorRecurrence.start(tasks,state,'t',{kind:'daily',start:globalThis.TaskitatorRecurrence.today(Date.now(),0)},'series_template_dp');
+    state.series[0].nodes[0].task.dynamic_priority_target='missing_priority';
+    let r=await dpSave(free.f,free.a,tasks,{recurrence_state:state});assert.equal(r.status,400);assert.equal(r.body.code,'INVALID_DYNAMIC_PRIORITY');
     state.series[0].nodes[0].task.dynamic_priority_target='prio_low';
-    const r=await dpSave(free.f,free.a,tasks,{recurrence_state:state});assert.equal(r.status,403);assert.equal(r.body.code,'PRO_REQUIRED');
+    r=await dpSave(free.f,free.a,tasks,{recurrence_state:state});assert.equal(r.status,200,'free accounts can use it in templates');
 });
 
 test('Dynamic Priority: older clients cannot strip it; stale snapshots conflict without changing it',async()=>{
@@ -2139,7 +2098,7 @@ test('F02: unfinished required child cannot vanish or be trashed under a shield;
 });
 test('F03: AI-locked task cannot inherit a later date by reparenting or ancestor edits; earlier is allowed',async()=>{
  const f=fixture(),a=await create(f);
- const base=[task('home',{ai_locked:false,due_date:'2026-01-01'}),task('later',{ai_locked:false,due_date:'2099-01-01'}),task('t',{parent_id:'home'})];
+ const base=[task('home',{ai_locked:false,due_date:'2026-01-01'}),task('later',{ai_locked:false,due_date:'2099-01-01'}),task('t',{parent_id:'home',due_date:''})];
  assert.equal((await save(f,a,base)).status,200);
  let next=structuredClone(base);next.find(t=>t.id==='t').parent_id='later';
  assert.equal((await auditPush(f,a,next)).status,403,'reparent under future parent');
@@ -2621,4 +2580,67 @@ test('audit L4: the legacy KV purge tool refuses to run before the migration dea
     const fs=await import('node:fs');
     assert.match(namespaceId(fs.readFileSync(new URL('./wrangler.toml',import.meta.url),'utf8')),/^[a-f0-9]{32}$/);
     assert.equal(namespaceId('[[kv_namespaces]]\nbinding = "OTHER"\nid = "'+'a'.repeat(32)+'"'),null);
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6.1.1: Worker rules for Count bonus tasks, Dynamic Bonus, AI audit exclusivity and Assign to today
+// ---------------------------------------------------------------------------
+const plain=(id,extra={})=>({id,title:id,status:'active',ai_locked:false,proof_criteria:'',...extra});
+test('Phase 6.1.1: loosening counted bonus work is refused with a rejected list; finishing today lifts it',async()=>{
+ const f=fixture(),a=await create(f),on={status_bonus_count:true};
+ assert.equal((await save(f,a,[plain('b',{is_bonus:true,due_date:'today'})],{settings:on})).status,200);
+ let r=await save(f,a,[plain('b',{is_bonus:true,due_date:'today',status:'trash'})],{settings:on});
+ assert.equal(r.status,403);assert.equal(r.body.code,'STATUS_LOCKED');assert.deepEqual(r.body.rejected.map(x=>x.id),['b']);
+ r=await save(f,a,[plain('b',{is_bonus:true,due_date:'today'})],{settings:{}});
+ assert.equal(r.status,403);assert.match(r.body.error,/Count bonus tasks/);
+ assert.equal((await save(f,a,[plain('b',{is_bonus:true,due_date:'today',status:'completed'})],{settings:on})).status,200);
+ assert.equal((await save(f,a,[plain('b',{is_bonus:true,due_date:'today',status:'completed'})],{settings:{}})).status,200,'today is finished');
+});
+test('Phase 6.1.1: with Count bonus tasks off, bonus work and Dynamic Bonus umbrellas never lock the phone',async()=>{
+ const f=fixture(),a=await create(f);
+ const tasks=[plain('day',{due_date:'today',strict_prerequisites:true,dynamic_bonus:true}),plain('u1',{parent_id:'day',status:'completed'}),plain('u2',{parent_id:'day',is_bonus:true})];
+ assert.equal((await save(f,a,tasks)).status,200);
+ assert.equal((await f.call('/status',a.token)).body.device_locked,false);
+ assert.equal((await save(f,a,tasks,{settings:{status_bonus_count:true}})).status,200);
+ assert.equal((await f.call('/status',a.token)).body.device_locked,true);
+});
+test('Phase 6.1.1: turning required work due today into bonus work is refused while today is unfinished',async()=>{
+ const f=fixture(),a=await create(f);
+ assert.equal((await save(f,a,[plain('r',{due_date:'today'}),plain('x',{due_date:'today'})])).status,200);
+ const r=await save(f,a,[plain('r',{due_date:'today',is_bonus:true}),plain('x',{due_date:'today'})]);
+ assert.equal(r.status,403);assert.deepEqual(r.body.rejected.map(x=>x.id),['r']);
+ assert.equal((await save(f,a,[plain('r',{due_date:'2099-01-01'}),plain('x',{due_date:'today'})])).status,200,'moving required work is unchanged');
+});
+test('Phase 6.1.1: Bonus, Dynamic Bonus and AI audit exclude each other; plan units and old combinations are kept',async()=>{
+ const f=fixture(),a=await create(f);
+ let r=await save(f,a,[task('t',{is_bonus:true})]);assert.equal(r.status,403);assert.equal(r.body.code,'BONUS_RULES');assert.deepEqual(r.body.rejected.map(x=>x.id),['t']);
+ r=await save(f,a,[task('t',{dynamic_bonus:true})]);assert.equal(r.status,403);assert.equal(r.body.code,'BONUS_RULES');
+ r=await save(f,a,[plain('t',{is_bonus:true,dynamic_bonus:true})]);assert.equal(r.status,403);assert.equal(r.body.code,'BONUS_RULES');
+ assert.notEqual((await save(f,a,[task('t',{is_bonus:true,study_plan_id:'plan_x'})])).body.code,'BONUS_RULES','plan units are exempt (study-plan grants decide)');
+});
+test('Phase 6.1.1: Dynamic Bonus cannot be switched on under a shield without bypass; switching it off is free',async()=>{
+ const f=fixture(),a=await create(f);
+ const tree=extra=>[plain('s',{strict_prerequisites:true}),plain('c',{parent_id:'s',...extra})];
+ assert.equal((await save(f,a,tree())).status,200);
+ let r=await save(f,a,tree({dynamic_bonus:true}));assert.equal(r.status,403);assert.equal(r.body.code,'SHIELD_REQUIRED');
+ const g=fixture(),b=await create(g);
+ assert.equal((await save(g,b,tree({dynamic_bonus:true}))).status,200,'set at creation');
+ assert.equal((await save(g,b,tree())).status,200,'turning it off');
+});
+test('Phase 6.1.1: an undated AI-locked task can be assigned to today only; dated ones cannot lose their date',async()=>{
+ const f=fixture(),a=await create(f);
+ assert.equal((await save(f,a,[task('t',{due_date:''})])).status,200);
+ assert.equal((await f.call('/status',a.token)).body.device_locked,false,'undated: no lock');
+ let r=await save(f,a,[task('t',{due_date:'2099-01-01'})]);assert.equal(r.status,403,'another date needs bypass');
+ r=await save(f,a,[task('t',{due_date:'today'})]);assert.equal(r.status,200,'Assign to today');
+ assert.equal((await f.call('/status',a.token)).body.device_locked,true);
+ r=await save(f,a,[task('t',{due_date:''})]);assert.equal(r.status,403,'removing the date needs bypass');
+});
+test('Phase 6.1.1: older clients must refresh before syncing recurring templates that use Dynamic Bonus',async()=>{
+ const f=fixture(),a=await create(f),tasks=[plain('t')],state={series:[],history:[]};
+ globalThis.TaskitatorRecurrence.start(tasks,state,'t',{kind:'daily',start:globalThis.TaskitatorRecurrence.today(Date.now(),0)},'series_template_db');
+ state.series[0].nodes[0].task.dynamic_bonus=true;
+ assert.equal((await save(f,a,tasks,{recurrence_state:state,dynamic_bonus_schema:1})).status,200);
+ assert.equal((await save(f,a,tasks,{recurrence_state:state})).status,428);
+ assert.equal((await save(f,a,tasks,{recurrence_state:state,dynamic_bonus_schema:1})).status,200);
 });

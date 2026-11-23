@@ -768,10 +768,15 @@ export class TaskProtection {
             return '';
         };
         const validDay=d=>/^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(Date.parse(d)) && new Date(d).toISOString().slice(0,10)===d;
-        // A protected commitment may stay the same or get stricter (earlier / undated), never later (F03).
+        // A protected commitment may stay the same or get stricter (earlier), never later (F03).
+        // Phase 6.1.1: undated tasks never count toward the phone lock, so removing a date is weaker, and an undated
+        // protected task may only gain today's date (Assign to today) without Emergency Bypass.
+        const logicalToday=()=>{const hour=Number.parseInt(previous.settings?.day_start_hour,10),dayStart=Number.isInteger(hour)&&hour>=0&&hour<=4?hour:0;return new Date(Date.now()+(3-dayStart)*3600000).toISOString().slice(0,10);};
         const weakerDue=(before,after)=>{
             if(after && after!=='today' && !validDay(after))return true;
-            if(before===after||after==='')return false;
+            if(before===after)return false;
+            if(after==='')return true;
+            if(before==='')return !(after==='today'||after===logicalToday());
             if(validDay(before)&&validDay(after))return after>before;
             if(before==='today'&&validDay(after)){
                 const hour=Number.parseInt(previous.settings?.day_start_hour,10);
@@ -782,6 +787,8 @@ export class TaskProtection {
         };
         // Every protected item is checked, so the client can revert just the rejected ones (not the whole copy).
         const rejected=[];
+        // Phase 6.1.1: Dynamic Bonus tasks whose required work is done count as bonus work for the shield rules.
+        const SCB=globalThis.TaskitatorStatusCount,prevBonus=SCB.bonusIds(previous.tasks),nextBonus=SCB.bonusIds(next.tasks);
         for(const old of previous.tasks){
           try{
             const current=map.get(old.id);
@@ -789,7 +796,7 @@ export class TaskProtection {
             if(replanOld.has(old.id)&&(!current||replanNew.has(old.id)))continue;
             const shielded=underShield(old);
             // F02: unfinished required work under a shield cannot vanish or be trashed.
-            if(shielded&&!old.is_bonus&&old.status!=='completed'&&old.status!=='trash'&&(!current||current.status==='trash'))
+            if(shielded&&!prevBonus.has(old.id)&&old.status!=='completed'&&old.status!=='trash'&&(!current||current.status==='trash'))
                 throw fail(403,'SHIELD_REQUIRED','Unfinished required work under a shield cannot be removed without Emergency Bypass.');
             if(protectedTask(old)&&old.status==='active'&&current&&weakerDue(effectiveDue(old,prevMap),effectiveDue(current,map))){
                 // The later date may come from an ancestor: report every ancestor whose due date changed too.
@@ -799,6 +806,7 @@ export class TaskProtection {
                 throw Object.assign(fail(403,'REQUIREMENTS_LOCKED','A protected task cannot be moved to a later date, directly or through its parent, without Emergency Bypass.'),{related});
             }
             if(shielded&&current&&!old.is_bonus&&current.is_bonus)throw fail(403,'SHIELD_REQUIRED','Required work protected by a shield cannot become bonus work.');
+            if(shielded&&current&&!old.dynamic_bonus&&current.dynamic_bonus===true&&!current.is_bonus)throw fail(403,'SHIELD_REQUIRED','Dynamic Bonus can\'t be turned on once a shield protects the task.');
             if(shielded&&current&&old.parent_id!==current.parent_id)throw fail(403,'SHIELD_REQUIRED','Shielded subtasks must remain with their parent.');
             // Phase 4.2: reducing load is not allowed while an audit is open. A task whose branch holds unfinished AI-audited work
             // cannot leave its parent (the parent is waiting on it) without Emergency Bypass. Moving a root task under a parent is fine.
@@ -814,6 +822,8 @@ export class TaskProtection {
                     if(edited&&EDIT_FIELDS.includes(field))continue;
                     // Older versions kept references only on the device. Pin an existing reference once; then it is immutable.
                     if(field==='reference_inline_data'&&!old.reference_inline_data&&!old.reference_id&&current.reference_inline_data)continue;
+                    // Phase 6.1.1: Assign to today. An undated protected task may gain today's date (nothing else).
+                    if(field==='due_date'&&!String(old.due_date??'').trim()&&effectiveDue(old,prevMap)===''&&(current.due_date==='today'||current.due_date===logicalToday()))continue;
                     if(JSON.stringify(stable(old[field]??null))!==JSON.stringify(stable(current[field]??null)))throw fail(403,'REQUIREMENTS_LOCKED','Protected requirements cannot change without Emergency Bypass.');
                 }
                 if(old.reference_id && JSON.stringify(stable(previous.recurrence_state?.reference_files?.[old.reference_id]??null))!==JSON.stringify(stable(next.recurrence_state?.reference_files?.[old.reference_id]??null)))
@@ -821,7 +831,7 @@ export class TaskProtection {
             }
             if(old.strict_prerequisites){
                 if(!current||!current.strict_prerequisites)throw fail(403,'SHIELD_REQUIRED','The task shield requires Emergency Bypass to remove.');
-                if(old.status==='active'&&current.status==='completed'&&branch(next.tasks,current.id).some(c=>c.id!==current.id&&!c.is_bonus&&c.status!=='completed'))throw fail(403,'CHILDREN_REQUIRED','Complete required subtasks first.');
+                if(old.status==='active'&&current.status==='completed'&&branch(next.tasks,current.id).some(c=>c.id!==current.id&&!nextBonus.has(c.id)&&c.status!=='completed'))throw fail(403,'CHILDREN_REQUIRED','Complete required subtasks first.');
             }
           }catch(e){
             if(e&&e.status===403&&typeof e.code==='string'){rejected.push({id:old.id,code:e.code,message:e.message,related:e.related||[]});continue;}
@@ -833,7 +843,7 @@ export class TaskProtection {
     // Dynamic Priority (Pro). Only dynamic_priority_target (a priority id, or null/absent when off) is stored;
     // the effective priority is derived and never written, so completions, AI audits, recurrence and Smart Study
     // never touch it. This guard covers every way the field can change in a pushed snapshot.
-    //  - Adding or changing it needs verified Pro (fail closed). Removing it never does.
+    //  - Free since Phase 6.1.1: adding or changing it only needs a valid target.
     //  - Phase 4.0: an AI lock or shield no longer freezes it. Dynamic priority is derived, never stored as the real
     //    priority, so phone blocking and audits are unaffected.
     //  - Unchanged values always pass, so a lapsed Pro plan keeps existing configuration intact.
@@ -850,19 +860,13 @@ export class TaskProtection {
         if(!changes.length)return;
         const priorities=next.settings?.custom_priorities;
         const valid=new Set(Array.isArray(priorities)?priorities.map(p=>p?.id):['prio_high','prio_med','prio_low']);
-        let checked=false;
-        for(const {old,now} of changes){
+        // Phase 6.1.1: Dynamic Priority is free. Only the target is validated.
+        for(const {now} of changes){
             if(now===null)continue;
             if(typeof now!=='string'||!now||now.length>64||!valid.has(now))
                 throw fail(400,'INVALID_DYNAMIC_PRIORITY','Dynamic Priority must target one of your existing priorities.');
-            if(checked)continue;
-            if(refreshError)throw refreshError; // Keyo unreachable or rejected and no valid signed cache: fail closed.
-            if(!await this.proActive(tx,account,client)) // stored records only; no network here
-                throw fail(403,'PRO_REQUIRED','Dynamic Priority is a Taskitator Pro feature. Existing settings are kept, but enabling or changing it needs an active Pro license.');
-            checked=true;
         }
     }
-    // Early bonus (Pro): adding or changing an early_date needs verified Pro (fail closed). Clearing one never does.
     // Cached, signed Pro entitlement (no network). Fails closed.
     async proActive(tx,account,client='web'){
         const e=await entitlementFor(tx,account,client);
@@ -870,12 +874,8 @@ export class TaskProtection {
         return !(!e||e.status!=='active'||!DYNAMIC_PRIORITY_TIERS.includes(e.tier)||e.account_id!==account||e.keyo_version!==1||!e.signed_token||
             !Number.isSafeInteger(e.valid_until)||e.valid_until<=Date.now()||(e.expires_at!==null&&(!Number.isSafeInteger(e.expires_at)||e.expires_at<=Date.now())));
     }
-    async guardEarly(tx,account,previous,next,refreshError=null,client='web'){
-        if(!globalThis.TaskitatorEarly.changed(previous,next).length)return;
-        if(refreshError)throw refreshError;
-        if(!await this.proActive(tx,account,client))
-            throw fail(403,'PRO_REQUIRED','Early bonus is a Taskitator Pro feature. Existing early dates are kept, but adding or changing one needs an active Pro license.');
-    }
+    // Early task is free since Phase 6.1.2 (dates are still validated by TaskitatorEarly.guard). Kept as a no-op hook.
+    async guardEarly(){}
     // Study plans (Phase 2.4a): editing a generated plan's names, priorities or audit criteria is Pro only.
     // Viewing, completing, rescheduling and deleting stay available after Pro ends.
     async guardStudyEdit(tx,account,previous,next,refreshError=null,client='web'){
@@ -946,7 +946,7 @@ export class TaskProtection {
         if(options.start<today)throw fail(400,'INVALID_REPLAN','The new schedule cannot start before today.');
         const impact=M.replanImpact(tasks,r.tasks,planId,today,snapshot.settings),bypass=await this.bypass(tx,userId);
         if(impact.later.length&&!bypass)throw fail(403,'REQUIREMENTS_LOCKED','This re-plan moves '+impact.later.length+' AI-audited task(s) to a later date or removes them. Activate Emergency Bypass from the bypass panel, then re-plan again.');
-        if(impact.today.length&&SC.pending(tasks,today)&&!bypass)throw fail(403,'STATUS_LOCKED','This re-plan moves work due today to a later date. That is locked until all of today\'s tasks are finished or Emergency Bypass is on.');
+        if(impact.today.length&&SC.pending(tasks,today,snapshot.settings)&&!bypass)throw fail(403,'STATUS_LOCKED','This re-plan moves work due today to a later date. That is locked until all of today\'s tasks are finished or Emergency Bypass is on.');
         const tree=M.planTree(r.tasks,planId),out=r.tasks.filter(t=>tree.has(t.id)).sort((a,b)=>a.id.localeCompare(b.id));
         await tx.put('pro:study-replan:'+userId+':'+planId,{hash:await sha256(JSON.stringify(out)),expires:Date.now()+10*60000});
         return {authorized:true,tasks:out,scheduled:r.scheduled,removed:r.removed,days:r.days,end:r.end,bypass_used:!!(impact.later.length||impact.today.length)};

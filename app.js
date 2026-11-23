@@ -1734,7 +1734,7 @@ window.TaskitatorApp = (() => {
                 if (oa && ob && a.order !== b.order) return a.order - b.order;
                 if (oa !== ob) return oa ? -1 : 1;
             }
-            if (mode === 'alpha') return String(a.title||'').localeCompare(String(b.title||''), undefined, {sensitivity:'base', numeric:true});
+            if (mode === 'alpha') return (globalThis.TaskitatorLabels?.compare||((x,y)=>String(x??'').localeCompare(String(y??''),undefined,{sensitivity:'base',numeric:true})))(a.title||'', b.title||'');
             if (mode === 'required' && !!a.is_bonus !== !!b.is_bonus) return a.is_bonus ? 1 : -1;
             const rA = getRank((dynamicPriority.get(a.id) ?? a.priority_id));
             const rB = getRank((dynamicPriority.get(b.id) ?? b.priority_id));
@@ -1770,8 +1770,10 @@ window.TaskitatorApp = (() => {
         visited.add(nodeId);
 
         const kids = tasks.filter(t => t.parent_id === nodeId && t.status !== 'trash');
+        // Phase 6.1.1: Dynamic Bonus tasks whose required work is done count as bonus work too.
+        const bonus = window.TaskitatorStatusCount?.bonusIds ? window.TaskitatorStatusCount.bonusIds(tasks) : null;
         for (const kid of kids) {
-            if (!kid.is_bonus && kid.status !== 'completed') return true;
+            if (!(bonus ? bonus.has(kid.id) : kid.is_bonus) && kid.status !== 'completed') return true;
             if (hasUncompletedDescendant(kid.id, visited)) return true;
         }
         return false;
@@ -2918,11 +2920,16 @@ window.TaskitatorApp = (() => {
         const visibleChildrenMap = new Map();
 
         const earlyIndex=globalThis.TaskitatorEarly?.index(tasks);
+        const dynamicBonusIds=new Set(),dynBonusAll=globalThis.TaskitatorStatusCount?.bonusIds?.(tasks);if(dynBonusAll)for(const t of tasks)if(t&&!t.is_bonus&&dynBonusAll.has(t.id))dynamicBonusIds.add(t.id);
+        // Phase 6.1.2: early study-plan units show under today's umbrella, or under a derived "Plan X.n" header (never stored).
+        const earlyGroups=currentView==='today'&&!filtersActive(viewFilters(activeFilters))?globalThis.TaskitatorLabels?.earlyGroups(tasks,todayStr):null;
         const displayTasks=(globalThis.TaskitatorEarly?.view(tasks,todayStr)??tasks).map(t=>{
+            if(earlyGroups?.parentOf.has(t.id)&&t.early_due)return {...t,parent_id:earlyGroups.parentOf.get(t.id)};
             if(t.status!=='active'||t.smart_early_date!==todayStr)return t;
             const parent=tasks.find(p=>p.study_plan_id===t.study_plan_id&&!p.parent_id&&p.due_date===todayStr);
             return parent?{...t,parent_id:parent.id,due_date:todayStr,is_bonus:true}:t;
         });
+        for(const h of earlyGroups?.headers||[])displayTasks.push({id:h.id,title:h.title,raw_title:h.title,status:'active',due_date:todayStr,parent_id:null,study_plan_id:h.study_plan_id,project_id:h.project_id,virtual_group:true,tags:[]});
         displayTasks.forEach(t => {
             if (t.status === 'trash') return;
             const pId = t.parent_id || 'root';
@@ -3039,7 +3046,39 @@ window.TaskitatorApp = (() => {
                 }
             }
 
+            // Phase 6.1.2: a derived early-group header. Not a task: no checkbox, no editing, no selection.
+            function buildGroupElement(task, depth) {
+                const li = document.createElement('li');
+                li.className = 'task-node early-group';
+                li.style.setProperty('--d', String(depth));
+                const row = document.createElement('div');
+                row.className = 'task-row early-group-row';
+                row.style.marginInlineStart = `${depth * 20}px`;
+                const title = document.createElement('span');
+                title.className = 'task-title';
+                title.textContent = task.title;
+                row.appendChild(title);
+                const badge = document.createElement('span');
+                badge.className = 'bonus-badge early-badge';
+                tkLabel(badge, 'bonus', 'Early group');
+                row.appendChild(badge);
+                li.appendChild(row);
+                const kids = sortTasks(visibleChildrenMap.get(task.id) || []);
+                if (kids.length) {
+                    const subtree = document.createElement('div');
+                    subtree.className = 'task-subtree';
+                    subtree.setAttribute('role', 'group');
+                    const subUl = document.createElement('ul');
+                    subUl.className = 'task-subtree-inner';
+                    kids.forEach(child => subUl.appendChild(buildNodeElement(child, depth + 1)));
+                    subtree.appendChild(subUl);
+                    li.appendChild(subtree);
+                }
+                return li;
+            }
+
             function buildNodeElementInner(task, depth = 0) {
+                if (task.virtual_group) return buildGroupElement(task, depth);
                 const li = document.createElement('li');
                 const isDone = task.status === 'completed';
                 
@@ -3108,7 +3147,7 @@ window.TaskitatorApp = (() => {
                 if (pObj) {
                     row.style.borderInlineStartColor = pObj.color;
                     row.style.setProperty('--pc', pObj.color);
-                    if (dynamicPriority.has(task.id)) row.title = 'Dynamic Priority: only bonus work remains';
+                    if (dynamicPriority.has(task.id)) row.title = 'Dynamic Priority: no required work remains';
                 }
 
                 const main = document.createElement('div');
@@ -3251,6 +3290,12 @@ window.TaskitatorApp = (() => {
                     bonusBadge.className = smartEarly ? 'bonus-badge early-badge' : 'bonus-badge';
                     tkLabel(bonusBadge, 'bonus', smartEarly ? 'Early · required '+(task.smart_origin_date||'') : 'Bonus');
                     main.appendChild(bonusBadge);
+                } else if (dynamicBonusIds.has(task.id)) {
+                    // Phase 6.1.1: Dynamic Bonus turned this task into bonus work (its required subtasks are done).
+                    const dynBadge = document.createElement('span');
+                    dynBadge.className = 'bonus-badge';
+                    tkLabel(dynBadge, 'bonus', 'Bonus · dynamic');
+                    main.appendChild(dynBadge);
                 }
 
                 const projObj = globalProjects.find(pr => pr.id === (task.project_id || 'inbox'));
@@ -3883,13 +3928,9 @@ window.TaskitatorApp = (() => {
                 if (dueIn) dueIn.value = getAppTodayStr();
                 const earlyBox = document.getElementById('batchEarlyToggle'), earlyNote = document.getElementById('batchEarlyNotice');
                 if (earlyBox) {
-                    earlyBox.checked = false; earlyBox.disabled = true;
+                    // Early task is free since Phase 6.1.2.
+                    earlyBox.checked = false; earlyBox.disabled = false;
                     if (earlyNote) { earlyNote.style.display = 'none'; earlyNote.textContent = ''; }
-                    // Pro only: the checkbox stays unpressable until the entitlement check passes.
-                    window.TaskitatorPro?.checkConsecutiveEntitlement?.().then(access => {
-                        if (access?.allowed) { earlyBox.disabled = false; return; }
-                        if (earlyNote) { earlyNote.textContent = 'Early bonus is a Taskitator Pro feature.'; earlyNote.style.display = 'block'; }
-                    }).catch(() => {});
                 }
                 batchDueDateModal.classList.add('open');
             });
@@ -3965,14 +4006,22 @@ window.TaskitatorApp = (() => {
         });
         document.getElementById('closeBatchBonusBtn')?.addEventListener('click', () => batchBonusModal?.classList.remove('open'));
         const applyBatchBonus = (makeBonus) => {
-            const isBypass = isBypassActiveSafe();
+            const isBypass = isBypassActiveSafe(), SC = window.TaskitatorStatusCount, today = getAppTodayStr();
+            let st = {}; try { st = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch (e) {}
+            // Phase 6.1.1: while today is unfinished, counted work due today can't turn into uncounted bonus work.
+            const locked = !isBypass && SC && SC.pending(tasks, today, st), byId = SC ? SC.index(tasks) : new Map(), bonusNow = SC ? SC.bonusIds(tasks) : new Set();
+            const stopsCounting = t => locked && SC.dueNow(byId, t, today) && SC.counts(byId, t, st, bonusNow) && !SC.counts(byId, { ...t, is_bonus: true }, st, new Set([t.id]));
             let changed = 0, skipped = 0;
             selectedTaskIds.forEach(id => {
                 const t = tasks.find(x => x.id === id);
                 if (!t || t.status !== 'active') { skipped++; return; }
                 if (Boolean(t.is_bonus) === makeBonus) return;
                 if (makeBonus && !isBypass && (t.strict_prerequisites || getShieldedAncestor(t.id))) { skipped++; return; }
+                // AI-audited tasks can't be bonus work (existing combinations stay until changed).
+                if (makeBonus && (t.ai_locked || t.require_ai_proof)) { skipped++; return; }
+                if (makeBonus && stopsCounting(t)) { skipped++; return; }
                 t.is_bonus = makeBonus;
+                if (makeBonus) delete t.dynamic_bonus;
                 changed++;
             });
             if (changed) saveStorageAndPush();
@@ -3994,12 +4043,17 @@ window.TaskitatorApp = (() => {
         document.getElementById('closeBatchStatusBtn')?.addEventListener('click', () => batchStatusModal?.classList.remove('open'));
         const applyBatchStatus = (count) => {
             const SC = window.TaskitatorStatusCount, byId = new Map(tasks.map(t => [t.id, t]));
-            const locked = !isBypassActiveSafe() && SC.pending(tasks, getAppTodayStr());
+            let scSettings = {}; try { scSettings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch (e) {}
+            const locked = !isBypassActiveSafe() && SC.pending(tasks, getAppTodayStr(), scSettings);
+            const bonus = SC.bonusIds(tasks), limited = SC.mode(scSettings) === 'limited';
+            // Bonus tasks use their own flag only (default: "Count bonus tasks"). In Limited they can't be chosen.
+            const current = t => bonus.has(t.id) ? (typeof t.status_count === 'boolean' ? t.status_count : SC.bonusCount(scSettings)) : SC.effective(byId, t);
             let changed = 0, skipped = 0;
             selectedTaskIds.forEach(id => {
                 const t = byId.get(id);
                 if (!t || t.status !== 'active') { skipped++; return; }
-                if (SC.effective(byId, t) === count) return;
+                if (bonus.has(t.id) && limited) { skipped++; return; }
+                if (current(t) === count) return;
                 if (!count && locked && SC.dueNow(byId, t, getAppTodayStr())) { skipped++; return; }
                 t.status_count = count; changed++;
             });
@@ -4023,6 +4077,11 @@ window.TaskitatorApp = (() => {
 
         function openBulkRescheduleModal() {
             const todayStr = getAppTodayStr();
+            // Phase 6.1.2: orange link to Study plans when a plan has overdue units (main or bonus).
+            {const box = document.getElementById('reschedulePlansBox');
+            if (box) box.hidden = !(window.TaskitatorStudyManage?.plansWithOverdue?.(tasks, todayStr)?.size > 0);
+            const link = document.getElementById('reschedulePlansLink');
+            if (link && !link.dataset.bound) { link.dataset.bound = '1'; link.addEventListener('click', () => rescheduleModal?.classList.remove('open')); }}
             const overdueAiTasks = tasks.filter(t => t.ai_locked && t.status === 'active' && t.due_date && t.due_date < todayStr);
             
             const gateBanner = document.getElementById('rescheduleAiLockGateBanner');

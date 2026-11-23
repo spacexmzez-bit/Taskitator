@@ -345,7 +345,7 @@
     function updateNode(state, task, fields) {
         const s = seriesFor(state, task); const node = s?.nodes.find(n => n.key === task.recurrence_node_id);
         if (!node) return;
-        const allowed = ['title', 'raw_title', 'description', 'tags', 'priority_id', 'dynamic_priority_target', 'project_id', 'is_bonus', 'strict_prerequisites', 'ai_locked', 'proof_criteria', 'raw_proof_criteria', 'reference_inline_data', 'reference_id'];
+        const allowed = ['title', 'raw_title', 'description', 'tags', 'priority_id', 'dynamic_priority_target', 'dynamic_bonus', 'project_id', 'is_bonus', 'strict_prerequisites', 'ai_locked', 'proof_criteria', 'raw_proof_criteria', 'reference_inline_data', 'reference_id'];
         for (const key of allowed) if (Object.prototype.hasOwnProperty.call(fields, key)) node.task[key] = copy(fields[key]);
     }
     function validateState(state, tasks) {
@@ -448,17 +448,17 @@
 
 // <<< MODULE_END: recurrence-core.js >>>
 // <<< MODULE_START: dynamic-priority.js >>>
-// Dynamic Priority (Pro): the effective priority is DERIVED from the task tree and never stored.
+// Dynamic Priority (free since Phase 6.1.1): the effective priority is DERIVED from the task tree and never stored.
 // priority_id always keeps the user's configured priority; dynamic_priority_target (a priority id, or
-// absent/null when off) is the level used while only bonus work remains. "Only bonus work remains" reuses
-// the shield/completion gate exactly: no unfinished non-bonus descendant at any depth (trashed tasks are
-// ignored) and at least one unfinished bonus descendant.
+// absent/null when off) is the level used while no unfinished required descendant remains (trashed tasks are
+// ignored). A task without required descendants, childless tasks included, uses the target immediately.
+// Bonus includes Dynamic Bonus tasks whose required work is done (TaskitatorStatusCount.bonusIds).
 (function(root){
     function effectiveMap(tasks, priorities) {
         const out = new Map();
         if (!Array.isArray(tasks)) return out;
         const valid = Array.isArray(priorities) ? new Set(priorities.map(p => p && p.id)) : null;
-        let byParent = null;
+        let byParent = null, bonus = null;
         for (const t of tasks) {
             const target = t && t.dynamic_priority_target;
             if (typeof target !== 'string' || !target || t.status !== 'active' || target === t.priority_id) continue;
@@ -469,17 +469,18 @@
                     if (!byParent.has(c.parent_id)) byParent.set(c.parent_id, []);
                     byParent.get(c.parent_id).push(c);
                 }
+                bonus = root.TaskitatorStatusCount?.bonusIds ? root.TaskitatorStatusCount.bonusIds(tasks) : new Set(tasks.filter(c => c && c.is_bonus).map(c => c.id));
             }
-            let required = false, bonus = false;
+            let required = false;
             const seen = new Set([t.id]), stack = [...(byParent.get(t.id) || [])];
             while (stack.length && !required) {
                 const c = stack.pop();
                 if (seen.has(c.id) || c.status === 'trash') continue;
                 seen.add(c.id);
-                if (c.status !== 'trash' && c.status !== 'completed') { if (c.is_bonus) bonus = true; else required = true; }
+                if (c.status !== 'completed' && !bonus.has(c.id)) required = true;
                 for (const k of byParent.get(c.id) || []) stack.push(k);
             }
-            if (!required && bonus) out.set(t.id, target);
+            if (!required) out.set(t.id, target);
         }
         return out;
     }
@@ -607,7 +608,7 @@
         if (document.getElementById('recurrenceEditScope')?.value === 'future') {
             // Keep future-only validated criteria intact when ordinary fields are edited.
             const {title,raw_title,description,tags,priority_id,project_id,is_bonus,strict_prerequisites} = task;
-            const fields={title,raw_title,description,tags,priority_id,project_id,is_bonus,strict_prerequisites,dynamic_priority_target:task.dynamic_priority_target??null};
+            const fields={title,raw_title,description,tags,priority_id,project_id,is_bonus,strict_prerequisites,dynamic_priority_target:task.dynamic_priority_target??null,dynamic_bonus:task.dynamic_bonus===true};
             const node=s.nodes.find(n=>n.key===task.recurrence_node_id);
             if(task.ai_locked && !node.task.ai_locked){
                 Object.assign(fields,{ai_locked:true,proof_criteria:task.proof_criteria,raw_proof_criteria:task.raw_proof_criteria});
@@ -760,24 +761,12 @@ window.TaskitatorComponents = Object.freeze({
         function controls(){const m=document.getElementById('taskDetailModal');return JSON.stringify([...(m?.querySelectorAll?.('input,textarea,select,[contenteditable]')||[])].map(e=>[e.id,e.type==='checkbox'?e.checked:e.isContentEditable?e.textContent:e.value,e.files?[...e.files].map(f=>[f.name,f.size]):null]));}
         function dirty(){return draft&&(JSON.stringify(draft.tasks)!==draft.originalTasks||JSON.stringify(draft.recurrence)!==draft.originalRecurrence||draft.savedCriteria||draft.newTags?.length||controls()!==editBaseline||pendingEditExemplarFile||removeEditReference||JSON.stringify([...editModalSelectedTags])!==draft.tags||editModalSelectedPriority!==draft.priority||editModalSelectedProject!==draft.project||editModalIsBonus!==draft.bonus);}
         function discardDraft(){if(dirty()&&!confirm('Changes unsaved. Discard your changes?'))return false;draft=null;clearConsecutiveGrant();window.TaskitatorEditorDraft=null;return true;}
-        // ---- Dynamic Priority (Pro) controls -------------------------------------------------------------
-        // Keep in sync with DYNAMIC_PRIORITY_TIERS in pro-backend.js. The Worker is the authority; this only
-        // decides whether the control is offered. MAX is not assumed to include Pro.
-        const DYNAMIC_PRIORITY_TIERS=['pro'];
+        // ---- Dynamic Priority controls (free) -------------------------------------------------------------
         const dpGeneration={create:0,edit:0};
         const dpEls=p=>({box:document.getElementById(p+'DynamicPriorityCheckbox'),opts:document.getElementById(p+'DynamicPriorityOptions'),sel:document.getElementById(p+'DynamicPriorityTarget'),note:document.getElementById(p+'DynamicPriorityNotice')});
-        async function dpEntitlement(){
-            try{
-                const s=await window.TaskitatorPro?.getStatus?.();
-                const allowed=s?.isPro===true&&s.status==='active'&&DYNAMIC_PRIORITY_TIERS.includes(String(s.tier).toLowerCase())&&(s.expires_at==null||s.expires_at>Date.now());
-                return {allowed,unavailable:false,status:s?.status||'free',tier:String(s?.tier||'free').toLowerCase()};
-            }catch{return {allowed:false,unavailable:true};}
-        }
-        function dpMessage(ent){
-            if(ent.unavailable)return "Couldn't verify your Pro status. Dynamic Priority can't be changed until it can be checked.";
-            if(ent.status==='active'&&!DYNAMIC_PRIORITY_TIERS.includes(ent.tier))return 'Your current license tier does not include Dynamic Priority.';
-            return ['expired','revoked','invalid'].includes(ent.status)?'Your Taskitator Pro license is not active. Existing Dynamic Priority settings are kept, but they can only be turned off.':'Dynamic Priority is a Taskitator Pro feature.';
-        }
+        // Dynamic Priority is free (Phase 6.1.1): no entitlement check.
+        async function dpEntitlement(){return {allowed:true,unavailable:false};}
+        function dpMessage(){return '';}
         // Synchronous part fills the controls (so dirty-form baselines are correct); entitlement is applied after.
         function dpSetup(p,{target=null,locked=false}){
             const {box,opts,sel,note}=dpEls(p);if(!box||!sel)return;
@@ -787,19 +776,13 @@ window.TaskitatorComponents = Object.freeze({
             const known=target&&prios.some(pr=>pr.id===target);
             if(target&&!known){const missing=document.createElement('option');missing.value=target;missing.textContent='Unavailable priority';sel.appendChild(missing);}
             sel.value=target||lowest||'';
-            box.checked=Boolean(target);box.disabled=true;sel.disabled=true;
+            box.checked=Boolean(target);box.disabled=false;sel.disabled=false;
             if(opts)opts.style.display=box.checked?'block':'none';
             if(note){note.style.display='none';note.textContent='';}
             const show=text=>{if(note){note.textContent=text;note.style.display=text?'block':'none';}};
             if(target&&!known)show('The previously chosen priority no longer exists. Pick a new one or turn this off.');
             box.onchange=()=>{if(opts)opts.style.display=box.checked?'block':'none';};
-            (async()=>{
-                const ent=await dpEntitlement();
-                if(gen!==dpGeneration[p]||!box.isConnected)return;
-                if(ent.allowed){box.disabled=false;sel.disabled=false;return;}
-                // Not entitled: new settings are blocked, but an existing one can always be turned off.
-                box.disabled=!target;sel.disabled=true;show(dpMessage(ent));
-            })();
+            void gen;
         }
         const dpValue=p=>{const {box,sel}=dpEls(p);return box&&sel&&box.checked&&sel.value?sel.value:null;};
         // Returns false (after telling the user) when a requested change cannot be made.
@@ -808,8 +791,6 @@ window.TaskitatorComponents = Object.freeze({
             if(!dpEls(p).box || !dpEls(p).sel || want===current)return true;
             
             if(want===null){delete task.dynamic_priority_target;return true;}
-            const ent=await dpEntitlement();
-            if(!ent.allowed){window.TaskitatorNotify(dpMessage(ent));return false;}
             task.dynamic_priority_target=want;return true;
         }
         // Opening an editor makes no network call. Ticking the box performs the one online check.
@@ -823,6 +804,12 @@ window.TaskitatorComponents = Object.freeze({
             if(changedRecurrence)localStorage.setItem('taskitator_recurrence_state',JSON.stringify(draft.recurrence));
             for(const tag of draft.newTags||[])liveHost.catalogs.addTag(tag);
             if(draft.savedCriteria)localStorage.setItem('taskitator_saved_criteria',JSON.stringify(draft.savedCriteria));
+            // Phase 6.1.1: refuse phone-lock loosenings locally (the Worker refuses them too).
+            {const SC=window.TaskitatorStatusCount;if(SC&&!window.TaskitatorEngine?.EmergencyManager?.isBypassActive?.()){
+                let st={};try{st=JSON.parse(localStorage.getItem('taskitator_settings')||'{}')||{};}catch(e){}
+                const day=liveHost.clock?.today?.()||new Date().toISOString().slice(0,10),after=current.map(o=>changes.find(t=>t.id===o.id)||o).concat(changes.filter(t=>!current.some(o=>o.id===t.id)));
+                const l=SC.loosenings({tasks:current,settings:st},{tasks:after,settings:st},day);
+                if(l.tasks.length&&SC.pending(current,day,st)){window.TaskitatorNotify(l.tasks[0].message+' Nothing was saved.');return false;}}}
             for(const t of changes){const i=current.findIndex(o=>o.id===t.id);if(i<0)current.push(t);else current[i]=t;}
             draft=null;window.TaskitatorEditorDraft=null;clearConsecutiveGrant();liveHost.tasks.save();return true;
         }
@@ -847,6 +834,7 @@ window.TaskitatorComponents = Object.freeze({
         let editModalSelectedPriority = null;
         let editModalSelectedProject = 'inbox';
         let editModalIsBonus = false;
+        let editAssignToday = false; // Phase 6.1.1: undated AI-locked task assigned to today
 
         // Mr. Study Gamification State
         let activeMrStudyRules = [];
@@ -1592,9 +1580,10 @@ window.TaskitatorComponents = Object.freeze({
         const subsOf = id => host.tasks.getAll().filter(t => t.parent_id === id && t.status !== 'trash');
         const prioRank = t => { const p = (host.catalogs.priorities() || []).find(x => x.id === t.priority_id); return p ? p.rank : 9999; };
         const cmpText = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base', numeric: true });
-        const cmpDefault = (a, b) => prioRank(a) - prioRank(b) || cmpText(a.due_date || '9999', b.due_date || '9999') || cmpText(a.created_at, b.created_at) || cmpText(a.title, b.title);
+        const cmpTitle = (a, b) => globalThis.TaskitatorLabels?.compare ? globalThis.TaskitatorLabels.compare(a, b) : cmpText(a, b); // Phase 6.1.2 labels
+        const cmpDefault = (a, b) => prioRank(a) - prioRank(b) || cmpText(a.due_date || '9999', b.due_date || '9999') || cmpText(a.created_at, b.created_at) || cmpTitle(a.title, b.title);
         const SORTERS = {
-            alpha: (a, b) => cmpText(a.title, b.title) || cmpDefault(a, b),
+            alpha: (a, b) => cmpTitle(a.title, b.title) || cmpDefault(a, b),
             priority: (a, b) => cmpDefault(a, b),
             required: (a, b) => (!!a.is_bonus - !!b.is_bonus) || cmpDefault(a, b)
         };
@@ -1857,13 +1846,19 @@ window.TaskitatorComponents = Object.freeze({
             if (editTaskDesc) editTaskDesc.value = task.description || '';
             if (editTaskDueDate) editTaskDueDate.value = task.due_date === 'today' ? host.clock.today() : (task.due_date || '');
             const earlyNote = document.getElementById('editTaskEarlyNote');
-            if (earlyNote) {
-                // Read-only: the early date is set or removed from the batch Due date dialog.
-                const E = window.TaskitatorEarly, list = host.tasks?.getAll?.() || [];
-                const shown = E && task.early_date ? E.appearance(E.index(list.length ? list : [task]), task, host.clock.today()) : null;
-                earlyNote.hidden = !shown;
-                earlyNote.textContent = shown ? 'Also shown early on ' + shown + ' (change it from the multi-select Due date button).' : '';
-            }
+            if (earlyNote) { earlyNote.hidden = true; earlyNote.textContent = ''; }
+            // Phase 6.1.2: Early task (free). The due date stays; early_date adds an optional earlier appearance.
+            {const E = window.TaskitatorEarly, row = document.getElementById('editEarlyTaskRow'), input = document.getElementById('editEarlyTaskDate'), clearBtn = document.getElementById('editEarlyTaskClear');
+            if (E && row && input) {
+                const list = host.tasks?.getAll?.() || [], by = E.index(list.length ? list : [task]), today = host.clock.today(), due = E.dueOf(by, task);
+                const eligible = task.status === 'active' && !task.recurrence_series_id && !task.smart_early_date && !!due && due > today;
+                row.hidden = !eligible;
+                input.min = today; input.max = due ? E.addDays?.(due, -1) || '' : '';
+                input.value = eligible && task.early_date && E.appearance(by, task, today) ? task.early_date : '';
+                input.dataset.initial = input.value;
+                if (clearBtn) { clearBtn.hidden = !input.value; clearBtn.onclick = () => { input.value = ''; clearBtn.hidden = true; }; }
+                input.onchange = () => { if (clearBtn) clearBtn.hidden = !input.value; };
+            }}
             if (detailQuickSubtaskInput) { detailQuickSubtaskInput.value = ''; detailQuickSubtaskInput._quickGeneration = (detailQuickSubtaskInput._quickGeneration || 0) + 1; }
 
             editModalSelectedTags.clear();
@@ -1877,7 +1872,7 @@ window.TaskitatorComponents = Object.freeze({
             }
             window.TaskitatorStatusCountUI?.setup('edit', task, null);
 
-            // Phase 4.0: a shield or AI lock no longer freezes Dynamic Priority. Pro is still required to turn it on or change it.
+            // Phase 4.0: a shield or AI lock no longer freezes Dynamic Priority (free since Phase 6.1.1).
             dpSetup('edit',{target:task.dynamic_priority_target||null});
 
             renderModalTagCloud('editTagCloud', editModalSelectedTags);
@@ -1961,6 +1956,7 @@ window.TaskitatorComponents = Object.freeze({
             }
 
             if (editCriteriaBoxContainer) editCriteriaBoxContainer.style.display = isLocked ? 'block' : 'none';
+            window.TaskitatorDynamicBonusUI?.setup('edit', task, { bypass: isBypassActive, shielded: Boolean(task.strict_prerequisites || host.tasks.shieldedAncestor(task.id)) });
 
             if (editExemplarChip && window.ExemplarStore) {
                 const exemplarRecord = await ExemplarStore.getExemplar(task.id);
@@ -1984,6 +1980,14 @@ window.TaskitatorComponents = Object.freeze({
             if (editTaskTitle) { editTaskTitle.contentEditable = cannotModifyLocked ? 'false' : 'true'; if (editTaskTitle.tagName === 'INPUT') editTaskTitle.readOnly = cannotModifyLocked; }
             { const n = document.getElementById('detailTitleLockNote'); if (n) n.hidden = !cannotModifyLocked; }
             if (editTaskDueDate) editTaskDueDate.disabled = cannotModifyLocked;
+            // Phase 6.1.1: an undated AI-locked task can be assigned to today without Emergency Bypass (today only).
+            editAssignToday = false;
+            {const btn = document.getElementById('editAssignTodayBtn'), list = host.tasks.getAll(), byId = new Map(list.map(t => [t.id, t]));
+            let undated = true; for (let n = task, i = 0; n && i < 100; n = byId.get(n.parent_id), i++) if (typeof n.due_date === 'string' && n.due_date.trim()) { undated = false; break; }
+            if (btn) {
+                btn.hidden = !(cannotModifyLocked && task.status === 'active' && undated);
+                btn.onclick = () => { editAssignToday = true; if (editTaskDueDate) editTaskDueDate.value = host.clock.today(); btn.hidden = true; window.TaskitatorNotify('Due today. Save to apply. Changing it again needs Emergency Bypass.', 'info'); };
+            }}
             if (editTaskCriteria) {
                 editTaskCriteria.disabled = cannotModifyLocked;
                 editTaskCriteria.value = task.raw_proof_criteria || task.proof_criteria || '';
@@ -2066,6 +2070,8 @@ window.TaskitatorComponents = Object.freeze({
             createModalIsBonus = false;
             if (bonusCheckbox) bonusCheckbox.checked = false;
             dpSetup('create',{});
+            {const aiBox = document.getElementById('aiLockCheckbox'); if (aiBox) aiBox.checked = false;
+            window.TaskitatorDynamicBonusUI?.setup('create', null);}
 
             const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');
             const mrStudyRewardInputs = document.getElementById('mrstudyRewardInputs');
@@ -3041,6 +3047,14 @@ window.TaskitatorComponents = Object.freeze({
                         if (parentTask) assignedProject = parentTask.project_id || 'inbox';
                     }
 
+                    // Phase 6.1.1: AI audit excludes Bonus and Dynamic Bonus; Bonus excludes Dynamic Bonus.
+                    if (isAi && isBonus) { window.TaskitatorNotify('An AI-audited task can’t be bonus work. Uncheck Bonus or the AI audit.'); return; }
+                    let dynamicBonus = window.TaskitatorDynamicBonusUI?.value('create') === true && !isBonus && !isAi;
+                    if (dynamicBonus) {
+                        const required = [...(document.getElementById('subtaskBuilderList')?.querySelectorAll('.subtask-input-title') || [])].filter(i => i.value.trim() && !i.value.includes('$$')).length;
+                        if (!required && !(await window.TaskitatorDynamicBonusUI.confirmNoRequired())) return;
+                    }
+
                     const submitBtn = document.getElementById('submitTaskCreateBtn');
                     if (submitBtn) {
                         submitBtn.disabled = true, submitBtn.classList.toggle('is-loading', true);
@@ -3079,6 +3093,7 @@ window.TaskitatorComponents = Object.freeze({
                         completed_at: null
                     };
                     {const sc = window.TaskitatorStatusCountUI?.value('create'); if (sc !== undefined) newTask.status_count = sc;}
+                    if (dynamicBonus) newTask.dynamic_bonus = true;
 
                     if (dpValue('create')) {
                         const dpEnt = await dpEntitlement();
@@ -3233,6 +3248,19 @@ window.TaskitatorComponents = Object.freeze({
                     }
 
                     if (!task.is_bonus && willBeBonus && !isBypassActive && (task.strict_prerequisites || host.tasks.shieldedAncestor(task.id))) { window.TaskitatorNotify('Required work protected by a shield cannot become bonus work.'); return; }
+                    // Phase 6.1.1: Dynamic Bonus and the AI audit / Bonus exclusivity.
+                    const DB = window.TaskitatorDynamicBonusUI, auditedAfter = willBeAiLocked || Boolean(task.require_ai_proof);
+                    if (willBeBonus && auditedAfter && !(task.is_bonus && DB?.audited(task))) { window.TaskitatorNotify('An AI-audited task can’t be bonus work. Nothing was saved.'); return; }
+                    const dbWant = DB?.value('edit');
+                    let dynamicBonusAfter = Boolean(task.dynamic_bonus);
+                    if (dbWant === false) dynamicBonusAfter = false;
+                    if (dbWant === true) {
+                        if (willBeBonus || auditedAfter) { window.TaskitatorNotify('Dynamic Bonus can’t be combined with Bonus or AI audit. Nothing was saved.'); return; }
+                        if (!task.dynamic_bonus && !isBypassActive && (task.strict_prerequisites || host.tasks.shieldedAncestor(task.id))) { window.TaskitatorNotify('Dynamic Bonus can’t be turned on once a shield protects this task. Nothing was saved.'); return; }
+                        if (!window.TaskitatorStatusCount?.hasRequired(host.tasks.getAll(), task.id) && !(await DB.confirmNoRequired())) return;
+                        dynamicBonusAfter = true;
+                    }
+                    if (willBeBonus || auditedAfter) dynamicBonusAfter = false;
                     const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(rawEditedTitle);
 
                     const editTaskParentSelect = document.getElementById('editTaskParentSelect');
@@ -3349,6 +3377,7 @@ window.TaskitatorComponents = Object.freeze({
                     task.tags = Array.from(editModalSelectedTags);
                     task.priority_id = editModalSelectedPriority;
                     task.is_bonus = willBeBonus;
+                    if (dynamicBonusAfter) task.dynamic_bonus = true; else delete task.dynamic_bonus;
 
                     if (!task.parent_id) {
                         const oldProjectId = task.project_id;
@@ -3358,6 +3387,7 @@ window.TaskitatorComponents = Object.freeze({
                         }
                     }
 
+                    if (task.ai_locked && !isBypassActive && editAssignToday && !String(task.due_date || '').trim()) task.due_date = host.clock.today();
                     if (!task.ai_locked || isBypassActive) {
                         task.title = cleanTitle;
                         task.raw_title = rawEditedTitle;
@@ -3367,6 +3397,12 @@ window.TaskitatorComponents = Object.freeze({
                         task.raw_proof_criteria = willBeAiLocked ? editedCriteriaRaw : '';
                     }
                     
+                    // Phase 6.1.2: Early task from the task panel. An invalid date is skipped with a message; the rest still saves.
+                    {const E = window.TaskitatorEarly, input = document.getElementById('editEarlyTaskDate'), row = document.getElementById('editEarlyTaskRow');
+                    if (E && input && row && !row.hidden && input.value !== input.dataset.initial) {
+                        if (!input.value) delete task.early_date;
+                        else { const why = E.reason(E.index(host.tasks.getAll()), task, input.value, host.clock.today()); if (why) window.TaskitatorNotify(why + ' The early date was not changed.'); else task.early_date = input.value; }
+                    }}
                     task.strict_prerequisites = willBeStrict;
                     {const sc = window.TaskitatorStatusCountUI?.value('edit'); if (sc !== undefined) task.status_count = sc;}
                     await window.TaskitatorRecurrenceUI?.applyEdit(task);
@@ -4132,22 +4168,37 @@ window.TaskitatorComponents = Object.freeze({
     const today = () => window.TaskitatorRecurrence.today(Date.now(), Number(settings().day_start_hour) || 0);
     function locked() {
         if (window.TaskitatorEngine?.EmergencyManager?.isBypassActive?.()) return false;
-        return SC().pending(tasks(), today());
+        return SC().pending(tasks(), today(), settings());
     }
     function box(prefix) { return { group: document.getElementById(prefix + 'StatusCountGroup'), input: document.getElementById(prefix + 'StatusCount'), note: document.getElementById(prefix + 'StatusCountNote') }; }
+    // Phase 6.1.1: bonus tasks never inherit a parent's flag. Without their own flag they follow "Count bonus tasks".
+    function initial(map, task, parentId, bonus) {
+        if (bonus) return task && typeof task.status_count === 'boolean' ? task.status_count : SC().bonusCount(settings());
+        const base = task ? task : (parentId ? map.get(parentId) : null);
+        return base ? SC().effective(map, base) : true;
+    }
     function setup(prefix, task, parentId) {
         const { group, input, note } = box(prefix);
         if (!group || !input) return;
         group.hidden = !normal();
         if (group.hidden) return;
-        const map = by(), base = task ? task : (parentId ? map.get(parentId) : null);
-        const inherited = base ? SC().effective(map, base) : true;
-        input.checked = inherited; input.dataset.initial = String(inherited);
-        const stuck = !!task && inherited && locked() && SC().dueNow(map, task, today()) && task.status === 'active';
-        input.disabled = stuck;
-        if (note) { note.hidden = !stuck; }
+        const map = by(), createBonus = document.getElementById('bonusTaskCheckbox');
+        const isBonus = () => task ? SC().bonusIds(tasks()).has(task.id) : Boolean(createBonus?.checked);
+        const paint = () => {
+            const value = initial(map, task, parentId, isBonus());
+            input.checked = value; input.dataset.initial = String(value);
+            const stuck = !!task && value && locked() && SC().dueNow(map, task, today()) && task.status === 'active';
+            input.disabled = stuck;
+            if (note) { note.hidden = !stuck; }
+        };
+        paint();
+        // Creating: ticking "Bonus" changes the default until the person sets the box by hand.
+        if (task) return;
+        createPaint = () => { if (String(input.checked) === input.dataset.initial) paint(); };
+        if (createBonus && !createBonus.dataset.scBound) { createBonus.dataset.scBound = '1'; createBonus.addEventListener('change', () => createPaint?.()); }
     }
-    // undefined = leave the task alone (follows its parent).
+    let createPaint = null;
+    // undefined = leave the task alone (follows its parent, or "Count bonus tasks" for bonus work).
     function value(prefix) {
         const { group, input } = box(prefix);
         if (!group || group.hidden || !input || input.disabled) return undefined;
@@ -4156,3 +4207,73 @@ window.TaskitatorComponents = Object.freeze({
     window.TaskitatorStatusCountUI = { setup, value, normal };
 })();
 // <<< MODULE_END: status-count-ui.js >>>
+
+// <<< MODULE_START: dynamic-bonus-ui.js >>>
+// Phase 6.1.1: Dynamic Bonus checkbox. A task with dynamic_bonus turns into bonus work once all its required
+// descendants are done (derived in TaskitatorStatusCount.bonusIds, never stored). Rules shown here, enforced by the Worker:
+//  - Bonus and Dynamic Bonus exclude each other. AI-audited tasks can have neither (existing combinations stay).
+//  - It can't be turned on for a task that is shielded or under a shield (without Emergency Bypass). Turning it off is always allowed.
+(function () {
+    'use strict';
+    const audited = t => Boolean(t && (t.ai_locked || t.require_ai_proof));
+    const ids = { create: ['createDynamicBonusCheckbox', 'bonusTaskCheckbox', 'aiLockCheckbox', 'createDynamicBonusNotice'],
+                  edit: ['editDynamicBonusCheckbox', 'editBonusTaskCheckbox', 'editAiLockCheckbox', 'editDynamicBonusNotice'] };
+    const state = { create: null, edit: null };
+    const els = p => { const [d, b, a, n] = ids[p].map(id => document.getElementById(id)); return { db: d, bonus: b, ai: a, note: n }; };
+    const show = (note, text) => { if (note) { note.textContent = text || ''; note.style.display = text ? 'block' : 'none'; } };
+    function setDisabled(el, on, mark) { if (!el) return; if (on) { if (!el.disabled) el.dataset[mark] = '1'; el.disabled = true; } else if (el.dataset[mark]) { delete el.dataset[mark]; el.disabled = false; } }
+    function uncheck(el) { if (el && el.checked) { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); } }
+    function apply(p) {
+        const st = state[p], { db, bonus, ai, note } = els(p);
+        if (!st || !db) return;
+        const task = st.task, aiOn = Boolean(ai?.checked) || audited(task);
+        const grandfathered = !!task && audited(task) && !!task.is_bonus;
+        let why = '';
+        if (aiOn) {
+            uncheck(db);
+            if (bonus && bonus.checked && !grandfathered) uncheck(bonus);
+            setDisabled(db, true, 'dbLock');
+            setDisabled(bonus, !(grandfathered && bonus?.checked), 'dbLock');
+            why = 'AI-audited tasks can’t be Bonus or Dynamic Bonus.';
+        } else {
+            setDisabled(bonus, db.checked, 'dbLock');
+            const shieldBlock = !!task && !task.dynamic_bonus && !st.bypass && st.shielded;
+            setDisabled(db, Boolean(bonus?.checked) || (shieldBlock && !db.checked), 'dbLock');
+            if (bonus?.checked) why = 'Uncheck Bonus to use Dynamic Bonus.';
+            else if (db.checked) why = '';
+            else if (shieldBlock) why = 'Dynamic Bonus can’t be turned on once a shield protects this task.';
+        }
+        show(note, why);
+    }
+    function bind(p) {
+        const { db, bonus, ai } = els(p);
+        for (const el of [db, bonus, ai]) if (el && !el.dataset.dbBound) { el.dataset.dbBound = '1'; el.addEventListener('change', () => apply(p)); }
+    }
+    // task: the task being edited (null when creating). opts: { bypass, shielded }.
+    function setup(p, task, opts = {}) {
+        const { db, bonus, ai } = els(p);
+        if (!db) return;
+        for (const el of [db, bonus, ai]) if (el?.dataset.dbLock) { delete el.dataset.dbLock; el.disabled = false; }
+        state[p] = { task: task || null, bypass: !!opts.bypass, shielded: !!opts.shielded };
+        // Phase 6.1.2: one "?" panel explains Dynamic Priority and Dynamic Bonus.
+        {const btn = document.getElementById(p + 'DynHelpBtn'), help = document.getElementById(p + 'DynHelp');
+        if (btn && help && !btn.dataset.bound) { btn.dataset.bound = '1'; btn.addEventListener('click', e => { e.preventDefault(); help.hidden = !help.hidden; btn.setAttribute('aria-expanded', String(!help.hidden)); }); }}
+        db.checked = Boolean(task && task.dynamic_bonus && !task.is_bonus);
+        db.dataset.initial = String(db.checked);
+        bind(p); apply(p);
+    }
+    // Creating: true/false. Editing: undefined when unchanged.
+    function value(p) {
+        const { db } = els(p);
+        if (!db) return undefined;
+        if (p === 'edit' && String(db.checked) === db.dataset.initial) return undefined;
+        return db.checked;
+    }
+    async function confirmNoRequired() {
+        const title = 'Dynamic Bonus won’t work here', message = 'This task has no required subtasks, so Dynamic Bonus never turns it into bonus work. Save anyway?';
+        try { if (window.TaskitatorConfirm) return Boolean(await window.TaskitatorConfirm({ title, message, confirmLabel: 'Save anyway', tone: 'warning' })); } catch (e) { return false; }
+        return typeof confirm === 'function' ? Boolean(confirm(message)) : false;
+    }
+    window.TaskitatorDynamicBonusUI = { setup, value, apply, confirmNoRequired, audited };
+})();
+// <<< MODULE_END: dynamic-bonus-ui.js >>>

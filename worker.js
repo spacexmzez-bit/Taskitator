@@ -130,7 +130,7 @@ import { proofRequestBody } from './pro-proof-payload.js';
     function updateNode(state, task, fields) {
         const s = seriesFor(state, task); const node = s?.nodes.find(n => n.key === task.recurrence_node_id);
         if (!node) return;
-        const allowed = ['title', 'raw_title', 'description', 'tags', 'priority_id', 'dynamic_priority_target', 'project_id', 'is_bonus', 'strict_prerequisites', 'ai_locked', 'proof_criteria', 'raw_proof_criteria', 'reference_inline_data', 'reference_id'];
+        const allowed = ['title', 'raw_title', 'description', 'tags', 'priority_id', 'dynamic_priority_target', 'dynamic_bonus', 'project_id', 'is_bonus', 'strict_prerequisites', 'ai_locked', 'proof_criteria', 'raw_proof_criteria', 'reference_inline_data', 'reference_id'];
         for (const key of allowed) if (Object.prototype.hasOwnProperty.call(fields, key)) node.task[key] = copy(fields[key]);
     }
     function validateState(state, tasks) {
@@ -2315,8 +2315,7 @@ export class TaskitatorSync {
             // Refresh Pro entitlement BEFORE the storage transaction (it may call Keyo). The transaction rechecks
             // the stored entitlement, so a change between this refresh and the commit is still caught.
             let dynamicRefreshError = null;
-            if (push && identity?.userId && (snapshot.tasks.some(t => t.dynamic_priority_target != null || t.early_date != null || t.study_plan_id) ||
-                snapshot.recurrence_state?.series?.some(s => s.nodes?.some(n => n.task?.dynamic_priority_target != null)) ||
+            if (push && identity?.userId && (snapshot.tasks.some(t => t.study_plan_id) ||
                 (Array.isArray(snapshot.saved_criteria) && (snapshot.saved_criteria.length > 4 || snapshot.saved_criteria.some(i => i && i.has_exemplar))))) {
                 dynamicRefreshError = await refreshKeyo(this.pro.licenses, this.storage, identity.userId, clientOf(identity)); // Keyo never decides app Pro
             }
@@ -2392,6 +2391,14 @@ export class TaskitatorSync {
                     }
                     try{globalThis.TaskitatorSmartStudy.guard(previous,snapshot,replanned);}catch(e){throw new HTTPError(409,e.message);}
                     try{globalThis.TaskitatorEarly.guard(previous,snapshot);}catch(e){throw new HTTPError(400,e.message);}
+                    // Phase 6.1.1: Bonus, Dynamic Bonus and AI audit exclude each other. Rejected tasks revert to the cloud copy.
+                    {const bad=globalThis.TaskitatorStatusCount.bonusRules(previous,snapshot);
+                    if(bad.length)throw Object.assign(new HTTPError(403,bad[0].message),{code:'BONUS_RULES',rejected:bad.map(b=>({id:b.id,code:'BONUS_RULES',message:b.message,related:[]}))});}
+                    // Older clients don't know Dynamic Bonus and drop it from recurring templates; make them refresh first.
+                    // (Ordinary tasks keep unknown fields on older clients, so only templates need the check.)
+                    if (body.dynamic_bonus_schema !== 1 && previous?.recurrence_state?.series?.some(s => s.nodes?.some(n => n.task?.dynamic_bonus === true))) {
+                        throw new HTTPError(428, 'Refresh Taskitator on this device before syncing tasks that use Dynamic Bonus.');
+                    }
                     await this.protection.guardSync(tx,identity.userId,previous,snapshot);
                     try { Recurrence.reconcile(snapshot); }
                     catch (err) { throw new HTTPError(400, err.message); }
@@ -2404,8 +2411,12 @@ export class TaskitatorSync {
                     await this.protection.consumeStudyReplanGrants(tx,identity.userId,previous,snapshot);
                     await this.protection.consumeCriteriaEditGrants(tx,identity.userId,previous,snapshot);
                     // Phone-lock counting: loosening is refused while today's tasks are unfinished, unless Emergency Bypass is on (breaks do not lift it).
-                    {const SC=globalThis.TaskitatorStatusCount,why=SC.loosened(previous,snapshot,logicalDate(Date.now(),dayHour(previous?.settings)));
-                    if(why&&SC.pending(previous.tasks,logicalDate(Date.now(),dayHour(previous.settings)))&&!(await this.protection.bypass(tx,identity.userId)))throw new HTTPError(403,why);}
+                    // Task-level loosenings carry a rejected list, so the device reverts just those tasks to the cloud copy.
+                    {const SC=globalThis.TaskitatorStatusCount,day=logicalDate(Date.now(),dayHour(previous?.settings)),l=SC.loosenings(previous,snapshot,day),why=l.setting||l.tasks[0]?.message;
+                    if(why&&SC.pending(previous.tasks,day,previous.settings)&&!(await this.protection.bypass(tx,identity.userId))){
+                        const err=new HTTPError(403,why);
+                        if(!l.setting)Object.assign(err,{code:'STATUS_LOCKED',rejected:l.tasks.map(t=>({id:t.id,code:'STATUS_LOCKED',message:t.message,related:[]}))});
+                        throw err;}}
                     globalThis.TaskitatorEarly.apply(snapshot);
                     globalThis.TaskitatorSmartStudy.apply(snapshot,previous);
                     // Breaks are changed only through /breaks. Sync keeps the stored copy, so a stale or

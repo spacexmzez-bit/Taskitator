@@ -36,7 +36,7 @@ function plans(tasks){
 function exportPlan(plan,now=new Date().toISOString()){
  if(!plan||!Array.isArray(plan.parents))throw Error('Choose a study plan to export.');
  const unitsOf=p=>plan.units.filter(u=>u.parent_id===p.id).sort((a,b)=>(unitNumber(a)??1e9)-(unitNumber(b)??1e9)||String(a.title).localeCompare(String(b.title)));
- const days=[...plan.parents].sort((a,b)=>String(a.due_date||'').localeCompare(String(b.due_date||''))||String(a.title).localeCompare(String(b.title))).map(p=>({
+ const days=[...plan.parents].sort((a,b)=>String(a.due_date||'').localeCompare(String(b.due_date||''))||(globalThis.TaskitatorLabels?.compare||((x,y)=>String(x??'').localeCompare(String(y??''),undefined,{sensitivity:'base',numeric:true})))(a.title,b.title)).map(p=>({
   title:p.title,date:p.due_date||null,description:p.description||'',priority:p.priority_id||null,status:p.status,
   units:unitsOf(p).map(u=>({number:unitNumber(u),title:u.title,status:u.status,bonus:Boolean(u.is_bonus),ai_audited:isAudited(u),priority:u.priority_id||null,
    early_date:(!u.smart_adjusted&&u.smart_early_date)||u.early_date||null,completed_at:u.completed_at||null}))}));
@@ -238,7 +238,7 @@ function replan(tasks,id,options){
   const title=(base||'Study plan')+' '+(next+i);
   const parent={study_plan_id:id,status:'active',project_id:template?.project_id||'inbox',tags:[...(template?.tags||[])],is_bonus:false,created_at:template?.created_at||null,completed_at:null,due_date:dates[i],
    id:pid,parent_id:null,title,raw_title:title,description:coverageLine(plural,nums,plan.chapter)+extra,ai_locked:false,proof_criteria:'',raw_proof_criteria:'',strict_prerequisites:true,
-   ...(prio?{priority_id:prio}:{}),...(typeof template?.status_count==='boolean'?{status_count:template.status_count}:{})};
+   ...(prio?{priority_id:prio}:{}),...(typeof template?.status_count==='boolean'?{status_count:template.status_count}:{}),...(template?.dynamic_bonus===true?{dynamic_bonus:true}:{})};
   fresh.push(parent);for(const u of units)placed.set(u.id,{parent_id:pid,due_date:dates[i]});
  });
  for(const t of tasks){
@@ -369,7 +369,7 @@ function softReschedule(tasks,id,options,today){
   const title=(base||'Study plan')+' '+(next+i),nums=(nowIn.get(f.id)||[]).sort((a,b)=>a-b);
   out.push({study_plan_id:id,status:'active',project_id:template?.project_id||'inbox',tags:[...(template?.tags||[])],is_bonus:false,created_at:template?.created_at||null,completed_at:null,due_date:f.date,
    id:f.id,parent_id:null,title,raw_title:title,description:coverageLine(plural,nums,plan.chapter)+extra,ai_locked:false,proof_criteria:'',raw_proof_criteria:'',strict_prerequisites:true,
-   ...(prio?{priority_id:prio}:{}),...(typeof template?.status_count==='boolean'?{status_count:template.status_count}:{})});
+   ...(prio?{priority_id:prio}:{}),...(typeof template?.status_count==='boolean'?{status_count:template.status_count}:{}),...(template?.dynamic_bonus===true?{dynamic_bonus:true}:{})});
  });
  const locked=[...moveSet].filter(uid=>isAudited(by.get(uid))||by.get(uid).strict_prerequisites);
  return {tasks:out,mode:o.mode,overdue:overdue.length,moved:moveSet.size,counts,locked,end:dates.at(-1)||null};
@@ -674,5 +674,11 @@ function currentSchedule(plan,today,fallbackWeekdays=[]){
  return out;
 }
 
-root.TaskitatorStudyManage={setChapters,currentSchedule,auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,bonusAdd,bonusRemove,bonusMissed,bonusWaiting,bonusSlide,bonusConvert,bonusFinish,bonusCheck,configOf,unitNumber,plans,exportPlan,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
+// Phase 6.1.2: ids of unfinished plans with overdue units (required or bonus) that need rescheduling.
+function plansWithOverdue(tasks,today){
+ const out=new Set();
+ for(const p of plans(tasks)){if(p.finished)continue;try{if(softOverdue(tasks,p.id,today).length||bonusMissed(tasks,p.id,today).length)out.add(p.id);}catch(e){}}
+ return out;
+}
+root.TaskitatorStudyManage={setChapters,currentSchedule,auditTargets,assignUnits,balance,planTree,replan,replanOptions,replanUnits,replanCounts,adjustCounts,replanImpact,softOptions,softOverdue,softDays,softReschedule,softCheck,bonusAdd,bonusRemove,bonusMissed,plansWithOverdue,bonusWaiting,bonusSlide,bonusConvert,bonusFinish,bonusCheck,configOf,unitNumber,plans,exportPlan,renamePlan,renameUnit,setPriorities,addCriteria,openUnits,deletePlan,prioritiesOf,rankOf,isAudited};
 })(typeof window==='undefined'?globalThis:window);

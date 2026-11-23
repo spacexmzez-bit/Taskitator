@@ -109,7 +109,7 @@
      blockReason:id=>id&&data.progress?.[id]?.complete?'This task is complete. Choose an open task.':null,
      active:fl=>!!(fl.tags.size||fl.priorities.size||fl.date.mode),
      match:(x,fl)=>{const checks=[];if(fl.tags.size)checks.push(x.tags.some(name=>fl.tags.has(name)));if(fl.priorities.size)checks.push(fl.priorities.has(x.priority_id));if(fl.date.mode)checks.push(DF?DF.matches(x,by,today,fl.date):true);return fl.logic==='or'?checks.some(Boolean):checks.every(Boolean);},
-     sort:(rows,mode)=>rows.sort((a,b)=>mode==='alpha'?String(a.title).localeCompare(String(b.title)):(rank.get(a.priority_id)??Infinity)-(rank.get(b.priority_id)??Infinity)||String(a.title).localeCompare(String(b.title)))});
+     sort:(rows,mode)=>{const L=(globalThis.TaskitatorLabels?.compare||((x,y)=>String(x??'').localeCompare(String(y??''),undefined,{sensitivity:'base',numeric:true})));return rows.sort((a,b)=>mode==='alpha'?L(a.title,b.title):(rank.get(a.priority_id)??Infinity)-(rank.get(b.priority_id)??Infinity)||L(a.title,b.title));}});
     // The picker is a native dialog outside this panel: register it as the top layer so focus and Escape stay with it.
     const dialog=document.querySelector?.('dialog.parent-picker'),release=dialog&&window.UniverseUX?.layer(dialog,{fit:false,close:()=>dialog.querySelector('.pp-close')?.click()});
     let choice;try{choice=await opening;}finally{release?.();}
@@ -350,7 +350,7 @@
    const dueOf=t=>{let due=t.due_at,p=t;const seen=new Set();while(!due&&p?.parent_id&&!seen.has(p.parent_id)){seen.add(p.parent_id);p=data.tasks.find(x=>x.id===p.parent_id);due=p?.due_at;}return due||null;};
    const rankOf=t=>{const c=data.catalog?.find(c=>c.id===t.priority_id);return c?c.rank:Infinity;};
    const byPosition=(a,b)=>(a.position??0)-(b.position??0);
-   const sorters={manual:byPosition,due:(a,b)=>(dueOf(a)??Infinity)-(dueOf(b)??Infinity)||byPosition(a,b),priority:(a,b)=>rankOf(a)-rankOf(b)||byPosition(a,b),title:(a,b)=>String(a.title).localeCompare(String(b.title))||byPosition(a,b)};
+   const sorters={manual:byPosition,due:(a,b)=>(dueOf(a)??Infinity)-(dueOf(b)??Infinity)||byPosition(a,b),priority:(a,b)=>rankOf(a)-rankOf(b)||byPosition(a,b),title:(a,b)=>(globalThis.TaskitatorLabels?.compare||((x,y)=>String(x??'').localeCompare(String(y??''),undefined,{sensitivity:'base',numeric:true})))(a.title,b.title)||byPosition(a,b)};
    let sortMode='manual';const sorted=list=>[...list].sort(sorters[sortMode]||byPosition);
    const sortChoices=[['manual','Manual order'],['due','Due date'],['priority','Priority'],['title','Title (A–Z)']];
    // Same date filter as personal lists (date-filter.js): matches the effective due date, own or inherited.

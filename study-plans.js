@@ -104,7 +104,7 @@ function analysis(plan, d) {
         return { opts, result, impact: M.replanImpact(tasks, result.tasks, plan.id, localToday(), settings) };
     } catch (e) { return { error: e.message }; }
 }
-const todayPending = () => { try { return window.TaskitatorStatusCount?.pending ? window.TaskitatorStatusCount.pending(tasks, localToday()) : true; } catch (e) { return true; } };
+const todayPending = () => { try { return window.TaskitatorStatusCount?.pending ? window.TaskitatorStatusCount.pending(tasks, localToday(), (() => { try { return JSON.parse(localStorage.getItem('taskitator_settings') || '{}') || {}; } catch (e) { return {}; } })()) : true; } catch (e) { return true; } };
 
 function mountSchedule(plan, d) {
     const id = plan.id, P = () => planOf(id);
@@ -211,7 +211,10 @@ function exportPlanJson(plan) {
 function card(plan, parent) {
     const list = M.prioritiesOf(settings), isOpen = current === plan.id;
     const c = el('section', undefined, parent, 'plan-card');
-    const top = el('div', undefined, c, 'plan-top'); el('h2', plan.base || tr('Study plan'), top);
+    const top = el('div', undefined, c, 'plan-top'), heading = el('h2', plan.base || tr('Study plan'), top);
+    // Phase 6.1.2: a plan with overdue units (required or bonus) that need rescheduling shows its name in red.
+    let overdue = false; try { overdue = !!M.plansWithOverdue?.(tasks, localToday())?.has(plan.id); } catch (e) {}
+    if (overdue) { heading.classList.add('plan-overdue'); heading.title = tr('This plan has overdue units to reschedule.'); }
     const badges = el('div', undefined, top, 'plan-badges');
     el('span', plan.finished ? tr('Finished') : tr('In progress'), badges, 'plan-badge');
     if (plan.audited) el('span', tr('AI audited: {n}', { n: plan.audited }), badges, 'plan-badge ai');
@@ -703,6 +706,78 @@ window.addEventListener('focus', () => { if (visible) refresh(); sweepBonus(); }
 window.addEventListener('taskitator-page-load-synced', () => setTimeout(sweepBonus, 600));
 setTimeout(sweepBonus, 4000); setInterval(sweepBonus, 300000);
 $('plansAddBtn')?.addEventListener('click', () => openCreate({}));
+$('plansImportBtn')?.addEventListener('click', () => pickImport());
+
+// ---- import (Phase 6.1.2): a file made by Export JSON becomes a new plan through the normal authorize flow ----
+function pickImport() {
+    if (busy) return;
+    const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json';
+    input.addEventListener('change', async () => {
+        const file = input.files?.[0]; if (!file) return;
+        if (file.size > 2 * 1024 * 1024) { status(tr('This file is too large for a study plan (2 MB limit).')); return; }
+        let data; try { data = JSON.parse(await file.text()); } catch (e) { status(tr('This file is not valid JSON.')); return; }
+        openImport(data);
+    });
+    input.click();
+}
+function openImport(data) {
+    const I = window.TaskitatorStudyImport, dlg = $('planImport'), body = $('planImportBody'); if (!I || !dlg) return;
+    load();
+    const st = { mode: 'template', start: localToday(), result: null };
+    const prios = M.prioritiesOf(settings).map(p => p.id);
+    const paint = () => {
+        body.replaceChildren();
+        const modes = el('div', undefined, body, 'plan-import-modes');
+        for (const [value, text, hint] of [['template', tr('Use as template'), tr('New start date, everything starts unfinished. The gaps between days are kept.')], ['restore', tr('Restore'), tr('Original dates, and units done in the file are marked done again.')]]) {
+            const lab = el('label', undefined, modes, 'plan-import-mode'), r = el('input', undefined, lab); r.type = 'radio'; r.name = 'planImportMode'; r.value = value; r.checked = st.mode === value;
+            el('strong', ' ' + text, lab); el('small', hint, lab);
+            r.addEventListener('change', () => { st.mode = value; paint(); });
+        }
+        if (st.mode === 'template') { const s = field(tr('Start date'), body, st.start, 'date'); s.min = localToday(); s.addEventListener('change', () => { st.start = s.value; paint(); }); }
+        try {
+            st.result = I.convert(data, { mode: st.mode, start: st.start, priorities: prios });
+            const m = st.result.summary, ul = el('ul', undefined, body);
+            el('li', tr('"{title}": {days} study days, {req} required and {bonus} bonus units.', { title: m.title, days: m.days, req: m.required, bonus: m.bonus }), ul);
+            el('li', tr('From {start} to {end}.', { start: m.start, end: m.end }), ul);
+            if (st.mode === 'restore' && m.done) el('li', tr('{n} unit(s) will be marked done again.', { n: m.done }), ul);
+            if (m.audited) el('li', tr('{n} AI-audited unit(s) are imported as normal units. Add AI criteria after importing if you need them.', { n: m.audited }), ul);
+            if (m.early) el('li', tr('Early dates in the file are not imported.'), ul);
+            $('planImportYes').disabled = false;
+        } catch (e) {
+            st.result = null; const ul = el('ul', undefined, body, 'plan-import-problems');
+            for (const p of e.problems || [e.message]) el('li', tr(p), ul);
+            el('p', tr('Nothing is created until every problem is fixed.'), body, 'plan-hint warn');
+            $('planImportYes').disabled = true;
+        }
+    };
+    let settled = false;
+    const finish = v => { if (settled) return; settled = true; if (dlg.open) dlg.close(); if (v && st.result) runImport(st.result); };
+    $('planImportYes').onclick = () => finish(true); $('planImportNo').onclick = () => finish(false); dlg.onclose = () => finish(false);
+    paint(); dlg.showModal();
+}
+async function runImport(result) {
+    if (busy) return;
+    if (pro !== true) { status(pro === null ? tr('Could not confirm your Pro license.') : tr('Importing a study plan needs an active Pro license, like creating one.')); return; }
+    if (window.TaskitatorEditorDraft) { status(tr('Save or cancel your open task editor first.')); return; }
+    busy = true; render();
+    try {
+        if (!await window.SyncEngine?.forceImmediateSync?.()) throw Error(tr('Sync your workspace successfully before importing the plan.'));
+        const planId = crypto.randomUUID(), created = new Date().toISOString();
+        const config = S.normalize(result.config), built = S.build(config, planId, created, false, '');
+        await TaskitatorAuth.api('/study-plan', { method: 'POST', body: JSON.stringify({ action: 'authorize', config, plan_id: planId, created_at: created, audit: false, criteria: '' }) });
+        const current = read(TASKS, []);
+        if (!current.some(t => t.study_plan_id === planId)) localStorage.setItem(TASKS, JSON.stringify([...current, ...built]));
+        window.TaskitatorApp?.loadStorage?.(); window.TaskitatorApp?.saveStorageAndPush?.(); window.TaskitatorApp?.renderUnifiedView?.();
+        if (!await window.SyncEngine?.forceImmediateSync?.()) { status(tr('Imported locally; sync is pending. Use Sync Now before editing the new plan.')); return; }
+        let done = 0;
+        if (result.completions.length) {
+            const list = read(TASKS, []); done = window.TaskitatorStudyImport.applyCompletions(list, planId, result.completions);
+            if (done) { localStorage.setItem(TASKS, JSON.stringify(list)); window.TaskitatorApp?.loadStorage?.(); window.TaskitatorApp?.saveStorageAndPush?.(); await window.SyncEngine?.forceImmediateSync?.(); }
+        }
+        status(tr('Imported "{title}".', { title: result.summary.title }) + (done ? ' ' + tr('{n} unit(s) marked done.', { n: done }) : ''));
+    } catch (e) { status(e.message); }
+    finally { load(); busy = false; render(); window.dispatchEvent(new CustomEvent('taskitator-tasks-updated')); }
+}
 window.addEventListener('storage', () => { if (visible && !busy && !anyDirty()) { load(); render(); } });
 // A plan created (or a draft used) from the dialog shows up here at once.
 window.addEventListener('taskitator-study-closed', () => { if (started && !busy && !anyDirty()) { load(); render(); } });

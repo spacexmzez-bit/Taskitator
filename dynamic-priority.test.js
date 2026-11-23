@@ -1,4 +1,4 @@
-// Dynamic Priority (Pro): client-side derivation and UI wiring. Worker enforcement lives in security.test.js.
+// Dynamic Priority (free since Phase 6.1.1): client-side derivation and UI wiring. Worker enforcement lives in security.test.js.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -21,19 +21,19 @@ test('lowers only when every required descendant is done and bonus work remains'
     assert.equal(eff([root(), t('r', { parent_id: 'root' }), t('b', { parent_id: 'root', is_bonus: true })]), 'prio_high');
 });
 
-test('no bonus work, only completed bonus work, or no children keeps the configured priority', () => {
-    assert.equal(eff([root()]), 'prio_high');
-    assert.equal(eff([root(), t('r', { parent_id: 'root', status: 'completed' })]), 'prio_high');
-    assert.equal(eff([root(), t('b', { parent_id: 'root', is_bonus: true, status: 'completed' })]), 'prio_high');
+test('Phase 6.1.1: no unfinished required work uses the target right away, childless tasks included', () => {
+    assert.equal(eff([root()]), 'prio_low');
+    assert.equal(eff([root(), t('r', { parent_id: 'root', status: 'completed' })]), 'prio_low');
+    assert.equal(eff([root(), t('b', { parent_id: 'root', is_bonus: true, status: 'completed' })]), 'prio_low');
 });
 
-test('restores when required work is reopened or newly added, and when bonus work is finished or removed', () => {
+test('restores when required work is reopened or newly added; bonus work no longer matters', () => {
     const tree = [root(), t('r', { parent_id: 'root', status: 'completed' }), t('b', { parent_id: 'root', is_bonus: true })];
     assert.equal(eff(tree), 'prio_low');
     assert.equal(eff(tree.map(x => x.id === 'r' ? { ...x, status: 'active' } : x)), 'prio_high');
     assert.equal(eff([...tree, t('new', { parent_id: 'root' })]), 'prio_high');
-    assert.equal(eff(tree.map(x => x.id === 'b' ? { ...x, status: 'completed' } : x)), 'prio_high');
-    assert.equal(eff(tree.map(x => x.id === 'b' ? { ...x, status: 'trash' } : x)), 'prio_high');
+    assert.equal(eff(tree.map(x => x.id === 'b' ? { ...x, status: 'completed' } : x)), 'prio_low', 'finished bonus work: still no required work');
+    assert.equal(eff(tree.map(x => x.id === 'b' ? { ...x, status: 'trash' } : x)), 'prio_low');
     assert.equal(eff(tree.map(x => x.id === 'b' ? { ...x, is_bonus: false } : x)), 'prio_high');
 });
 
@@ -49,8 +49,9 @@ test('trashed branches are ignored; moving a branch changes the result', () => {
     const tree = [root(), t('b', { parent_id: 'root', is_bonus: true }), t('r', { parent_id: 'root', status: 'trash' })];
     assert.equal(eff(tree), 'prio_low');
     assert.equal(eff(tree.map(x => x.id === 'r' ? { ...x, status: 'active' } : x)), 'prio_high');
-    const moved = tree.map(x => x.id === 'b' ? { ...x, parent_id: null } : x);
-    assert.equal(eff(moved), 'prio_high');
+    const moved = tree.map(x => x.id === 'b' ? { ...x, parent_id: null, is_bonus: false } : x);
+    assert.equal(eff(moved), 'prio_low', 'no required work left under root');
+    assert.equal(eff(tree.map(x => x.id === 'b' ? { ...x, is_bonus: false } : x)), 'prio_high');
 });
 
 test('ignores completed or trashed owners, missing targets, same-level targets and unknown priorities', () => {
@@ -70,14 +71,15 @@ test('derivation is pure, handles cycles, and nested tasks each use their own ta
     assert.equal(effectiveMap('not an array', PRIORITIES).size, 0);
 });
 
-test('UI: create and edit forms mark the feature Pro, offer real priorities, default to lowest and respect locks', () => {
+test('UI: create and edit forms offer the free feature with real priorities and default to lowest', () => {
     const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
     for (const prefix of ['create', 'edit']) {
-        const block = html.match(new RegExp(`id="${prefix}DynamicPriorityContainer"[\\s\\S]*?</small>\\s*</div>`))[0];
-        assert.match(block, /pro-feature-pill">PRO</);
+        // Phase 6.1.2: one section, Dynamic Priority and Dynamic Bonus on one line, explanations in the ? panel.
+        const block = html.match(new RegExp(`id="${prefix}DynSection"[\\s\\S]*?id="${prefix}DynamicBonusNotice"`))[0];
+        assert.doesNotMatch(block, /pro-feature-pill/);
         assert.match(block, new RegExp(`id="${prefix}DynamicPriorityCheckbox"`));
         assert.match(block, new RegExp(`id="${prefix}DynamicPriorityTarget"`));
-        assert.match(block, /restores it automatically when required work becomes unfinished/);
+        assert.match(block, /restores the original automatically when required work becomes unfinished/);
     }
     assert.ok(html.indexOf('createDynamicPriorityContainer') > html.indexOf('id="bonusTaskCheckbox"'));
     assert.ok(html.indexOf('editDynamicPriorityContainer') > html.indexOf('id="editBonusTaskCheckbox"'));

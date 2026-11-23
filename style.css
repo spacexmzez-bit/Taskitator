@@ -5926,3 +5926,32 @@ dialog.parent-picker::backdrop{background:rgba(0,0,0,.6)}
 .lab-wrap .lab-boxrow .lab-field { min-width: 0; margin-bottom: 0; }
 .lab-wrap .lab-boxrow textarea { margin-block-start: 1.5rem; }
 .lab-wrap .lab-copy { position: absolute; inset-block-start: 0; inset-inline-end: 0; }
+
+/* Phase 6.1.1: Assign to today (undated AI-locked tasks) and Dynamic Bonus */
+.assign-today-btn { display: inline-flex; margin-top: 6px; padding: 4px 10px; font-size: 0.8rem; }
+.assign-today-btn[hidden] { display: none; }
+.dynamic-bonus-box { margin-top: -4px; }
+
+/* Phase 6.1.2: Dynamic Priority + Dynamic Bonus on one line, explanations in a "?" panel */
+.dyn-section { position: relative; }
+.dyn-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.dyn-title { font-size: 0.85rem; font-weight: 600; }
+.dyn-help-btn { width: 22px; height: 22px; border-radius: 50%; padding: 0; font-size: 0.75rem; font-weight: 700; line-height: 1; }
+.dyn-help { margin-bottom: 8px; padding: 8px 10px; border-radius: 6px; font-size: 0.78rem; color: var(--text-muted); background: var(--card-subtle); border: 1px solid var(--border-color); }
+.dyn-help p { margin: 0 0 4px; }
+.dyn-help p:last-child { margin-bottom: 0; }
+.dyn-line { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+.dyn-line label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; margin: 0; }
+.dyn-section .dynamic-bonus-box { margin-top: 0; }
+/* Phase 6.1.2: Early task row in the task panel, early groups in Today, reschedule link, plans with overdue units */
+.early-task-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; }
+.early-task-row[hidden] { display: none; }
+.early-task-label { font-size: 0.8rem; font-weight: 600; }
+.early-task-row .early-edit-note { flex-basis: 100%; margin-top: 0; }
+.early-group-row { cursor: default; opacity: 0.95; }
+.reschedule-plans-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; color: #fb923c; border-color: rgba(251, 146, 60, 0.5); background: rgba(251, 146, 60, 0.1); font-weight: 600; text-decoration: none; }
+.plan-card-title.plan-overdue, .plan-overdue { color: #f87171; }
+.plan-import-modes { display: grid; gap: 8px; margin-bottom: 10px; }
+.plan-import-mode { display: grid; grid-template-columns: auto 1fr; column-gap: 6px; align-items: baseline; cursor: pointer; }
+.plan-import-mode small { grid-column: 2; color: var(--text-muted); font-size: 0.78rem; }
+.plan-import-problems li { color: #f87171; }

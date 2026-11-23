@@ -87,11 +87,11 @@ test('closing during an undo window asks first, finalizes, and the next open fin
     assert.match(read('core.js'), /'taskitator_pending_grace'/, 'kept per account like the other local data');
 });
 
-test('Dynamic Priority: no shield/AI lock freeze in the editor or the Worker; Pro still required', () => {
+test('Dynamic Priority: no shield/AI lock freeze in the editor or the Worker; free since Phase 6.1.1', () => {
     assert.doesNotMatch(comp, /Locked: Dynamic Priority/);
     const pb = read('pro-backend.js');
     assert.doesNotMatch(pb, /fail\(403,'DYNAMIC_PRIORITY_LOCKED'/);
-    assert.match(pb, /fail\(403,'PRO_REQUIRED','Dynamic Priority is a Taskitator Pro feature/);
+    assert.doesNotMatch(pb, /Dynamic Priority is a Taskitator Pro feature/);
 });
 
 test('"Smart Study" is now "Early Appearance" in every user-facing string, with the PRO pill', () => {

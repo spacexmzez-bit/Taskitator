@@ -1477,7 +1477,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
         </section>
 <section id="shellView-study-plans" class="shell-view" data-shell-view="study-plans" hidden>
 <div class="plans-wrap">
-<header class="plans-header"><h1><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</h1><button type="button" class="icon-btn" id="plansAddBtn" title="New study plan" aria-label="New study plan"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-add"></use></svg></button><button type="button" class="emergency-icon-btn plans-bypass" id="plansBypassBtn" title="Emergency Bypass" aria-label="Emergency Bypass"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-emergency"></use></svg><span class="wide-label" id="plansBypassLabel">Emergency bypass</span></button></header>
+<header class="plans-header"><h1><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</h1><button type="button" class="icon-btn" id="plansAddBtn" title="New study plan" aria-label="New study plan"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-add"></use></svg></button><button type="button" class="icon-btn" id="plansImportBtn" title="Import a study plan (JSON)" aria-label="Import a study plan (JSON)"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-folder"></use></svg></button><button type="button" class="emergency-icon-btn plans-bypass" id="plansBypassBtn" title="Emergency Bypass" aria-label="Emergency Bypass"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-emergency"></use></svg><span class="wide-label" id="plansBypassLabel">Emergency bypass</span></button></header>
 <p class="plans-note">See the plans created by study recurrence, change their names and priorities, add AI criteria, or delete them.</p>
 <p id="plansNotice" class="plans-notice" hidden></p>
 <div class="tk-tabs plans-pagetabs" role="tablist"><button type="button" class="tk-tab" role="tab" id="plansTabPlans" aria-selected="true">Plans</button><button type="button" class="tk-tab" role="tab" id="plansTabDrafts" aria-selected="false">Drafts <span id="plansDraftCount"></span></button></div>
@@ -1492,6 +1492,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
 </div>
 <div class="plan-savebar" id="planSaveBar" hidden><span class="plan-savebar-msg" id="planSaveMsg" role="status"></span><button type="button" class="icon-btn" id="planDiscard">Discard</button><button type="button" class="icon-btn" id="planSaveDraft">Save draft</button><button type="button" class="icon-btn plan-save" id="planSave">Save changes</button></div>
 <dialog id="planConfirm" class="plan-confirm"><h3 id="planConfirmTitle"></h3><div id="planConfirmBody"></div><div class="plan-confirm-actions"><button type="button" class="icon-btn" id="planConfirmNo">Cancel</button><button type="button" class="icon-btn plan-save" id="planConfirmYes">Confirm</button></div></dialog>
+<dialog id="planImport" class="plan-confirm plan-import"><h3>Import study plan</h3><div id="planImportBody"></div><div class="plan-confirm-actions"><button type="button" class="icon-btn" id="planImportNo">Cancel</button><button type="button" class="icon-btn plan-save" id="planImportYes">Import</button></div></dialog>
 <dialog id="planSoft" class="plan-confirm plan-soft"><h3>Soft reschedule</h3><div id="planSoftBody"></div><div class="plan-confirm-actions"><button type="button" class="icon-btn" id="planSoftNo">Cancel</button><button type="button" class="icon-btn plan-save" id="planSoftYes">Reschedule</button></div></dialog>
 </section>
 <section id="shellView-test-lab" class="shell-view" data-shell-view="test-lab" hidden>
@@ -1561,7 +1562,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
 <section class="hp-sec" id="help-p-credits"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-receipt"></use></svg> How credits are charged</h3><p class="hp-intro">Every charge is rounded <b>up to the next 0.5</b> credit.</p><ol><li>Before a review runs you see a price preview. A temporary maximum is held; unused held credits return.</li><li>You pay the <b>real cost</b> of the review. There is no multiplier for reference exemplars and no batch discount.</li><li>Reviewing several tasks together is one combined request, so it <b>usually costs less</b> than reviewing them one by one.</li><li>If the verdict is <b>insufficient proof</b> (legitimate but needs another page or clearer photo) you are charged <b>half</b> the real usage, rounded up to the next 0.5.</li><li>Tap <b>View details</b> to see usage to 4 decimals.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">You review 4 tasks together. You pay what that one combined review really costs, rounded up to the next 0.5, shared across the 4 tasks.</div></details></section>
 <section class="hp-sec" id="help-p-batch"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg> Batch proof review</h3><p class="hp-intro">Review several AI-locked tasks together.</p><ol><li>Tap <b>☑ Multiselect</b>, tick the AI-locked tasks, then <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg> Batch review selected tasks</b>.</li><li>You can include up to <b>20</b> tasks per batch.</li><li>Attach <b>1–5</b> files (8 MB per photo or 30 MB per PDF).</li><li>You pay the real cost of the combined review. Check the price before you start.</li></ol><p class="hp-note">Reviewing several tasks together usually costs less than reviewing them one by one.</p><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Select 3 homework tasks → <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bolt"></use></svg> Batch review → attach one PDF of all three → submit.</div></details></section>
 <section class="hp-sec" id="help-p-num"><h3> Consecutive subtasks {num==X}</h3><p class="hp-intro">Fast numbered subtasks.</p><ol><li>In Create Task or Task Details, tick <b>Consecutive {num==X}</b> by Quick Subtasks.</li><li>Type a subtask containing <code>{num==1}</code> and press <b>Enter</b>. The number advances each time.</li><li>Without Pro, add subtasks one by one. Existing numbered subtasks stay intact.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Type <i>Read chapter {num==1}</i>, Enter → the box now holds <code>{num==2}</code>, Enter again → <code>{num==3}</code>.</div></details></section>
-<section class="hp-sec" id="help-p-dyn"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-growth"></use></svg> Dynamic Priority</h3><p class="hp-intro">Lower a task's priority while only bonus work is left.</p><ol><li>In Create Task or Task Details open the <b>Dynamic Priority</b> section.</li><li>Under <b>While only bonus work remains, use priority</b> choose a level.</li><li>The task takes that priority while only bonus subtasks are unfinished, and returns to normal automatically if required work becomes unfinished again.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Parent <i>Finish report</i> is priority 1. Only the bonus cover page remains. With Dynamic Priority set to a lower level, the parent drops to it until required work reappears.</div></details></section>
+<section class="hp-sec" id="help-p-dyn"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-growth"></use></svg> Dynamic Priority</h3><p class="hp-intro">Change a task's priority while no unfinished required work is left. Free.</p><ol><li>In Create Task or Task Details open the <b>Dynamic Priority</b> section.</li><li>Under <b>While no unfinished required work remains, use priority</b> choose a level.</li><li>The task takes that priority while no required subtask is unfinished (a task without subtasks takes it right away), and returns to normal automatically if required work becomes unfinished again.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Parent <i>Finish report</i> is priority 1. Only the bonus cover page remains. With Dynamic Priority set to a lower level, the parent drops to it until required work reappears.</div></details></section>
 <section class="hp-sec" id="help-p-study"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Study plans</h3><p class="hp-intro">Spread study units over days. Ask Copilot to create one.</p><ol><li>Tell Copilot you want a study plan. It asks for a <b>title</b>, the <b>total number of units</b> and your <b>study days</b>.</li><li>It opens an editable preview before anything is created.</li><li>Study plans require Pro. Without Pro Copilot tells you so.</li></ol><p class="hp-note">Missed days: on <b>Study plans</b> an overdue plan shows <b>Soft reschedule</b> (Pro) and <b>Move overdue to today</b>. Soft reschedule hands the overdue units out one at a time over the coming study days, so no day loses units and the plan stays in order; once a day for each plan. Move overdue to today is free and stacks them on today.</p><p class="hp-note">Early Appearance is also included with Pro. Its instructions are not yet in this guide.</p><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">You: “Plan 12 chapters over Mon, Wed, Fri.” Copilot asks for the title, then shows a preview you can edit.</div></details></section>
 <section class="hp-sec" id="help-p-uni"><h3>🌌 Universe</h3><p class="hp-intro">A shared workspace for a group. Open it from the menu.</p><ol><li>Tabs: <b>My dashboard</b>, <b>Projects</b>, <b>My stats</b>, <b>Controls</b> (managers) and <b>Settings</b>. Needs an internet connection; changes are not queued offline.</li><li>Your tasks are grouped by <b>Overdue</b>, <b>Today</b>, <b>Upcoming</b>, <b>No date</b> and <b>Complete</b>. A task moves through <b>Open</b> → <b>Submitted</b> → <b>In review</b> → <b>Approved</b> or <b>Needs changes</b> (fix and resubmit).</li><li>Managers create work with <b>＋</b> in Projects and manage <b>People</b>, <b>Invitations</b> (single-use links that reserve a seat) and <b>Labels</b> in Controls.</li><li>Limits: up to <b>20</b> members besides the owner, <b>2</b> Universes you own. You can join <b>2</b> Universes on Free or <b>7</b> on Pro.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Controls → Invitations → create a link → send it. It reserves a seat until accepted, cancelled or expired.</div></details></section>
 <section class="hp-sec" id="help-p-test"><h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Test your criteria on hosted AI</h3><p class="hp-intro">Same as the Free test, but paid in credits.</p><ol><li>Press <b><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-test"></use></svg> Test your criteria</b>. You see a credit estimate before it runs.</li><li>Charged exactly like a real audit; there are no free tests.</li></ol><details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Criteria validated at 8/10 → Test → estimate shows → Run test.</div></details></section>
@@ -1765,6 +1766,12 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <h3 style="margin: 0; color: var(--primary);"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-calendar"></use></svg> Reschedule Overdue Tasks</h3>
             <button type="button" class="icon-btn" id="closeBulkRescheduleModalBtn" style="padding: 2px 8px;">✕</button>
+        </div>
+
+        <!-- Phase 6.1.2: study-plan units are rescheduled from the Study plans page -->
+        <div id="reschedulePlansBox" hidden>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 4px;">Study plans with overdue units are rescheduled from the Study plans page (plan names in red).</p>
+            <a href="#study-plans" data-shell-link="study-plans" class="icon-btn reschedule-plans-link" id="reschedulePlansLink"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-study"></use></svg> Open Study plans</a>
         </div>
 
         <!-- Overdue AI Lock Gate Banner -->
@@ -2210,21 +2217,26 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
             </div>
 
 
-            <!-- Dynamic Priority (Pro) -->
-            <div class="form-group dynamic-priority-box" id="createDynamicPriorityContainer">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" id="createDynamicPriorityCheckbox">
-                    <span>Dynamic Priority</span>
-                    <span class="pro-feature-pill">PRO</span>
-                </label>
-                <div id="createDynamicPriorityOptions" style="display: none; padding-inline-start: 28px; margin-top: 6px;">
-                    <label for="createDynamicPriorityTarget" style="font-size: 0.78rem; color: var(--text-muted);">While only bonus work remains, use priority:</label>
+            <!-- Dynamic Priority + Dynamic Bonus (Phase 6.1.2: one line, explanations in the ? panel) -->
+            <div class="form-group dyn-section" id="createDynSection">
+                <div class="dyn-head">
+                    <span class="dyn-title">Dynamic options</span>
+                    <button type="button" class="icon-btn dyn-help-btn" id="createDynHelpBtn" aria-label="What Dynamic Priority and Dynamic Bonus do" aria-expanded="false" aria-controls="createDynHelp">?</button>
+                </div>
+                <div class="dyn-help" id="createDynHelp" hidden>
+                    <p><strong>Dynamic Priority:</strong> Uses the chosen priority while no unfinished required subtask remains (a task without subtasks uses it right away), and restores the original automatically when required work becomes unfinished.</p>
+                    <p><strong>Dynamic Bonus:</strong> Turns this task into bonus work once all its required subtasks are done. It can't be combined with Bonus or AI audit.</p>
+                </div>
+                <div class="dyn-line">
+                    <label class="dynamic-priority-box" id="createDynamicPriorityContainer"><input type="checkbox" id="createDynamicPriorityCheckbox"> <span>Dynamic Priority</span></label>
+                    <label class="dynamic-bonus-box" id="createDynamicBonusContainer"><input type="checkbox" id="createDynamicBonusCheckbox"> <span>Dynamic Bonus</span></label>
+                </div>
+                <div id="createDynamicPriorityOptions" style="display: none; margin-top: 6px;">
+                    <label for="createDynamicPriorityTarget" style="font-size: 0.78rem; color: var(--text-muted);">While no unfinished required work remains, use priority:</label>
                     <select id="createDynamicPriorityTarget" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.85rem;"></select>
                 </div>
-                <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-inline-start: 28px;">
-                    Lowers this task's priority while only bonus subtasks remain, and restores it automatically when required work becomes unfinished.
-                </small>
-                <small id="createDynamicPriorityNotice" class="pro-consecutive-notice" style="display: none; margin-inline-start: 28px;" role="status" aria-live="polite"></small>
+                <small id="createDynamicPriorityNotice" class="pro-consecutive-notice" style="display: none;" role="status" aria-live="polite"></small>
+                <small id="createDynamicBonusNotice" class="pro-consecutive-notice" style="display: none;" role="status" aria-live="polite"></small>
             </div>
 
             <!-- AI Proof Verification Option -->
@@ -2403,7 +2415,14 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
         <div class="form-group" id="editDueDateContainer">
             <label for="editTaskDueDate">Due Date</label>
             <input type="date" id="editTaskDueDate">
+            <button type="button" class="icon-btn assign-today-btn" id="editAssignTodayBtn" hidden>Assign to today</button>
             <small id="editTaskEarlyNote" class="early-edit-note" hidden></small>
+            <div class="early-task-row" id="editEarlyTaskRow" hidden>
+                <label for="editEarlyTaskDate" class="early-task-label">Early task</label>
+                <input type="date" id="editEarlyTaskDate" aria-describedby="editEarlyTaskHint">
+                <button type="button" class="icon-btn" id="editEarlyTaskClear">Remove</button>
+                <small id="editEarlyTaskHint" class="early-edit-note">Also shows this task on an earlier day as optional work. Its due date doesn't change until it's done.</small>
+            </div>
         </div>
 
             <div class="form-group" id="editStatusCountGroup" hidden>
@@ -2436,21 +2455,26 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
             </small>
         </div>
 
-        <!-- Dynamic Priority (Pro) -->
-        <div class="form-group dynamic-priority-box" id="editDynamicPriorityContainer">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                <input type="checkbox" id="editDynamicPriorityCheckbox">
-                <span>Dynamic Priority</span>
-                <span class="pro-feature-pill">PRO</span>
-            </label>
-            <div id="editDynamicPriorityOptions" style="display: none; padding-inline-start: 28px; margin-top: 6px;">
-                <label for="editDynamicPriorityTarget" style="font-size: 0.78rem; color: var(--text-muted);">While only bonus work remains, use priority:</label>
+        <!-- Dynamic Priority + Dynamic Bonus (Phase 6.1.2: one line, explanations in the ? panel) -->
+        <div class="form-group dyn-section" id="editDynSection">
+            <div class="dyn-head">
+                <span class="dyn-title">Dynamic options</span>
+                <button type="button" class="icon-btn dyn-help-btn" id="editDynHelpBtn" aria-label="What Dynamic Priority and Dynamic Bonus do" aria-expanded="false" aria-controls="editDynHelp">?</button>
+            </div>
+            <div class="dyn-help" id="editDynHelp" hidden>
+                <p><strong>Dynamic Priority:</strong> Uses the chosen priority while no unfinished required subtask remains (a task without subtasks uses it right away), and restores the original automatically when required work becomes unfinished.</p>
+                <p><strong>Dynamic Bonus:</strong> Turns this task into bonus work once all its required subtasks are done. It can't be combined with Bonus or AI audit.</p>
+            </div>
+            <div class="dyn-line">
+                <label class="dynamic-priority-box" id="editDynamicPriorityContainer"><input type="checkbox" id="editDynamicPriorityCheckbox"> <span>Dynamic Priority</span></label>
+                <label class="dynamic-bonus-box" id="editDynamicBonusContainer"><input type="checkbox" id="editDynamicBonusCheckbox"> <span>Dynamic Bonus</span></label>
+            </div>
+            <div id="editDynamicPriorityOptions" style="display: none; margin-top: 6px;">
+                <label for="editDynamicPriorityTarget" style="font-size: 0.78rem; color: var(--text-muted);">While no unfinished required work remains, use priority:</label>
                 <select id="editDynamicPriorityTarget" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-size: 0.85rem;"></select>
             </div>
-            <small style="color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 4px; padding-inline-start: 28px;">
-                Lowers this task's priority while only bonus subtasks remain, and restores it automatically when required work becomes unfinished.
-            </small>
-            <small id="editDynamicPriorityNotice" class="pro-consecutive-notice" style="display: none; margin-inline-start: 28px;" role="status" aria-live="polite"></small>
+            <small id="editDynamicPriorityNotice" class="pro-consecutive-notice" style="display: none;" role="status" aria-live="polite"></small>
+            <small id="editDynamicBonusNotice" class="pro-consecutive-notice" style="display: none;" role="status" aria-live="polite"></small>
         </div>
 
         <!-- AI Audit card (Phase 4.0): the proof toggle, criteria, reference file and checks in one highlighted card -->
@@ -2667,6 +2691,8 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
 <script type="text/taskitator-script" src="pro.js"></script>
     <script type="text/taskitator-script" src="pro/smart-study.js"></script>
     <script type="text/taskitator-script" src="pro/early-bonus.js"></script>
+    <script type="text/taskitator-script" src="pro/labels.js"></script>
+    <script type="text/taskitator-script" src="pro/study-import.js"></script>
     <script type="text/taskitator-script" src="pro/early-move.js"></script>
     <script type="text/taskitator-script" src="pro/status-count.js"></script>
     <script type="text/taskitator-script" src="date-filter.js"></script>

@@ -1,4 +1,4 @@
-/* Early bonus (Pro). A task keeps its real due date; early_date adds an optional appearance on one earlier day.
+/* Early task (free since Phase 6.1.2; earlier called Early bonus). A task keeps its real due date; early_date adds an optional appearance on one earlier day.
    Shared by the browser and the Worker. Nothing here moves a due date or any other task. */
 (function(root){
 'use strict';
@@ -73,5 +73,6 @@ function guard(previous,next){
 }
 // Tasks whose early date was added or changed in this snapshot (these need Pro).
 function changed(previous,next){const before=index(previous?.tasks);return (next?.tasks||[]).filter(t=>t.early_date!==undefined&&t.early_date!==null&&before.get(t.id)?.early_date!==t.early_date);}
-root.TaskitatorEarly={date,index,dueOf,reason,set,clear,showing,view,appearance,apply,guard,changed};
+function addDays(d,n){if(!date(d))return '';const x=new Date(d+'T00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10);}
+root.TaskitatorEarly={date,index,dueOf,reason,set,clear,showing,view,appearance,apply,guard,changed,addDays};
 })(typeof window==='undefined'?globalThis:window);

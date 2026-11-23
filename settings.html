@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html lang="en" class="auth-pending">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-QyWG7tllESYJX8YAdY1lQYwQaYUcIEZmIc/fctdCqts=' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com; font-src 'self' data: https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-phBsPp8o1DnqIziFjhsljQVaiAk85t+1wf5IFqD27Ys=' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com; font-src 'self' data: https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
 <style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -304,15 +304,23 @@
                     <button type="button" class="icon-btn break-help-btn" id="statusModeHelpBtn" aria-label="What each mode does" aria-expanded="false" aria-controls="statusModeHelp">!</button>
                 </div>
                 <div class="status-mode-help" id="statusModeHelp" hidden>
-                    <p><strong>Harsh:</strong> Every task due today counts toward locking the phone. Default.</p>
-                    <p><strong>Normal:</strong> Only tasks with "Count toward phone lock" checked count. New tasks start checked.</p>
-                    <p><strong>Limited:</strong> Only AI-locked tasks count toward locking the phone.</p>
+                    <p><strong>Harsh:</strong> Every task due today counts toward locking the phone. Default. Bonus tasks count only when "Count bonus tasks" is on.</p>
+                    <p><strong>Normal:</strong> Only tasks with "Count toward phone lock" checked count. New required tasks start checked. New bonus tasks start checked only when "Count bonus tasks" is on.</p>
+                    <p><strong>Limited:</strong> Only AI-locked tasks count toward locking the phone. Bonus tasks never count.</p>
+                    <p>Tasks with no due date never count toward the phone lock.</p>
                     <p>AI-locked tasks always count. Loosening this setting or unchecking tasks is locked until all of today's tasks are finished or Emergency Bypass is on. Breaks don't unlock it. Tightening is always allowed.</p>
                 </div>
                 <div class="status-mode-group" role="radiogroup" aria-label="Phone lock counting">
                     <label class="status-mode-opt"><input type="radio" name="statusMode" value="harsh"> Harsh</label>
                     <label class="status-mode-opt"><input type="radio" name="statusMode" value="normal"> Normal</label>
                     <label class="status-mode-opt"><input type="radio" name="statusMode" value="limited"> Limited</label>
+                </div>
+                <div class="setting-row" id="statusBonusRow" hidden>
+                    <div class="setting-text">
+                        <label for="statusBonusToggle" class="setting-label">Count bonus tasks</label>
+                        <p class="setting-hint" id="statusBonusHint">Off: bonus tasks, including study-plan bonus units and Dynamic Bonus tasks, don't lock the phone.</p>
+                    </div>
+                    <input type="checkbox" id="statusBonusToggle" class="switch" role="switch" aria-describedby="statusBonusHint">
                 </div>
                 <p class="status-mode-lock" id="statusModeLock" hidden>Loosening is locked until all of today's tasks are finished or Emergency Bypass is on.</p>
                 <div class="setting-row" id="statusBulkRow" hidden>
@@ -1377,6 +1385,7 @@ async function saveSettings(silent = false) {
     const SC = () => window.TaskitatorStatusCount;
     const radios = [...document.querySelectorAll('input[name="statusMode"]')];
     const lockNote = document.getElementById('statusModeLock'), bulkRow = document.getElementById('statusBulkRow');
+    const bonusRow = document.getElementById('statusBonusRow'), bonusToggle = document.getElementById('statusBonusToggle');
     const bulkToggle = document.getElementById('statusBulkToggle'), helpBtn = document.getElementById('statusModeHelpBtn'), help = document.getElementById('statusModeHelp');
     if (!radios.length || !SC()) return;
     const read = () => { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; } catch (e) { return {}; } };
@@ -1390,7 +1399,7 @@ async function saveSettings(silent = false) {
     function locked() {
         if (window.TaskitatorEngine?.EmergencyManager?.isBypassActive?.()) return false;
         let tasks = []; try { tasks = JSON.parse(localStorage.getItem('taskitator_tasks') || '[]'); } catch (e) {}
-        return SC().pending(tasks, getAppTodayStr());
+        return SC().pending(tasks, getAppTodayStr(), read());
     }
     function render() {
         const s = read(), mode = SC().mode(s), isLocked = locked();
@@ -1398,6 +1407,11 @@ async function saveSettings(silent = false) {
         lockNote.hidden = !isLocked;
         bulkRow.hidden = mode !== 'normal';
         bulkToggle.checked = !!s.status_bulk;
+        if (bonusRow && bonusToggle) {
+            bonusRow.hidden = mode === 'limited';
+            bonusToggle.checked = s.status_bonus_count === true;
+            bonusToggle.disabled = isLocked && s.status_bonus_count === true;
+        }
     }
     radios.forEach(r => r.addEventListener('change', async () => {
         const current = SC().mode(read()), next = r.value;
@@ -1411,6 +1425,18 @@ async function saveSettings(silent = false) {
         render();
     }));
     bulkToggle.addEventListener('change', () => write({ status_bulk: bulkToggle.checked }));
+    // Phase 6.1.1: "Count bonus tasks". Turning it on is stricter; turning it off is a loosening.
+    bonusToggle?.addEventListener('change', async () => {
+        const want = bonusToggle.checked, had = read().status_bonus_count === true;
+        if (want === had) return;
+        if (!want && locked()) { render(); notify('Turning off "Count bonus tasks" is locked until all of today\'s tasks are finished or Emergency Bypass is on.', 'error'); return; }
+        const ok = await ask(want
+            ? { title: 'Count bonus tasks?', message: 'Bonus tasks due today, including study-plan bonus units and Dynamic Bonus tasks, will lock the phone until they are done. Turning this off again stays locked until all of today\'s tasks are finished or Emergency Bypass is on.', tone: 'warning', confirmLabel: 'Count them' }
+            : { title: 'Stop counting bonus tasks?', message: 'Bonus tasks, including study-plan bonus units and Dynamic Bonus tasks, will no longer lock the phone.', tone: 'warning', confirmLabel: 'Stop counting' });
+        if (!ok) { render(); return; }
+        write({ status_bonus_count: want });
+        render();
+    });
     helpBtn.addEventListener('click', () => { help.hidden = !help.hidden; helpBtn.setAttribute('aria-expanded', String(!help.hidden)); });
     ['taskitator-settings-changed', 'focus', 'storage', 'taskitator-data-changed'].forEach(ev => window.addEventListener(ev, render));
     render(); setTimeout(render, 1500);
