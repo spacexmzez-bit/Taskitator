@@ -765,82 +765,250 @@ if (typeof window !== 'undefined') window.TaskitatorRevert = TaskitatorRevert;
         });
     }
 
-    // ---- Conflict panel (runs on this device only) ----
+    // ---- Sync dialogs (run on this device only) ----
+    // Phase 6.2: one Taskitator-styled shell for every sync decision, plain wording, a coloured
+    // status line, and a list of what differs between this device and the cloud.
+    const tr = (key, vars) => {
+        const api = typeof window !== 'undefined' ? window.TaskitatorI18n : null;
+        if (api && typeof api.t === 'function') return api.t(key, vars);
+        return String(key).replace(/\{(\w+)\}/g, (m, k) => (vars && k in vars ? String(vars[k]) : m));
+    };
     let panelOpen = false;
-    const FIELD_NAMES = { title: 'Title', description: 'Description', due_date: 'Due date', priority_id: 'Priority', project_id: 'Project',
-        status: 'Status', completed_at: 'Completed', parent_id: 'Parent', proof_criteria: 'Proof criteria' };
+    const FIELD_NAMES = { title: 'Title', raw_title: 'Title', description: 'Description', due_date: 'Due date', priority_id: 'Priority',
+        project_id: 'Project', status: 'Status', completed_at: 'Completed', parent_id: 'Parent task', proof_criteria: 'Proof criteria',
+        raw_proof_criteria: 'Proof criteria', tags: 'Tags', is_bonus: 'Bonus', dynamic_bonus: 'Dynamic Bonus',
+        dynamic_priority_target: 'Dynamic priority', early_date: 'Early task date', strict_prerequisites: 'Shield',
+        ai_locked: 'AI check', require_ai_proof: 'AI proof', status_count: 'Counts toward phone lock', notes: 'Notes',
+        recurrence: 'Repeat', reference_id: 'Reference file', reference_inline_data: 'Reference file', color: 'Colour', name: 'Name',
+        status_mode: 'Phone lock mode', status_bonus_count: 'Count bonus tasks', day_start_hour: 'Day starts at', theme: 'Theme', language: 'Language' };
+    // Bookkeeping fields that change on every save; they are never shown as differences.
+    const QUIET_FIELDS = new Set(['updated_at', 'modified_at', 'last_modified', 'sort_order', 'order']);
+    function fieldName(key) {
+        if (FIELD_NAMES[key]) return tr(FIELD_NAMES[key]);
+        const text = String(key).replace(/_/g, ' ').trim();
+        return text.charAt(0).toUpperCase() + text.slice(1);
+    }
     function show(value) {
-        if (value === undefined || value === null || value === '') return '(empty)';
-        const text = typeof value === 'string' ? value : JSON.stringify(value);
-        return text.length > 200 ? text.slice(0, 200) + '…' : text;
+        if (value === undefined || value === null || value === '') return tr('(empty)');
+        if (value === true) return tr('Yes');
+        if (value === false) return tr('No');
+        if (typeof value === 'number') return String(value);
+        if (typeof value === 'string') {
+            if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) && Number.isFinite(Date.parse(value))) {
+                const api = typeof window !== 'undefined' ? window.TaskitatorI18n : null;
+                return api?.dateTime ? api.dateTime(value) : new Date(value).toLocaleString();
+            }
+            return value.length > 160 ? value.slice(0, 160) + '…' : value;
+        }
+        if (isPrimitiveList(value)) return value.length ? value.map(String).join(', ') : tr('(empty)');
+        if (Array.isArray(value)) return tr('{n} entries', { n: value.length });
+        return tr('Detailed settings');
     }
+    const isProtected = t => Boolean(t && (t.ai_locked || t.require_ai_proof || t.strict_prerequisites));
+    const titleOf = (...items) => { for (const t of items) if (t && t.title != null && String(t.title).trim()) return String(t.title); return ''; };
+
+    // What differs between this device and the cloud. With a base copy (the last version both agreed on)
+    // each difference says which side made it; without one it can only say the two copies differ.
+    function diff(base, local, remote) {
+        const out = { exact: Boolean(base), tasks: [], projects: 0, settings: [], other: [] };
+        const list = v => (Array.isArray(v) ? v : []).filter(x => x && x.id !== undefined);
+        const byId = v => new Map(list(v).map(x => [x.id, x]));
+        const changed = (a, b) => {
+            const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+            return [...keys].filter(k => !QUIET_FIELDS.has(k) && !same(a?.[k], b?.[k]));
+        };
+        const names = keys => [...new Set(keys.map(fieldName))];
+        const L = byId(local.tasks), R = byId(remote.tasks), B = base ? byId(base.tasks) : null;
+        for (const id of new Set([...L.keys(), ...R.keys()])) {
+            const l = L.get(id), r = R.get(id), b = B?.get(id);
+            const row = { id, title: titleOf(l, r, b) || tr('Untitled task'), protected: isProtected(r) || isProtected(l), fields: [] };
+            if (l && r) {
+                const all = changed(l, r);
+                if (!all.length) continue;
+                if (B && b) {
+                    const mine = changed(b, l), theirs = changed(b, r);
+                    row.kind = mine.length && theirs.length ? 'both' : mine.length ? 'device' : 'cloud';
+                    row.fields = names(row.kind === 'both' ? [...mine, ...theirs] : mine.length ? mine : theirs);
+                } else { row.kind = 'different'; row.fields = names(all); }
+            } else if (l) row.kind = B ? (b ? 'deleted-cloud' : 'added-device') : 'only-device';
+            else row.kind = B ? (b ? 'deleted-device' : 'added-cloud') : 'only-cloud';
+            out.tasks.push(row);
+        }
+        const P = byId(local.projects), Q = byId(remote.projects);
+        for (const id of new Set([...P.keys(), ...Q.keys()])) if (!same(P.get(id), Q.get(id))) out.projects++;
+        const S = local.settings || {}, T = remote.settings || {};
+        out.settings = [...new Set([...Object.keys(S), ...Object.keys(T)])]
+            .filter(k => !VOLATILE_SETTINGS.has(k) && k !== 'gemini_api_key' && !same(S[k], T[k])).map(fieldName);
+        if (!same(local.recurrence_state, remote.recurrence_state)) out.other.push(tr('Repeating tasks'));
+        if (!same(local.saved_criteria, remote.saved_criteria)) out.other.push(tr('Saved criteria'));
+        return out;
+    }
+    const KIND_TEXT = {
+        device: 'Changed on this device', cloud: 'Changed in the cloud', both: 'Changed on both',
+        different: 'Different', 'added-device': 'Added on this device', 'added-cloud': 'Added in the cloud',
+        'deleted-device': 'Deleted on this device', 'deleted-cloud': 'Deleted in the cloud',
+        'only-device': 'Only on this device', 'only-cloud': 'Only in the cloud'
+    };
+
+    const make = (tag, cls, text) => {
+        const n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text !== undefined) n.textContent = text;
+        return n;
+    };
+    const button = (label, cls) => { const b = make('button', 'icon-btn ' + (cls || ''), label); b.type = 'button'; return b; };
+
+    // Shared shell. Returns helpers for the status line and for closing. tone: info | warning | danger.
+    function shell({ id, tone = 'info', title, intro, onClose }) {
+        const dialog = make('dialog', `confirm-sheet sync-dialog confirm-${tone === 'danger' ? 'danger' : tone === 'warning' ? 'warning' : 'primary'}`);
+        if (id) dialog.id = id;
+        dialog.setAttribute('aria-labelledby', (id || 'syncDialog') + 'Title');
+        const box = make('div', 'confirm-sheet-box');
+        const head = make('div', 'sync-dialog-head');
+        const h = make('h3', 'confirm-sheet-title', title);
+        h.id = (id || 'syncDialog') + 'Title';
+        const close = button('×', 'sync-dialog-close');
+        close.setAttribute('aria-label', tr('Close'));
+        head.append(h, close);
+        box.append(head);
+        if (intro) box.append(make('p', 'confirm-sheet-message', intro));
+        const status = make('div', 'sync-status');
+        status.setAttribute('role', 'status');
+        status.hidden = true;
+        box.append(status);
+        const body = make('div', 'sync-dialog-body');
+        const actions = make('div', 'confirm-sheet-actions sync-actions');
+        box.append(body, actions);
+        dialog.append(box);
+        let closed = false;
+        const api = {
+            dialog, body, actions, close,
+            setStatus(text, kind = 'info') {
+                status.hidden = !text;
+                status.textContent = text || '';
+                status.dataset.tone = kind;
+                if (kind === 'error') status.setAttribute('role', 'alert'); else status.setAttribute('role', 'status');
+            },
+            remove() {
+                if (closed) return;
+                closed = true;
+                try { dialog.close(); } catch { /* already closed */ }
+                dialog.remove();
+            },
+            open() { document.body.appendChild(dialog); dialog.showModal(); }
+        };
+        close.addEventListener('click', () => onClose?.());
+        dialog.addEventListener('cancel', event => { event.preventDefault(); onClose?.(); });
+        return api;
+    }
+
+    // Renders the "What's different" list into a container.
+    function renderDiff(container, d, limit = 25) {
+        container.textContent = '';
+        const total = d.tasks.length + (d.projects ? 1 : 0) + (d.settings.length ? 1 : 0) + d.other.length;
+        const section = make('section', 'sync-diff');
+        section.append(make('h4', 'sync-diff-title', tr("What's different")));
+        if (!d.exact) section.append(make('p', 'sync-diff-note', tr("This device can't tell which side made each change, only that the two copies differ.")));
+        if (!total) { section.append(make('p', 'sync-diff-note', tr('No differences in tasks or settings.'))); container.append(section); return; }
+        const ul = make('ul', 'sync-diff-list');
+        for (const row of d.tasks.slice(0, limit)) {
+            const li = make('li', 'sync-diff-row');
+            li.dataset.kind = row.kind;
+            const name = make('span', 'sync-diff-name', (row.protected ? '🔒 ' : '') + row.title);
+            name.setAttribute('translate', 'no');
+            const what = make('span', 'sync-diff-kind', tr(KIND_TEXT[row.kind]) + (row.fields.length ? ': ' + row.fields.join(', ') : ''));
+            li.append(name, what);
+            ul.append(li);
+        }
+        if (d.tasks.length > limit) ul.append(make('li', 'sync-diff-more', tr('And {n} more tasks', { n: d.tasks.length - limit })));
+        if (d.projects) ul.append(make('li', 'sync-diff-row', tr('Projects: {n} different', { n: d.projects })));
+        if (d.settings.length) ul.append(make('li', 'sync-diff-row', tr('Settings: {list}', { list: d.settings.slice(0, 6).join(', ') + (d.settings.length > 6 ? '…' : '') })));
+        for (const name of d.other) ul.append(make('li', 'sync-diff-row', tr('{name}: different', { name })));
+        section.append(ul);
+        container.append(section);
+    }
+
     function describe(c) {
-        if (c.kind === 'delete') return { title: c.label, line: c.deletedOn === 'device' ? 'Deleted on this device, edited in the cloud' : 'Edited on this device, deleted in the cloud',
-            mine: c.deletedOn === 'device' ? 'Delete it' : 'Keep my edited version', theirs: c.deletedOn === 'device' ? 'Keep the cloud version' : 'Delete it' };
-        if (c.kind === 'orphan') return { title: c.label, line: 'Its parent task was removed in the cloud', mine: c.mine, theirs: c.theirs };
-        if (c.kind === 'whole') return { title: c.scope === 'recurrence_state' ? 'Repeating tasks' : 'Saved criteria', line: 'Changed on both sides', mine: show(c.mine), theirs: show(c.theirs) };
-        return { title: c.label, line: (FIELD_NAMES[c.field] || c.field) + ' changed on both sides', mine: show(c.mine), theirs: show(c.theirs) };
+        if (c.kind === 'delete') return {
+            title: c.label,
+            line: c.deletedOn === 'device' ? tr('Deleted on this device, edited in the cloud') : tr('Edited on this device, deleted in the cloud'),
+            mine: c.deletedOn === 'device' ? tr('Delete it') : tr('Keep my edited version'),
+            theirs: c.deletedOn === 'device' ? tr('Keep the cloud version') : tr('Delete it') };
+        if (c.kind === 'orphan') return { title: c.label, line: tr('Its parent task was removed in the cloud'), mine: tr('Keep as a main task'), theirs: tr('Remove it') };
+        if (c.kind === 'whole') return { title: c.scope === 'recurrence_state' ? tr('Repeating tasks') : tr('Saved criteria'), line: tr('Changed on both'), mine: show(c.mine), theirs: show(c.theirs) };
+        if (c.kind === 'setting') return { title: tr('Setting: {name}', { name: fieldName(c.field) }), line: tr('Changed on both'), mine: show(c.mine), theirs: show(c.theirs) };
+        return { title: c.label, line: tr('{field} changed on both', { field: fieldName(c.field) }), mine: show(c.mine), theirs: show(c.theirs) };
     }
-    // Resolves with a choices map, or null when the user decides later.
+
+    // Field-by-field chooser. Resolves with a choices map, or null when the user decides later.
     function askUser(conflicts, times = {}) {
         if (panelOpen || typeof document === 'undefined' || !document.body) return Promise.resolve(null);
         panelOpen = true;
         return new Promise(resolve => {
             const choices = {};
-            const dialog = document.createElement('dialog');
-            dialog.id = 'taskitatorMergePanel';
-            dialog.className = 'modal-overlay open';
-            dialog.style.cssText = 'display:block;position:fixed;inset:0;margin:auto;width:min(94vw,560px);height:fit-content;max-height:90vh;overflow:auto;padding:20px;border:1px solid #777;border-radius:12px;background:#171b24;color:#fff;z-index:2147483647;';
-            const el = (tag, text, css) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (css) n.style.cssText = css; return n; };
-            dialog.append(el('h2', 'Choose what to keep', 'margin-top:0'),
-                el('p', `${conflicts.length} item${conflicts.length === 1 ? ' was' : 's were'} changed differently on this device and in the cloud. Everything else merged automatically. Nothing is saved until you press Apply.`));
-            const when = el('p', `This device last edited: ${times.local ? (window.TaskitatorI18n?.dateTime(times.local) ?? new Date(times.local).toLocaleString()) : 'time unknown'} · Cloud saved: ${times.remote ? (window.TaskitatorI18n?.dateTime(times.remote) ?? new Date(times.remote).toLocaleString()) : 'time unknown'}`, 'font-size:.8rem;opacity:.75');
-            dialog.append(when);
-            const apply = el('button', 'Apply', 'margin:6px;padding:10px;border-radius:6px;cursor:pointer;');
-            apply.type = 'button'; apply.disabled = true;
-            const refresh = () => { apply.disabled = conflicts.some(c => !choices[c.id]); };
+            let ui;
+            const finish = value => { ui.remove(); panelOpen = false; resolve(value); };
+            ui = shell({ id: 'taskitatorMergePanel', title: tr('Pick which change to keep'),
+                intro: conflicts.length === 1
+                    ? tr('1 item was changed differently on this device and in the cloud. Everything else was combined automatically. Nothing is saved until you tap Save.')
+                    : tr('{n} items were changed differently on this device and in the cloud. Everything else was combined automatically. Nothing is saved until you tap Save.', { n: conflicts.length }),
+                onClose: () => finish(null) });
+            const stamp = v => v ? (window.TaskitatorI18n?.dateTime?.(v) ?? new Date(v).toLocaleString()) : tr('unknown');
+            ui.body.append(make('p', 'sync-times', tr('Last edit on this device: {a} · Last cloud save: {b}', { a: stamp(times.local), b: stamp(times.remote) })));
+            const allRow = make('div', 'sync-all');
+            const allMine = button(tr('This device for all'), 'sync-chip'), allCloud = button(tr('Cloud for all'), 'sync-chip');
+            allRow.append(make('span', 'sync-all-label', tr('Quick pick:')), allMine, allCloud);
+            ui.body.append(allRow);
+            const save = button(tr('Save'), 'confirm-ok btn-primary');
+            save.disabled = true;
+            const refresh = () => {
+                const left = conflicts.filter(c => !choices[c.id]).length;
+                save.disabled = left > 0;
+                ui.setStatus(left ? tr('{n} left to pick', { n: left }) : tr('Ready to save.'), left ? 'info' : 'success');
+            };
+            const pickers = [];
             for (const c of conflicts) {
                 const d = describe(c);
-                const card = el('div', undefined, 'border:1px solid #444;border-radius:8px;padding:10px;margin:10px 0;');
+                const card = make('div', 'sync-card');
                 card.dataset.conflictId = c.id;
-                card.append(el('strong', d.title), el('div', d.line, 'font-size:.8rem;opacity:.75;margin-bottom:6px'));
+                const name = make('strong', 'sync-card-title', d.title);
+                if (c.kind !== 'setting' && c.kind !== 'whole') name.setAttribute('translate', 'no');
+                card.append(name, make('div', 'sync-card-line', d.line));
                 if (c.guarded) {
                     card.dataset.guarded = 'true';
-                    card.append(el('div', '🔒 AI-protected task. If "This device" breaks its protection (for example a later date), the cloud value is kept for this item only; your other choices still apply.', 'font-size:.75rem;color:#f5c26b;margin-bottom:6px'));
+                    card.append(make('div', 'sync-card-guard', tr('🔒 Protected task. If your pick breaks its protection, the cloud value is kept for this one only.')));
                 }
-                const row = el('div', undefined, 'display:flex;gap:8px;flex-wrap:wrap');
-                const buttons = {};
-                for (const [side, heading, text] of [['mine', 'This device', d.mine], ['theirs', 'Cloud', d.theirs]]) {
-                    const b = el('button', undefined, 'flex:1 1 200px;text-align:start;padding:8px;border-radius:6px;cursor:pointer;');
+                const row = make('div', 'sync-options');
+                const opts = {};
+                for (const [side, heading, text] of [['mine', tr('This device'), d.mine], ['theirs', tr('Cloud'), d.theirs]]) {
+                    const b = make('button', 'sync-option');
                     b.type = 'button';
-                    b.append(el('div', heading, 'font-size:.7rem;opacity:.7'), el('div', text, 'word-break:break-word'));
-                    b.addEventListener('click', () => {
-                        choices[c.id] = side;
-                        for (const [s, other] of Object.entries(buttons)) other.style.outline = s === side ? '2px solid #4c8dff' : 'none';
-                        refresh();
-                    });
-                    buttons[side] = b; row.append(b);
+                    b.dataset.side = side;
+                    b.setAttribute('aria-pressed', 'false');
+                    const value = make('span', 'sync-option-value', text);
+                    if (c.kind === 'field') value.setAttribute('translate', 'no');
+                    b.append(make('span', 'sync-option-head', heading), value);
+                    b.addEventListener('click', () => { choices[c.id] = side; paint(); refresh(); });
+                    opts[side] = b; row.append(b);
                 }
-                card.append(row); dialog.append(card);
+                const paint = () => { for (const [s, b] of Object.entries(opts)) b.setAttribute('aria-pressed', String(choices[c.id] === s)); };
+                pickers.push(paint);
+                card.append(row);
+                ui.body.append(card);
             }
-            const finish = value => { dialog.remove(); panelOpen = false; resolve(value); };
-            const all = side => { for (const c of conflicts) choices[c.id] = side; finish({ ...choices }); };
-            const bar = el('div', undefined, 'display:flex;flex-wrap:wrap;gap:4px;margin-top:8px');
-            const mineAll = el('button', 'Keep all mine'), theirsAll = el('button', 'Use all cloud'), later = el('button', 'Decide later');
-            for (const b of [mineAll, theirsAll, later]) { b.type = 'button'; b.style.cssText = 'margin:6px;padding:10px;border-radius:6px;cursor:pointer;'; }
-            mineAll.addEventListener('click', () => all('mine'));
-            theirsAll.addEventListener('click', () => all('theirs'));
+            const all = side => { for (const c of conflicts) choices[c.id] = side; pickers.forEach(p => p()); refresh(); };
+            allMine.addEventListener('click', () => all('mine'));
+            allCloud.addEventListener('click', () => all('theirs'));
+            const later = button(tr('Decide later'), 'confirm-cancel');
             later.addEventListener('click', () => finish(null));
-            apply.addEventListener('click', () => { if (!apply.disabled) finish({ ...choices }); });
-            dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
-            bar.append(apply, mineAll, theirsAll, later);
-            dialog.append(bar);
-            document.body.appendChild(dialog);
-            dialog.showModal();
+            save.addEventListener('click', () => { if (!save.disabled) finish({ ...choices }); });
+            ui.actions.append(later, save);
+            refresh();
+            ui.open();
         });
     }
 
-    window.TaskitatorMerge = Object.freeze({ merge3, saveBase, loadBase, clearBase, clearAllBases, askUser, canon });
+    window.TaskitatorMerge = Object.freeze({ merge3, saveBase, loadBase, clearBase, clearAllBases, askUser, canon, diff, shell, renderDiff, show, fieldName, tr });
 })();
 
 // <<< MODULE_END: merge.js >>>
@@ -889,6 +1057,7 @@ const SyncEngine = {
     ],
     sessionId: null,
     pushQueue: Promise.resolve(),
+    PROTECTION_CODES: ['PROOF_REQUIRED', 'REQUIREMENTS_LOCKED', 'SHIELD_REQUIRED'],
     debounceTimer: null,
     panelWasOpen: false,
     hasUnsavedChanges: false,
@@ -1085,7 +1254,13 @@ const SyncEngine = {
         };
     },
 
+    // A sync decision is open on this device: background and manual syncs wait for it.
+    decisionOpen() {
+        return Boolean(this.conflictDialogOpen || this.blockedDialogOpen || this.mergeInFlight);
+    },
+
     push(force = false, extraData = {}) {
+        if (this.decisionOpen()) return Promise.resolve({ success: false, conflict: true, deferred: true, error: 'Finish the open sync choice first.' });
         const sessionId = this.sessionId;
         const config = this.getConfig();
         const run = () => this.sessionMatches(config, sessionId)
@@ -1119,7 +1294,7 @@ const SyncEngine = {
                 this.rememberRemoteVersion(remote.version);
                 base = String(remote.version);
             }
-            const { today_breaks: ignoredBreaks, __revertedOnce: ignoredFlag, ...currentExtras } = extraData;
+            const { today_breaks: ignoredBreaks, __reverts: ignoredFlag, ...currentExtras } = extraData;
             const payload = this.getPayload(false, currentExtras);
             payload.base_version = Number(base);
             payload.mutation_id = revision;
@@ -1134,12 +1309,16 @@ const SyncEngine = {
             const data = await res.json();
             if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
             if (res.status === 409) return this.resolveConflict(data, this.mergeInFlight ? this.mergeAttempt : 0);
-            if(res.status===403 && Array.isArray(data.rejected) && data.rejected.length && !extraData.__revertedOnce){
-                const reverted = await this.revertRejected(data.rejected, config, sessionId, revision);
-                if (reverted) return this.performPush(force, { ...extraData, __revertedOnce: true });
+            // Phase 6.2: a protection refusal is not a disagreement between two copies. Put just the refused
+            // tasks back to the cloud copy and upload everything else again (up to 3 passes, since a fix can
+            // reveal the next refused item). Never offer "keep this device's copy": it would be refused again.
+            const reverts = extraData.__reverts || 0;
+            if(res.status===403 && Array.isArray(data.rejected) && data.rejected.length && reverts < 3){
+                const reverted = await this.revertRejected(data.rejected, config, sessionId);
+                if (reverted) return this.performPush(force, { ...extraData, __reverts: reverts + 1 });
             }
-            if(res.status===403 && ['PROOF_REQUIRED','REQUIREMENTS_LOCKED','SHIELD_REQUIRED'].includes(data.code))
-                return this.reportConflict({...data,remote_version:payload.base_version,error:data.error+' Keep a backup of local changes, then use the cloud copy and submit proof, or activate Emergency Bypass for the intended change.'});
+            if(res.status===403 && this.PROTECTION_CODES.includes(data.code))
+                return this.reportBlocked(data);
             if (!res.ok || data.success !== true || data.version !== payload.base_version + 1) {
                 throw new Error(data.error || 'Upload acknowledgement is invalid. Local changes were retained.');
             }
@@ -1213,7 +1392,7 @@ const SyncEngine = {
     // closing the last one restarts it from the full window.
     editingPanelOpen() {
         if (typeof document === 'undefined' || !document.querySelector) return false;
-        return !!document.querySelector('.modal-overlay.open:not([data-sync-ignore])');
+        return this.decisionOpen() || !!document.querySelector('.modal-overlay.open:not([data-sync-ignore])');
     },
 
     startAutoWindow() {
@@ -1434,7 +1613,7 @@ const SyncEngine = {
             }
             const seen = localStorage.getItem(this.STORAGE_KEY_REMOTE_VERSION);
             if (!options.discardLocal && seen !== null && data.version < Number(seen)) {
-                return this.reportConflict({ remote_version: data.version, error: 'Cloud revision is older than this device. Check the migration before choosing a copy.' });
+                return this.reportConflict({ remote_version: data.version, why: 'The cloud has an older copy than this device, for example after a backup was restored on another device.' });
             }
             const modified = localStorage.getItem(this.STORAGE_KEY_LAST_MODIFIED);
             const legacyLocalNewer = seen === null && modified && data.updated_at &&
@@ -1528,19 +1707,27 @@ const SyncEngine = {
             const remote = await this.readCloud(config);
             if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
             if (remote.empty || !Array.isArray(remote.tasks) || base.version > remote.version) return fallback();
-            const revision = localStorage.getItem(this.STORAGE_KEY_REVISION);
-            const local = this.getPayload();
-            const first = merge.merge3(base, local, remote);
-            let choices = {};
-            if (first.conflicts.length) {
-                this.notify('conflict', { ...info, merge: true });
-                choices = await merge.askUser(first.conflicts, {
-                    local: localStorage.getItem(this.STORAGE_KEY_LAST_MODIFIED), remote: remote.updated_at });
-                if (!choices) return { success: false, conflict: true, deferred: true, error: 'Conflicts are waiting for your decision on this device.' };
-                if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
-            }
-            if (revision !== localStorage.getItem(this.STORAGE_KEY_REVISION)) {
-                return { success: false, error: 'Local edits changed during the merge. Sync again to retry.' };
+            let revision = localStorage.getItem(this.STORAGE_KEY_REVISION);
+            let local = this.getPayload();
+            let choices = {}, asked = 0;
+            // Phase 6.2: edits saved on this device while the panel was open are not an error. Re-read this
+            // device's copy and merge again with the picks already made; only new clashes are asked about.
+            for (let round = 0; ; round++) {
+                const pass = merge.merge3(base, local, remote, choices);
+                if (pass.unresolved.length) {
+                    this.notify('conflict', { ...info, merge: true });
+                    asked += pass.unresolved.length;
+                    const picked = await merge.askUser(pass.unresolved, {
+                        local: localStorage.getItem(this.STORAGE_KEY_LAST_MODIFIED), remote: remote.updated_at });
+                    if (!picked) return { success: false, conflict: true, deferred: true, error: 'Conflicts are waiting for your decision on this device.' };
+                    if (!this.sessionMatches(config, sessionId)) return { success: false, reason: 'session_changed' };
+                    choices = { ...choices, ...picked };
+                }
+                const current = localStorage.getItem(this.STORAGE_KEY_REVISION);
+                if (current === revision) break;
+                if (round >= 3) return { success: false, error: 'This device kept changing during the merge. Sync again in a moment.' };
+                revision = current;
+                local = this.getPayload();
             }
             const { merged } = merge.merge3(base, local, remote, choices);
             const settings = JSON.parse(localStorage.getItem(this.STORAGE_KEY_SETTINGS) || '{}');
@@ -1558,7 +1745,7 @@ const SyncEngine = {
             localStorage.setItem(this.STORAGE_KEY_REVISION, crypto.randomUUID());
             this.hasUnsavedChanges = true;
             localStorage.setItem(this.STORAGE_KEY_DIRTY, 'true');
-            window.dispatchEvent(new CustomEvent('taskitator-merged', { detail: { conflicts: first.conflicts.length } }));
+            window.dispatchEvent(new CustomEvent('taskitator-merged', { detail: { conflicts: asked } }));
             this.mergeAttempt = attempt + 1;
             const result = await this.performPush(false);
             if (result.success && !result.pending) this.pendingPageRefresh = true;
@@ -1572,17 +1759,38 @@ const SyncEngine = {
         }
     },
 
+    // Plain-language reason for one refused task (Phase 6.2).
+    plainReason(r = {}) {
+        if (r.code === 'SHIELD_REQUIRED') return 'Protected by a shield. Changing it needs Emergency Bypass.';
+        if (r.code === 'REQUIREMENTS_LOCKED' || r.code === 'PROOF_REQUIRED') return 'AI-checked task. Changing it needs proof or Emergency Bypass.';
+        return r.message || 'This change is not allowed right now.';
+    },
+
     // The server refused only some protected items. Put just those (and the ancestors that moved them)
     // back to the cloud copy; every other local edit and merge choice stays and is pushed again.
-    async revertRejected(rejected, config, sessionId, revision) {
+    // Phase 6.2: works even if this device changed during the upload (only the refused tasks are touched),
+    // restores their protected reference files too, and tells the user in a plain warning toast.
+    async revertRejected(rejected, config, sessionId) {
         try {
             const remote = await this.readCloud(config);
             if (!this.sessionMatches(config, sessionId) || remote.empty || !Array.isArray(remote.tasks)) return false;
-            if (revision !== localStorage.getItem(this.STORAGE_KEY_REVISION)) return false;
             const tasks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_TASKS) || '[]');
             const result = TaskitatorRevert.apply(tasks, remote.tasks, rejected);
             if (!result.changed.length) return false;
             localStorage.setItem(this.STORAGE_KEY_TASKS, JSON.stringify(result.tasks));
+            const cloudRefs = remote.recurrence_state?.reference_files || {};
+            const state = JSON.parse(localStorage.getItem('taskitator_recurrence_state') || 'null');
+            if (state && typeof state === 'object') {
+                let touched = false;
+                const refs = { ...(state.reference_files || {}) };
+                for (const { id } of result.changed) {
+                    const ref = remote.tasks.find(t => t.id === id)?.reference_id;
+                    if (!ref || JSON.stringify(refs[ref] ?? null) === JSON.stringify(cloudRefs[ref] ?? null)) continue;
+                    if (cloudRefs[ref] === undefined) delete refs[ref]; else refs[ref] = JSON.parse(JSON.stringify(cloudRefs[ref]));
+                    touched = true;
+                }
+                if (touched) localStorage.setItem('taskitator_recurrence_state', JSON.stringify({ ...state, reference_files: refs }));
+            }
             localStorage.setItem(this.STORAGE_KEY_REVISION, crypto.randomUUID());
             localStorage.setItem(this.STORAGE_KEY_DIRTY, 'true');
             this.hasUnsavedChanges = true;
@@ -1590,9 +1798,12 @@ const SyncEngine = {
             this.notify('reverted', detail);
             window.dispatchEvent(new CustomEvent('taskitator-reverted', { detail }));
             window.dispatchEvent(new CustomEvent('taskitator-merged', { detail: { conflicts: 0, reverted: result.changed.length } }));
+            const tr = window.TaskitatorMerge?.tr || (k => k);
             const names = result.changed.map(t => `"${t.title}"`).join(', ');
-            const msg = `Kept the cloud version of ${names}: ${[...new Set(detail.reasons)].join(' ')} All your other changes were kept.`;
-            if (typeof window.showToast === 'function') window.showToast(msg); else this.notify('error', msg);
+            const reasons = [...new Set(rejected.map(r => tr(this.plainReason(r))))].join(' ');
+            const msg = tr('Not saved: {names}. {reasons} These tasks were put back to the cloud version. Your other changes are kept.', { names, reasons });
+            if (window.TaskitatorToast?.show) window.TaskitatorToast.show(msg, { type: 'warning', duration: 12000 });
+            else this.notify('error', msg);
             return true;
         } catch (err) {
             return false;
@@ -1601,72 +1812,219 @@ const SyncEngine = {
 
     reportConflict(data = {}) {
         const detail = { ...data, conflict: true,
-            error: data.error || 'Another device changed cloud data. Both copies are kept until you choose.' };
+            error: data.error || 'This device and the cloud have different changes. Choose which version to keep.' };
         this.notify('conflict', detail);
         this.notify('error', detail.error);
         if (typeof document.createElement === 'function' && document.body) {
-            this.openConflictDialog().catch(err => this.notify('error', err.message));
+            this.openConflictDialog({ why: data.why }).catch(err => this.notify('error', err.message));
         }
         return { success: false, conflict: true, error: detail.error, data: detail };
     },
 
-    async openConflictDialog() {
-        if (this.conflictDialogOpen) return;
+    // Protected tasks were refused and could not be put back automatically. Never offers
+    // "keep this device's copy" (it would be refused again).
+    reportBlocked(data = {}) {
+        const error = 'Some changes to protected tasks are blocked. Nothing from this device was uploaded yet.';
+        this.notify('error', error);
+        if (typeof document.createElement === 'function' && document.body) {
+            try { this.openBlockedDialog(data); } catch (err) { this.notify('error', err.message); }
+        }
+        return { success: false, blocked: true, code: data.code, rejected: Array.isArray(data.rejected) ? data.rejected : [], error };
+    },
+
+    openBlockedDialog(data = {}) {
+        const M = window.TaskitatorMerge;
+        if (this.blockedDialogOpen || !M?.shell) return;
+        this.blockedDialogOpen = true;
+        const tr = M.tr, config = this.getConfig(), sessionId = this.sessionId;
+        let rejected = Array.isArray(data.rejected) && data.rejected.length ? data.rejected : [];
+        let busy = false;
+        const done = () => { ui.remove(); this.blockedDialogOpen = false; };
+        const ui = M.shell({ id: 'taskitatorBlockedPanel', tone: 'danger', title: tr('Some changes are blocked'),
+            intro: tr('The cloud refused changes to protected tasks, so nothing from this device was uploaded yet.'),
+            onClose: () => { if (!busy) done(); } });
+        const tasks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_TASKS) || '[]');
+        const ul = document.createElement('ul');
+        ul.className = 'sync-diff-list';
+        const rows = rejected.length ? rejected : [{ code: data.code, message: data.error }];
+        for (const r of rows.slice(0, 20)) {
+            const li = document.createElement('li');
+            li.className = 'sync-diff-row';
+            li.dataset.kind = 'blocked';
+            const title = r.id != null ? (tasks.find(t => t.id === r.id)?.title || tr('Untitled task')) : '';
+            if (title) {
+                const name = document.createElement('span');
+                name.className = 'sync-diff-name'; name.setAttribute('translate', 'no'); name.textContent = '🔒 ' + title;
+                li.append(name);
+            }
+            const why = document.createElement('span');
+            why.className = 'sync-diff-kind'; why.textContent = tr(this.plainReason(r));
+            li.append(why);
+            ul.append(li);
+        }
+        ui.body.append(ul);
+        const help = document.createElement('p');
+        help.className = 'sync-why';
+        help.textContent = tr('To keep these changes, turn on Emergency Bypass, then tap Try again. Otherwise, put these tasks back to the cloud version.');
+        ui.body.append(help);
+        const extra = document.createElement('div');
+        extra.className = 'sync-secondary';
+        const retry = document.createElement('button');
+        retry.type = 'button'; retry.className = 'icon-btn'; retry.textContent = tr('Try again');
+        extra.append(retry);
+        const trigger = document.getElementById('emergencyTriggerBtn') || document.getElementById('plansBypassBtn');
+        if (trigger) {
+            const bypass = document.createElement('button');
+            bypass.type = 'button'; bypass.className = 'icon-btn btn-warning'; bypass.textContent = tr('Emergency bypass');
+            bypass.addEventListener('click', () => { if (!busy) trigger.click(); });
+            extra.append(bypass);
+        }
+        ui.body.append(extra);
+        const later = document.createElement('button');
+        later.type = 'button'; later.className = 'icon-btn confirm-cancel'; later.textContent = tr('Decide later');
+        const undo = document.createElement('button');
+        undo.type = 'button';
+        undo.className = 'icon-btn confirm-ok ' + (rejected.length ? 'btn-primary' : 'btn-danger');
+        undo.textContent = rejected.length ? tr('Put them back and sync') : tr('Use the cloud version');
+        ui.actions.append(later, undo);
+        later.addEventListener('click', () => { if (!busy) done(); });
+        const run = async action => {
+            if (busy) return;
+            busy = true; retry.disabled = undo.disabled = true;
+            ui.setStatus(tr('Working…'), 'info');
+            try {
+                if (!this.sessionMatches(config, sessionId)) { ui.setStatus(tr('You signed in to another account in a different tab. Reload this page.'), 'error'); return; }
+                let result;
+                if (action === 'undo' && rejected.length) {
+                    const ok = await this.revertRejected(rejected, config, sessionId);
+                    result = ok ? await this.performPush(false) : { success: false, error: tr('Could not reach the cloud. Check your connection and try again.') };
+                } else if (action === 'undo') {
+                    const remote = await this.readCloud(config);
+                    result = await this.pull(null, { discardLocal: true, expectedVersion: remote.version,
+                        expectedRevision: localStorage.getItem(this.STORAGE_KEY_REVISION) });
+                } else result = await this.performPush(false);
+                if (result?.blocked) {
+                    if (result.rejected?.length) rejected = result.rejected;
+                    ui.setStatus(tr('Still blocked. Turn on Emergency Bypass first, or put these tasks back to the cloud version.'), 'error');
+                    return;
+                }
+                if (result?.success) { done(); window.TaskitatorToast?.show?.(tr('Sync fixed.'), { type: 'success' }); return; }
+                ui.setStatus(result?.reason === 'offline' ? tr("You're offline. Connect to the internet, then try again.") : (result?.error || tr('Something went wrong. Try again.')), 'error');
+            } catch (err) {
+                ui.setStatus(err.offline ? tr("You're offline. Connect to the internet, then try again.") : err.message, 'error');
+            } finally {
+                busy = false; retry.disabled = undo.disabled = false;
+            }
+        };
+        retry.addEventListener('click', () => run('retry'));
+        undo.addEventListener('click', () => run('undo'));
+        ui.open();
+    },
+
+    // Whole-copy chooser, used only when a field-by-field merge is not possible.
+    async openConflictDialog(info = {}) {
+        const M = window.TaskitatorMerge;
+        if (this.conflictDialogOpen || !M?.shell) return;
         this.conflictDialogOpen = true;
-        let dialog;
+        const tr = M.tr, config = this.getConfig(), sessionId = this.sessionId;
+        let remote = null, local = null, pick = null, busy = false, ui = null;
+        const done = () => { ui?.remove(); this.conflictDialogOpen = false; };
         try {
-            const config = this.getConfig(), sessionId = this.sessionId;
-            const remote = await this.readCloud(config);
-            if (!this.sessionMatches(config, sessionId)) return;
-            const revision = localStorage.getItem(this.STORAGE_KEY_REVISION);
-            const local = this.getPayload();
-            dialog = document.createElement('dialog');
-            dialog.className = 'modal-overlay open';
-            dialog.style.cssText = 'display:block;position:fixed;inset:0;margin:auto;width:min(90vw,480px);height:fit-content;max-height:90vh;overflow:auto;padding:24px;border:1px solid #777;border-radius:12px;background:#171b24;color:#fff;z-index:2147483647;';
-            const title = document.createElement('h2'); title.textContent = 'Choose which copy to keep';
-            const description = document.createElement('p');
-            description.textContent = 'This device and the cloud have different edits. Nothing has been overwritten. Download both copies before choosing. Your choice replaces the other copy; it does not merge tasks.';
-            const feedback = document.createElement('p');
-            dialog.append(title, description, feedback);
-            const addButton = (label, handler) => {
-                const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
-                button.style.cssText = 'margin:6px;padding:10px;border-radius:6px;cursor:pointer;';
-                button.addEventListener('click', handler); dialog.appendChild(button); return button;
-            };
-            const close = () => { dialog.remove(); this.conflictDialogOpen = false; };
+            ui = M.shell({ id: 'taskitatorCopyChooser', tone: 'warning', title: tr("This device and the cloud don't match"),
+                intro: tr('Changes were saved here and on another device, and they could not be combined automatically. Nothing has been lost. Pick which version to keep.'),
+                onClose: () => { if (!busy) done(); } });
+            if (info.why) { const why = document.createElement('p'); why.className = 'sync-why'; why.textContent = tr(info.why); ui.body.append(why); }
+            const diffBox = document.createElement('div');
+            ui.body.append(diffBox);
+            const options = document.createElement('div');
+            options.className = 'sync-options sync-options-stack';
+            const apply = document.createElement('button');
+            apply.type = 'button'; apply.className = 'icon-btn confirm-ok btn-danger'; apply.textContent = tr('Choose a version');
+            apply.disabled = true;
+            const tiles = {};
+            for (const [mode, head, text] of [
+                ['local', tr("Keep this device's version"), tr("The cloud copy is replaced with this device's copy. Protected tasks that break their rules keep the cloud version.")],
+                ['cloud', tr('Use the cloud version'), tr('Changes that exist only on this device are discarded.')]]) {
+                const b = document.createElement('button');
+                b.type = 'button'; b.className = 'sync-option'; b.dataset.side = mode === 'local' ? 'mine' : 'theirs';
+                b.setAttribute('aria-pressed', 'false');
+                const h = document.createElement('span'); h.className = 'sync-option-head'; h.textContent = head;
+                const v = document.createElement('span'); v.className = 'sync-option-value'; v.textContent = text;
+                b.append(h, v);
+                b.addEventListener('click', () => {
+                    if (busy) return;
+                    pick = mode;
+                    for (const [m, t] of Object.entries(tiles)) t.setAttribute('aria-pressed', String(m === mode));
+                    apply.disabled = false;
+                    apply.textContent = mode === 'local' ? tr("Keep this device's version") : tr('Use the cloud version');
+                });
+                tiles[mode] = b; options.append(b);
+            }
+            ui.body.append(options);
+            const backup = document.createElement('details');
+            backup.className = 'sync-backup';
+            const summary = document.createElement('summary');
+            summary.textContent = tr('Save a backup first (optional)');
+            backup.append(summary);
             const downloadBackup = (snapshot, label) => {
-                const settings = { ...(snapshot.settings || {}) };
+                const settings = { ...(snapshot?.settings || {}) };
                 delete settings.worker_passkey;
                 delete settings.gemini_api_key;
-                const backup = {
+                const data = {
                     export_date: new Date().toISOString(),
-                    taskitator_recurrence_state: snapshot.recurrence_state || {series:[],history:[]},
-                    taskitator_tasks: snapshot.tasks || [],
-                    taskitator_projects: snapshot.projects || [],
+                    taskitator_recurrence_state: snapshot?.recurrence_state || {series:[],history:[]},
+                    taskitator_tasks: snapshot?.tasks || [],
+                    taskitator_projects: snapshot?.projects || [],
                     taskitator_settings: window.TaskitatorAuth.cleanSettings(settings),
-                    taskitator_daily_breaks: snapshot.today_breaks || {},
-                    taskitator_audit_ledger: snapshot.completed_audit_ledger || [],
-                    taskitator_saved_criteria: snapshot.saved_criteria || []
+                    taskitator_daily_breaks: snapshot?.today_breaks || {},
+                    taskitator_audit_ledger: snapshot?.completed_audit_ledger || [],
+                    taskitator_saved_criteria: snapshot?.saved_criteria || []
                 };
-                const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));
+                const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
                 const link = document.createElement('a'); link.href = url; link.download = `taskitator-${label}-backup.json`;
                 document.body.appendChild(link); link.click(); link.remove();
                 setTimeout(() => URL.revokeObjectURL(url), 30000);
             };
-            addButton('Download device backup', () => downloadBackup(local, 'device'));
-            addButton('Download cloud backup', () => downloadBackup(remote, 'cloud'));
-            let busy = false;
-            const choose = async mode => {
-                if (busy) return;
-                busy = true;
-                feedback.textContent = 'Applying your choice…';
+            const row = document.createElement('div');
+            row.className = 'sync-secondary';
+            for (const [label, side] of [[tr("This device's copy"), 'device'], [tr('Cloud copy'), 'cloud']]) {
+                const b = document.createElement('button');
+                b.type = 'button'; b.className = 'icon-btn'; b.textContent = label;
+                b.addEventListener('click', () => downloadBackup(side === 'device' ? local : remote, side));
+                row.append(b);
+            }
+            backup.append(row);
+            ui.body.append(backup);
+            const later = document.createElement('button');
+            later.type = 'button'; later.className = 'icon-btn confirm-cancel'; later.textContent = tr('Decide later');
+            later.addEventListener('click', () => { if (!busy) done(); });
+            ui.actions.append(later, apply);
+            const signedOut = tr('You signed in to another account in a different tab. Reload this page.');
+            // Reads both copies and redraws the difference list. Safe to call again at any time.
+            const load = async () => {
+                ui.setStatus(tr('Loading both copies…'), 'info');
+                remote = await this.readCloud(config);
+                if (!this.sessionMatches(config, sessionId)) { ui.setStatus(signedOut, 'error'); apply.disabled = true; return false; }
+                local = this.getPayload();
+                let base = await M.loadBase(config.username);
+                if (base && (remote.empty || base.version > remote.version)) base = null;
+                M.renderDiff(diffBox, M.diff(base, local, remote.empty ? { tasks: [], projects: [], settings: {} } : remote));
+                ui.setStatus('', 'info');
+                return true;
+            };
+            const choose = async () => {
+                if (busy || !pick) return;
+                busy = true; apply.disabled = true;
+                ui.setStatus(tr('Saving your choice…'), 'info');
                 const run = async () => {
-                    if (!this.sessionMatches(config, sessionId) || revision !== localStorage.getItem(this.STORAGE_KEY_REVISION)) {
-                        return { success: false, error: 'Session or local edits changed. Close this dialog and sync again.' };
-                    }
-                    if (mode === 'cloud') return this.pull(null, { discardLocal: true,
-                        expectedVersion: remote.version, expectedRevision: revision });
-                    this.rememberRemoteVersion(remote.version);
+                    if (!this.sessionMatches(config, sessionId)) return { success: false, error: signedOut };
+                    // The cloud changed since the list was drawn: show the new list instead of failing.
+                    const fresh = await this.readCloud(config);
+                    if (fresh.version !== remote.version) return { success: false, changed: true };
+                    // Edits saved on this device while the panel was open are part of "this device's version".
+                    const revision = localStorage.getItem(this.STORAGE_KEY_REVISION);
+                    if (pick === 'cloud') return this.pull(null, { discardLocal: true, expectedVersion: fresh.version, expectedRevision: revision });
+                    this.rememberRemoteVersion(fresh.version);
                     localStorage.removeItem(this.STORAGE_KEY_INITIAL_PULL);
                     this.hasUnsavedChanges = true;
                     localStorage.setItem(this.STORAGE_KEY_DIRTY, 'true');
@@ -1676,19 +2034,33 @@ const SyncEngine = {
                 this.pushQueue = pending.catch(() => {});
                 try {
                     const result = await pending;
-                    if (result.success) close();
-                    else feedback.textContent = result.error || 'The cloud changed again. Close this dialog and review the new conflict.';
-                } catch (err) { feedback.textContent = err.message; }
-                finally { busy = false; }
+                    if (result?.success) {
+                        done();
+                        window.TaskitatorToast?.show?.(tr('Sync fixed. Your choice was saved.'), { type: 'success' });
+                        return;
+                    }
+                    if (result?.blocked) { done(); return; } // the blocked panel explains what happened
+                    if (result?.changed || result?.conflict || result?.reason === 'local_changed') {
+                        await load();
+                        ui.setStatus(tr('Something changed while this was open. The list is updated. Check it and choose again.'), 'warning');
+                        return;
+                    }
+                    ui.setStatus(result?.reason === 'offline' ? tr("You're offline. Connect to the internet, then try again.")
+                        : (result?.error || tr('Something went wrong. Try again.')), 'error');
+                } catch (err) {
+                    ui.setStatus(err?.offline ? tr("You're offline. Connect to the internet, then try again.") : err.message, 'error');
+                } finally {
+                    busy = false;
+                    if (ui.dialog.isConnected) apply.disabled = !pick;
+                }
             };
-            addButton('Use cloud copy', () => choose('cloud'));
-            addButton('Keep this device’s copy', () => choose('local'));
-            addButton('Decide later', () => { if (!busy) close(); });
-            dialog.addEventListener('cancel', event => { event.preventDefault(); if (!busy) close(); });
-            document.body.appendChild(dialog);
-            dialog.showModal();
-        } finally {
-            if (!dialog?.isConnected) this.conflictDialogOpen = false;
+            apply.addEventListener('click', choose);
+            ui.open();
+            await load();
+        } catch (err) {
+            if (ui?.dialog?.isConnected) ui.setStatus(err?.offline ? tr("You're offline. Connect to the internet, then try again.") : err.message, 'error');
+            else this.conflictDialogOpen = false;
+            throw err;
         }
     },
 
@@ -2192,7 +2564,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-phase4-v62');
+                    resolve(event.data?.version === 'taskitator-phase4-v63');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });

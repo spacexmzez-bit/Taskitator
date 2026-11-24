@@ -58,9 +58,10 @@ test('a protected task removed locally is restored from the cloud', () => {
 
 test('push retries once after reverting rejected items instead of the whole-copy chooser', () => {
     const fn = core.match(/async performPush\([\s\S]*?\n    },\n/)[0];
-    assert.match(fn, /data\.rejected[\s\S]*revertRejected[\s\S]*__revertedOnce: true/);
-    assert.ok(fn.indexOf('revertRejected') < fn.indexOf("['PROOF_REQUIRED','REQUIREMENTS_LOCKED','SHIELD_REQUIRED']"));
-    assert.match(fn, /__revertedOnce: ignoredFlag/);
+    assert.match(fn, /data\.rejected[\s\S]*revertRejected[\s\S]*__reverts: reverts \+ 1/);
+    assert.ok(fn.indexOf('revertRejected') < fn.indexOf('this.PROTECTION_CODES.includes(data.code)'));
+    assert.match(fn, /__reverts: ignoredFlag/);
+    assert.doesNotMatch(fn, /reportConflict\(\{\.\.\.data/, 'a refusal never opens the copy chooser');
 });
 
 test('conflict panel flags AI-protected task conflicts', () => {

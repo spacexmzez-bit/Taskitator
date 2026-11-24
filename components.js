@@ -42,7 +42,7 @@
         return 'info';
     }
 
-    const ICONS = { success: '✓', error: '!', info: 'i' };
+    const ICONS = { success: '✓', error: '!', warning: '!', info: 'i' };
 
     function dismiss(toast) {
         if (!toast || toast._leaving) return;

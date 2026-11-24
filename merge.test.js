@@ -131,8 +131,8 @@ test('sync engine routes conflicts through the merge and falls back safely', () 
     assert.match(fn, /if \(!base\) return fallback\(\)/, 'no base copy -> copy chooser');
     assert.match(fn, /base\.version > remote\.version\) return fallback\(\)/);
     assert.match(fn, /attempt >= 3/);
-    assert.match(fn, /choices = await merge\.askUser/);
+    assert.match(fn, /const picked = await merge\.askUser/);
     assert.match(fn, /deferred: true/, 'Decide later leaves local edits queued');
-    assert.match(fn, /revision !== localStorage\.getItem\(this\.STORAGE_KEY_REVISION\)/);
+    assert.match(fn, /const current = localStorage\.getItem\(this\.STORAGE_KEY_REVISION\)/, 'edits during the panel re-merge instead of failing');
     assert.match(fn, /this\.performPush\(false\)/);
 });
