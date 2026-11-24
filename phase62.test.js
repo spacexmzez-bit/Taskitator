@@ -74,7 +74,7 @@ for (const code of ['PROOF_REQUIRED', 'REQUIREMENTS_LOCKED', 'SHIELD_REQUIRED'])
         assert.equal(r.blocked, true);
         assert.equal(f.opened.conflict, 0);
         assert.equal(f.opened.blocked, 1);
-        assert.equal(f.calls.filter(u => u.endsWith('/sync/push')).length, 4, 'three revert passes, then stop');
+        assert.equal(f.calls.filter(u => u.endsWith('/sync/push')).length, 2, 'one revert, then the same refusal again stops the loop');
     });
 }
 
@@ -191,4 +191,36 @@ test('new sync strings have Arabic translations', async () => {
         'Not saved: {names}. {reasons} These tasks were put back to the cloud version. Your other changes are kept.',
         'AI-checked task. Changing it needs proof or Emergency Bypass.', 'Protected by a shield. Changing it needs Emergency Bypass.'])
         assert.ok(ar[key], key);
+});
+
+// ---- Phase 6.2.1: stop the revert loop ----
+test('the same refused tasks put back twice in a row are not reverted a third time automatically', async () => {
+    const f = engine({ local: [audited('2026-11-30')], remote: [audited('2026-11-25')] });
+    const rej = [{ id: 'ai', code: 'SHIELD_REQUIRED', message: 'm' }];
+    assert.equal(await f.SE.revertRejected(rej, f.SE.getConfig(), 's'), true);
+    f.storage.setItem('taskitator_tasks', JSON.stringify([audited('2026-11-30')]));
+    assert.equal(await f.SE.revertRejected(rej, f.SE.getConfig(), 's'), false, 'second time within 10 minutes: stop');
+    assert.equal(await f.SE.revertRejected(rej, f.SE.getConfig(), 's', { manual: true }), true, 'the panel button still works');
+});
+
+test('a different set of refused tasks is reverted normally', async () => {
+    const f = engine({ local: [audited('2026-11-30')], remote: [audited('2026-11-25')] });
+    assert.equal(await f.SE.revertRejected([{ id: 'ai', code: 'SHIELD_REQUIRED' }], f.SE.getConfig(), 's'), true);
+    f.storage.setItem('taskitator_revert_log', JSON.stringify({ sig: 'other', at: Date.now(), count: 1 }));
+    assert.equal(await f.SE.revertRejected([{ id: 'ai', code: 'SHIELD_REQUIRED' }], f.SE.getConfig(), 's'), true);
+});
+
+test('the revert message names three tasks and counts the rest', async () => {
+    const mk = n => Array.from({ length: n }, (_, i) => ({ id: 't' + i, title: 'T' + i, status: 'active', ai_locked: true, due_date: '2026-11-30' }));
+    const f = engine({ local: mk(10), remote: mk(10).map(t => ({ ...t, due_date: '2026-11-25' })) });
+    await f.SE.revertRejected(mk(10).map(t => ({ id: t.id, code: 'REQUIREMENTS_LOCKED' })), f.SE.getConfig(), 's');
+    assert.match(f.toasts[0].m, /"T0", "T1", "T2" and 7 more/);
+    assert.doesNotMatch(f.toasts[0].m, /T9/);
+});
+
+test('bonus sweep: pause is stored, and a move that sync put back counts as failed', () => {
+    const src = fs.readFileSync(new URL('./study-plans.js', import.meta.url), 'utf8');
+    assert.match(src, /localStorage\.setItem\(SWEEP_KEY/);
+    assert.match(src, /throw Error\('not kept'\)/);
+    assert.match(src, /catch \(e\) \{ sweepFailed\.set\(plan\.id, Date\.now\(\)\)/);
 });

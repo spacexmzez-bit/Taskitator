@@ -14,6 +14,7 @@
     // Built only when the UI is Arabic (register() calls this function lazily).
     const build = () => ({
         "Universe": "يونيفيرس",
+        "{names} and {n} more": "{names} و{n} أخرى",
         "Phone lock mode": "وضع قفل الهاتف",
         "Day starts at": "يبدأ اليوم عند",
         "Theme": "المظهر",

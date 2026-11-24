@@ -1770,8 +1770,21 @@ const SyncEngine = {
     // back to the cloud copy; every other local edit and merge choice stays and is pushed again.
     // Phase 6.2: works even if this device changed during the upload (only the refused tasks are touched),
     // restores their protected reference files too, and tells the user in a plain warning toast.
-    async revertRejected(rejected, config, sessionId) {
+    // Phase 6.2.1: the same set of tasks put back twice within 10 minutes means something on this device keeps
+    // changing them again. Stop reverting automatically (the blocked panel explains) instead of looping.
+    revertLooping(ids) {
         try {
+            const sig = [...ids].sort().join('|'), now = Date.now();
+            const log = JSON.parse(localStorage.getItem('taskitator_revert_log') || '{}');
+            const prior = log.sig === sig && now - (log.at || 0) < 600000 ? (log.count || 0) : 0;
+            localStorage.setItem('taskitator_revert_log', JSON.stringify({ sig, at: now, count: prior + 1 }));
+            return prior >= 1;
+        } catch { return false; }
+    },
+
+    async revertRejected(rejected, config, sessionId, { manual = false } = {}) {
+        try {
+            if (!manual && this.revertLooping(rejected.map(r => r.id))) return false;
             const remote = await this.readCloud(config);
             if (!this.sessionMatches(config, sessionId) || remote.empty || !Array.isArray(remote.tasks)) return false;
             const tasks = JSON.parse(localStorage.getItem(this.STORAGE_KEY_TASKS) || '[]');
@@ -1799,7 +1812,8 @@ const SyncEngine = {
             window.dispatchEvent(new CustomEvent('taskitator-reverted', { detail }));
             window.dispatchEvent(new CustomEvent('taskitator-merged', { detail: { conflicts: 0, reverted: result.changed.length } }));
             const tr = window.TaskitatorMerge?.tr || (k => k);
-            const names = result.changed.map(t => `"${t.title}"`).join(', ');
+            const shown = result.changed.slice(0, 3).map(t => `"${t.title}"`).join(', ');
+            const names = result.changed.length > 3 ? tr('{names} and {n} more', { names: shown, n: result.changed.length - 3 }) : shown;
             const reasons = [...new Set(rejected.map(r => tr(this.plainReason(r))))].join(' ');
             const msg = tr('Not saved: {names}. {reasons} These tasks were put back to the cloud version. Your other changes are kept.', { names, reasons });
             if (window.TaskitatorToast?.show) window.TaskitatorToast.show(msg, { type: 'warning', duration: 12000 });
@@ -1896,7 +1910,7 @@ const SyncEngine = {
                 if (!this.sessionMatches(config, sessionId)) { ui.setStatus(tr('You signed in to another account in a different tab. Reload this page.'), 'error'); return; }
                 let result;
                 if (action === 'undo' && rejected.length) {
-                    const ok = await this.revertRejected(rejected, config, sessionId);
+                    const ok = await this.revertRejected(rejected, config, sessionId, { manual: true });
                     result = ok ? await this.performPush(false) : { success: false, error: tr('Could not reach the cloud. Check your connection and try again.') };
                 } else if (action === 'undo') {
                     const remote = await this.readCloud(config);
@@ -2564,7 +2578,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-phase4-v63');
+                    resolve(event.data?.version === 'taskitator-phase4-v64');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });

@@ -540,7 +540,11 @@ async function convertBonus(plan) {
     await commit(() => { const r = M.bonusConvert(tasks, plan.id); return { tasks: r.tasks, converted: r.converted }; }, r => tr('{n} bonus unit(s) are now required.', { n: r.converted }));
 }
 // A bonus unit not finished by the end of its day slides to the next day. Runs quietly when the app opens, regains focus or the day changes.
-let sweeping = false; const sweepFailed = new Map();
+// The 10-minute pause after a failed move is stored, so a page refresh cannot reset it (Phase 6.2.1).
+let sweeping = false;
+const SWEEP_KEY = 'taskitator_sweep_failed';
+const sweepFailed = { get(id) { try { return Number(JSON.parse(localStorage.getItem(SWEEP_KEY) || '{}')[id]) || 0; } catch { return 0; } },
+    set(id, at) { try { const m = JSON.parse(localStorage.getItem(SWEEP_KEY) || '{}'); m[id] = at; localStorage.setItem(SWEEP_KEY, JSON.stringify(m)); } catch { /* storage full or blocked */ } } };
 async function sweepBonus() {
     if (sweeping || busy || !syncing() || !M.bonusWaiting) return;
     if (started && anyDirty()) return;
@@ -563,6 +567,10 @@ async function sweepBonus() {
                     if (localStorage.getItem(TASKS) === saved && before !== null) localStorage.setItem(TASKS, before);
                     throw Error(sent.error || 'rejected');
                 }
+                // A refused move is put back by sync and still reports success. If the move did not stick, treat it as failed
+                // so the same move is not tried again straight away.
+                { const now = new Map(JSON.parse(localStorage.getItem(TASKS) || '[]').map(t => [t.id, t]));
+                  if (answer.tasks.some(t => { const k = now.get(t.id); return !k || k.parent_id !== t.parent_id || !!k.is_bonus !== !!t.is_bonus || k.due_date !== t.due_date || k.status !== t.status; })) throw Error('not kept'); }
                 window.dispatchEvent(new CustomEvent('taskitator-tasks-updated'));
                 window.TaskitatorNotify?.(tr('{n} bonus unit(s) moved to the next day.', { n: answer.missed }) + clearedNote(answer), 'info');
                 load();
