@@ -149,6 +149,7 @@
     clearTimeout(tabTimer);
     const old=panels[activeTab];
     if(old)old.classList.remove('study-panel-leaving');
+    for(const [key,b]of Object.entries(tabButtons))b.setAttribute('aria-selected',String(key===k)); // Phase 6.3: underline moves at once
     if(activeTab===k)return;
     const apply=()=>{for(const [key,p]of Object.entries(panels)){p.hidden=key!==k;tabButtons[key].setAttribute('aria-selected',String(key===k));}activeTab=k;};
     if(!old||window.matchMedia('(prefers-reduced-motion: reduce)').matches){apply();return;}

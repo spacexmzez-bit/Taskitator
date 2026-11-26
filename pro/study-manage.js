@@ -27,7 +27,7 @@ function plans(tasks){
   const required=units.filter(u=>!u.is_bonus),extra=units.filter(u=>u.is_bonus),done=required.filter(u=>u.status==='completed').length,bonusLeft=extra.filter(u=>u.status==='active').length;
   const same=values=>new Set(values).size===1?values[0]??null:undefined;
   return {id,base,custom:custom.length,unit,plural,chapter,total:required.length,done,remaining:required.length-done,bonus:extra.length,bonusDone:extra.filter(u=>u.status==='completed').length,bonusLeft,early:units.filter(u=>u.status==='active'&&!u.is_bonus&&u.smart_early_date&&!u.smart_adjusted).length,ready:required.length>0&&done===required.length&&bonusLeft>0,days:parents.length,
-   start:dates[0]||null,end:dates.at(-1)||null,audited:units.filter(isAudited).length,
+   start:dates[0]||null,end:dates.at(-1)||null,audited:units.filter(isAudited).length,auditedOpen:units.filter(u=>u.status==='active'&&isAudited(u)).length,
    parentPriority:same(parents.map(p=>p.priority_id||null)),unitPriority:same(units.map(u=>u.priority_id||null)),
    finished:units.length>0&&units.every(u=>u.status==='completed'),parents,units,group};
  }).sort((a,b)=>(b.end||'').localeCompare(a.end||''));
@@ -64,10 +64,10 @@ function renameUnit(tasks,id,unit,plural,{bypass=false}={}){
  const plan=forPlan(tasks,id);unit=String(unit??'').trim();plural=String(plural||'').trim()||unit+'s';
  if(!plan.unit)throw Error('This plan has no units to rename.');
  if(!unit||unit.length>40||plural.length>45||/[{}]/.test(unit+plural))throw Error('Enter a unit name without syntax brackets.');
- if(plan.audited&&!bypass)throw Error('This plan has AI-audited units. Renaming them needs Emergency Bypass.');
+ if(plan.auditedOpen&&!bypass)throw Error('This plan has AI-audited units. Renaming them needs Emergency Bypass.');
  const out=copy(tasks),units=new Set(plan.units.map(u=>u.id)),parents=new Set(plan.parents.map(p=>p.id));let changed=0;
  for(const t of out){
-  if(units.has(t.id)){const n=unitNumber(t);if(n!==null){const x=root.TaskitatorStudyCore.unitTexts(unit,n,plan.chapter);t.title=x.title;t.raw_title=x.raw;changed++;}}
+  if(units.has(t.id)){if(!bypass&&t.status!=='active'&&isAudited(t))continue;const n=unitNumber(t);if(n!==null){const x=root.TaskitatorStudyCore.unitTexts(unit,n,plan.chapter);t.title=x.title;t.raw_title=x.raw;changed++;}}
   else if(parents.has(t.id)&&plan.plural&&typeof t.description==='string'&&t.description.startsWith('Covers '+plan.plural+' '))t.description='Covers '+plural.toLowerCase()+t.description.slice(7+plan.plural.length);
  }
  return {tasks:out,changed};
@@ -80,9 +80,11 @@ function setChapters(tasks,id,size,label,{bypass=false}={}){
  const sz=size==null||size===''?null:Number(size),lab=String(label??'Ch').trim()||'Ch';
  if(sz!==null&&(!Number.isSafeInteger(sz)||sz<1||sz>1000))throw Error('Use whole numbers within the displayed limits.');
  if(sz&&(lab.length>20||/[{}·]/.test(lab)))throw Error('Enter a chapter label without brackets or the · sign, up to 20 characters.');
- if(plan.audited&&!bypass)throw Error('This plan has AI-audited units. Relabelling them needs Emergency Bypass.');
+ if(plan.auditedOpen&&!bypass)throw Error('This plan has AI-audited units. Relabelling them needs Emergency Bypass.');
  const ch=sz?{size:sz,label:lab}:null,out=copy(tasks),units=new Set(plan.units.map(u=>u.id)),parents=new Set(plan.parents.map(p=>p.id)),byParent=new Map();let changed=0;
  for(const t of out)if(units.has(t.id)){
+  // Phase 6.3: finished AI-checked units keep their names unless Emergency Bypass is on (the server locks their titles).
+  if(!bypass&&t.status!=='active'&&isAudited(t))continue;
   const n=unitNumber(t);if(n===null)continue;
   const x=core.unitTexts(plan.unit,n,ch);t.title=x.title;t.raw_title=x.raw;
   if(ch){t.chapter_size=ch.size;t.chapter_label=ch.label;}else{delete t.chapter_size;delete t.chapter_label;}

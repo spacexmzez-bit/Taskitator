@@ -31,7 +31,7 @@ function render(box,days,state,again,opts={}){
  const dates=[...days.keys()].sort(),fmtMonth=opts.fmtMonth||(ym=>ym);
  if(!dates.length){mk('p',tr('Nothing scheduled yet.'),box,'plan-hint');return;}
  const seg=mk('div',undefined,box,'ss-sum-seg');
- for(const [k,t] of [['cal','Calendar'],['list','List']]){const b=mk('button',tr(t),seg,state.view===k?'is-on':'');b.type='button';b.setAttribute('data-sum-view',k);b.onclick=()=>{state.view=k;again();};}
+ for(const [k,t] of [['cal','Calendar'],['list','List']]){const b=mk('button',tr(t),seg,state.view===k?'is-on':'');b.type='button';b.setAttribute('data-sum-view',k);b.setAttribute('aria-pressed',String(state.view===k));b.onclick=()=>{state.view=k;again();};}
  const legend=mk('div',undefined,box,'ss-sum-legend');
  for(const k of KINDS){const l=mk('span',undefined,legend);mk('i',undefined,l,'sum-dot is-'+k);mk('span',tr(LABEL[k]),l);}
  const line=(parent,k,t)=>{const it=mk('div',undefined,parent,'ss-sum-item');mk('i',undefined,it,'sum-dot is-'+k);mk('span',t,it);return it;};

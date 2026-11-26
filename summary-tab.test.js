@@ -23,7 +23,7 @@ test('Smart calendar counts sit on their own line, not on the day number', () =>
 test('edit confirmation is red for AI criteria or audited re-plans, blue otherwise', () => {
     const p = src('study-plans.js');
     assert.ok(p.includes("function ask(title, lines, yes, tone)") && p.includes("classList.toggle('is-danger', tone === 'danger')"));
-    assert.ok(p.includes("const risky = info.dirty.ai || (plan.audited > 0 && (info.dirty.sched"));
+    assert.ok(p.includes("const risky = info.dirty.ai || (plan.auditedOpen > 0 && (info.dirty.sched"));
     assert.ok(p.includes("risky ? 'danger' : 'primary'"));
     assert.ok(/\.plan-confirm \.is-danger\{background:var\(--danger\)/.test(src('style.css')));
 });

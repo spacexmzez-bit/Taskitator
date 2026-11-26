@@ -2722,6 +2722,8 @@ window.TaskitatorComponents = Object.freeze({
                     addTaskModal.classList.remove('open');
                 });
             }
+            // Phase 6.3: the top-right ✕ does exactly what Cancel does.
+            document.getElementById('addTaskCloseX')?.addEventListener('click', () => closeAddTaskModalBtn?.click());
 
             // Gamification Selection Handlers
             const mrStudySelect = document.getElementById('taskMrstudyRuleSelect');

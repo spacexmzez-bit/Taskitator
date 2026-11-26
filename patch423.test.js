@@ -35,17 +35,13 @@ test('Phase 4.2.3: an undefined variable blocks instead of reaching the AI liter
   assert.match(lab, /Unresolved variable\(s\)/);
 });
 
-test('Phase 4.2.3: layout has separate Validation and Testing sections with the requested placement', () => {
+test('Phase 6.3: one card per version holds the criteria, Validate, Test and both results (replaces the 4.2.3 split)', () => {
+  const c = lab.slice(lab.indexOf('function card('), lab.indexOf('const scoreTone'));
+  for (const s of ["field(tr('Proof criteria')", "tr('Validate')", "tr('Test')", 'vOut', 'tOut', "tr('Save to criteria library')"]) assert.ok(c.includes(s), s);
+  assert.ok(c.indexOf("tr('Copy')") < c.indexOf("field(tr('Proof criteria')"), 'Copy sits in the card header');
   const build = lab.slice(lab.indexOf('function build()'));
-  const iV = build.indexOf("tr('Validation')"), iT = build.indexOf("tr('Testing')");
-  assert.ok(iV > 0 && iT > iV);
-  const col = lab.slice(lab.indexOf('function column('), lab.indexOf('function paint('));
-  assert.ok(col.indexOf("'Copy'") > col.indexOf("field(tr('Proof criteria')") && col.indexOf("'Copy'") < col.indexOf("'Validate'"), 'Copy sits next to the box');
-  assert.ok(col.indexOf("'Confirm'") > col.indexOf('vOut'), 'Confirm is below the validation result');
-  assert.ok(!/'Test'/.test(col.slice(0, col.indexOf("const t = el('section'"))), 'Test button is not in the validation half');
-  assert.ok(build.indexOf("tr('Exemplar (optional)')") > iV && build.indexOf("tr('Exemplar (optional)')") < iT, 'exemplar is in Validation');
-  assert.ok(build.indexOf("tr('Unit number") > iT, 'unit number is in Testing');
-  assert.ok(build.indexOf("tr('Test proof (shared by A and B)')") > iT, 'proof upload is in Testing');
+  assert.ok(build.indexOf("'lab-topbar'") < build.indexOf("tr('Test inputs')"), 'the switcher is above the inputs');
+  for (const s of ["tr('Unit number", "tr('Test proof (shared by A and B)')", "tr('Exemplar (optional)')", "tr('Note to the auditor (optional)')"]) assert.ok(build.indexOf(s) > build.indexOf("tr('Test inputs')") && build.indexOf(s) < build.indexOf("card('a'"), s + ' is in Test inputs');
 });
 
 test('Phase 4.2.3: Arabic strings exist for the new labels, no duplicate keys', () => {

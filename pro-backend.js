@@ -910,7 +910,8 @@ export class TaskProtection {
     async authorizeStudyDelete(tx,userId,snapshot,planId){
         const group=(snapshot?.tasks||[]).filter(t=>t&&t.study_plan_id===planId);
         if(!group.length)throw fail(404,'PLAN_NOT_SYNCED','This study plan is not in your synced tasks. Sync, then try again.');
-        const guarded=group.some(protectedTask);let bypass=null;
+        // Phase 6.3: only unfinished AI-protected units make deleting cost Emergency Bypass uses.
+        const guarded=group.some(t=>protectedTask(t)&&t.status==='active');let bypass=null;
         if(guarded){
             const now=Date.now(),key='pro:emergency:'+userId,s=await this.emergencyState(tx,userId,snapshot,now),active=s.active_until_ms>now,need=active?1:2;
             if(s.uses_left<need)throw fail(429,'BYPASS_EXHAUSTED','Deleting a plan with AI criteria needs '+need+' Emergency Bypass use'+(need>1?'s':'')+' and you have '+s.uses_left+' left this week.');

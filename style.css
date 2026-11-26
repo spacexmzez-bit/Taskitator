@@ -6008,3 +6008,76 @@ dialog.parent-picker::backdrop{background:rgba(0,0,0,.6)}
 .sync-secondary .icon-btn{min-height:38px;height:auto;padding:6px 14px;font-size:.84rem}
 .sync-actions{justify-content:space-between}
 .sync-actions .confirm-ok:disabled{opacity:.45;cursor:not-allowed}
+
+/* Phase 6.3: native controls follow the dark themes (date icons, scrollbars, spinners, resize handles). */
+:root { color-scheme: dark; }
+
+/* Phase 6.3: stronger selected state for study toggles and the preview button (white text on a darker primary, at least 5.7:1). */
+:root { --primary-strong: color-mix(in srgb, var(--primary) 68%, #000); }
+:root :is(.study-seg-btn.is-active, .ss-seg-btn.is-active, .plan-seg-btn.is-active) { background: var(--primary-strong); border-color: var(--primary); color: #fff; }
+:root .ss-preview-btn:not(.is-done) { background: var(--primary-strong); border-color: var(--primary); color: #fff; }
+.ss-sum-seg button.is-on { background: var(--primary-strong); color: #fff; }
+
+/* Phase 6.3: the Emergency Bypass button in the Study plans header replaces the top-bar one on that page. */
+html[data-shell="study-plans"] .top-navbar #emergencyTriggerBtn { display: none; }
+/* Phase 6.3: room for the save bar, whatever its height. */
+.plans-wrap.plans-wrap { padding-bottom: calc(var(--plan-bar-h, 110px) + 32px); }
+
+/* Phase 6.3: Create New Task, close button and a footer that stays visible while scrolling. */
+.modal-head-row { display: flex; align-items: flex-start; gap: 10px; }
+.modal-head-row h3 { flex: 1; }
+.modal-x { flex: none; width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 50%; font-size: 1.1rem; line-height: 1; }
+#addTaskModal .task-modal-actions-create { position: sticky; bottom: -24px; z-index: 3; margin: 20px -24px -24px; padding: 12px 24px calc(14px + env(safe-area-inset-bottom)); background: var(--card-bg); border-top: 1px solid var(--border-color); border-radius: 0 0 16px 16px; }
+
+/* Phase 6.3: Test lab. Version A blue, version B purple; green / amber / red results. */
+.lab-wrap { --lab-a: var(--primary); --lab-b: #a78bfa; --lab-good: #22c55e; --lab-warn: #f59e0b; --lab-bad: #ef4444; }
+.lab-wrap .lab-topbar { position: sticky; top: 0; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; margin: 0 0 4px; border: 1.5px solid var(--border-color); border-radius: 12px; background: var(--card-bg); box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+.lab-wrap .lab-picker { flex: 1 1 220px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lab-wrap .lab-picker-label { font-weight: 700; font-size: .85rem; }
+.lab-wrap .lab-picker select { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 10px; border: 1.5px solid var(--border-color); background: var(--input-bg, transparent); color: var(--text-color); font: inherit; font-size: .88rem; }
+.lab-wrap .lab-count { white-space: nowrap; }
+.lab-wrap .icon-btn.lab-primary { background: var(--primary-strong); border-color: var(--primary); color: #fff; font-weight: 700; }
+.lab-wrap .icon-btn.lab-secondary { background: transparent; border-color: var(--primary); color: var(--text-color); }
+.lab-wrap .icon-btn.lab-danger { background: transparent; border-color: rgba(239,68,68,.6); color: #fca5a5; }
+.lab-wrap .icon-btn.lab-small { min-height: 32px; height: auto; padding: 4px 10px; font-size: .8rem; }
+.lab-wrap .icon-btn.lab-confirm:not(:disabled) { background: rgba(34,197,94,.15); border-color: var(--lab-good); color: #86efac; }
+.lab-wrap .lab-topbar .icon-btn, .lab-wrap .lab-actions .icon-btn { width: auto; height: auto; min-height: 40px; padding: 8px 14px; }
+.lab-wrap .lab-inputs { border: 1.5px solid var(--border-color); border-radius: 12px; padding: 10px 12px; }
+.lab-wrap .lab-inputs > summary { cursor: pointer; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; list-style-position: inside; }
+.lab-wrap .lab-inputs-title { font-weight: 700; }
+.lab-wrap .lab-inputs[open] > summary { margin-bottom: 10px; }
+.lab-wrap .lab-inputs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 0 12px; }
+.lab-wrap .lab-inputs .lab-proof { margin: 8px 0; }
+.lab-wrap .lab-card { border: 1.5px solid var(--border-color); border-inline-start: 5px solid var(--lab-a); border-radius: 12px; padding: 12px; background: var(--card-subtle, transparent); min-width: 0; }
+.lab-wrap .lab-card[data-side=b] { border-inline-start-color: var(--lab-b); }
+.lab-wrap .lab-card[hidden] { display: none; }
+.lab-wrap .lab-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.lab-wrap .lab-card-title { flex: 1; margin: 0; font-size: 1rem; color: var(--lab-a); }
+.lab-wrap .lab-card[data-side=b] .lab-card-title { color: var(--lab-b); }
+.lab-wrap .lab-card textarea { width: 100%; box-sizing: border-box; }
+.lab-wrap .lab-result { border: 1.5px solid var(--border-color); border-inline-start-width: 4px; border-radius: 10px; padding: 8px 10px; margin-top: 8px; font-size: .86rem; }
+.lab-wrap .lab-result[data-tone=good] { border-color: rgba(34,197,94,.45); border-inline-start-color: var(--lab-good); }
+.lab-wrap .lab-result[data-tone=warn] { border-color: rgba(245,158,11,.45); border-inline-start-color: var(--lab-warn); }
+.lab-wrap .lab-result[data-tone=bad] { border-color: rgba(239,68,68,.5); border-inline-start-color: var(--lab-bad); }
+.lab-wrap .lab-result-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lab-wrap .lab-result-kind { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.lab-wrap .lab-badge { padding: 2px 9px; border-radius: 99px; font-size: .8rem; }
+.lab-wrap [data-tone=good] .lab-badge { background: rgba(34,197,94,.18); color: #86efac; }
+.lab-wrap [data-tone=warn] .lab-badge { background: rgba(245,158,11,.18); color: #fcd34d; }
+.lab-wrap [data-tone=bad] .lab-badge { background: rgba(239,68,68,.18); color: #fca5a5; }
+.lab-wrap .lab-stale { padding: 1px 8px; border-radius: 99px; border: 1px dashed var(--lab-warn); color: #fcd34d; font-size: .72rem; }
+.lab-wrap .lab-rewrite { padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,.04); }
+.lab-wrap .lab-both { justify-content: flex-end; }
+/* Same colours on the study-plan Check criteria line. */
+.plan-check[data-tone=good] { color: #86efac; }
+.plan-check[data-tone=warn] { color: #fcd34d; }
+.plan-check[data-tone=bad] { color: #fca5a5; }
+@media (max-width: 639px) {
+    #addTaskModal .task-modal-actions-create { bottom: calc(-20px - env(safe-area-inset-bottom)); margin: 20px -18px calc(-20px - env(safe-area-inset-bottom)); padding: 12px 18px calc(14px + env(safe-area-inset-bottom)); border-radius: 0; }
+}
+.lab-wrap [hidden] { display: none !important; }
+.lab-wrap .lab-picker { flex: 1 1 100%; }
+.lab-wrap .lab-count { flex: 1; }
+.lab-wrap .lab-card textarea, .lab-wrap .lab-inputs :is(input:not([type=file]), textarea) { font: inherit; font-size: .9rem; padding: 10px; border-radius: 10px; border: 1.5px solid var(--border-color); background: var(--input-bg, rgba(255,255,255,.04)); color: var(--text-color); }
+.lab-wrap .lab-card textarea:focus { border-color: var(--primary); outline: none; }
+.lab-wrap .lab-card[data-side=b] textarea:focus { border-color: var(--lab-b); }

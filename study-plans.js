@@ -172,10 +172,12 @@ function barInfo(plan, d) {
 }
 function chrome() {
     const plan = current && planOf(current), bar = $('planSaveBar');
-    if (!plan || !canEdit()) { bar.hidden = true; return; }
+    if (!plan || !canEdit()) { bar.hidden = true; document.body.classList.remove('has-savebar'); return; }
     const d = draftFor(plan), info = barInfo(plan, d);
     for (const [k, dot] of Object.entries(ui.dots)) dot.hidden = !info.dirty[k];
     bar.hidden = false; $('planSaveMsg').textContent = info.msg;
+    requestAnimationFrame(() => { if (!bar.hidden) document.documentElement.style.setProperty('--plan-bar-h', bar.offsetHeight + 'px'); });
+    document.body.classList.add('has-savebar');
     $('planDiscard').disabled = busy || !info.dirty.info && !info.dirty.ai && !info.dirty.sched;
     $('planSaveDraft').disabled = busy || !Drafts() || !info.dirty.info && !info.dirty.ai && !info.dirty.sched;
     const save = $('planSave'); save.textContent = info.apply ? tr('Apply re-plan') : tr('Save changes');
@@ -217,14 +219,19 @@ function card(plan, parent) {
     if (overdue) { heading.classList.add('plan-overdue'); heading.title = tr('This plan has overdue units to reschedule.'); }
     const badges = el('div', undefined, top, 'plan-badges');
     el('span', plan.finished ? tr('Finished') : tr('In progress'), badges, 'plan-badge');
-    if (plan.audited) el('span', tr('AI audited: {n}', { n: plan.audited }), badges, 'plan-badge ai');
+    if (plan.auditedOpen) el('span', tr('AI audited: {n}', { n: plan.auditedOpen }), badges, 'plan-badge ai');
     if (plan.bonus) el('span', tr('Bonus: {done} of {n}', { done: plan.bonusDone, n: plan.bonus }), badges, 'plan-badge');
     if (plan.early) el('span', tr('Bonus left: {n} ({plan} plan, {early} early)', { n: plan.bonusLeft + plan.early, plan: plan.bonusLeft, early: plan.early }), badges, 'plan-badge plan-badge-early');
     el('p', tr('{done} of {total} done', { done: plan.done, total: plan.total }) + ' · ' + tr('{n} study days', { n: plan.days }) + (plan.start ? ' · ' + fmtDate(plan.start) + ' – ' + fmtDate(plan.end) : ''), c, 'plan-meta');
     const bar = el('div', undefined, c, 'plan-bar'); el('span', undefined, bar).style.width = (plan.total ? Math.round(plan.done / plan.total * 100) : 0) + '%';
     const actions = el('div', undefined, c, 'plan-actions');
     const toggle = el('button', isOpen ? tr('Close') : tr('Edit'), actions, 'icon-btn'); toggle.type = 'button'; toggle.disabled = busy;
-    toggle.addEventListener('click', () => { current = isOpen ? null : plan.id; render(); });
+    toggle.addEventListener('click', () => {
+        current = isOpen ? null : plan.id;
+        // Phase 6.3: opening the editor closes this plan's preview and brings the form into view.
+        if (!isOpen) { previews.delete(plan.id); render(); requestAnimationFrame(() => document.querySelector('#plansListView .plan-card .tk-tabs')?.scrollIntoView({ block: 'start', behavior: 'smooth' })); return; }
+        render();
+    });
     // Read-only summary of the plan as it stands, without opening the editor (Phase 3.7.1).
     const previewing = previews.has(plan.id);
     const prev = el('button', previewing ? tr('Hide preview') : tr('Preview plan'), actions, 'icon-btn'); prev.type = 'button'; prev.dataset.act = 'preview';
@@ -250,7 +257,7 @@ function card(plan, parent) {
         el('p', tr('{n} overdue unit(s). Soft reschedule spreads them over the coming study days; Move overdue to today stacks them on today.', { n: late }), c, 'plan-hint');
     }
     if (!isOpen) return;
-    if (plan.bonusLeft) el('p', tr('Re-planning is off while the plan has unfinished bonus units. Complete the plan or convert the bonus units to required first.'), c, 'plan-hint warn');
+    if (plan.bonusLeft) el('p', tr('Re-planning is off while the plan has unfinished bonus units. Use Remove all under Bonus units, or finish them, then edit the schedule.'), c, 'plan-hint warn');
     const d = draftFor(plan), edit = canEdit() && !busy;
     if (!canEdit()) el('p', pro === null ? tr('Could not confirm your Pro license, so editing is off. You can still delete this plan.') : tr('Editing study plans needs an active Pro license. You can still view, finish and delete this plan.'), c, 'plan-hint warn');
     const tabs = el('div', undefined, c, 'tk-tabs'); tabs.setAttribute('role', 'tablist'); ui = { dots: {} };
@@ -262,7 +269,10 @@ function card(plan, parent) {
             clearTimeout(d.tabTransition);
             if (panel) panel.classList.remove('study-panel-leaving');
             if (d.tab === key) return;
-            const apply = () => { if (!c.isConnected) return; d.tab = key; render(); };
+            // Phase 6.3: the underline moves at once, and the choice is kept even if the page redraws during the fade.
+            for (const t of tabs.querySelectorAll('.tk-tab')) t.setAttribute('aria-selected', String(t === b));
+            d.tab = key;
+            const apply = () => { if (c.isConnected) render(); };
             if (!panel || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { apply(); return; }
             panel.classList.add('study-panel-leaving');
             d.tabTransition = setTimeout(apply, 140);
@@ -284,7 +294,7 @@ function infoTab(plan, d, panel, list, edit) {
     } else el('p', tr('This plan has custom day titles, so there is no single title to change.'), fs, 'plan-hint');
     const grid = el('div', undefined, fs, 'plan-grid');
     if (plan.unit) {
-        const unit = field(tr('Unit name'), grid, d.info.unit), locked = plan.audited > 0 && !bypass.active; unit.maxLength = 40; unit.disabled = !edit || locked;
+        const unit = field(tr('Unit name'), grid, d.info.unit), locked = plan.auditedOpen > 0 && !bypass.active; unit.maxLength = 40; unit.disabled = !edit || locked;
         unit.addEventListener('input', () => { d.info.unit = unit.value; chrome(); });
     } else el('div', undefined, grid);
     const choices = [['', tr('No priority')], ...list.map(p => [p.id, p.name || p.id])];
@@ -293,7 +303,7 @@ function infoTab(plan, d, panel, list, edit) {
     el('p', tr('Units cannot be more important than their parent. Finished tasks keep their priority.'), fs, 'plan-hint');
     // Chapter labels (Phase 3.6.1): a separate section; the fields show only while the switch is on. Switching off removes the labels when saved.
     if (plan.unit) {
-        const locked = plan.audited > 0 && !bypass.active, sec = el('div', undefined, fs, 'plan-chapters');
+        const locked = plan.auditedOpen > 0 && !bypass.active, sec = el('div', undefined, fs, 'plan-chapters');
         const on = field(tr('Use chapter labels'), sec, '', 'checkbox'); on.checked = d.info.chapOn === true; on.disabled = !edit || locked; on.dataset.act = 'chapter-toggle';
         const body = el('div', undefined, sec); body.hidden = !on.checked; const cg = el('div', undefined, body, 'plan-grid');
         const cs = field(tr('Units per chapter (optional)'), cg, d.info.chapSize, 'number'); cs.min = 1; cs.max = 1000; cs.inputMode = 'numeric'; cs.disabled = !edit || locked;
@@ -303,11 +313,12 @@ function infoTab(plan, d, panel, list, edit) {
         el('p', tr('Units per chapter adds a chapter label to every unit title (for example Ch 3 · Lesson.17) and to each day\'s "Covers" line. It does not create extra tasks.'), body, 'plan-hint');
         on.addEventListener('change', () => { d.info.chapOn = on.checked; body.hidden = !on.checked; if (!on.checked) { d.info.chapSize = ''; cs.value = ''; } chrome(); });
     }
-    if (plan.audited && plan.unit) el('p', bypass.active ? tr('Emergency Bypass is active, so audited units can be renamed.') : tr('This plan has AI-audited units. Renaming them needs Emergency Bypass: use the Emergency Bypass button at the top of this page.'), fs, 'plan-hint warn');
+    if (plan.audited > plan.auditedOpen && plan.unit && !bypass.active) el('p', tr('Finished AI-checked units keep their current names when you rename the unit or change chapter labels.'), fs, 'plan-hint');
+    if (plan.auditedOpen && plan.unit) el('p', bypass.active ? tr('Emergency Bypass is active, so audited units can be renamed.') : tr('This plan has AI-audited units. Renaming them needs Emergency Bypass: use the Emergency Bypass button at the top of this page.'), fs, 'plan-hint warn');
     // Deleting stays outside the save bar and outside Pro.
     const del = el('div', undefined, panel, 'plan-delbox');
     const b = el('button', tr('Delete plan'), del, 'icon-btn plan-delete'); b.type = 'button'; b.disabled = busy; b.addEventListener('click', () => removePlan(plan));
-    el('p', plan.audited > 0 ? tr('This plan has AI criteria: deleting costs 2 Emergency Bypass uses (1 if a bypass window is open).') : tr('Allowed: this plan has no AI criteria, so deleting it is free.'), del, 'plan-hint');
+    el('p', plan.auditedOpen > 0 ? tr('This plan has AI criteria: deleting costs 2 Emergency Bypass uses (1 if a bypass window is open).') : (plan.audited ? tr('Free: every AI-checked unit in this plan is already finished.') : tr('Allowed: this plan has no AI criteria, so deleting it is free.')), del, 'plan-hint');
 }
 
 function aiTab(plan, d, panel, edit) {
@@ -319,7 +330,7 @@ function aiTab(plan, d, panel, edit) {
     const example = field(tr('Example unit number for checking (optional)'), fs, d.ai.example || '', 'number');
     example.min = '1'; example.max = '1000000'; example.step = '1'; example.placeholder = String(open[0] || 1);
     el('p', tr('Leave blank to use the first included unit. This example is only for checking the criteria.'), fs, 'plan-hint');
-    example.addEventListener('input', () => { d.ai.example = example.value; check.textContent = ''; });
+    example.addEventListener('input', () => { d.ai.example = example.value; check.textContent = ''; delete check.dataset.tone; });
     el('p', tr('Every unfinished unit gets the criteria unless you list it here. Finished units are never included.'), fs, 'plan-hint');
     const chips = el('div', undefined, fs, 'plan-chips'), note = el('p', '', fs, 'plan-hint'), check = el('p', '', fs, 'plan-hint');
     if (plan.audited) el('p', tr('Units that already have criteria stay locked: they cannot be excluded or changed here. Use the task editor to edit their criteria.'), fs, 'plan-hint warn');
@@ -330,12 +341,14 @@ function aiTab(plan, d, panel, edit) {
         for (const n of open) el('span', name + '.' + n, chips, 'plan-chip' + (locked.has(n) ? ' done' : target.has(n) ? ' lock' : ' skip'));
         note.textContent = tr('🔒 = will get the criteria. Struck through = excluded.');
     };
-    criteria.addEventListener('input', () => { d.ai.criteria = criteria.value; check.textContent = ''; chrome(); });
+    criteria.addEventListener('input', () => { d.ai.criteria = criteria.value; check.textContent = ''; delete check.dataset.tone; chrome(); });
     ex.addEventListener('input', () => { d.ai.exclude = ex.value; paint(); chrome(); });
     paint();
     if (settings.strict_criteria_validation !== false) {
         const b = el('button', tr('Check criteria'), fs, 'icon-btn'); b.type = 'button';
-        b.addEventListener('click', async () => { try { const v = await validateCriteria(plan, d); check.textContent = v.score + '/10 · ' + v.critique; } catch (e) { check.textContent = e.message; } });
+        check.classList.add('plan-check');
+        b.addEventListener('click', async () => { try { const v = await validateCriteria(plan, d); check.textContent = v.score + '/10 · ' + v.critique; check.dataset.tone = v.score >= 7 ? 'good' : v.score >= 4 ? 'warn' : 'bad'; } catch (e) { check.textContent = e.message; check.dataset.tone = 'bad'; } });
+        el('p', tr('Checking changes nothing. Units are only locked when you save.'), fs, 'plan-hint');
     }
 }
 const stamp = (plan, d) => JSON.stringify([d.ai.criteria, plan.id, d.ai.exclude, d.ai.example || '']);
@@ -384,7 +397,7 @@ async function save() {
         if (info.dirty.info || info.dirty.ai) lines.push(tr('Saved in two steps: task info and criteria first, then the schedule. If the schedule step fails, the first step stays saved.'));
     }
     // Red when the save touches AI criteria or the audited units' schedule/names; blue otherwise (Phase 3.7).
-    const risky = info.dirty.ai || (plan.audited > 0 && (info.dirty.sched || (info.dirty.info && d.info.unit !== origInfo(plan).unit)));
+    const risky = info.dirty.ai || (plan.auditedOpen > 0 && (info.dirty.sched || (info.dirty.info && d.info.unit !== origInfo(plan).unit)));
     if (!await ask(info.apply ? tr('Apply re-plan?') : tr('Save changes?'), lines, info.apply ? tr('Apply re-plan') : tr('Save'), risky ? 'danger' : 'primary')) return;
     if (info.dirty.info || info.dirty.ai) {
         const ok = await commit(() => {
@@ -581,7 +594,7 @@ async function sweepBonus() {
 
 async function removePlan(plan) {
     if (busy) return;
-    const guarded = plan.audited > 0;
+    const guarded = plan.auditedOpen > 0;
     const uses = bypass.uses === null ? '' : ' ' + tr('You have {n} use(s) left this week.', { n: bypass.uses });
     const need = bypass.active ? 1 : 2;
     if (guarded && bypass.uses !== null && bypass.uses < need) { status(tr('Deleting a plan with AI criteria needs {need} Emergency Bypass use(s). You have {n} left this week.', { need, n: bypass.uses })); return; }
@@ -611,7 +624,7 @@ function render() {
     const note = $('plansNotice');
     note.hidden = canEdit() || !plans.length;
     note.textContent = pro === null ? tr('Could not confirm your Pro license, so editing is off. You can still view and delete plans.') : tr('Editing study plans needs an active Pro license. You can still view, finish and delete plans. Resubscribing restores editing.');
-    if (!current || pageTab !== 'plans') $('planSaveBar').hidden = true;
+    if (!current || pageTab !== 'plans') { $('planSaveBar').hidden = true; document.body.classList.remove('has-savebar'); }
     $('plansListView').hidden = pageTab !== 'plans'; $('plansDraftsView').hidden = pageTab !== 'drafts';
     $('plansTabPlans').setAttribute('aria-selected', String(pageTab === 'plans')); $('plansTabDrafts').setAttribute('aria-selected', String(pageTab === 'drafts'));
     const list = Drafts()?.listStudy() || []; $('plansDraftCount').textContent = list.length ? '(' + list.length + ')' : '';
@@ -701,7 +714,12 @@ let started = false, visible = false;
 async function start() {
     if (started) return; started = true;
     $('planSave').addEventListener('click', () => save());
-    $('planDiscard').addEventListener('click', () => { if (current) { drafts.delete(current); render(); status(''); } });
+    // Phase 6.3: Discard is off when nothing changed; otherwise it asks, then closes the editor.
+    $('planDiscard').addEventListener('click', async () => {
+        if (!current || busy) return;
+        if (!await ask(tr('Discard changes?'), [tr('Your unsaved changes to this plan are lost.')], tr('Discard'), 'danger')) return;
+        drafts.delete(current); current = null; render(); status('');
+    });
     $('planSaveDraft').addEventListener('click', () => saveDraft());
     $('plansBypassBtn').addEventListener('click', () => openBypass());
     $('plansTabPlans').addEventListener('click', () => { pageTab = 'plans'; render(); });
@@ -713,7 +731,7 @@ const refresh = () => { if (!busy && !anyDirty()) { load(); access().then(render
 window.addEventListener('focus', () => { if (visible) refresh(); sweepBonus(); });
 window.addEventListener('taskitator-page-load-synced', () => setTimeout(sweepBonus, 600));
 setTimeout(sweepBonus, 4000); setInterval(sweepBonus, 300000);
-$('plansAddBtn')?.addEventListener('click', () => openCreate({}));
+$('plansAddBtn')?.addEventListener('click', () => { if (pageTab !== 'plans') { pageTab = 'plans'; render(); } openCreate({}); });
 $('plansImportBtn')?.addEventListener('click', () => pickImport());
 
 // ---- import (Phase 6.1.2): a file made by Export JSON becomes a new plan through the normal authorize flow ----

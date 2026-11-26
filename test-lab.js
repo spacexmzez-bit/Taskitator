@@ -1,6 +1,6 @@
 /* Test lab (Phase 3.5, Pro). A workbench for proof criteria: write criteria (and a second version B to compare), attach test proofs,
    then Validate (score out of 10) and Test (a dry-run audit, same prompt and billing as a real one, nothing is locked or completed).
-   Tests are kept on this device only, in IndexedDB. A criteria that scored 8/10 or more can be confirmed into Saved criteria (marked "Lab").
+   Tests are kept on this device only, in IndexedDB. Phase 6.3: one card per version (A blue, B purple) with Validate, Test and both results; shared inputs in one block; a sticky test switcher; colour-coded scores and verdicts. A criteria that scored 8/10 or more can be confirmed into Saved criteria (marked "Lab").
    The pure helpers below are shared with the tests; the view only exists in the browser. */
 (function (root) {
     'use strict';
@@ -109,25 +109,30 @@
         return new Promise((resolve, reject) => { const t = el('textarea', text, document.body); t.style.cssText = 'position:fixed;opacity:0'; t.select(); try { document.execCommand('copy') ? resolve() : reject(Error('copy')); } catch (e) { reject(e); } t.remove(); });
     }
 
-    // ---- one criteria version (A or B): a Validation half and a Testing half ----
-    function column(key, vParent, tParent) {
-        const c = el('section', undefined, vParent, 'lab-col');
-        const head = el('h3', key.toUpperCase(), c, 'lab-col-title');
-        const row = el('div', undefined, c, 'lab-boxrow');
-        const box = field(tr('Proof criteria'), row, 'textarea'); box.rows = 7; box.maxLength = 4000;
-        const copyBtn = el('button', tr('Copy'), row, 'icon-btn lab-copy'); copyBtn.type = 'button';
+    // ---- one criteria version (A or B): criteria, Validate, Test and both results in one card (Phase 6.3) ----
+    const SIDE_NAME = { a: 'Version A', b: 'Version B' };
+    function card(key, parent) {
+        const c = el('section', undefined, parent, 'lab-card');
+        c.dataset.side = key;
+        const head = el('div', undefined, c, 'lab-card-head');
+        el('h3', tr(SIDE_NAME[key]), head, 'lab-card-title');
+        const copyBtn = el('button', tr('Copy'), head, 'icon-btn lab-small'); copyBtn.type = 'button';
+        let removeBtn = null;
+        if (key === 'b') {
+            removeBtn = el('button', tr('Remove B'), head, 'icon-btn lab-small lab-danger'); removeBtn.type = 'button';
+            removeBtn.addEventListener('click', () => { if (busy) return; rec.b = null; load(); later(); });
+        }
+        const box = field(tr('Proof criteria'), c, 'textarea'); box.rows = 6; box.maxLength = 4000;
         const bar = el('div', undefined, c, 'lab-actions');
-        const vBtn = el('button', tr('Validate'), bar, 'icon-btn'); vBtn.type = 'button';
+        const vBtn = el('button', tr('Validate'), bar, 'icon-btn lab-secondary'); vBtn.type = 'button';
+        const tBtn = el('button', tr('Test'), bar, 'icon-btn lab-primary'); tBtn.type = 'button';
         const vOut = el('div', undefined, c, 'lab-result');
+        const tOut = el('div', undefined, c, 'lab-result');
         const okBar = el('div', undefined, c, 'lab-actions');
-        const confirmBtn = el('button', tr('Confirm'), okBar, 'icon-btn lab-confirm'); confirmBtn.type = 'button';
+        const confirmBtn = el('button', tr('Save to criteria library'), okBar, 'icon-btn lab-confirm'); confirmBtn.type = 'button';
+        const confirmNote = el('span', undefined, okBar, 'lab-muted');
         const savePane = el('div', undefined, c, 'lab-save'); savePane.hidden = true;
-        const t = el('section', undefined, tParent, 'lab-col');
-        el('h3', key.toUpperCase(), t, 'lab-col-title');
-        const tBar = el('div', undefined, t, 'lab-actions');
-        const tBtn = el('button', tr('Test'), tBar, 'icon-btn'); tBtn.type = 'button';
-        const tOut = el('div', undefined, t, 'lab-result');
-        const part = { key, root: c, roots: [c, t], head, box, vBtn, tBtn, vOut, tOut, confirmBtn, copyBtn, savePane };
+        const part = { key, root: c, roots: [c], box, vBtn, tBtn, vOut, tOut, confirmBtn, confirmNote, copyBtn, removeBtn, savePane };
         box.addEventListener('input', () => { rec[key].criteria = box.value; paint(part); later(); });
         vBtn.addEventListener('click', () => act('validate', [key]));
         tBtn.addEventListener('click', () => act('test', [key]));
@@ -135,31 +140,45 @@
         confirmBtn.addEventListener('click', () => openSave(part));
         return part;
     }
+    // good (green), warn (amber), bad (red): the same colours everywhere a score or verdict is shown.
+    const scoreTone = s => (Number(s) >= 7 ? 'good' : Number(s) >= 4 ? 'warn' : 'bad');
+    const verdictTone = v => (v === 'approved' ? 'good' : v === 'incomplete' ? 'warn' : 'bad');
     function paint(part) {
         const side = rec[part.key]; if (!side) return;
-        part.box.value = side.criteria;
-        const fill = (out, r, line) => {
+        if (part.box.value !== side.criteria) part.box.value = side.criteria;
+        const fill = (out, r, label, line, tone) => {
             out.textContent = ''; out.hidden = !r; if (!r) return;
-            if (r.error) { el('strong', tr('Could not run'), out); el('p', r.error, out); return; }
-            el('strong', line(r), out);
+            const head = el('div', undefined, out, 'lab-result-head');
+            el('span', label, head, 'lab-result-kind');
+            if (r.error) { out.dataset.tone = 'bad'; el('strong', tr('Could not run'), head); el('p', r.error, out); return; }
+            out.dataset.tone = tone(r);
+            el('strong', line(r), head, 'lab-badge');
+            if (stale(side, r)) el('span', tr('Older text'), head, 'lab-stale').title = tr('This result is for an earlier version of the text.');
             if (r.critique) el('p', r.critique, out);
-            if (r.rewrite) { el('p', tr('Suggested rewrite:'), out, 'lab-muted'); el('p', r.rewrite, out); }
-            if (stale(side, r)) el('p', tr('This result is for an earlier version of the text.'), out, 'lab-warn');
+            if (r.rewrite) { el('p', tr('Suggested rewrite:'), out, 'lab-muted'); el('p', r.rewrite, out, 'lab-rewrite'); }
             el('p', r.credits != null ? tr('{n} credits used.', { n: r.credits }) : tr('AI usage was consumed.'), out, 'lab-muted');
         };
-        fill(part.vOut, side.validate, r => tr('Score: {n}/10', { n: r.score }));
-        fill(part.tOut, side.test, r => tr('Test verdict: {v}', { v: ({ approved: tr('APPROVED'), incomplete: tr('INSUFFICIENT PROOF') }[r.verdict]) || tr('REJECTED') }));
-        part.confirmBtn.disabled = busy || !canConfirm(side);
+        fill(part.vOut, side.validate, tr('Validation'), r => tr('Score: {n}/10', { n: r.score }), r => scoreTone(r.score));
+        fill(part.tOut, side.test, tr('Test'), r => ({ approved: tr('APPROVED'), incomplete: tr('INSUFFICIENT PROOF') }[r.verdict]) || tr('REJECTED'), r => verdictTone(r.verdict));
+        const ok = canConfirm(side);
+        part.confirmBtn.disabled = busy || !ok;
+        part.confirmNote.textContent = ok ? '' : tr('Needs a validation score of {n}/10 or higher for this exact text.', { n: LIMITS.pass });
         part.copyBtn.disabled = !String(side.criteria || '').trim();
         part.vBtn.disabled = part.tBtn.disabled = busy;
+        if (part.removeBtn) part.removeBtn.disabled = busy;
     }
-    const paintAll = () => { for (const k of ['a', 'b']) if (ui[k]) paint(ui[k]); for (const r of ui.colB.roots) r.hidden = !rec.b; ui.addB.hidden = Boolean(rec.b); ui.vboth.hidden = !rec.b; ui.tboth.hidden = !rec.b; ui.totals.textContent = tr('This session: {c} AI calls, {n} credits reported.', { c: sessionCalls, n: sessionCredits }); };
+    const paintAll = () => {
+        for (const k of ['a', 'b']) if (ui[k]) paint(ui[k]);
+        ui.b.root.hidden = !rec.b; ui.addB.hidden = Boolean(rec.b); ui.both.hidden = !rec.b;
+        ui.newBtn.disabled = ui.picker.disabled = ui.delBtn.disabled = busy;
+        ui.totals.textContent = tr('This session: {c} AI calls, {n} credits reported.', { c: sessionCalls, n: sessionCredits });
+    };
 
     // ---- confirm into Saved criteria ----
     function openSave(part) {
         const side = rec[part.key], p = part.savePane; p.textContent = ''; p.hidden = false;
         const t = field(tr('Title'), p); t.maxLength = LIMITS.title; t.value = labelOf(rec);
-        const go = el('button', tr('Save to Saved criteria'), p, 'icon-btn'); go.type = 'button';
+        const go = el('button', tr('Save to Saved criteria'), p, 'icon-btn lab-primary'); go.type = 'button';
         const no = el('button', tr('Cancel'), p, 'icon-btn'); no.type = 'button';
         const msg = el('p', undefined, p, 'lab-muted'); msg.setAttribute('role', 'status');
         no.addEventListener('click', () => { p.hidden = true; });
@@ -223,25 +242,41 @@
         } finally { busy = false; paintAll(); persist(); }
     }
 
-    // ---- history ----
+    // ---- saved tests: a switcher in the sticky top bar (Phase 6.3) ----
+    let known = [];
     function renderHistory(all) {
-        const box = ui.history; box.textContent = '';
-        const rows = [...all].sort((x, y) => (y.updated || 0) - (x.updated || 0));
-        if (!rows.length) { el('p', tr('No saved tests yet.'), box, 'lab-muted'); return; }
-        for (const r of rows) {
-            const row = el('div', undefined, box, 'lab-hist-row' + (rec && r.id === rec.id ? ' current' : ''));
-            el('span', labelOf(r) + ' · ' + new Date(r.updated).toLocaleDateString(), row, 'lab-hist-name');
-            const open = el('button', tr('Open'), row, 'icon-btn'); open.type = 'button';
-            const del = el('button', tr('Delete'), row, 'icon-btn'); del.type = 'button';
-            open.addEventListener('click', () => { if (busy) return; rec = r; load(); });
-            del.addEventListener('click', async () => { if (busy) return; await store.delete(r.id); if (rec && r.id === rec.id) { rec = newTest(); load(); } renderHistory(await store.all()); });
+        known = [...all].sort((x, y) => (y.updated || 0) - (x.updated || 0));
+        if (rec && !known.some(r => r.id === rec.id)) known.unshift(rec);
+        const pick = ui.picker; pick.textContent = '';
+        for (const r of known) {
+            const o = el('option', labelOf(r) + ' · ' + new Date(r.updated || Date.now()).toLocaleDateString(), pick);
+            o.value = r.id; if (rec && r.id === rec.id) o.selected = true;
         }
+        ui.count.textContent = tr('{n} saved', { n: known.length });
+    }
+    function switchTo(id) {
+        if (busy || !rec || id === rec.id) return;
+        const next = known.find(r => r.id === id); if (!next) return;
+        clearTimeout(timer); persist();
+        rec = next; load(); renderHistory(known);
+    }
+    async function deleteCurrent() {
+        if (busy || !rec) return;
+        const ok = root.TaskitatorConfirm
+            ? await root.TaskitatorConfirm({ title: tr('Delete this test?'), message: tr('Its criteria, results and proofs are removed from this device.'), confirmLabel: tr('Delete'), tone: 'danger' })
+            : confirm(tr('Delete this test?'));
+        if (!ok) return;
+        clearTimeout(timer);
+        try { await store.delete(rec.id); } catch (_) { /* already gone */ }
+        const all = (await store.all()).sort((x, y) => (y.updated || 0) - (x.updated || 0));
+        rec = all[0] || newTest(); load(); renderHistory(all);
     }
     function renderFiles() {
         ui.fileList.textContent = '';
         rec.files.forEach((f, i) => { const chip = el('span', f.name + ' ', ui.fileList, 'lab-chip'); const x = el('button', '✕', chip, 'lab-chip-x'); x.type = 'button'; x.setAttribute('aria-label', tr('Remove')); x.addEventListener('click', () => { rec.files.splice(i, 1); renderFiles(); later(); }); });
         ui.exName.textContent = rec.exemplar ? rec.exemplar.name : '';
         ui.exClear.hidden = !rec.exemplar;
+        ui.inputsNote.textContent = tr('{f} proof file(s){x}', { f: rec.files.length, x: rec.exemplar ? ' · ' + tr('exemplar') : '' });
     }
     function load() { ui.title.value = rec.taskTitle; ui.unit.value = unitOf(rec.unit); ui.context.value = rec.context; renderFiles(); paintAll(); for (const k of ['a', 'b']) ui[k].savePane.hidden = true; }
 
@@ -253,32 +288,27 @@
         el('p', tr('Try proof criteria before you use them. Validate scores the wording; Test runs a real audit on your sample proof. Nothing here saves or locks a task. Both use credits.'), rootEl, 'plans-note');
         ui.locked = el('p', tr('The Test lab is a Taskitator Pro feature.'), rootEl, 'plans-notice'); ui.locked.hidden = true;
         const wb = ui.wb = el('div', undefined, rootEl, 'lab-bench');
-        ui.title = field(tr('Task title (optional, helps the AI)'), wb); ui.title.maxLength = 160;
-        ui.title.addEventListener('input', () => { rec.taskTitle = ui.title.value; later(); });
-        el('p', tr('Variables work as in tasks: write {name==value} in the title and {name} in the criteria.'), wb, 'lab-muted');
-        // ---- Validation ----
-        const vs = el('section', undefined, wb, 'lab-section'); el('h2', tr('Validation'), vs, 'lab-section-title');
-        const vcols = el('div', undefined, vs, 'lab-cols');
-        const tcols = el('div', undefined, undefined, 'lab-cols');
-        ui.a = column('a', vcols, tcols); ui.b = ui.colB = column('b', vcols, tcols);
-        const ex = el('fieldset', undefined, vs, 'lab-proof'); el('legend', tr('Exemplar (optional, shared by A and B)'), ex);
-        const el2 = el('label', tr('Exemplar (optional)'), ex, 'lab-field'), ei = el('input', undefined, el2); ei.type = 'file'; ei.accept = 'image/*,application/pdf';
-        ui.exName = el('span', undefined, ex, 'lab-muted'); ui.exClear = el('button', tr('Remove exemplar'), ex, 'icon-btn'); ui.exClear.type = 'button';
-        ei.addEventListener('change', () => { const f = ei.files && ei.files[0]; ei.value = ''; if (!f) return; const check = AE().validateFile(f); if (!check.valid) { notify(check.error); return; } rec.exemplar = { name: f.name, type: f.type, blob: f }; renderFiles(); later(); });
-        ui.exClear.addEventListener('click', () => { rec.exemplar = null; renderFiles(); later(); });
-        ui.addB = el('button', tr('Add a second version (B) to compare'), vs, 'icon-btn'); ui.addB.type = 'button';
-        ui.addB.addEventListener('click', () => { rec.b = rec.b || blank(); if (!rec.b.criteria) rec.b.criteria = rec.a.criteria; load(); later(); });
-        const vboth = ui.vboth = el('div', undefined, vs, 'lab-actions');
-        const vb = el('button', tr('Validate both'), vboth, 'icon-btn'), rm = el('button', tr('Remove B'), vboth, 'icon-btn');
-        vb.type = rm.type = 'button';
-        vb.addEventListener('click', () => act('validate', ['a', 'b']));
-        rm.addEventListener('click', () => { rec.b = null; load(); later(); });
-        // ---- Testing ----
-        const ts = el('section', undefined, wb, 'lab-section');
-        el('h2', tr('Testing'), ts, 'lab-section-title');
-        ui.unit = field(tr('Unit number (used for {num} unless the title sets it)'), ts); ui.unit.type = 'number'; ui.unit.min = '1'; ui.unit.max = '9999'; ui.unit.step = '1'; ui.unit.value = '1';
+        // Sticky switcher: change tests without scrolling.
+        const top = el('div', undefined, wb, 'lab-topbar');
+        const pl = el('label', undefined, top, 'lab-picker');
+        el('span', tr('Test'), pl, 'lab-picker-label');
+        ui.picker = el('select', undefined, pl); ui.picker.setAttribute('aria-label', tr('Saved tests'));
+        ui.picker.addEventListener('change', () => switchTo(ui.picker.value));
+        ui.count = el('span', undefined, top, 'lab-muted lab-count');
+        ui.newBtn = el('button', tr('New test'), top, 'icon-btn lab-primary'); ui.newBtn.type = 'button';
+        ui.newBtn.addEventListener('click', () => { if (busy) return; clearTimeout(timer); persist(); rec = newTest(); load(); renderHistory(known); });
+        ui.delBtn = el('button', tr('Delete'), top, 'icon-btn lab-danger'); ui.delBtn.type = 'button';
+        ui.delBtn.addEventListener('click', deleteCurrent);
+        // Shared inputs, used by both versions.
+        const inputs = el('details', undefined, wb, 'lab-inputs'); inputs.open = true;
+        const sum = el('summary', undefined, inputs); el('span', tr('Test inputs'), sum, 'lab-inputs-title'); ui.inputsNote = el('span', undefined, sum, 'lab-muted');
+        const grid = el('div', undefined, inputs, 'lab-inputs-grid');
+        ui.title = field(tr('Task title (optional, helps the AI)'), grid); ui.title.maxLength = 160;
+        ui.title.addEventListener('input', () => { rec.taskTitle = ui.title.value; later(); renderHistory(known); });
+        ui.unit = field(tr('Unit number (used for {num} unless the title sets it)'), grid); ui.unit.type = 'number'; ui.unit.min = '1'; ui.unit.max = '9999'; ui.unit.step = '1'; ui.unit.value = '1';
         ui.unit.addEventListener('input', () => { rec.unit = unitOf(ui.unit.value); later(); });
-        const proof = el('fieldset', undefined, ts, 'lab-proof'); el('legend', tr('Test proof (shared by A and B)'), proof);
+        el('p', tr('Variables work as in tasks: write {name==value} in the title and {name} in the criteria.'), inputs, 'lab-muted');
+        const proof = el('fieldset', undefined, inputs, 'lab-proof'); el('legend', tr('Test proof (shared by A and B)'), proof);
         const fl = el('label', tr('Proof photos or PDFs (up to 5)'), proof, 'lab-field'), fi = el('input', undefined, fl); fi.type = 'file'; fi.multiple = true; fi.accept = 'image/*,application/pdf';
         ui.fileList = el('div', undefined, proof, 'lab-chips');
         fi.addEventListener('change', () => {
@@ -287,16 +317,24 @@
             const check = AE().validateProofFiles(files); if (!check.valid) { notify(check.error); return; }
             rec.files = files.map(f => ({ name: f.name, type: f.type, blob: f })); renderFiles(); later();
         });
-        ui.context = field(tr('Note to the auditor (optional)'), ts); ui.context.maxLength = 500;
+        const ex = el('fieldset', undefined, inputs, 'lab-proof'); el('legend', tr('Exemplar (optional, shared by A and B)'), ex);
+        const el2 = el('label', tr('Exemplar (optional)'), ex, 'lab-field'), ei = el('input', undefined, el2); ei.type = 'file'; ei.accept = 'image/*,application/pdf';
+        ui.exName = el('span', undefined, ex, 'lab-muted'); ui.exClear = el('button', tr('Remove exemplar'), ex, 'icon-btn lab-small'); ui.exClear.type = 'button';
+        ei.addEventListener('change', () => { const f = ei.files && ei.files[0]; ei.value = ''; if (!f) return; const check = AE().validateFile(f); if (!check.valid) { notify(check.error); return; } rec.exemplar = { name: f.name, type: f.type, blob: f }; renderFiles(); later(); });
+        ui.exClear.addEventListener('click', () => { rec.exemplar = null; renderFiles(); later(); });
+        ui.context = field(tr('Note to the auditor (optional)'), inputs); ui.context.maxLength = 500;
         ui.context.addEventListener('input', () => { rec.context = ui.context.value; later(); });
-        ts.append(tcols);
-        const tboth = ui.tboth = el('div', undefined, ts, 'lab-actions');
-        const tb = el('button', tr('Test both'), tboth, 'icon-btn'); tb.type = 'button';
+        // The two versions, side by side on wide screens.
+        const cols = el('div', undefined, wb, 'lab-cols');
+        ui.a = card('a', cols); ui.b = card('b', cols);
+        ui.addB = el('button', tr('Add a second version (B) to compare'), wb, 'icon-btn lab-secondary'); ui.addB.type = 'button';
+        ui.addB.addEventListener('click', () => { rec.b = rec.b || blank(); if (!rec.b.criteria) rec.b.criteria = rec.a.criteria; load(); later(); });
+        const both = ui.both = el('div', undefined, wb, 'lab-actions lab-both');
+        const vb = el('button', tr('Validate both'), both, 'icon-btn lab-secondary'), tb = el('button', tr('Test both'), both, 'icon-btn lab-primary');
+        vb.type = tb.type = 'button';
+        vb.addEventListener('click', () => act('validate', ['a', 'b']));
         tb.addEventListener('click', () => act('test', ['a', 'b']));
         ui.totals = el('p', undefined, wb, 'lab-muted'); ui.totals.setAttribute('role', 'status');
-        const hh = el('h2', tr('Saved tests'), wb, 'plans-section'); const nw = el('button', tr('New test'), hh, 'icon-btn'); nw.type = 'button';
-        nw.addEventListener('click', () => { if (busy) return; rec = newTest(); load(); renderHistory([]); store.all().then(renderHistory); });
-        ui.history = el('div', undefined, wb, 'lab-history');
         const foot = el('footer', undefined, rootEl, 'lab-foot');
         el('p', tr('Tests and proofs are saved on this device only, in your browser. Clearing browser data or switching devices removes them.'), foot, 'lab-muted');
         ui.footNote = el('p', undefined, foot, 'lab-muted');

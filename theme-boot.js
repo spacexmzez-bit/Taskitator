@@ -79,6 +79,9 @@
             meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta);
         }
         if (meta) meta.content = space ? space.metaThemeColor : theme.metaThemeColor;
+        // Phase 6.3: paint the page background and native controls before the stylesheet loads (no white flash between pages).
+        html.style.colorScheme = 'dark';
+        html.style.backgroundColor = space ? space.metaThemeColor : theme.metaThemeColor;
     }
 
     // ----- Allowed themes (product gate) -----

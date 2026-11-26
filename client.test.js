@@ -362,7 +362,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase4-v64'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase4-v65'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -1167,7 +1167,7 @@ test('Study plans page: soft reschedule dialog, Pro gate and free Move overdue t
 });
 test('Study plans: + button opens the create dialog; Pro pill on Study recurrence; editor starts from current settings',()=>{
  const html=fs.readFileSync(new URL('index.html',root),'utf8'),js=fs.readFileSync(new URL('study-plans.js',root),'utf8');
- assert.ok(html.includes('id="plansAddBtn"'));assert.match(js,/\$\('plansAddBtn'\)\?\.addEventListener\('click', \(\) => openCreate\(\{\}\)\)/,'the + button opens the dialog in place (Phase 3.0)');
+ assert.ok(html.includes('id="plansAddBtn"'));assert.match(js,/\$\('plansAddBtn'\)\?\.addEventListener\('click', \(\) => \{ if \(pageTab !== 'plans'\) \{ pageTab = 'plans'; render\(\); \} openCreate\(\{\}\); \}\)/,'the + button opens the dialog in place, from the Plans tab (Phase 6.3)');
  assert.match(js,/d\.kind === 'create'\) \{ await openCreate\(\{ draft: \{ \.\.\.d, id \} \}\)/);assert.doesNotMatch(js,/location\.href/);
  assert.match(fs.readFileSync(new URL('pro/study-plan.js',root),'utf8'),/get\('study_new'\)==='1'/);
  const c=fs.readFileSync(new URL('components.js',root),'utf8');
