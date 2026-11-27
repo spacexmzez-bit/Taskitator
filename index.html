@@ -465,7 +465,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
                 <span class="dump-active-dot" id="dumpActiveIndicator"></span>
             </button>
             
-            <button type="button" class="sync-dot-button" id="syncStatusButton" aria-label="Sync status: Local only. Open sync details" aria-haspopup="dialog" aria-controls="syncInfoModal"><span class="sync-dot local-only" id="syncStatusDot" aria-hidden="true"></span><span class="sync-countdown" id="syncCountdown" aria-hidden="true"></span></button>
+            <button type="button" class="sync-dot-button" id="syncStatusButton" aria-label="Sync status: Not synced / Pending. Open sync details" aria-haspopup="dialog" aria-controls="syncInfoModal"><span class="sync-dot pending" id="syncStatusDot" aria-hidden="true"></span><span class="sync-countdown" id="syncCountdown" aria-hidden="true"></span></button>
             
             <button class="emergency-icon-btn" id="emergencyTriggerBtn" title="Emergency Bypass" aria-label="Emergency Bypass">
                 <svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-emergency"></use></svg><span class="wide-label">Emergency bypass</span>
@@ -2072,13 +2072,6 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
             The dot shows whether your changes are synced.
         </p>
         <div class="sync-legend-item">
-            <span class="sync-dot local-only" style="cursor: default;"></span>
-            <div style="font-size: 0.85rem;">
-                <strong style="color: #94a3b8;">Gray: Local Only</strong>
-                <div style="color: var(--text-muted); font-size: 0.8rem;">Not connected to cloud sync.</div>
-            </div>
-        </div>
-        <div class="sync-legend-item">
             <span class="sync-dot offline" style="cursor: default;"></span>
             <div style="font-size: 0.85rem;">
                 <strong style="color: #94a3b8;">Gray ring: Offline</strong>
@@ -2102,8 +2095,8 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
         <div class="sync-legend-item">
             <span class="sync-dot error" style="cursor: default;"></span>
             <div style="font-size: 0.85rem;">
-                <strong style="color: #f87171;">Red: Sync Failed / Offline</strong>
-                <div style="color: var(--text-muted); font-size: 0.8rem;">Network error or worker rejection. Check your connection and try again.</div>
+                <strong style="color: #f87171;">Red: Sync Failed</strong>
+                <div style="color: var(--text-muted); font-size: 0.8rem;">The server rejected the sync or the request failed. Try Force Sync Now; your changes stay on this device.</div>
             </div>
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">

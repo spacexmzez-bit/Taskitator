@@ -257,7 +257,7 @@ test('offline banner is small, dismissible and gates AI actions in source', asyn
     const comp = fs.readFileSync(new URL('components.js', root), 'utf8');
     const app = fs.readFileSync(new URL('app.js', root), 'utf8');
     assert.match(core, /aria-label', 'Dismiss offline notice'/);
-    assert.match(core, /bannerDismissed = false;/);
+    assert.match(core, /if \(active\) bannerDismissed = bootNoticeShown;/, 'a new offline period shows the banner again unless the boot notice is up (Phase 6.8)');
     assert.match(core, /bannerTimer = setTimeout\(\(\) => \{ bannerDismissed = true; bar\.remove\(\); \}, BANNER_SHOW_MS\)/);
     assert.doesNotMatch(core, /Changes are saved on this device and sync when you reconnect/);
     assert.match(pro, /validateCriteria\(criteriaText[\s\S]{0,160}TaskitatorOffline\?\.active[\s\S]{0,160}internet connection/);

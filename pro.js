@@ -1464,11 +1464,13 @@ window.TaskitatorEngine = TaskitatorEngine;
 
             let res;
             try {
-                res = await fetch(`${baseUrl}${path}`, {
+                const call = fetch(`${baseUrl}${path}`, {
                     ...options,
                     headers,
                     cache: 'no-store'
                 });
+                // Phase 6.8: audits and reviews show "taking longer than usual" after 10 s.
+                res = await (global.TaskitatorSlow?.isAiPath(path) ? global.TaskitatorSlow.track(call) : call);
             } catch (error) { throw (await global.TaskitatorOffline?.translate(error)) ?? error; }
 
             const data = await res.json().catch(() => ({}));

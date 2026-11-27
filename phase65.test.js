@@ -140,5 +140,5 @@ test('CSS: pop-down is driven by the Consecutive checkbox, animated, reduced-mot
 test('help: Pro help section and README describe Auto create; cache moved', () => {
     assert.match(html, /<b>Auto create \(Pro\)<\/b>/);
     assert.match(read('README.md'), /Auto create \(Phase 6\.5\)/);
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v70'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v71'/);
 });

@@ -133,11 +133,16 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
     }
     // Open the cached account only for a network-class failure, never after an HTTP
     // answer (401, deletion), a deliberate logout, or when the data belongs to someone else.
-    async function canOpenOffline(error) {
-        if (error?.status) return false;
+    // Phase 6.8: can this device open the cached account at all? (no network check: the boot "Skip" button and the
+    // 45 s cutoff use it, because a slow but reachable server would otherwise refuse the user who asked to stop waiting).
+    function canOfferOffline() {
         try { if (sessionStorage.getItem('taskitator_logout_pending') === '1') return false; } catch {}
         const known = identity();
-        if (!known || localStorage.getItem('taskitator_local_owner') !== known.account.user) return false;
+        return Boolean(known && localStorage.getItem('taskitator_local_owner') === known.account.user);
+    }
+    async function canOpenOffline(error) {
+        if (error?.status) return false;
+        if (!canOfferOffline()) return false;
         return isNetworkError(error) || !(await probe());
     }
     function enterBootOffline() {
@@ -191,7 +196,7 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
     }
 
     // ----- Connectivity state, banner and interface gating -----
-    let bannerDismissed = false, bannerTimer = 0;
+    let bannerDismissed = false, bannerTimer = 0, bootNoticeShown = false, reloadOnRecover = false;
     const BANNER_SHOW_MS = 6000;
     function renderBanner() {
         let bar = document.getElementById('offlineBanner');
@@ -209,6 +214,39 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             bannerTimer = setTimeout(() => { bannerDismissed = true; bar.remove(); }, BANNER_SHOW_MS);
         }
     }
+    // Phase 6.8: a lasting notice after the boot screen was skipped or gave up (45 s). Reconnect reloads the page, which
+    // retries the update and sign-in cleanly. It replaces the 6-second offline banner and goes away once back online.
+    const BOOT_TEXT = {
+        timeout: "Taskitator couldn't connect, so it opened the copy saved on this device. Changes sync when you reconnect.",
+        skipped: 'Opened offline from the copy saved on this device. Changes sync when you reconnect.',
+        back: "You're back online. Reconnect to finish updating Taskitator."
+    };
+    function bootNotice(reason, opts = {}) {
+        if (opts.updatePending) reloadOnRecover = true;
+        bootNoticeShown = true;
+        bannerDismissed = true;
+        document.getElementById('offlineBanner')?.remove();
+        if (!document.body) return;
+        let bar = document.getElementById('bootOfflineNotice');
+        if (!bar) {
+            bar = document.createElement('div');
+            bar.id = 'bootOfflineNotice';
+            bar.setAttribute('role', 'status');
+            const text = document.createElement('span');
+            text.className = 'boot-offline-text';
+            const again = document.createElement('button');
+            again.type = 'button'; again.className = 'boot-offline-reconnect'; again.textContent = 'Reconnect';
+            again.addEventListener('click', () => location.reload());
+            const close = document.createElement('button');
+            close.type = 'button'; close.className = 'boot-offline-close'; close.textContent = '×';
+            close.setAttribute('aria-label', 'Dismiss notice');
+            close.addEventListener('click', () => bar.remove());
+            bar.append(text, again, close);
+            document.body.append(bar);
+        }
+        bar.querySelector('.boot-offline-text').textContent = BOOT_TEXT[reason] || BOOT_TEXT.skipped;
+        bar.dataset.reason = reason;
+    }
     function applyUI() {
         document.querySelectorAll?.(GATED).forEach(node => {
             node.toggleAttribute('data-requires-online', active);
@@ -218,7 +256,8 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
     function setActive(next) {
         if (next === active) return;
         active = next;
-        if (active) bannerDismissed = false;
+        if (active) bannerDismissed = bootNoticeShown;
+        if (!active) { bootNoticeShown = false; document.getElementById('bootOfflineNotice')?.remove(); }
         document.documentElement.classList.toggle('is-offline', active);
         renderBanner(); applyUI();
         window.dispatchEvent(new CustomEvent('taskitator-connectivity', { detail: { offline: active } }));
@@ -234,6 +273,9 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
     }
     async function recover() {
         if (recovering) return;
+        // Opened offline while an update was waiting: the files on screen may be older than the server, so never
+        // reconnect in place. Say it is back and let Reconnect reload.
+        if (reloadOnRecover) { bootNotice('back'); return; }
         recovering = true;
         try { await window.TaskitatorAuth?.reconnect(); }
         catch (error) { if (!isNetworkError(error)) console.warn('[Offline] Reconnect failed:', error?.message || error); }
@@ -262,12 +304,45 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
         OfflineError, isNetworkError, probe, confirmFailure, translate, assertOnline,
         get active() { return active; }, get bootOffline() { return bootOffline; },
         identity, recordConfirmed, noteConfirmed, forget, reauthRequired, markReauthStarted,
-        canOpenOffline, enterBootOffline, leaveBootOffline, cachedUserId, setActive, applyUI,
+        canOpenOffline, canOfferOffline, bootNotice, enterBootOffline, leaveBootOffline, cachedUserId, setActive, applyUI,
         proStatus, saveProToken, trustedNow, lastOnline: () => number(KEY.online)
     });
 })();
 
 // <<< MODULE_END: offline.js >>>
+
+// Phase 6.8: "taking longer than usual" for AI work (audits, Copilot, Universe review). One notice for the whole app:
+// shown while at least one tracked request has waited 10 s, removed when the last one answers.
+(function () {
+    'use strict';
+    if (typeof window === 'undefined' || window.TaskitatorSlow) return;
+    const AFTER_MS = 10000;
+    let waiting = 0;
+    function render() {
+        let pill = document.getElementById('aiSlowNotice');
+        if (waiting > 0 && document.body) {
+            if (!pill) {
+                pill = document.createElement('div');
+                pill.id = 'aiSlowNotice';
+                pill.setAttribute('role', 'status');
+                pill.textContent = 'AI is taking longer than usual…';
+                document.body.append(pill);
+            }
+        } else pill?.remove();
+    }
+    function track(promise) {
+        if (!promise || typeof promise.then !== 'function') return promise;
+        let late = false;
+        const timer = setTimeout(() => { late = true; waiting++; render(); }, AFTER_MS);
+        const done = () => { clearTimeout(timer); if (late) { waiting = Math.max(0, waiting - 1); render(); } };
+        promise.then(done, done);
+        return promise;
+    }
+    // Requests that run a model. Quotes, key management and settings reads are quick and stay untracked.
+    const isAiPath = path => /^\/(?:pro\/)?ai\/(?:generate|review|batch-review|personal-review|batch-confirm)(?:[/?]|$)/.test(String(path || ''))
+        || /^\/universe\/.+\/submit(?:[/?]|$)/.test(String(path || ''));
+    window.TaskitatorSlow = Object.freeze({ track, isAiPath, AFTER_MS, get waiting() { return waiting; } });
+})();
 // <<< MODULE_START: auth-client.js >>>
 (function () {
     'use strict';
@@ -405,8 +480,9 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             try {
                 headers.set('Authorization', 'Bearer ' + await this.token(freshToken));
                 if (options.body) headers.set('Content-Type', 'application/json');
-                res = await fetch(config.workerUrl.replace(/\/$/, '') + path,
+                const call = fetch(config.workerUrl.replace(/\/$/, '') + path,
                     { ...requestOptions, headers, cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
+                res = await (window.TaskitatorSlow?.isAiPath(path) ? window.TaskitatorSlow.track(call) : call);
                 data = await res.json();
             } catch (error) { throw (await offline?.translate(error)) ?? error; }
             if (res.ok) offline?.noteConfirmed();
@@ -449,7 +525,14 @@ window.TASKITATOR_AUTH_CONFIG = Object.freeze({
             window.TaskitatorOffline?.forget();
         },
         async manageAccount() { window.Clerk.openUserProfile(); },
-        async loadClerk() {
+        // Phase 6.8: one load at a time. A boot that gave up keeps loading in the background; a later reconnect joins it
+        // instead of adding the Clerk scripts a second time.
+        loadClerk() {
+            if (window.Clerk?.loaded) return Promise.resolve();
+            if (!this.clerkLoading) this.clerkLoading = this.loadClerkOnce().catch(error => { this.clerkLoading = null; throw error; });
+            return this.clerkLoading;
+        },
+        async loadClerkOnce() {
             if (window.Clerk?.loaded) return;
             if (!/^pk_(test|live)_[A-Za-z0-9+/=]+$/.test(config.publishableKey || '')) {
                 throw new Error('Secure sign-in needs one-time setup. Follow SECURITY-SETUP.txt and fill in auth-config.js.');
@@ -2565,8 +2648,53 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
     const status = document.createElement('div');
     status.id = 'authLoadingStatus';
     status.style.cssText = 'position:fixed;inset:0;background:#0f172a;color:#e2e8f0;z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;gap:16px';
-    status.textContent = 'Loading . . .';
+    // Phase 6.8 boot watchdog. One clock from page start: "Taking longer than usual" at 10 s; at 45 s the boot stops
+    // waiting and opens the copy saved on this device (offline) with a Reconnect notice. A Skip button does the same
+    // at once. Both exist only where offline can open (a signed-in device with its own cached account); elsewhere the
+    // 45 s cutoff shows a failure with Try again. The watchdog covers the secure-files update and sign-in.
+    const msg = document.createElement('div');
+    msg.className = 'boot-msg';
+    msg.textContent = 'Loading . . .';
+    const slow = document.createElement('p');
+    slow.className = 'boot-slow';
+    slow.hidden = true;
+    slow.style.cssText = 'margin:0;font-size:13px;font-weight:600;opacity:.8';
+    slow.textContent = 'Taking longer than usual…';
+    status.append(msg, slow);
     document.body.append(status);
+    const say = text => { msg.textContent = text; };
+    const BOOT_STOP = new Error('Boot stopped.');
+    let stopBoot = null, stopReason = '', wentOffline = false, updateWaiting = false;
+    const stopped = new Promise((_, reject) => { stopBoot = reason => { stopReason = reason; reject(BOOT_STOP); }; });
+    stopped.catch(() => {});
+    const guard = work => Promise.race([work, stopped]);
+    const stop = reason => { const fn = stopBoot; stopBoot = null; fn?.(reason); };
+    const canSkip = () => !loginPage && !deletionStatusPage && !publicComponentView && Boolean(window.TaskitatorOffline?.canOfferOffline?.());
+    let skip = null;
+    if (canSkip()) {
+        skip = document.createElement('button');
+        skip.type = 'button';
+        skip.className = 'boot-skip';
+        skip.textContent = 'Skip and open offline';
+        skip.style.cssText = 'position:absolute;left:50%;bottom:max(24px, env(safe-area-inset-bottom));transform:translateX(-50%);background:transparent;border:1px solid currentColor;color:inherit;opacity:.8;font:inherit;font-size:13px;font-weight:600;padding:8px 14px;border-radius:999px;cursor:pointer;white-space:nowrap';
+        skip.addEventListener?.('click', () => stop('skipped'));
+        status.append(skip);
+    }
+    const slowTimer = setTimeout(() => { slow.hidden = false; }, 10000);
+    const cutTimer = setTimeout(() => stop('timeout'), 45000);
+    const disarm = () => { clearTimeout(slowTimer); clearTimeout(cutTimer); stopBoot = null; skip?.remove?.(); skip = null; };
+    // The boot stopped (Skip or 45 s): open offline, or explain why it cannot.
+    const goOffline = () => {
+        disarm();
+        if (!canSkip()) {
+            const error = new Error("Taskitator couldn't connect. Check your internet connection and try again.");
+            error.bootFailure = true;
+            throw error;
+        }
+        window.TaskitatorOffline.enterBootOffline();
+        window.TaskitatorOffline.bootNotice?.(stopReason === 'timeout' ? 'timeout' : 'skipped', { updatePending: updateWaiting });
+        wentOffline = true;
+    };
     try {
         // Old cache-first workers ignore query strings and can return an old
         // sync engine to the new login. Activate the security worker first.
@@ -2578,31 +2706,39 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-phase4-v70');
+                    resolve(event.data?.version === 'taskitator-phase4-v71');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });
             // Offline, the cached files are all there is; waiting for a new worker would strand the user.
             if (!(await versionMatches()) && navigator.onLine !== false) {
-                status.textContent = 'Updating secure app files…';
-                await new Promise((resolve, reject) => {
-                    let complete = false;
-                    const finish = error => {
-                        if (complete) return; complete = true;
-                        clearTimeout(timer);
-                        navigator.serviceWorker.removeEventListener('controllerchange', check);
-                        if (error) reject(error); else resolve();
-                    };
-                    const check = async () => { if (await versionMatches()) finish(); };
-                    const timer = setTimeout(() => finish(new Error('Security files are still updating. Close old Taskitator tabs, then reload this page. Your drafts are retained.')), 30000);
-                    navigator.serviceWorker.addEventListener('controllerchange', check);
-                    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
-                        .then(registration => registration.update()).then(check).catch(finish);
-                });
-                // Styles and deferred scripts may already have come from the old
-                // controller. Rebuild the page under the new cache before init.
-                location.reload();
-                return;
+                say('Updating secure app files…');
+                updateWaiting = true;
+                // Phase 6.8: no own time limit any more; the 45 s watchdog decides (offline copy or Try again).
+                try {
+                    await guard(new Promise((resolve, reject) => {
+                        let complete = false;
+                        const finish = error => {
+                            if (complete) return; complete = true;
+                            navigator.serviceWorker.removeEventListener('controllerchange', check);
+                            if (error) reject(error); else resolve();
+                        };
+                        const check = async () => { if (await versionMatches()) finish(); };
+                        navigator.serviceWorker.addEventListener('controllerchange', check);
+                        navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+                            .then(registration => registration.update()).then(check).catch(finish);
+                    }));
+                } catch (error) {
+                    if (error !== BOOT_STOP) throw error;
+                    goOffline();
+                }
+                if (!wentOffline) {
+                    // Styles and deferred scripts may already have come from the old
+                    // controller. Rebuild the page under the new cache before init.
+                    disarm();
+                    location.reload();
+                    return;
+                }
             }
         } else if ('serviceWorker' in navigator) {
             // A first visit has no old worker intercepting scripts. Installation
@@ -2611,12 +2747,14 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 .catch(() => {});
         }
         if (deletionStatusPage) {
+            disarm();
             window.TaskitatorDeletionStatus?.activate?.();
             document.documentElement.classList.remove('auth-pending');
             status.remove();
             return;
         }
         if (publicComponentView) {
+            disarm();
             const activatePublicView = (rawView) => {
                 const pubView = String(rawView || '').toLowerCase() === 'compare' ? 'compare' : 'legal';
                 document.querySelectorAll('.component-view-pane').forEach(el => {
@@ -2667,14 +2805,23 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
             hint.rel = 'preload'; hint.as = 'script'; hint.href = original.getAttribute('src');
             document.head.append(hint);
         }
-        try { await TaskitatorAuth.init(); }
+        if (!wentOffline) {
+        try {
+            const signIn = TaskitatorAuth.init();
+            signIn?.catch?.(() => {});   // a sign-in that finishes after Skip must not raise an unhandled rejection
+            await guard(signIn);
+        }
         catch (error) {
+            if (error === BOOT_STOP) goOffline(); else {
             const offline = window.TaskitatorOffline;
             // An HTTP answer that ends the account's access is final: no cached fallback.
             if (error?.status === 401 || error?.status === 403 || error?.status === 410) offline?.forget();
             if (!loginPage && offline && await offline.canOpenOffline(error)) offline.enterBootOffline();
             else throw error;
+            }
         }
+        }
+        disarm();
         if (TaskitatorAuth.deletion) {
             if (TaskitatorAuth.deletion.receipt) sessionStorage.setItem('taskitator_deletion_receipt', TaskitatorAuth.deletion.receipt);
             location.replace('settings.html?view=deletion-status'); return;
@@ -2731,9 +2878,13 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
         if (err.status === 401 && sessionStorage.getItem('taskitator_deletion_receipt')) {
             location.replace('settings.html?view=deletion-status'); return;
         }
-        status.textContent = err.message || 'Secure sign-in is unavailable. Reload to try again.';
+        disarm();
+        slow.hidden = true;
+        say(err.message || 'Secure sign-in is unavailable. Reload to try again.');
         const reload = document.createElement('button'); reload.textContent = 'Try again';
         reload.onclick = () => location.reload(); status.append(reload);
+    } finally {
+        clearTimeout(slowTimer); clearTimeout(cutTimer);
     }
 })();
 

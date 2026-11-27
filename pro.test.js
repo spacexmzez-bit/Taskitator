@@ -1202,7 +1202,7 @@ test('Pro UI and username scripts wait for authenticated cache activation',()=>{
         assert.doesNotMatch(html,/<script defer src="pro\.js"/);
     }
     const bootstrap=readConsolidatedSource('auth-bootstrap.js');
-    assert.ok(bootstrap.indexOf('location.reload()')<bootstrap.indexOf('await TaskitatorAuth.init()'));
+    assert.ok(bootstrap.indexOf('location.reload()')<bootstrap.indexOf('TaskitatorAuth.init()'));
     assert.ok(!bootstrap.includes('TaskitatorAuth.manageAccount()'));
 });
 
@@ -1535,7 +1535,7 @@ test("Free-versus-Pro comparison page covers limits, dynamic charges, ×2 exempl
 test("Account-deletion status route on settings.html?view=deletion-status activates status panel without self-redirecting", async () => {
     const bootCode = readConsolidatedSource("auth-bootstrap.js");
     assert.ok(bootCode.includes("if (deletionStatusPage)"), "auth-bootstrap.js must guard deletionStatusPage before TaskitatorAuth.init()");
-    assert.ok(bootCode.indexOf("if (deletionStatusPage)") < bootCode.indexOf("await TaskitatorAuth.init()"));
+    assert.ok(bootCode.indexOf("if (deletionStatusPage)") < bootCode.indexOf("TaskitatorAuth.init()"));
 
     const delStatusCode = readConsolidatedSource("deletion-status.js");
     assert.ok(delStatusCode.includes("window.TaskitatorDeletionStatus = { check, activate }"));
@@ -1583,7 +1583,7 @@ test("Ari getPageContext identifies components.html views (stats, trash, blocker
 
 test("Service worker STATIC_ASSETS lists only existing consolidated files and uses release cache", () => {
     const swCode = readConsolidatedSource("sw.js");
-    assert.match(swCode, /const CACHE_NAME = 'taskitator-phase4-v70'/);
+    assert.match(swCode, /const CACHE_NAME = 'taskitator-phase4-v71'/);
     const listMatch = swCode.match(/const STATIC_ASSETS = \[([\s\S]*?)\];/);
     assert.ok(listMatch, "STATIC_ASSETS must be defined in sw.js");
     const assets = [...listMatch[1].matchAll(/'\.\/([^']+)'/g)].map(m => m[1]).filter(Boolean);

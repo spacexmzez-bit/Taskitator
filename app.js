@@ -845,6 +845,15 @@ ${formattedInput}`;
             appendBubble(text, 'user');
 
             const loadingBubble = appendBubble('Thinking...', 'bot', true);
+            // Phase 6.8: after 10 s the bubble says so (the app-wide AI notice is hidden while Copilot is open).
+            const slowTimer = setTimeout(() => {
+                if (!loadingBubble.isConnected) return;
+                const note = document.createElement('span');
+                note.className = 'chat-slow';
+                note.textContent = 'Taking longer than usual…';
+                loadingBubble.append(note);
+                loadingBubble.setAttribute('aria-label', 'Thinking… taking longer than usual.');
+            }, window.TaskitatorSlow?.AFTER_MS || 10000);
             const sendBtn = form.querySelector('button[type="submit"]');
             form.classList.add('is-busy');
             input.setAttribute('aria-busy', 'true');
@@ -860,6 +869,7 @@ ${formattedInput}`;
                 loadingBubble.remove();
                 appendBubble(`Error: ${err.message}`, 'bot').classList.add('error');
             } finally {
+                clearTimeout(slowTimer);
                 form.classList.remove('is-busy');
                 input.removeAttribute('aria-busy');
                 if (sendBtn) { sendBtn.disabled = false; sendBtn.classList.remove('is-loading'); }
@@ -1659,11 +1669,8 @@ window.TaskitatorApp = (() => {
             settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
         } catch (e) {}
 
-        if (!window.SyncEngine?.isConfigured()) {
-            updateSyncDot('local-only');
-        } else {
-            updateSyncDot('pending');
-        }
+        // Phase 6.8: there is no "Local only" mode (the app needs sign-in); unsynced work is simply pending.
+        updateSyncDot('pending');
 
         if (window.SyncEngine && typeof SyncEngine.scheduleAutoPush === 'function') {
             SyncEngine.scheduleAutoPush();
@@ -1674,7 +1681,7 @@ window.TaskitatorApp = (() => {
         const dot = document.getElementById('syncStatusDot');
         if (!dot) return;
         // Offline outranks every other state: grey means "saved here, not reachable".
-        if (state !== 'local-only' && window.TaskitatorOffline?.active) state = 'offline';
+        if (window.TaskitatorOffline?.active) state = 'offline';
         const prev = dot.dataset.state;
         dot.className = `sync-dot ${state}`;
         dot.dataset.state = state;
@@ -1684,7 +1691,7 @@ window.TaskitatorApp = (() => {
         else if (state === 'pending') dot.title = 'Sync Status: Not synced / Pending';
         else if (state === 'error') dot.title = 'Sync Status: Sync Failed';
         else if (state === 'offline') dot.title = 'Sync Status: Offline. Changes are saved on this device';
-        else dot.title = 'Sync Status: Local only';
+        else dot.title = 'Sync Status: Not synced / Pending';
         const button = document.getElementById('syncStatusButton');
         if (button) { button.title = dot.title + ' · Open sync details'; button.setAttribute('aria-label', dot.title + '. Open sync details'); }
     }
@@ -1713,8 +1720,7 @@ window.TaskitatorApp = (() => {
         try {
             settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
         } catch (e) {}
-        if (!window.SyncEngine?.isConfigured()) updateSyncDot('local-only');
-        else updateSyncDot(window.SyncEngine.isDirty?.() ? 'pending' : 'synced');
+        updateSyncDot(!window.SyncEngine?.isConfigured() || window.SyncEngine.isDirty?.() ? 'pending' : 'synced');
     }
 
     // =========================================================================
@@ -4444,7 +4450,7 @@ window.TaskitatorApp = (() => {
 
                 if (!window.SyncEngine?.isConfigured()) {
                     window.TaskitatorNotify('Cannot sync right now. Check your account and connection.');
-                    updateSyncDot('local-only');
+                    updateSyncDot('pending');
                     return;
                 }
 

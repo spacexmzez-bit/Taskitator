@@ -1327,11 +1327,6 @@ body {
     flex-shrink: 0;
 }
 
-.sync-dot.local-only {
-    background-color: #64748b;
-    box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.2);
-}
-
 .sync-dot.pending {
     background-color: #eab308;
     box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.25);
@@ -1347,7 +1342,7 @@ body {
     box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
 }
 
-/* Offline: grey like Local Only, but hollow so the two stay distinguishable */
+/* Offline: a hollow grey ring */
 .sync-dot.offline {
     background-color: transparent;
     border: 2px solid #64748b;
@@ -1404,11 +1399,6 @@ html.is-offline [data-requires-online] {
     background: var(--card-subtle);
     border: 1px solid var(--border-color);
     text-transform: capitalize;
-}
-
-.sync-badge-word.local-only {
-    border-color: #475569;
-    color: #94a3b8;
 }
 
 .sync-badge-word.pending {
@@ -6196,3 +6186,36 @@ html[dir="rtl"] .fx-fold[open] > summary::after { transform: rotate(-90deg); }
 .card-title-row.fold-head > :nth-child(2), .status-mode-head.fold-head > :nth-child(2) { flex: 1 1 auto; }
 .card-title-row.fold-head > :nth-child(n+3), .status-mode-head.fold-head > :nth-child(n+3) { flex: none; }
 html[data-motion="static"] .fold-head > .fold-toggle, html[data-motion="reduced"] .fold-head > .fold-toggle { transition: none; }
+
+/* Phase 6.8: boot gave up or was skipped (core.js bootNotice). Stays until dismissed or back online. */
+#bootOfflineNotice {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: max(12px, env(safe-area-inset-bottom)); z-index: 2147483000;
+    display: flex; align-items: center; gap: 10px;
+    width: max-content; max-width: calc(100vw - 24px);
+    padding-block: 8px; padding-inline: 14px 6px;
+    background: var(--card-subtle, #334155); color: var(--text-color, #e2e8f0);
+    border: 1px solid var(--border-hover, #475569); border-radius: 12px;
+    font-size: 0.82rem; line-height: 1.35; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+#bootOfflineNotice .boot-offline-text { flex: 1 1 auto; }
+#bootOfflineNotice .boot-offline-reconnect {
+    flex: none; padding: 6px 12px; border: 0; border-radius: 8px; cursor: pointer;
+    background: var(--tk-btn, var(--primary)); color: var(--tk-btn-text, #fff); font: inherit; font-weight: 700;
+}
+#bootOfflineNotice .boot-offline-close {
+    flex: none; min-width: 32px; min-height: 32px; border: 0; background: none; color: inherit;
+    font-size: 1.05rem; line-height: 1; cursor: pointer;
+}
+/* Phase 6.8: slow AI request (core.js TaskitatorSlow). Sits above the offline notices. */
+#aiSlowNotice {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px); z-index: 2147483001;
+    max-width: calc(100vw - 32px); padding: 8px 14px; border-radius: 999px; pointer-events: none;
+    background: var(--card-subtle, #334155); color: var(--text-color, #e2e8f0);
+    border: 1px solid var(--border-hover, #475569); font-size: 0.82rem; font-weight: 600;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+body:has(#copilotDrawer.open) #aiSlowNotice { display: none; }
+.chat-bubble.loading:has(.chat-slow) { flex-wrap: wrap; }
+.chat-bubble.loading .chat-slow { flex-basis: 100%; margin-top: 6px; font-size: 0.78rem; color: var(--text-muted); }
