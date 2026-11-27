@@ -1161,6 +1161,7 @@
         "Synced": "متزامن",
         "TASKITATOR FREE & PRO": "TASKITATOR المجاني وبرو",
         "Tags": "الوسوم",
+        "New tag": "وسم جديد",
         "Tags, priorities, checks": "الوسوم، الأولويات، الفحوصات",
         "Tap Macros tab and open a new macro creation screen.": "اضغط تبويب Macros وافتح شاشة إنشاء ماكرو جديد.",
         "Tap the blue Actions plus button to add response behavior.": "اضغط زر إضافة Actions الأزرق لإضافة سلوك الاستجابة.",

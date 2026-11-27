@@ -121,7 +121,7 @@
     }
 
     function render(step, t) {
-      card.replaceChildren();
+      card.replaceChildren(); card.scrollTop = 0;
       const centered = !t || step.kind === 'center';
       const meta = el('div', 'tt-meta');
       meta.append(el('span', 'tt-chapter', chapter), el('span', 'tt-count', `${index + 1} of ${list.length}`));
@@ -180,8 +180,15 @@
       const step = list[index];
       target = step.kind === 'center' ? null : findTarget(step.selector);
       const vw = innerWidth, vh = innerHeight;
-      card.style.maxHeight = (vh - 2 * EDGE) + 'px';
+      // Phase 7.4: measure without lifting max-height. Lifting it let the content fit, which reset the
+      // card's own scroll to the top four times a second on live steps (Next could not be reached).
+      const scrolled = card.scrollTop;
+      try { placeCard(target, vw, vh); } finally { if (card.scrollTop !== scrolled) card.scrollTop = scrolled; }
+    }
+    function placeCard(target, vw, vh) {
+      const step = list[index];
       if (!target) {
+        card.style.maxHeight = (vh - 2 * EDGE) + 'px';
         veil.classList.add('tt-dim'); ring.classList.add('tt-none'); arrow.classList.add('tt-hide');
         card.classList.add('tt-center'); card.style.left = card.style.top = '';
         hole();
@@ -190,7 +197,7 @@
       const r = target.getBoundingClientRect();
       const L = Math.max(0, r.left - PAD), T = Math.max(0, r.top - PAD);
       const R = Math.min(vw, r.right + PAD), B = Math.min(vh, r.bottom + PAD);
-      if (R <= L || B <= T) { veil.classList.add('tt-dim'); ring.classList.add('tt-none'); card.classList.add('tt-center'); hole(); return; }
+      if (R <= L || B <= T) { card.style.maxHeight = (vh - 2 * EDGE) + 'px'; veil.classList.add('tt-dim'); ring.classList.add('tt-none'); card.classList.add('tt-center'); hole(); return; }
       veil.classList.remove('tt-dim'); ring.classList.remove('tt-none');
       Object.assign(ring.style, { left: L + 'px', top: T + 'px', width: (R - L) + 'px', height: (B - T) + 'px' });
       hole(L, T, R, B);
@@ -198,20 +205,20 @@
       card.classList.remove('tt-center');
       const w = Math.min(420, vw - 2 * EDGE);
       card.style.width = w + 'px';
-      const h = card.offsetHeight;
+      const h = Math.ceil(card.scrollHeight + card.offsetHeight - card.clientHeight);   // full height, scroll or not
       const below = vh - B - GAP - EDGE, above = T - GAP - EDGE;
       let side = h <= below ? 'below' : h <= above ? 'above' : (below >= above ? 'below' : 'above');
       let room = side === 'below' ? below : above;
       let top, showArrow = true;
       if (room < Math.min(h, 160)) { // target nearly fills the screen: dock the card at the bottom, no arrow
-        const share = step.live ? 0.36 : 0.5; // a live panel needs most of the screen
+        const share = step.live ? 0.42 : 0.5; // a live panel needs most of the screen
         side = 'dock'; showArrow = false;
         // dock:'top' keeps a panel's footer (its Save button) uncovered.
         top = step.dock === 'top' ? EDGE : vh - EDGE - Math.min(h, vh * share);
         card.style.maxHeight = Math.floor(vh * share) + 'px';
       } else {
         const used = Math.min(h, room);
-        if (h > room) card.style.maxHeight = Math.floor(room) + 'px';
+        card.style.maxHeight = Math.floor(Math.min(room, vh - 2 * EDGE)) + 'px';
         top = side === 'below' ? B + GAP : T - GAP - used;
       }
       const cx = (L + R) / 2;

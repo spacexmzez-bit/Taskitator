@@ -56,6 +56,10 @@
 .tt-checklist .tt-go{margin-inline-start:auto;color:var(--primary-hover,#60a5fa)}
 
 .tt-actions{display:flex;align-items:center;gap:8px;margin-top:12px}
+/* Phase 7.4: Back / Next stay in view when the card has to scroll (a docked live step on a phone). */
+.tt-card .tt-actions{position:sticky;bottom:0;z-index:1;margin-top:4px;padding-top:10px;background:inherit;box-shadow:0 -10px 12px -10px rgba(0,0,0,.55)}
+.tt-card.tt-mini .tt-actions{display:none}
+@media (max-width:640px),(pointer:coarse){.tt-keys{display:none}.tt-card .tt-actions{bottom:-12px;margin-bottom:-12px;padding-bottom:12px}}
 .tt-spacer{flex:1}
 .tt-skip{background:none;border:0;color:var(--text-muted,#8bb3e8);font:inherit;font-size:.8rem;padding:8px 4px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 .tt-btn{font:inherit;font-weight:700;font-size:.86rem;min-height:40px;padding:0 16px;border-radius:9px;border:1.5px solid var(--border-color,#1e3a6e);background:var(--card-bg,#0f1d3a);color:var(--text-color,#f0f7ff);cursor:pointer;box-shadow:0 2px 0 var(--depth,#050d1f);transition:transform var(--dur-fast,120ms) var(--ease-out,ease),box-shadow var(--dur-fast,120ms) var(--ease-out,ease)}

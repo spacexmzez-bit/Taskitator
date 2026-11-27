@@ -490,6 +490,74 @@
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(globalThis);
 // <<< MODULE_END: dynamic-priority.js >>>
+// <<< MODULE_START: nlp-match.js >>>
+// Phase 7.4: matching for the title shortcuts (!priority, #project, @tag) and the mention list.
+// Case-insensitive, spaces ignored, any script (Arabic included); Arabic-Indic digits count as numbers.
+// Priority: exact name, then rank position (!3 or !p3 = third level from the top), then a unique name start.
+(function(root){
+    const TOKEN = /(?:^|\s)((\$\$|[#!@][\p{L}\p{N}\p{M}_.\-]+))\s$/u;
+    const ACTIVE = /(?:^|\s)([#!@])([\p{L}\p{N}\p{M}_.\-]*)$/u;
+    const digits = s => s.replace(/[\u0660-\u0669]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/[\u06F0-\u06F9]/g, d => String(d.charCodeAt(0) - 0x06F0));
+    const norm = s => digits(String(s == null ? '' : s).normalize('NFKC').replace(/\s+/g, '').toLocaleLowerCase());
+    const ordered = list => (Array.isArray(list) ? list : []).filter(p => p && p.id != null)
+        .map((p, i) => [p, i]).sort((a, b) => ((Number(a[0].rank) || 0) - (Number(b[0].rank) || 0)) || (a[1] - b[1])).map(x => x[0]);
+    // alias(name): the name as shown on screen (the Arabic for the default High/Medium/Low); it matches too.
+    const namesOf = (p, alias) => { const a = [norm(p.name)]; const t = alias ? norm(alias(String(p.name)) || '') : ''; if (t && t !== a[0]) a.push(t); return a; };
+    function priority(list, raw, alias) {
+        const prios = ordered(list), v = norm(raw);
+        if (!v) return null;
+        const exact = prios.find(p => namesOf(p, alias).includes(v));
+        if (exact) return exact;
+        const m = v.match(/^p?(\d{1,3})$/);
+        if (m) { const n = Number(m[1]); return n >= 1 && n <= prios.length ? prios[n - 1] : null; }
+        const starts = prios.filter(p => namesOf(p, alias).some(n => n.startsWith(v)));
+        return starts.length === 1 ? starts[0] : null;
+    }
+    const projectsOf = list => (Array.isArray(list) ? list : []).filter(p => p && p.id != null && p.id !== 'inbox');
+    function project(list, raw) {
+        const v = norm(raw);
+        return v ? projectsOf(list).find(p => norm(p.name) === v) || null : null;
+    }
+    // Returns {value, isNew}: an existing tag keeps its own spelling; a new one is stored in lower case.
+    function tag(list, raw) {
+        const v = norm(raw);
+        if (!v) return null;
+        const hit = (Array.isArray(list) ? list : []).find(t => norm(t) === v);
+        return hit != null ? { value: hit, isNew: false } : { value: String(raw).trim().toLocaleLowerCase(), isNew: true };
+    }
+    function rankBy(items, q, nameOf) {
+        if (!q) return items.slice();
+        const a = [], b = [];
+        for (const it of items) { const n = norm(nameOf(it)); if (n.startsWith(q)) a.push(it); else if (n.includes(q)) b.push(it); }
+        return a.concat(b);
+    }
+    // Rows for the mention list: {kind, item, name, rank?, isNew?}.
+    function suggest(kind, list, query, limit, alias) {
+        const q = norm(query), max = limit || 50;
+        if (kind === '!') {
+            const prios = ordered(list);
+            const rows = prios.map((p, i) => ({ kind, item: p, name: String(p.name), rank: i + 1 }));
+            const m = q.match(/^p?(\d{1,3})$/);
+            const byNum = m ? rows.filter(r => r.rank === Number(m[1])) : [];
+            const shown = alias ? rows.map(r => ({ r, n: norm(alias(r.name) || '') })) : [];
+            const byName = rankBy(rows, q, r => r.name).concat(shown.filter(x => x.n.startsWith(q) || x.n.includes(q)).map(x => x.r))
+                .filter((r, i, all) => !byNum.includes(r) && all.indexOf(r) === i);
+            return byNum.concat(byName).slice(0, max);
+        }
+        if (kind === '#') return rankBy(projectsOf(list), q, p => p.name).slice(0, max).map(p => ({ kind, item: p, name: String(p.name) }));
+        if (kind === '@') {
+            const tags = (Array.isArray(list) ? list : []).filter(t => typeof t === 'string' && t);
+            const rows = rankBy(tags, q, t => t).slice(0, max).map(t => ({ kind, item: t, name: t }));
+            if (q && !tags.some(t => norm(t) === q)) rows.push({ kind, item: String(query).trim().toLocaleLowerCase(), name: String(query).trim().toLocaleLowerCase(), isNew: true });
+            return rows;
+        }
+        return [];
+    }
+    // Text typed for a picked row, so removing the chip gives back a token that matches again.
+    const tokenOf = row => row.kind + String(row.name).replace(/\s+/g, '');
+    root.TaskitatorNlpMatch = { TOKEN, ACTIVE, norm, priority, project, tag, suggest, tokenOf };
+})(globalThis);
+// <<< MODULE_END: nlp-match.js >>>
 // <<< MODULE_START: recurrence-ui.js >>>
 // File: recurrence-ui.js
 (function () {
@@ -814,7 +882,7 @@ window.TaskitatorComponents = Object.freeze({
             draft=null;window.TaskitatorEditorDraft=null;clearConsecutiveGrant();liveHost.tasks.save();return true;
         }
         host={...host,tasks:{...host.tasks,getAll:()=>draft?draft.tasks:liveHost.tasks.getAll(),reload:()=>{if(!draft)liveHost.tasks.reload();},save:()=>{if(!draft)liveHost.tasks.save();},moveProject:(id,project)=>{if(draft){for(const t of TaskitatorRecurrence.subtree(draft.tasks,id))t.project_id=project;}else liveHost.tasks.moveProject(id,project);}}};
-        host.catalogs={...host.catalogs,tags:()=>[...liveHost.catalogs.tags(),...(draft?.newTags||[])],addTag:tag=>{if(draft){draft.newTags||=[];if(!draft.newTags.includes(tag))draft.newTags.push(tag);}else liveHost.catalogs.addTag(tag);}};
+        host.catalogs={...host.catalogs,tags:()=>[...liveHost.catalogs.tags(),...(draft?.newTags||[])],addTag:tag=>{if(draft){draft.newTags||=[];if(!draft.newTags.includes(tag)&&!liveHost.catalogs.tags().includes(tag))draft.newTags.push(tag);}else liveHost.catalogs.addTag(tag);}};
         host.tasks.descendants=id=>draft?TaskitatorRecurrence.subtree(draft.tasks,id).filter(t=>t.id!==id):liveHost.tasks.descendants(id);
         let criteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
         let editCriteriaValidationState = { validated: false, score: 0, isTemplate: false, isSavedCriteria: false, savedCriteriaText: '' };
@@ -1167,135 +1235,225 @@ window.TaskitatorComponents = Object.freeze({
                     event.preventDefault(); insertText(event.dataTransfer.getData('text/plain'));
                 });
                 div.addEventListener('input', (e) => handleInput(e, contextType, div));
-                div.addEventListener('click', (e) => handleClick(e, contextType, div));
+                div.addEventListener('click', (e) => { handleClick(e, contextType, div); updateMenu(div, contextType); });
+                div.addEventListener('keyup', (e) => { if (!['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key)) updateMenu(div, contextType); });
+                div.addEventListener('blur', () => setTimeout(() => { if (menu && menu.div === div && document.activeElement !== div) closeMenu(); }, 150));
+                div.setAttribute('aria-autocomplete', 'list');
                 div.addEventListener('keydown', handleKeydown);
                 div.addEventListener('paste', handlePaste);
                 
                 return div;
             }
 
-            function handleInput(e, contextType, div) {
-                const sel = window.getSelection();
-                if (!sel.rangeCount) return;
-                
-                const range = sel.getRangeAt(0);
-                const node = range.startContainer;
-                
-                if (node.nodeType !== Node.TEXT_NODE) return;
-                
-                const textBeforeCaret = node.textContent.substring(0, range.startOffset);
-                if (!textBeforeCaret.endsWith(' ')) return;
-                
-                const match = textBeforeCaret.match(/(?:^|\s)((\$\$|[#!@][a-zA-Z0-9_.-]+))\s$/);
-                if (!match) return;
-                
-                const rawToken = match[1];
-                let chipData = null;
-
-                if (rawToken === '$$') {
-                    chipData = {
-                        html: `<span class="nlp-chip nlp-bonus" contenteditable="false" data-type="bonus" data-raw="$$"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+            // Phase 7.4: one chip builder for typed tokens and picks from the mention list.
+            const esc = s => TaskitatorSafety.escapeHtml(s);
+            function chipFor(kind, resolved, rawToken, contextType) {
+                const edit = contextType === 'edit';
+                if (kind === '$$') return {
+                    html: `<span class="nlp-chip nlp-bonus" contenteditable="false" data-type="bonus" data-raw="$$"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-bonus"></use></svg> Bonus <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                    action: () => {
+                        if (edit) editModalIsBonus = true; else createModalIsBonus = true;
+                        const cb = document.getElementById(edit ? 'editBonusTaskCheckbox' : 'bonusTaskCheckbox');
+                        if (cb) cb.checked = true;
+                    }
+                };
+                if (kind === '!') {
+                    const pObj = resolved;
+                    return {
+                        html: `<span class="nlp-chip nlp-prio" contenteditable="false" data-type="prio" data-id="${esc(pObj.id)}" data-raw="${esc(rawToken)}"><span class="priority-color-dot" style="background:${esc(TaskitatorSafety.cssColor(pObj.color))}; width:8px; height:8px; display:inline-block; border-radius:50%; margin-inline-end:4px;"></span>${esc(shownName(pObj.name))} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
                         action: () => {
-                            if (contextType === 'edit') {
-                                editModalIsBonus = true;
-                                const cb = document.getElementById('editBonusTaskCheckbox');
-                                if (cb) cb.checked = true;
-                            } else {
-                                createModalIsBonus = true;
-                                const cb = document.getElementById('bonusTaskCheckbox');
-                                if (cb) cb.checked = true;
-                            }
+                            if (edit) { editModalSelectedPriority = pObj.id; renderModalPriorityCloud('editPriorityCloud', true); }
+                            else { createModalSelectedPriority = pObj.id; renderModalPriorityCloud('createPriorityCloud', false); }
                         }
                     };
-                } else {
-                    const prefix = rawToken[0];
-                    const value = rawToken.substring(1).toLowerCase();
-                    
-                    if (prefix === '!') {
-                        const prios = host.catalogs.priorities();
-                        let pId = null;
-                        if (['p1', 'high'].includes(value)) pId = prios.find(p => p.rank === 1)?.id;
-                        else if (['p2', 'med', 'medium'].includes(value)) pId = prios.find(p => p.rank === 2)?.id;
-                        else if (['p3', 'low'].includes(value)) pId = prios.find(p => p.rank === 3)?.id;
-                        
-                        if (pId) {
-                            const pObj = prios.find(p => p.id === pId);
-                            chipData = {
-                                html: `<span class="nlp-chip nlp-prio" contenteditable="false" data-type="prio" data-id="${TaskitatorSafety.escapeHtml(pId)}" data-raw="${TaskitatorSafety.escapeHtml(rawToken)}"><span class="priority-color-dot" style="background:${TaskitatorSafety.escapeHtml(TaskitatorSafety.cssColor(pObj.color))}; width:8px; height:8px; display:inline-block; border-radius:50%; margin-inline-end:4px;"></span>${TaskitatorSafety.escapeHtml(pObj.name)} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
-                                action: () => {
-                                    if (contextType === 'edit') {
-                                        editModalSelectedPriority = pId;
-                                        renderModalPriorityCloud('editPriorityCloud', true);
-                                    } else {
-                                        createModalSelectedPriority = pId;
-                                        renderModalPriorityCloud('createPriorityCloud', false);
-                                    }
-                                }
-                            };
-                        }
-                    } else if (prefix === '#') {
-                        const projs = host.catalogs.projects();
-                        const pObj = projs.find(p => p.name.replace(/\s+/g, '').toLowerCase() === value);
-                        if (pObj && pObj.id !== 'inbox') {
-                            chipData = {
-                                html: `<span class="nlp-chip nlp-proj" contenteditable="false" data-type="proj" data-id="${TaskitatorSafety.escapeHtml(pObj.id)}" data-raw="${TaskitatorSafety.escapeHtml(rawToken)}"><span>${TaskitatorSafety.escapeHtml(pObj.icon)}</span> ${TaskitatorSafety.escapeHtml(pObj.name)} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
-                                action: () => {
-                                    if (contextType === 'edit') {
-                                        editModalSelectedProject = pObj.id;
-                                        renderModalProjectCloud('editProjectCloud', true);
-                                    } else {
-                                        createModalSelectedProject = pObj.id;
-                                        renderModalProjectCloud('createProjectCloud', false);
-                                    }
-                                }
-                            };
-                        }
-                    } else if (prefix === '@') {
-                        chipData = {
-                            html: `<span class="nlp-chip nlp-tag" contenteditable="false" data-type="tag" data-id="${TaskitatorSafety.escapeHtml(value)}" data-raw="${TaskitatorSafety.escapeHtml(rawToken)}"># ${TaskitatorSafety.escapeHtml(value)} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
-                            action: () => {
-                                host.catalogs.addTag(value);
-                                if (contextType === 'edit') {
-                                    editModalSelectedTags.add(value);
-                                    renderModalTagCloud('editTagCloud', editModalSelectedTags);
-                                } else {
-                                    createModalSelectedTags.add(value);
-                                    renderModalTagCloud('createTagCloud', createModalSelectedTags);
-                                }
-                            }
-                        };
-                    }
                 }
-                
-                if (chipData) {
-                    const startOffset = match.index + (match[0].startsWith(' ') ? 1 : 0);
-                    const endOffset = range.startOffset; 
-                    
-                    const beforeText = node.textContent.substring(0, startOffset);
-                    const afterText = node.textContent.substring(endOffset);
-                    
-                    node.textContent = beforeText;
-                    
-                    const chipWrapper = document.createElement('span');
-                    chipWrapper.innerHTML = chipData.html;
-                    const chipNode = chipWrapper.firstChild;
-                    
-                    const afterNode = document.createTextNode('\u00A0' + afterText); 
-                    
-                    const parent = node.parentNode;
-                    parent.insertBefore(chipNode, node.nextSibling);
-                    parent.insertBefore(afterNode, chipNode.nextSibling);
-                    
-                    chipData.action();
-                    
-                    const newRange = document.createRange();
-                    newRange.setStart(afterNode, 1);
-                    newRange.collapse(true);
-                    sel.removeAllRanges();
-                    sel.addRange(newRange);
+                if (kind === '#') {
+                    const pObj = resolved;
+                    return {
+                        html: `<span class="nlp-chip nlp-proj" contenteditable="false" data-type="proj" data-id="${esc(pObj.id)}" data-raw="${esc(rawToken)}"><span>${esc(pObj.icon || '')}</span> ${esc(pObj.name)} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                        action: () => {
+                            if (edit) { editModalSelectedProject = pObj.id; renderModalProjectCloud('editProjectCloud', true); }
+                            else { createModalSelectedProject = pObj.id; renderModalProjectCloud('createProjectCloud', false); }
+                        }
+                    };
                 }
+                if (kind === '@') {
+                    const value = resolved.value;
+                    return {
+                        html: `<span class="nlp-chip nlp-tag" contenteditable="false" data-type="tag" data-id="${esc(value)}" data-raw="${esc(rawToken)}"># ${esc(value)} <button type="button" class="nlp-chip-remove">&times;</button></span>`,
+                        action: () => {
+                            if (resolved.isNew) host.catalogs.addTag(value);
+                            if (edit) { editModalSelectedTags.add(value); renderModalTagCloud('editTagCloud', editModalSelectedTags); }
+                            else { createModalSelectedTags.add(value); renderModalTagCloud('createTagCloud', createModalSelectedTags); }
+                        }
+                    };
+                }
+                return null;
             }
-            
+            const shownName = n => window.TaskitatorI18n?.translateText?.(n) || n;
+            function resolveToken(rawToken) {
+                const M = window.TaskitatorNlpMatch;
+                if (rawToken === '$$') return { kind: '$$', resolved: true };
+                const kind = rawToken[0], value = rawToken.substring(1);
+                if (kind === '!') return { kind, resolved: M.priority(host.catalogs.priorities(), value, shownName) };
+                if (kind === '#') return { kind, resolved: M.project(host.catalogs.projects(), value) };
+                if (kind === '@') return { kind, resolved: M.tag(host.catalogs.tags(), value) };
+                return { kind, resolved: null };
+            }
+            // Swap node.textContent[start, end) for the chip and put the caret after it.
+            function insertChip(node, startOffset, endOffset, chipData) {
+                const sel = window.getSelection();
+                const beforeText = node.textContent.substring(0, startOffset);
+                const afterText = node.textContent.substring(endOffset).replace(/^[ \u00A0]/, '');
+                node.textContent = beforeText;
+                const chipWrapper = document.createElement('span');
+                chipWrapper.innerHTML = chipData.html;
+                const chipNode = chipWrapper.firstChild;
+                const afterNode = document.createTextNode('\u00A0' + afterText);
+                const parent = node.parentNode;
+                // A task has one priority and one project: a newer chip of the same kind replaces the older one.
+                const type = chipNode.getAttribute('data-type');
+                if (type !== 'tag') (node.parentElement?.closest('.task-rich-input') || parent).querySelectorAll(`.nlp-chip[data-type="${type}"]`).forEach(c => c.remove());
+                parent.insertBefore(chipNode, node.nextSibling);
+                parent.insertBefore(afterNode, chipNode.nextSibling);
+                chipData.action();
+                const newRange = document.createRange();
+                newRange.setStart(afterNode, 1);
+                newRange.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(newRange);
+            }
+
+            function handleInput(e, contextType, div) {
+                const sel = window.getSelection();
+                if (!sel.rangeCount) { closeMenu(); return; }
+                const range = sel.getRangeAt(0);
+                const node = range.startContainer;
+                if (node.nodeType !== Node.TEXT_NODE) { closeMenu(); return; }
+                const textBeforeCaret = node.textContent.substring(0, range.startOffset);
+                if (!textBeforeCaret.endsWith(' ')) { updateMenu(div, contextType); return; }
+                closeMenu();
+                const match = textBeforeCaret.match(window.TaskitatorNlpMatch.TOKEN);
+                if (!match) return;
+                const rawToken = match[1];
+                const { kind, resolved } = resolveToken(rawToken);
+                if (!resolved) return;   // unknown names stay as plain text
+                const chipData = chipFor(kind, resolved, rawToken, contextType);
+                if (!chipData) return;
+                const startOffset = match.index + (match[0].length - match[1].length - 1);
+                insertChip(node, startOffset, range.startOffset, chipData);
+            }
+
+            // ---- Mention list (Phase 7.4): typing ! @ or # at the start of a word lists levels, tags or projects.
+            let menu = null;   // {el, div, contextType, rows, index, node, start, end}
+            const KIND_LABEL = { '!': 'Priority', '#': 'Projects', '@': 'Tags' };
+            function caretToken(div) {
+                const sel = window.getSelection();
+                if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+                const range = sel.getRangeAt(0), node = range.startContainer;
+                if (node.nodeType !== Node.TEXT_NODE || !div.contains(node)) return null;
+                const before = node.textContent.substring(0, range.startOffset);
+                const m = before.match(window.TaskitatorNlpMatch.ACTIVE);
+                if (!m) return null;
+                return { node, kind: m[1], query: m[2], start: range.startOffset - m[2].length - 1, end: range.startOffset };
+            }
+            function listFor(kind) {
+                if (kind === '!') return host.catalogs.priorities();
+                if (kind === '#') return host.catalogs.projects();
+                return host.catalogs.tags();
+            }
+            function closeMenu() {
+                if (!menu) return;
+                menu.el.remove();
+                menu.div.removeAttribute('aria-activedescendant');
+                menu.div.setAttribute('aria-expanded', 'false');
+                menu = null;
+            }
+            function updateMenu(div, contextType) {
+                const tok = caretToken(div);
+                if (!tok) { closeMenu(); return; }
+                const rows = window.TaskitatorNlpMatch.suggest(tok.kind, listFor(tok.kind), tok.query, 50, shownName);
+                if (!rows.length) { closeMenu(); return; }
+                if (!menu || menu.div !== div) {
+                    closeMenu();
+                    const el = document.createElement('div');
+                    el.className = 'nlp-menu';
+                    el.id = div.id + 'Mentions';
+                    el.setAttribute('role', 'listbox');
+                    el.addEventListener('mousedown', ev => ev.preventDefault());   // keep the caret in the title
+                    el.addEventListener('click', ev => {
+                        const opt = ev.target.closest('.nlp-menu-item');
+                        if (opt && menu) pick(Number(opt.dataset.i));
+                    });
+                    const hostEl = div.closest('.form-group') || div.parentNode;
+                    hostEl.classList.add('nlp-host');
+                    hostEl.appendChild(el);
+                    div.setAttribute('aria-controls', el.id);
+                    div.setAttribute('aria-expanded', 'true');
+                    menu = { el, div, contextType, rows: [], index: 0 };
+                }
+                const sameKind = menu.kind === tok.kind && menu.query === tok.query;
+                Object.assign(menu, { rows, node: tok.node, start: tok.start, end: tok.end, kind: tok.kind, query: tok.query });
+                if (!sameKind) menu.index = 0;
+                menu.index = Math.min(menu.index, rows.length - 1);
+                renderMenu();
+            }
+            function renderMenu() {
+                const { el, rows, kind, div } = menu;
+                el.replaceChildren();
+                const head = document.createElement('div');
+                head.className = 'nlp-menu-head';
+                head.textContent = KIND_LABEL[kind];
+                el.appendChild(head);
+                rows.forEach((row, i) => {
+                    const opt = document.createElement('div');
+                    opt.className = 'nlp-menu-item' + (i === menu.index ? ' active' : '');
+                    opt.id = el.id + '-' + i;
+                    opt.dataset.i = String(i);
+                    opt.setAttribute('role', 'option');
+                    opt.setAttribute('aria-selected', i === menu.index ? 'true' : 'false');
+                    if (kind === '!') {
+                        opt.innerHTML = `<span class="nlp-menu-rank">${row.rank}</span><span class="priority-color-dot" style="background:${esc(TaskitatorSafety.cssColor(row.item.color))}"></span><span class="nlp-menu-name">${esc(row.name)}</span>`;
+                    } else if (kind === '#') {
+                        opt.innerHTML = `<span class="nlp-menu-icon">${esc(row.item.icon || '')}</span><span class="nlp-menu-name">${esc(row.name)}</span>`;
+                    } else if (row.isNew) {
+                        opt.innerHTML = `<span class="nlp-menu-icon">+</span><span class="nlp-menu-name">${esc(row.name)}</span><span class="nlp-menu-new">New tag</span>`;
+                    } else {
+                        opt.innerHTML = `<span class="nlp-menu-icon">#</span><span class="nlp-menu-name">${esc(row.name)}</span>`;
+                    }
+                    el.appendChild(opt);
+                });
+                div.setAttribute('aria-activedescendant', el.id + '-' + menu.index);
+                el.querySelector('.nlp-menu-item.active')?.scrollIntoView?.({ block: 'nearest' });
+            }
+            function pick(i) {
+                if (!menu) return;
+                const row = menu.rows[i];
+                const { node, start, end, contextType, div } = menu;
+                closeMenu();
+                if (!row || !node.isConnected) return;
+                const resolved = row.kind === '@' ? { value: row.item, isNew: !!row.isNew } : row.item;
+                const chipData = chipFor(row.kind, resolved, window.TaskitatorNlpMatch.tokenOf(row), contextType);
+                if (!chipData) return;
+                div.focus();
+                insertChip(node, start, end, chipData);
+            }
+            // Keys go to the list first while it is open (window capture runs before the modals' Escape handlers).
+            window.addEventListener('keydown', ev => {
+                if (!menu || ev.target !== menu.div || ev.isComposing) return;
+                const n = menu.rows.length;
+                if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+                    menu.index = (menu.index + (ev.key === 'ArrowDown' ? 1 : -1) + n) % n;
+                    renderMenu();
+                } else if (ev.key === 'Enter' || ev.key === 'Tab') {
+                    pick(menu.index);
+                } else if (ev.key === 'Escape') {
+                    closeMenu();
+                } else return;
+                ev.preventDefault();
+                ev.stopImmediatePropagation();
+            }, true);
+
             function handleClick(e, contextType, div) {
                 if (e.target.matches('.nlp-chip-remove')) {
                     e.preventDefault();

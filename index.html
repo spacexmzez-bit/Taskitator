@@ -280,7 +280,7 @@
             display: block;
         }
     </style>
-<link rel="stylesheet" href="tutorial-spotlight.css?v=tour-v3">
+<link rel="stylesheet" href="tutorial-spotlight.css?v=tour-v4">
 <link rel="icon" type="image/svg+xml" href="image/nature_sprites/favicon.svg">
 <link rel="stylesheet" href="palettes.css">
 <link rel="stylesheet" href="family-nature.css">
@@ -1667,6 +1667,8 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
 <div class="hp-try-row"><button type="button" class="hp-try" data-help-tour="create" data-help-from="help-create">Try it live: create a task</button><button type="button" class="hp-try" data-help-tour="details" data-help-from="help-create">Try it live: edit a task</button><span class="hp-try-note">Opens Today. Everything but the control you need fades out.</span></div>
 <h4>Create</h4>
 <ol><li>Tap <b>+ New task</b>.</li><li><b>Task Title</b> (required). Optional: Description, Project, Priority, Tags (+ Add), Due Date (starts as today when you create from Today), Repeat, Shield, Count toward phone lock (Normal mode), Bonus, Dynamic options, AI proof, Quick Subtasks.</li><li><b>Save Task</b>, or <b>Draft</b>, or <b>Cancel</b> / ✕.</li></ol>
+<p><b>Title shortcuts (Phase 7.4).</b> In <b>Task Title</b> (Create Task and Task Details), type a shortcut and a space. It turns into a chip and fills the field below. Tap the chip's ✕ to undo.</p>
+<ul><li><code>!</code> + a priority: the level's name in any case (<code>!normal</code>, <code>!Normal</code>), its number counted from the top (<code>!3</code> or <code>!p3</code> = your third level; Arabic digits work), or the start of a name if only one level starts that way (<code>!med</code>). If you name a level "3", <code>!3</code> means that level. In Arabic, the Arabic names shown for the default levels work too. A new priority chip replaces the old one.</li><li><code>#</code> + a project: its full name without spaces, any case (<code>#UniWork</code>). Inbox has no shortcut.</li><li><code>@</code> + a tag: an existing tag, or a new one (saved in lower case).</li><li><code>$$</code>: marks the task as bonus.</li><li><b>Pick from a list:</b> typing <code>!</code>, <code>#</code> or <code>@</code> at the start of a word opens a list of your levels (with their numbers), projects or tags, narrowed as you type. Tap a row, or use ↑ ↓ and Enter or Tab. Esc closes the list. For tags, the last row adds what you typed as a <b>New tag</b>.</li><li>Names in any language work. A shortcut that matches nothing stays as plain text in the title.</li></ul>
 <p><b>Edit:</b> tap a task to open <b>Task Details</b>, change fields, then <b>Save Changes</b>. Nothing applies until you save. Task Details adds: Hierarchy / Parent Task, Assign to today (undated AI tasks), Early task, the AI Audit card (Inherit criteria from a sibling, Edit criteria, reference file), the subtask list, <b>Delete Task</b> and <b>Draft</b>.</p>
 <p><b>Delete:</b> ✕ on the row or <b>Delete Task</b> → the task and its subtasks go to Trash. AI-locked branches and shielded tasks with unfinished subtasks need Emergency Bypass.</p>
 <details class="hp-ex"><summary><span class="o">Show example</span><span class="c">Hide example</span></summary><div class="hp-exbody">Title: <i>Write essay outline</i> · Project: <i>School</i> · Due: today · Tag: <i>writing</i> → <b>Save Task</b>. It now appears on Today.</div></details>
@@ -1689,10 +1691,10 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
 <h4>Free days</h4>
 <ol><li>Settings → Day &amp; week → <b>Streak free days</b>. Your weekend is selected until you change it.</li><li>Tick the days. You can choose up to your weekend days plus 2.</li><li>Press <b>Save changes</b>. The change starts next week (the day after your weekend), so today can't be made free after you've missed it.</li></ol>
 <p>On a free day, not finishing a task doesn't break your streak, and completing tasks adds no points and no streak day.</p>
-<h4>Make today required</h4>
-<ol><li>On a free day, tap the points strip and press <b>Make today required</b>.</li><li>Confirm. Taskitator syncs first, then today becomes a normal day: tasks you finish from now on earn points and count toward your streak, and finishing none breaks it tonight.</li><li>Tasks you already finished today don't count, even if you reopen and finish them again. It can't be undone. Next week's free days stay free.</li></ol>
-<h4>Streak counting</h4>
-<ul><li>Settings → Day &amp; week → <b>Streak counting</b>.</li><li><b>Loose</b> (default): any finished task keeps your streak, bonus tasks included.</li><li><b>Normal</b>: only required (non-bonus) tasks keep it.</li><li><b>Tight</b>: only AI-locked tasks keep it.</li><li>Points always count every task. A change starts next week, after your weekend.</li></ul>
+<p><b>Make today required</b> (once per free day)</p>
+<ol><li>On a free day, open the points strip and press <b>Make today required</b>.</li><li>Confirm. Taskitator syncs first, then today becomes a normal day: tasks you finish from now on earn points and count toward your streak, and finishing none breaks it tonight.</li><li>Tasks you already finished today don't count, even if you reopen and finish them again. It can't be undone. Your weekly free days don't change, so next week's free day is free again.</li></ol>
+<p><b>Streak counting</b> (Settings → Day &amp; week)</p>
+<ul><li><b>Loose</b> (default): any finished task keeps the streak, bonus tasks included.</li><li><b>Normal:</b> only required (non-bonus) tasks keep it.</li><li><b>Tight:</b> only AI-locked tasks keep it. Choosing it asks first.</li><li>Points always count every task. A change starts next week, after your weekend, like free days. Days from before Phase 7.2 count as kept in every mode.</li></ul>
 </section>
 <section class="hp-sec" id="help-friends">
 <h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-person"></use></svg> Friends</h3>
@@ -1773,7 +1775,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
 <section class="hp-sec" id="help-labels">
 <h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-tag"></use></svg> Priorities and tags</h3>
 <p>Settings → <b>Tasks</b>.</p>
-<ul><li><b>Tags</b>: type and <b>+ Add</b>; remove with ✕. Used in the editor and filters.</li><li><b>Priorities</b>: <b>+ Add level</b>, rename, colour, reorder with arrows (#1 is highest), delete. A task's ring and animal take its priority colour.</li><li><b>Task checks</b>: <b>Check criteria before locking</b> (AI must rate criteria 7/10 before a task can lock).</li><li>Press <b>Save changes</b>.</li></ul>
+<ul><li><b>Tags</b>: type and <b>+ Add</b>; remove with ✕. Used in the editor and filters.</li><li><b>Priorities</b>: <b>+ Add level</b>, rename, colour, reorder with arrows (#1 is highest), delete. A task's ring and animal take its priority colour. The order is what <code>!1</code>, <code>!2</code> … mean in a task title (see Tasks: create and edit).</li><li><b>Task checks</b>: <b>Check criteria before locking</b> (AI must rate criteria 7/10 before a task can lock).</li><li>Press <b>Save changes</b>.</li></ul>
 </section>
 <section class="hp-sec" id="help-repeat">
 <h3><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-recurring"></use></svg> Recurring tasks</h3>
@@ -3248,7 +3250,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
     <script type="text/taskitator-script" src="components.js"></script>
     <script type="text/taskitator-script" src="root-completion.js"></script>
     <script type="text/taskitator-script" src="uni/focus-timer.js"></script>
-    <script type="text/taskitator-script" src="copilot-knowledge.js?v=ck-1"></script>
+    <script type="text/taskitator-script" src="copilot-knowledge.js?v=ck-2"></script>
     <script type="text/taskitator-script" src="app.js?v=phase-4-2-3"></script>
     <script type="text/taskitator-script" src="views/projects.js"></script>
     <script type="text/taskitator-script" src="views/calendar.js"></script>
@@ -3260,7 +3262,7 @@ html[lang="ar"] #shellView-help .help-lang-note{margin:12px auto 0!important}
     <script type="text/taskitator-script" src="test-lab.js"></script>
     <script type="text/taskitator-script" src="sleep.js"></script>
     <script type="text/taskitator-script" src="shell-router.js"></script>
-    <script type="text/taskitator-script" src="tutorial-spotlight.js?v=tour-v3"></script>
+    <script type="text/taskitator-script" src="tutorial-spotlight.js?v=tour-v4"></script>
 <script type="text/taskitator-script" src="tutorial-integration.js?v=tour-v3"></script>
 <script type="text/taskitator-script" src="help-tours.js?v=help-v1"></script>
 <script type="text/taskitator-script" src="points.js?v=pts-v1"></script>

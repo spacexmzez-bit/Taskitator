@@ -170,7 +170,7 @@ test('Browser: sync dispatches the summary; strip, panel, cache per account; fre
     assert.match(index, /src="points\.js\?v=pts-v1"><\/script>\n<script type="text\/taskitator-script" src="points-ui\.js\?v=pts-v\d">/);
     const sw = read('sw.js');
     assert.match(sw, /'\.\/points\.js', '\.\/points-ui\.js'/);
-    assert.match(sw, /CACHE_NAME = 'taskitator-phase4-v78'/);
+    assert.match(sw, /CACHE_NAME = 'taskitator-phase4-v79'/);
     const ui = read('points-ui.js');
     assert.match(ui, /window\.addEventListener\('taskitator-points', e => update\(e\.detail, true\)\)/);
     assert.match(ui, /auth\.api\('\/points'\)/);

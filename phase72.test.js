@@ -19,7 +19,7 @@ test('Friends view has Collabs; Universe page opens a group directly and badges 
     assert.match(uni, /startsWith\('Collab ·'\)/);
     assert.match(read('friends-backend.js'), /purpose: 'Collab · a shared space for friends\.'/);
     assert.match(read('index.html'), /id="help-p-collab"/);
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v78'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v79'/);
     assert.match(read('README.md'), /\*\*Collab \(Phase 7\.0\):\*\*/);
     for (const k of ['Collabs', 'Start a collab', 'Create collab', 'Invited by @{0}']) assert.ok(read('locales/ar.js').includes('"' + k + '"'), k);
 });

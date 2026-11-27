@@ -13,6 +13,7 @@
     const TASKS = [
         'Today = tasks due today or overdue (undated never show). General = every active task as a tree.',
         '+ New task: title required; optional description, project, priority, tags, due date, Repeat, Shield, Bonus, Dynamic options, AI proof, Quick Subtasks. Draft parks it (not a task, no lock). Tap a task → Task Details → Save Changes.',
+        'Title shortcuts + space: !name or !N (Nth priority from the top), #Project, @tag, $$ bonus; typing ! # @ shows a pick list.',
         'Subtasks: type + Enter; "$$" marks bonus. Bonus = optional, never blocks its parent. Shield (irreversible): parent completes only after its required subtasks.',
         'AI-locked (irrevocable): proof criteria; completing opens proof upload (1–5 JPG/PNG/WebP/PDF), 7/10 passes, every review costs AI usage. Rename, delete, postpone when overdue or reopen need Emergency Bypass. You cannot create, approve or complete these.',
         'Complete: tap the circle, 10 s Undo. A top-level task trashes its unprotected unfinished subtasks; reopening (same day) restores them.',

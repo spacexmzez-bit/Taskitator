@@ -768,6 +768,56 @@ body {
     background: rgba(0,0,0,0.15);
 }
 
+/* Phase 7.4: mention list under the title for ! (priority), # (projects) and @ (tags). */
+.nlp-host { position: relative; }
+.nlp-menu {
+    position: absolute;
+    inset-inline: 0;
+    top: 100%;
+    margin-top: 4px;
+    z-index: 40;
+    max-height: 232px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px;
+    background: var(--card-bg);
+    border: 1.5px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+.nlp-menu-head {
+    padding: 4px 10px 6px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.nlp-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 6px 10px;
+    border-radius: 7px;
+    font-size: 0.9rem;
+    color: var(--text-color);
+    cursor: pointer;
+}
+.nlp-menu-item.active { background: var(--accent-light, rgba(59, 130, 246, 0.16)); }
+.nlp-menu-item .priority-color-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.nlp-menu-rank {
+    min-width: 22px;
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+.nlp-menu-icon { width: 22px; text-align: center; flex: none; color: var(--text-muted); }
+.nlp-menu-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nlp-menu-new { font-size: 0.72rem; font-weight: 700; color: var(--primary); }
+
 .nlp-proj {
     background: color-mix(in srgb, var(--tk-acc) 20%, transparent);
     color: var(--tk-acc-3);

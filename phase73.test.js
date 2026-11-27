@@ -87,5 +87,5 @@ test('Copilot sends knowledge for the current page only; Friends and Universe ge
         assert.ok(k > 0 && k < a, f + ': knowledge loads before app.js');
     }
     assert.match(read('sw.js'), /'\.\/copilot-knowledge\.js'/);
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v78'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v79'/);
 });
