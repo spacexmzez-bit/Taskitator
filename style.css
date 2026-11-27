@@ -6081,3 +6081,44 @@ html[data-shell="study-plans"] .top-navbar #emergencyTriggerBtn { display: none;
 .lab-wrap .lab-card textarea, .lab-wrap .lab-inputs :is(input:not([type=file]), textarea) { font: inherit; font-size: .9rem; padding: 10px; border-radius: 10px; border: 1.5px solid var(--border-color); background: var(--input-bg, rgba(255,255,255,.04)); color: var(--text-color); }
 .lab-wrap .lab-card textarea:focus { border-color: var(--primary); outline: none; }
 .lab-wrap .lab-card[data-side=b] textarea:focus { border-color: var(--lab-b); }
+
+
+/* Phase 6.5: Auto create pops down under Consecutive; "?" panel explains both. */
+.consec-title-wrap { display: flex; align-items: center; gap: 8px; }
+.auto-create-wrap { display: grid; grid-template-rows: 1fr; }
+.auto-create-inner { min-height: 0; overflow: hidden; display: flex; justify-content: flex-end; padding-block: 2px 8px; }
+.auto-create-label { padding-inline-start: 10px; border-inline-start: 2px solid var(--border-color); }
+@supports selector(:has(*)) {
+    .auto-create-wrap {
+        grid-template-rows: 0fr;
+        opacity: 0;
+        transform: translateY(-6px);
+        visibility: hidden;
+        transition: grid-template-rows .2s ease, opacity .2s ease, transform .2s ease, visibility 0s linear .2s;
+    }
+    .form-group:has(#createConsecutiveToggle:checked) > .auto-create-wrap,
+    .form-group:has(#detailConsecutiveToggle:checked) > .auto-create-wrap {
+        grid-template-rows: 1fr;
+        opacity: 1;
+        transform: none;
+        visibility: visible;
+        transition-delay: 0s;
+    }
+}
+.consec-help { animation: consecHelpIn .18s ease-out; }
+.consec-help[hidden] { display: none; }
+.consec-help .consec-steps { margin: 0 0 8px; padding-inline-start: 18px; }
+.consec-help .consec-steps li { margin-bottom: 4px; }
+.consec-help code { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 1px 5px; font-size: .74rem; color: var(--text-color); }
+.consec-demo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; padding: 8px; border-radius: 6px; background: var(--card-bg); border: 1px dashed var(--border-color); }
+.consec-demo-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; opacity: .75; }
+.consec-demo-out { display: flex; flex-wrap: wrap; gap: 4px; flex: 1 1 100%; }
+.consec-demo-out span { padding: 2px 8px; border-radius: 999px; font-size: .74rem; background: var(--accent-light, var(--card-subtle)); color: var(--text-color); border: 1px solid var(--border-color); }
+.consec-demo-out span.is-skip { text-decoration: line-through; opacity: .5; }
+@keyframes consecHelpIn { from { opacity: 0; transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) {
+    .auto-create-wrap { transition: none !important; }
+    .consec-help { animation: none; }
+}
+html[data-motion="reduce"] .auto-create-wrap { transition: none !important; }
+html[data-motion="reduce"] .consec-help { animation: none; }

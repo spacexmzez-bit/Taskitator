@@ -794,7 +794,7 @@ window.TaskitatorComponents = Object.freeze({
             task.dynamic_priority_target=want;return true;
         }
         // Opening an editor makes no network call. Ticking the box performs the one online check.
-        function refreshConsecutive(){for(const id of ['createConsecutiveToggle','detailConsecutiveToggle']){const e=document.getElementById(id);if(e){e.disabled=false;e.title='';}}}
+        function refreshConsecutive(){for(const id of ['createConsecutiveToggle','detailConsecutiveToggle','createAutoCreateToggle','detailAutoCreateToggle']){const e=document.getElementById(id);if(e){e.disabled=false;e.title='';}}}
         function commitDraft(){
             if(!draft)return false;if(draft.session!==localStorage.getItem('taskitator_session_id')){window.TaskitatorNotify('Your account changed. Reopen the editor.');return false;}
             liveHost.tasks.reload();const current=liveHost.tasks.getAll(),original=JSON.parse(draft.originalTasks),changes=draft.tasks.filter(t=>JSON.stringify(t)!==JSON.stringify(original.find(o=>o.id===t.id)));
@@ -983,6 +983,30 @@ window.TaskitatorComponents = Object.freeze({
                     const nextVal = parseInt(digits, 10) + 1;
                     return `{num==${nextVal}}`;
                 });
+            },
+
+            // Phase 6.5 Auto create: {num==1-15} or {num==1-15_5_7} -> one raw title per number.
+            // Skips sit after underscores; a skip outside the range, or equal to the first or last number, is ignored.
+            RANGE_LIMIT: 100,
+            hasRangePattern(text) {
+                return /\{num==\s*\d+\s*-\s*\d+[^}]*\}/i.test(String(text || ''));
+            },
+            expandConsecutiveRange(text) {
+                const raw = String(text || '');
+                const m = /\{num==(\d+)-(\d+)((?:_\d+)*)\}/i.exec(raw);
+                if (!m) return { ok: false, error: 'Write the range as {num==1-15}, with skips after underscores like {num==1-15_5_7}. Nothing was created.' };
+                const from = parseInt(m[1], 10), to = parseInt(m[2], 10);
+                if (!(from <= to)) return { ok: false, error: `The range has to go up, for example {num==${to}-${from}}. Nothing was created.` };
+                const skip = new Set(m[3].split('_').filter(Boolean).map(Number));
+                const inside = [...skip].filter(n => n > from && n < to).length;
+                const count = (to - from + 1) - inside;
+                if (!(count <= this.RANGE_LIMIT)) return { ok: false, error: `Auto create makes at most ${this.RANGE_LIMIT} subtasks at once. Nothing was created.` };
+                const items = [];
+                for (let n = from; n <= to; n++) {
+                    if (n > from && n < to && skip.has(n)) continue;
+                    items.push(raw.slice(0, m.index) + `{num==${n}}` + raw.slice(m.index + m[0].length));
+                }
+                return { ok: true, items, count: items.length, from, to };
             }
         };
         window.TaskitatorSmartCriteria = SmartCriteriaEngine; // the Test lab uses the same title-variable rules
@@ -1441,7 +1465,7 @@ window.TaskitatorComponents = Object.freeze({
             const keep = new Set(['editTitleGroup', 'editDescGroup', 'editSubtasksGroup']);
             const parts = [...box.querySelectorAll(':scope > .form-group, :scope > fieldset, :scope > .ai-audit-card, :scope > #recurrenceTaskControls')].filter(e => !keep.has(e.id));
             const sub = document.getElementById('editSubtasksGroup');
-            for (const sel of ['.subtask-head-tools', '.quick-subtask-row', '#detailConsecutiveNotice', '.subtask-sort-tools']) { const e = sub?.querySelector(sel); if (e) parts.push(e); }
+            for (const sel of ['.subtask-head-tools', '.auto-create-wrap', '.quick-subtask-row', '#detailConsecutiveNotice', '.subtask-sort-tools']) { const e = sub?.querySelector(sel); if (e) parts.push(e); }
             for (const e of parts) { e.inert = on; e.classList.toggle('done-locked', on); }
             box.classList.toggle('is-done-locked', on);
             const note = document.getElementById('detailDoneNote');
@@ -2427,6 +2451,96 @@ window.TaskitatorComponents = Object.freeze({
                 });
             }
 
+            // Phase 6.5: Auto create. One Pro check, one confirm above AUTO_CONFIRM_OVER, then the caller's create() runs once for the whole range.
+            const AUTO_CONFIRM_OVER = 20;
+            async function autoCreateRange({ input, raw, generation, noticeEl, consecutiveCb, autoCb, create }) {
+                const show = msg => { if (noticeEl) { noticeEl.textContent = msg; noticeEl.style.display = 'block'; } };
+                const restore = () => { if (generation === input._quickGeneration && input.value === '') input.value = raw; };
+                if (!consecutiveCb?.checked || !autoCb?.checked) {
+                    show(consecutiveCb?.checked ? 'Turn on Auto create to create this range. Nothing was created.' : 'Tick Consecutive, then Auto create, to create a range. Nothing was created.');
+                    restore();
+                    return;
+                }
+                const exp = SmartCriteriaEngine.expandConsecutiveRange(raw);
+                if (!exp.ok) { show(exp.error); restore(); return; }
+                input._pendingConsecutiveText = raw;
+                try {
+                    const check = await grantConsecutive();
+                    if (!autoCb.checked) { restore(); return; }
+                    if (!check.allowed) {
+                        if (check.status !== 'error') autoCb.checked = false;
+                        show(check.message);
+                        restore();
+                        return;
+                    }
+                    if (exp.count > AUTO_CONFIRM_OVER) {
+                        const ok = typeof window.TaskitatorConfirm === 'function' && await window.TaskitatorConfirm({ title: `Create ${exp.count} subtasks?`, message: `This creates ${exp.count} subtasks, numbered ${exp.from} to ${exp.to}.`, confirmLabel: 'Create' });
+                        if (!ok) { restore(); return; }
+                    }
+                    if (noticeEl) { noticeEl.style.display = 'none'; noticeEl.textContent = ''; }
+                    create(exp.items);
+                } finally {
+                    if (input._pendingConsecutiveText === raw) delete input._pendingConsecutiveText;
+                    input.focus?.();
+                }
+            }
+            const buildDetailSubtask = (rawInput, parentTask, id, createdAt) => {
+                const isBonusSub = rawInput.includes('$$');
+                const cleanedBonusInput = rawInput.replace(/\$\$/g, '').trim();
+                const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(cleanedBonusInput);
+                const templateCriteria = parentTask.raw_proof_criteria || parentTask.proof_criteria || '';
+                let resolvedCriteria = '';
+                if (templateCriteria) resolvedCriteria = SmartCriteriaEngine.resolveCriteria(templateCriteria, varMap).resolvedText;
+                return {
+                    id,
+                    parent_id: parentTask.id,
+                    title: cleanTitle,
+                    raw_title: cleanedBonusInput,
+                    description: '',
+                    tags: [],
+                    priority_id: host.catalogs.lowestPriority(),
+                    project_id: parentTask.project_id || 'inbox',
+                    status: 'active',
+                    due_date: '',
+                    ai_locked: false,
+                    proof_criteria: resolvedCriteria,
+                    raw_proof_criteria: templateCriteria,
+                    strict_prerequisites: false,
+                    is_bonus: isBonusSub,
+                    created_at: createdAt,
+                    completed_at: null
+                };
+            };
+            const refreshDetailAfterAdd = () => {
+                const taskDetailModal = document.getElementById('taskDetailModal');
+                refreshDetailSubtaskList(activeDetailTaskId, taskDetailModal?._customRenderFn);
+                if (typeof taskDetailModal?._customRenderFn === 'function') taskDetailModal._customRenderFn();
+                else host.view.refresh();
+            };
+            const createDetailBatch = (items, parentTask) => {
+                const all = host.tasks.getAll(), used = new Set(all.map(t => t.id)), base = Date.now();
+                items.forEach((raw, i) => {
+                    let id;
+                    do { id = 'task_' + base + '_' + i.toString(36) + Math.random().toString(36).substr(2, 4); } while (used.has(id));
+                    used.add(id);
+                    all.push(buildDetailSubtask(raw, parentTask, id, new Date(base + i).toISOString()));
+                });
+                host.tasks.save();
+                refreshDetailAfterAdd();
+            };
+            const addBuilderItem = (rawText) => {
+                const subtaskBuilderList = document.getElementById('subtaskBuilderList');
+                if (!subtaskBuilderList) return;
+                const div = document.createElement('div');
+                div.className = 'subtask-builder-item';
+                div.innerHTML = `
+                                <input type="text" class="subtask-input-title" value="${TaskitatorSafety.escapeHtml(rawText)}" style="flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" required>
+                                <button type="button" class="action-del-btn">✕</button>
+                            `;
+                div.querySelector('.action-del-btn').addEventListener('click', () => div.remove());
+                subtaskBuilderList.appendChild(div);
+            };
+
             // Dual-Panel Sequential Quick-Subtask Inputs (Enter commits, maintains focus, consecutive auto-increment)
             const detailQuickSubtaskInput = document.getElementById('detailQuickSubtaskInput');
             if (detailQuickSubtaskInput) {
@@ -2451,38 +2565,20 @@ window.TaskitatorComponents = Object.freeze({
                         detailQuickSubtaskInput.value = '';
                         detailQuickSubtaskInput.focus();
 
-                        const isBonusSub = rawSubInput.includes('$$');
-                        const cleanedBonusInput = rawSubInput.replace(/\$\$/g, '').trim();
-
-                        const { cleanTitle, varMap } = SmartCriteriaEngine.parseTitle(cleanedBonusInput);
-
-                        const templateCriteria = parentTask.raw_proof_criteria || parentTask.proof_criteria || '';
-                        let resolvedCriteria = '';
-                        if (templateCriteria) {
-                            const res = SmartCriteriaEngine.resolveCriteria(templateCriteria, varMap);
-                            resolvedCriteria = res.resolvedText;
+                        // Phase 6.5: a range ({num==1-15}) is Auto create: never a literal subtask.
+                        if (SmartCriteriaEngine.hasRangePattern(rawSubInput)) {
+                            await autoCreateRange({
+                                input: detailQuickSubtaskInput, raw: rawSubInput, generation,
+                                noticeEl: document.getElementById('detailConsecutiveNotice'),
+                                consecutiveCb: document.getElementById('detailConsecutiveToggle'),
+                                autoCb: document.getElementById('detailAutoCreateToggle'),
+                                create: items => createDetailBatch(items, parentTask)
+                            });
+                            return;
                         }
 
                         const newTaskId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-                        const newSubtask = {
-                            id: newTaskId,
-                            parent_id: activeDetailTaskId,
-                            title: cleanTitle,
-                            raw_title: cleanedBonusInput,
-                            description: '',
-                            tags: [],
-                            priority_id: host.catalogs.lowestPriority(),
-                            project_id: parentTask.project_id || 'inbox',
-                            status: 'active',
-                            due_date: '',
-                            ai_locked: false,
-                            proof_criteria: resolvedCriteria,
-                            raw_proof_criteria: templateCriteria,
-                            strict_prerequisites: false,
-                            is_bonus: isBonusSub,
-                            created_at: new Date().toISOString(),
-                            completed_at: null
-                        };
+                        const newSubtask = buildDetailSubtask(rawSubInput, parentTask, newTaskId, new Date().toISOString());
 
                         host.tasks.getAll().push(newSubtask);
                         host.tasks.save();
@@ -2542,17 +2638,19 @@ window.TaskitatorComponents = Object.freeze({
                         createQuickSubtaskInput.value = '';
                         createQuickSubtaskInput.focus();
 
-                        const subtaskBuilderList = document.getElementById('subtaskBuilderList');
-                        if (subtaskBuilderList) {
-                            const div = document.createElement('div');
-                            div.className = 'subtask-builder-item';
-                            div.innerHTML = `
-                                <input type="text" class="subtask-input-title" value="${TaskitatorSafety.escapeHtml(rawText)}" style="flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);" required>
-                                <button type="button" class="action-del-btn">✕</button>
-                            `;
-                            div.querySelector('.action-del-btn').addEventListener('click', () => div.remove());
-                            subtaskBuilderList.appendChild(div);
+                        // Phase 6.5: a range ({num==1-15}) is Auto create: never a literal subtask.
+                        if (SmartCriteriaEngine.hasRangePattern(rawText)) {
+                            await autoCreateRange({
+                                input: createQuickSubtaskInput, raw: rawText, generation,
+                                noticeEl: document.getElementById('createConsecutiveNotice'),
+                                consecutiveCb: document.getElementById('createConsecutiveToggle'),
+                                autoCb: document.getElementById('createAutoCreateToggle'),
+                                create: items => items.forEach(addBuilderItem)
+                            });
+                            return;
                         }
+
+                        addBuilderItem(rawText);
 
                         const consecutiveCb = document.getElementById('createConsecutiveToggle');
                         const noticeEl = document.getElementById('createConsecutiveNotice');
@@ -2608,10 +2706,47 @@ window.TaskitatorComponents = Object.freeze({
             };
             bindConsecutiveToggle('createConsecutiveToggle', 'createConsecutiveNotice');
             bindConsecutiveToggle('detailConsecutiveToggle', 'detailConsecutiveNotice');
+            // Phase 6.5: Auto create sits under Consecutive (CSS shows it while Consecutive is ticked). Ticking Consecutive
+            // always starts with Auto create off; unticking turns it off. Ticking Auto create runs the same Pro check.
+            const bindAutoCreateToggle = (autoId, consecutiveId, noticeId) => {
+                const autoEl = document.getElementById(autoId), consecutiveEl = document.getElementById(consecutiveId), noticeEl = document.getElementById(noticeId);
+                if (!autoEl || !consecutiveEl) return;
+                autoEl.disabled = true;
+                consecutiveEl.addEventListener('change', () => { autoEl.checked = false; });
+                autoEl.addEventListener('change', async () => {
+                    if (!autoEl.checked) return;
+                    const check = await grantConsecutive();
+                    if (check.allowed) { if (noticeEl) { noticeEl.style.display = 'none'; noticeEl.textContent = ''; } }
+                    else {
+                        autoEl.checked = false;
+                        if (noticeEl) { noticeEl.textContent = check.message; noticeEl.style.display = 'block'; }
+                    }
+                });
+            };
+            bindAutoCreateToggle('createAutoCreateToggle', 'createConsecutiveToggle', 'createConsecutiveNotice');
+            bindAutoCreateToggle('detailAutoCreateToggle', 'detailConsecutiveToggle', 'detailConsecutiveNotice');
+            // Phase 6.5: "?" panel next to the subtasks label explains Consecutive and Auto create step by step.
+            const consecutiveHelpHtml = '<ol class="consec-steps">' +
+                '<li><b>Tick Consecutive</b> (Pro) beside the subtask field.</li>' +
+                '<li><b>Type a title with a number</b>, like <code>Lesson {num==1}</code>, and press Enter or +. The field refills with <code>Lesson {num==2}</code>, so keep pressing Enter.</li>' +
+                '<li><b>Auto create</b> (Pro) appears under Consecutive. Tick it, type a range like <code>Lesson {num==1-5_3}</code> and press Enter once.</li></ol>' +
+                '<div class="consec-demo"><code>Lesson {num==1-5_3}</code><span class="consec-demo-label">creates</span>' +
+                '<div class="consec-demo-out"><span>Lesson 1</span><span>Lesson 2</span><span class="is-skip">Lesson 3</span><span>Lesson 4</span><span>Lesson 5</span></div></div>' +
+                '<p>Skips go after underscores (<code>_3</code>, <code>_5_7</code>). A skip outside the range, or equal to the first or last number, is ignored. Auto create makes up to 100 subtasks at once and asks first above 20. Without Auto create ticked, a range creates nothing.</p>';
+            for (const [btnId, helpId] of [['createConsecHelpBtn', 'createConsecHelp'], ['detailConsecHelpBtn', 'detailConsecHelp']]) {
+                const btn = document.getElementById(btnId), help = document.getElementById(helpId);
+                if (!btn || !help) continue;
+                help.innerHTML = consecutiveHelpHtml;
+                btn.addEventListener('click', e => {
+                    e.preventDefault();
+                    help.hidden = !help.hidden;
+                    btn.setAttribute('aria-expanded', String(!help.hidden));
+                });
+            }
             for(const id of ['createQuickSubtaskInput','detailQuickSubtaskInput']){const input=document.getElementById(id);if(input){input.setAttribute?.('enterkeyhint','done');input.addEventListener('beforeinput',e=>{if(e.inputType==='insertLineBreak'&&!e.isComposing){e.preventDefault();input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));}});}}
             void refreshConsecutive();
             let proExpiry=null;
-            window.addEventListener('taskitator-pro-status',event=>{clearTimeout(proExpiry);const s=event.detail,allowed=s?.isPro===true&&s.status==='active'&&(s.expires_at===null||s.expires_at>Date.now());for(const id of ['createConsecutiveToggle','detailConsecutiveToggle']){const e=document.getElementById(id);if(e){e.disabled=!allowed;if(!allowed)e.checked=false;}}if(allowed&&s.expires_at!==null)proExpiry=setTimeout(()=>{void refreshConsecutive();},Math.min(2147483647,s.expires_at-Date.now()));});
+            window.addEventListener('taskitator-pro-status',event=>{clearTimeout(proExpiry);const s=event.detail,allowed=s?.isPro===true&&s.status==='active'&&(s.expires_at===null||s.expires_at>Date.now());for(const id of ['createConsecutiveToggle','detailConsecutiveToggle','createAutoCreateToggle','detailAutoCreateToggle']){const e=document.getElementById(id);if(e){e.disabled=!allowed;if(!allowed)e.checked=false;}}if(allowed&&s.expires_at!==null)proExpiry=setTimeout(()=>{void refreshConsecutive();},Math.min(2147483647,s.expires_at-Date.now()));});
             window.addEventListener('beforeunload',e=>{if(dirty()){e.preventDefault();e.returnValue='';}});
             document.addEventListener('keydown',e=>{if(e.key==='Escape'&&draft&&document.getElementById('taskDetailModal')?.classList.contains('open')){e.preventDefault();e.stopImmediatePropagation();if(discardDraft()){document.getElementById('taskDetailModal').classList.remove('open');activeDetailTaskId=null;}}},true);
             document.addEventListener('click',e=>{if(!draft)return;const link=e.target.closest?.('a[href]');if(link&&!discardDraft()){e.preventDefault();e.stopImmediatePropagation();}},true);

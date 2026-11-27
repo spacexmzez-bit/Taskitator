@@ -9,9 +9,9 @@ test('the Pro check is a single shared promise, dropped on denial or error and l
     assert.match(components, /if\(held&&!\(held\.expires_at!==null&&held\.expires_at<=Date\.now\(\)\)\)return held\.promise;/);
     assert.match(components, /if\(check\.allowed\)grant\.expires_at=check\.expires_at\?\?null;/);
     assert.match(components, /grant\.promise\.then\(check=>\{if\(!check\.allowed\)drop\(\);\},drop\);/);
-    // Only the grant helper reaches the server check; the tick and both quick-subtask handlers use it.
+    // Only the grant helper reaches the server check; the Consecutive tick, the Auto create tick (Phase 6.5), both quick-subtask handlers and the Auto create runner use it.
     assert.equal((components.match(/checkConsecutiveEntitlement\(\)/g) || []).length, 1);
-    assert.equal((components.match(/await grantConsecutive\(\)/g) || []).length, 3);
+    assert.equal((components.match(/await grantConsecutive\(\)/g) || []).length, 5);
 });
 
 test('opening an editor makes no Pro check', () => {

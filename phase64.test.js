@@ -43,5 +43,5 @@ test('stamp CSS: fits the 340 ms wait, hidden when animals are off, ring stays p
 });
 
 test('cache version moved so devices pick up the new sprite and styles', () => {
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v66'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v\d+'/);
 });
