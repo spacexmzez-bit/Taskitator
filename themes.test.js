@@ -55,7 +55,7 @@ function boot({ stored, tier, now = Date.now(), lowEnd = false } = {}) {
     return { A: window.TaskitatorAppearance, html, meta, toasts, timers, status, saved, store };
 }
 
-test('registry schema: unique ids, valid tiers/status, families and sprite exist, blue is free default', () => {
+test('registry schema: unique ids, valid tiers/status, families and sprite exist, savannah is free default', () => {
     const R = loadRegistry();
     const ids = R.THEMES.map(t => t.id);
     assert.equal(new Set(ids).size, ids.length);
@@ -67,26 +67,26 @@ test('registry schema: unique ids, valid tiers/status, families and sprite exist
         assert.match(t.metaThemeColor, /^#[0-9a-f]{6}$/i);
         assert.match(read('palettes.css'), new RegExp(`html\\[data-palette="${t.palette}"\\]`), 'palette block for ' + t.id);
     }
-    assert.equal(R.DEFAULT_THEME, 'blue');
-    assert.equal(R.byId('blue').tier, 'free');
-    assert.equal(R.byId('green').tier, 'pro');
+    assert.equal(R.DEFAULT_THEME, 'savannah');
+    assert.equal(R.byId('savannah').tier, 'free');
+    assert.equal(R.byId('desert').tier, 'pro');
 });
 
 test('themesAllowed: free, pro, max, expired and unknown plans', () => {
     const R = loadRegistry();
-    assert.deepEqual([...R.themesAllowed('free')], ['blue']);
-    assert.deepEqual([...R.themesAllowed('pro')], ['blue', 'green']);
-    assert.deepEqual([...R.themesAllowed('max')], ['blue', 'green']);
-    assert.deepEqual([...R.themesAllowed('expired')], ['blue']);
-    assert.deepEqual([...R.themesAllowed(undefined)], ['blue']);
-    assert.deepEqual([...R.themesAllowed('unknown')], ['blue']);
+    assert.deepEqual([...R.themesAllowed('free')], ['savannah']);
+    assert.deepEqual([...R.themesAllowed('pro')], ['savannah', 'desert', 'jungle', 'marina', 'fictional']);
+    assert.deepEqual([...R.themesAllowed('max')], ['savannah', 'desert', 'jungle', 'marina', 'fictional']);
+    assert.deepEqual([...R.themesAllowed('expired')], ['savannah']);
+    assert.deepEqual([...R.themesAllowed(undefined)], ['savannah']);
+    assert.deepEqual([...R.themesAllowed('unknown')], ['savannah']);
     const now = 1_000_000;
-    assert.deepEqual([...R.allowedFromStatus({ isPro: true, status: 'active', expires_at: now - 1 }, now)], ['blue'], 'expired Pro');
-    assert.deepEqual([...R.allowedFromStatus({ isPro: true, status: 'active', expires_at: null }, now)], ['blue', 'green']);
+    assert.deepEqual([...R.allowedFromStatus({ isPro: true, status: 'active', expires_at: now - 1 }, now)], ['savannah'], 'expired Pro');
+    assert.deepEqual([...R.allowedFromStatus({ isPro: true, status: 'active', expires_at: null }, now)], ['savannah', 'desert', 'jungle', 'marina', 'fictional']);
     // A list claiming a Pro theme cannot unlock it for an inactive plan.
-    assert.deepEqual([...R.allowedFromStatus({ isPro: false, status: 'inactive', themes: { allowed: ['blue', 'green'] } }, now)], ['blue']);
-    assert.equal(R.validTheme('nope'), 'blue');
-    assert.equal(R.validTheme(42), 'blue');
+    assert.deepEqual([...R.allowedFromStatus({ isPro: false, status: 'inactive', themes: { allowed: ['savannah', 'desert', 'jungle', 'marina', 'fictional'], catalog_version: 2 } }, now)], ['savannah']);
+    assert.equal(R.validTheme('nope'), 'savannah');
+    assert.equal(R.validTheme(42), 'savannah');
 });
 
 test('offline status computes the same theme block as the Worker', () => {
@@ -94,17 +94,17 @@ test('offline status computes the same theme block as the Worker', () => {
     assert.match(core, /themes: themes\('free'\)/);
     assert.match(core, /themes: themes\('pro'\)/);
     const R = loadRegistry();
-    assert.deepEqual(JSON.parse(JSON.stringify(R.statusFor('free'))), { allowed: ['blue'], default: 'blue', catalog_version: 1 });
+    assert.deepEqual(JSON.parse(JSON.stringify(R.statusFor('free'))), { allowed: ['savannah'], default: 'savannah', catalog_version: 2 });
 });
 
-test('appearance storage validates, migrates and falls back to blue', () => {
+test('appearance storage validates, migrates and falls back to savannah', () => {
     const { A, html, meta } = boot({ stored: '{not json' });
-    assert.equal(A.read().theme, 'blue');
-    assert.equal(html.dataset.palette, 'blue');
+    assert.equal(A.read().theme, 'savannah');
+    assert.equal(html.dataset.palette, 'savannah');
     assert.equal(html.dataset.family, 'nature');
-    assert.equal(meta.content, '#0a1119');
+    assert.equal(meta.content, '#0f1411');
     const n = A.normalize({ theme: 'purple', effective: 9, anim: { bird: 'yes', clouds: false }, bird_speed: 99, extra: 1 });
-    assert.equal(n.theme, 'blue'); assert.equal(n.effective, 'blue');
+    assert.equal(n.theme, 'savannah'); assert.equal(n.effective, 'savannah');
     assert.equal(n.anim.clouds, false); assert.equal(typeof n.anim.bird, 'boolean');
     assert.equal(n.bird_speed, 7); assert.equal(A.normalize({ bird_speed: 2 }).bird_speed, 7); assert.equal(A.setBirdSpeed, undefined); assert.equal(n.extra, undefined); assert.equal(n.v, 1);
 });
@@ -123,53 +123,53 @@ test('appearance key is per device: never in sync, snapshots, account archives o
     assert.ok(!accountKeys.includes('taskitator_appearance'));
     assert.ok(!core.match(/const SNAPSHOT_KEYS = \[([^\]]*)\]/)[1].includes('appearance'));
     assert.ok(!/appearance/.test(core.match(/function cleanSettings[\s\S]*?\n    }\n/)?.[0] || ''));
-    // "Clear this browser" wipes localStorage, which resets the theme to Blue.
+    // "Clear this browser" wipes localStorage, which resets the theme to Savannah.
     assert.match(read('settings.html'), /localStorage\.clear\(\);/);
 });
 
 test('free users cannot select a Pro theme; Pro users can', () => {
     const free = boot();
-    assert.equal(free.A.setTheme('green'), false);
-    assert.equal(free.A.read().theme, 'blue');
+    assert.equal(free.A.setTheme('desert'), false);
+    assert.equal(free.A.read().theme, 'savannah');
     const pro = boot();
-    pro.status({ isPro: true, status: 'active', expires_at: null, themes: { allowed: ['blue', 'green'] } });
-    assert.equal(pro.A.setTheme('green'), true);
-    assert.equal(pro.html.dataset.palette, 'green');
-    assert.equal(pro.meta.content, '#0f1410');
+    pro.status({ isPro: true, status: 'active', expires_at: null, themes: { allowed: ['savannah', 'desert', 'jungle', 'marina', 'fictional'], catalog_version: 2 } });
+    assert.equal(pro.A.setTheme('desert'), true);
+    assert.equal(pro.html.dataset.palette, 'desert');
+    assert.equal(pro.meta.content, '#15110a');
 });
 
 test('lapse: preference kept, effective reverts once with a toast, renewal restores it', () => {
-    const b = boot({ stored: { v: 1, theme: 'green', effective: 'green' } });
-    assert.equal(b.html.dataset.palette, 'green', 'boot applies the stored effective theme (no flash)');
+    const b = boot({ stored: { v: 1, theme: 'desert', effective: 'desert' } });
+    assert.equal(b.html.dataset.palette, 'desert', 'boot applies the stored effective theme (no flash)');
     b.status({ isPro: false, status: 'expired' });
-    assert.equal(b.saved().theme, 'green');
-    assert.equal(b.saved().effective, 'blue');
-    assert.equal(b.html.dataset.palette, 'blue');
-    assert.deepEqual(b.toasts, ['Pro ended, theme set to Blue.']);
+    assert.equal(b.saved().theme, 'desert');
+    assert.equal(b.saved().effective, 'savannah');
+    assert.equal(b.html.dataset.palette, 'savannah');
+    assert.deepEqual(b.toasts, ['Pro ended, theme set to Savannah.']);
     b.status({ isPro: false, status: 'expired' });
     assert.equal(b.toasts.length, 1, 'toast is one-time');
     b.status({ isPro: true, status: 'active', expires_at: null });
-    assert.equal(b.saved().effective, 'green');
-    assert.equal(b.html.dataset.palette, 'green');
+    assert.equal(b.saved().effective, 'desert');
+    assert.equal(b.html.dataset.palette, 'desert');
 });
 
 test('network failure keeps the theme; an expired cached tier cannot keep a Pro theme across restarts', () => {
-    const kept = boot({ stored: { v: 1, theme: 'green', effective: 'green' }, tier: { tier: 'pro', exp: null } });
-    assert.equal(kept.html.dataset.palette, 'green', 'no status event (network error) keeps the current theme');
+    const kept = boot({ stored: { v: 1, theme: 'desert', effective: 'desert' }, tier: { tier: 'pro', exp: null } });
+    assert.equal(kept.html.dataset.palette, 'desert', 'no status event (network error) keeps the current theme');
     const now = Date.now();
-    const gone = boot({ stored: { v: 1, theme: 'green', effective: 'green' }, tier: { tier: 'pro', exp: now - 1000 }, now });
-    assert.equal(gone.html.dataset.palette, 'blue');
-    assert.equal(gone.saved().theme, 'green', 'preference survives');
+    const gone = boot({ stored: { v: 1, theme: 'desert', effective: 'desert' }, tier: { tier: 'pro', exp: now - 1000 }, now });
+    assert.equal(gone.html.dataset.palette, 'savannah');
+    assert.equal(gone.saved().theme, 'desert', 'preference survives');
 });
 
 test('Pro expiring mid-session schedules a re-check at expires_at', () => {
     const now = Date.now();
-    const b = boot({ stored: { v: 1, theme: 'green', effective: 'green' }, now });
+    const b = boot({ stored: { v: 1, theme: 'desert', effective: 'desert' }, now });
     b.status({ isPro: true, status: 'active', expires_at: now + 60000 });
     const timer = b.timers.find(t => t.ms >= 60000 && t.ms < 61000);
     assert.ok(timer, 'expiry timer scheduled');
     timer.f();
-    assert.equal(b.html.dataset.palette, 'blue');
+    assert.equal(b.html.dataset.palette, 'savannah');
 });
 
 test('sprite integrity: every semantic key resolves to a non-empty symbol with a real viewBox', () => {
@@ -184,14 +184,14 @@ test('sprite integrity: every semantic key resolves to a non-empty symbol with a
     const icons = read('icons.js');
     const map = icons.match(/nature: \{([\s\S]*?)\n        \}/)[1];
     for (const [, key, id] of map.matchAll(/'([a-z0-9-]+)': '([a-z0-9-]+)'/g)) assert.ok(symbols.has(id), `icon key ${key} -> ${id}`);
-    for (const a of icons.match(/const ANIMALS = \[([^\]]+)\]/)[1].match(/'([a-z]+)'/g)) assert.ok(symbols.has('nt-a-' + a.slice(1, -1)), a);
+    for (const a of (icons.match(/const PACKS = Object\.freeze\(\{([\s\S]*?)\n    \}\);/)[1].match(/'([a-z]+)'/g))) assert.ok(symbols.has('nt-a-' + a.slice(1, -1)), a);
     for (const id of ['nt-bird0', 'nt-bird1', 'nt-bird2', 'nt-leaf', 'nt-brand-hybrid', 'nt-brand-mascot', 'nt-brand-letter', 'nt-brand-text']) assert.ok(symbols.has(id), id);
 });
 
 test('every #ic- reference in chrome resolves to a mapped icon key', () => {
     const icons = read('icons.js');
     const keys = new Set([...icons.match(/nature: \{([\s\S]*?)\n        \}/)[1].matchAll(/'([a-z0-9-]+)': '/g)].map(m => m[1]));
-    const animals = icons.match(/const ANIMALS = \[([^\]]+)\]/)[1].match(/'([a-z]+)'/g).map(a => 'animal-' + a.slice(1, -1));
+    const animals = (icons.match(/const PACKS = Object\.freeze\(\{([\s\S]*?)\n    \}\);/)[1].match(/'([a-z]+)'/g)).map(a => 'animal-' + a.slice(1, -1));
     animals.forEach(k => keys.add(k)); ['bird0', 'bird1', 'bird2'].forEach(k => keys.add(k));
     for (const f of ['index.html', 'components.html', 'settings.html', 'legal.html', 'login.html', 'app.js', 'components.js', 'pro.js', 'nature.js']) {
         for (const [, key] of read(f).matchAll(/#ic-([a-z0-9-]+)/g)) assert.ok(keys.has(key), `${f}: #ic-${key}`);

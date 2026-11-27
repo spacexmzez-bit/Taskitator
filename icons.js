@@ -34,15 +34,41 @@
             'brand-hybrid': 'nt-brand-hybrid', 'brand-mascot': 'nt-brand-mascot', 'brand-letter': 'nt-brand-letter', 'brand-text': 'nt-brand-text'
         }
     };
-    // Animal completion buttons, in priority order (rank 1 first). Extra ranks wrap around.
-    const ANIMALS = ['lion', 'tiger', 'wolf', 'bear', 'eagle', 'fox', 'elephant', 'rhino', 'gorilla', 'deer', 'owl', 'zebra', 'giraffe', 'hippo', 'roo', 'croc'];
+    // Phase 6.7: one animal pack per theme (theme id = pack id). Completion buttons draw from the theme's pack plus any
+    // Icon mix extras (Pro), weighted so the theme's own pack always leads.
+    const PACKS = Object.freeze({
+        savannah: Object.freeze(['lion', 'elephant', 'giraffe', 'zebra', 'rhino', 'hippo', 'hyena', 'buffalo', 'ostrich']),
+        desert: Object.freeze(['camel', 'fox', 'snake', 'lizard', 'vulture', 'meerkat', 'tortoise', 'coyote', 'falcon']),
+        jungle: Object.freeze(['gorilla', 'tiger', 'toucan', 'parrot', 'frog', 'chameleon', 'monkey', 'sloth', 'crocodile']),
+        marina: Object.freeze(['whale', 'orca', 'dolphin', 'shark', 'seal', 'walrus', 'turtle', 'penguin', 'swordfish']),
+        fictional: Object.freeze(['dragon', 'yeti', 'unicorn', 'phoenix', 'griffin', 'minotaur', 'pegasus', 'werewolf', 'sphinx'])
+    });
+    const ANIMALS = Object.freeze(Object.values(PACKS).flat());
+    // Share of tasks per pack, theme's pack first, by number of packs in use.
+    const WEIGHTS = Object.freeze({ 1: [100], 2: [60, 40], 3: [40, 30, 30], 4: [34, 22, 22, 22], 5: [28, 18, 18, 18, 18] });
+    // Footprint archetype per animal (Phase 6.4 stamp): 12 print symbols shared by all 45 animals.
+    const PRINT_OF = Object.freeze({
+        lion: 'cat', tiger: 'cat', sphinx: 'cat',
+        fox: 'canine', coyote: 'canine', hyena: 'canine', werewolf: 'canine', meerkat: 'canine',
+        gorilla: 'hand', monkey: 'hand', yeti: 'hand', sloth: 'hand',
+        camel: 'hoof', giraffe: 'hoof', buffalo: 'hoof', minotaur: 'hoof',
+        zebra: 'horse', unicorn: 'horse', pegasus: 'horse',
+        elephant: 'pad', rhino: 'heavy', hippo: 'heavy',
+        vulture: 'bird', falcon: 'bird', toucan: 'bird', parrot: 'bird', ostrich: 'bird', phoenix: 'bird', griffin: 'bird',
+        lizard: 'reptile', tortoise: 'reptile', chameleon: 'reptile', crocodile: 'reptile', dragon: 'reptile',
+        frog: 'webbed', penguin: 'webbed',
+        whale: 'wave', orca: 'wave', dolphin: 'wave', shark: 'wave', seal: 'wave', walrus: 'wave', turtle: 'wave', swordfish: 'wave',
+        snake: 'trail'
+    });
+    const PRINTS = Object.freeze([...new Set(Object.values(PRINT_OF))]);
     const BIRD_FRAMES = ['nt-bird0', 'nt-bird1', 'nt-bird2'];
 
     const family = () => document.documentElement.dataset.family || document.documentElement.getAttribute('data-family') || 'nature';
     const mapFor = fam => MAPS[fam] || MAPS.nature;
     // Animals, bird frames and the leaf are semantic keys too.
     for (const fam of Object.keys(MAPS)) {
-        ANIMALS.forEach(a => { MAPS[fam]['animal-' + a] = 'nt-a-' + a; MAPS[fam]['print-' + a] = 'nt-f-' + a; });
+        ANIMALS.forEach(a => { MAPS[fam]['animal-' + a] = 'nt-a-' + a; });
+        PRINTS.forEach(p => { MAPS[fam]['print-' + p] = 'nt-f-' + p; });
         BIRD_FRAMES.forEach((b, i) => { MAPS[fam]['bird' + i] = b; });
     }
     // Markup always points at the family-neutral alias #ic-<key>; the alias is built from
@@ -75,16 +101,46 @@
     function glyph(value, cls) {
         return has(value) ? node(value, cls) : document.createTextNode(value == null ? '' : String(value));
     }
-    // Random but stable: the same task always gets the same animal (hash of its id), so re-renders never reshuffle.
-    function animalForId(id) {
-        let h = 2166136261;
-        for (const c of String(id ?? '')) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
-        return ANIMALS[(h >>> 0) % ANIMALS.length];
+    // Packs in use: the theme's pack first, then Icon mix extras (theme-boot.js decides what is allowed).
+    function packs() {
+        try {
+            const list = window.TaskitatorAppearance?.packs?.() || [];
+            const ok = list.filter(p => PACKS[p]);
+            if (ok.length) return ok.slice(0, 5);
+        } catch { /* fall through */ }
+        const theme = document.documentElement.dataset.theme;
+        return [PACKS[theme] ? theme : 'savannah'];
+    }
+    const fnv = s => { let h = 2166136261; for (const c of String(s ?? '')) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
+    // Random but stable: the same task always gets the same animal for the same packs (hash of its id), so
+    // re-renders never reshuffle. One hash picks the pack by weight, a second picks the animal inside it.
+    function animalForId(id, list) {
+        const use = Array.isArray(list) && list.length ? list : packs();
+        const w = WEIGHTS[use.length] || WEIGHTS[1];
+        let roll = fnv(id) % 100, i = 0;
+        while (i < w.length - 1 && roll >= w[i]) { roll -= w[i]; i++; }
+        const pack = PACKS[use[i]] || PACKS.savannah;
+        return pack[fnv('a:' + String(id ?? '')) % pack.length];
     }
     function animalFor(rank) {
         const n = Number.isInteger(rank) && rank > 0 ? rank - 1 : 0;
-        return ANIMALS[n % ANIMALS.length];
+        const pack = PACKS[packs()[0]];
+        return pack[n % pack.length];
     }
+    // A task's completion animal. The task id is kept on the node so a theme or Icon mix change can redraw it in place.
+    function taskAnimal(id, cls) {
+        const el = animal(animalForId(id), cls);
+        if (id != null && el.setAttribute) el.setAttribute('data-seed', String(id));
+        return el;
+    }
+    function redrawAnimals(root) {
+        (root || document).querySelectorAll('.tk-animal[data-seed]').forEach(el => {
+            const use = el.querySelector('use');
+            const href = '#ic-animal-' + animalForId(el.getAttribute('data-seed'));
+            if (use && use.getAttribute('href') !== href) use.setAttribute('href', href);
+        });
+    }
+    window.addEventListener('taskitator-appearance', () => redrawAnimals());
     function animal(rankOrName, cls) {
         const name = typeof rankOrName === 'string' && ANIMALS.includes(rankOrName) ? rankOrName : animalFor(rankOrName);
         return node('animal-' + name, 'tk-animal' + (cls ? ' ' + cls : ''));
@@ -99,9 +155,10 @@
             if ((document.documentElement.getAttribute('data-fx-off') || '').split(/\s+/).includes('animals')) return false;
             const href = btn.querySelector('.tk-animal use')?.getAttribute('href') || '';
             const name = href.replace('#ic-animal-', '');
-            if (!ANIMALS.includes(name) || !has('print-' + name)) return false;
+            const kind = PRINT_OF[name];
+            if (!kind || !has('print-' + kind)) return false;
             btn.querySelectorAll('.tk-print').forEach(n => n.remove());
-            const print = node('print-' + name, 'tk-print');
+            const print = node('print-' + kind, 'tk-print');
             btn.appendChild(print);
             setTimeout(() => print.remove(), STAMP_MS + 260);
             return true;
@@ -118,7 +175,7 @@
             if (p && row) row.style.setProperty('--pc', p.color);
             if (checkBtn) {
                 if (task?.ai_locked) checkBtn.classList.add('is-ai-locked');
-                if (!checkBtn.querySelector('.tk-animal')) checkBtn.appendChild(animal(task?.id != null ? animalForId(task.id) : (Number(p?.rank) || 1)));
+                if (!checkBtn.querySelector('.tk-animal')) checkBtn.appendChild(task?.id != null ? taskAnimal(task.id) : animal(Number(p?.rank) || 1));
             }
         } catch { /* cosmetic only */ }
     }
@@ -167,5 +224,5 @@
     }
     sprite();
 
-    window.TaskitatorIcons = Object.freeze({ MAPS, ANIMALS, BIRD_FRAMES, icon, node, glyph, has, symbol, animal, animalFor, animalForId, stamp, STAMP_MS, decorateTask, ready: () => sprite() });
+    window.TaskitatorIcons = Object.freeze({ MAPS, PACKS, ANIMALS, WEIGHTS, PRINT_OF, PRINTS, packs, taskAnimal, redrawAnimals, BIRD_FRAMES, icon, node, glyph, has, symbol, animal, animalFor, animalForId, stamp, STAMP_MS, decorateTask, ready: () => sprite() });
 })();

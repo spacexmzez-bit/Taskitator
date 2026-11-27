@@ -8,8 +8,8 @@
    server decides which themes an account may use, the client enforces it. */
 (function (root) {
     'use strict';
-    const CATALOG_VERSION = 1;
-    const DEFAULT_THEME = 'blue';
+    const CATALOG_VERSION = 2;
+    const DEFAULT_THEME = 'savannah';
 
     const FAMILIES = Object.freeze({
         nature: Object.freeze({ id: 'nature', sprite: 'image/nature_sprites/sprite.svg', sceneSet: 'nature' }),
@@ -20,11 +20,19 @@
 
     // tier: 'free' | 'pro'. status: 'live' | 'hidden' (hidden = kept but never offered).
     // entitlementKey is reserved for individually unlocked themes (not used yet).
+    // Phase 6.7: each theme also names its animal pack (the same id; see PACKS in icons.js). Blue/Green were removed
+    // without migration: a stored unknown id falls back to the default through validTheme().
     const THEMES = Object.freeze([
-        Object.freeze({ id: 'blue', label: 'Blue', family: 'nature', palette: 'blue', tier: 'free', status: 'live', order: 1,
-            swatch: Object.freeze(['#0a1119', '#304d74', '#6e9bd5']), metaThemeColor: '#0a1119', spriteKey: 'nature', sceneSet: 'nature', since: 1 }),
-        Object.freeze({ id: 'green', label: 'Green', family: 'nature', palette: 'green', tier: 'pro', status: 'live', order: 2,
-            swatch: Object.freeze(['#0f1410', '#6a553a', '#c9b27a']), metaThemeColor: '#0f1410', spriteKey: 'nature', sceneSet: 'nature', since: 1 })
+        Object.freeze({ id: 'savannah', label: 'Savannah', family: 'nature', palette: 'savannah', tier: 'free', status: 'live', order: 1,
+            swatch: Object.freeze(['#0f1411', '#55695a', '#a9bea9']), metaThemeColor: '#0f1411', spriteKey: 'nature', sceneSet: 'nature', since: 2 }),
+        Object.freeze({ id: 'desert', label: 'Desert', family: 'nature', palette: 'desert', tier: 'pro', status: 'live', order: 2,
+            swatch: Object.freeze(['#15110a', '#7a6236', '#d4b97a']), metaThemeColor: '#15110a', spriteKey: 'nature', sceneSet: 'nature', since: 2 }),
+        Object.freeze({ id: 'jungle', label: 'Jungle', family: 'nature', palette: 'jungle', tier: 'pro', status: 'live', order: 3,
+            swatch: Object.freeze(['#0b0e06', '#4a5726', '#a7b85a']), metaThemeColor: '#0b0e06', spriteKey: 'nature', sceneSet: 'nature', since: 2 }),
+        Object.freeze({ id: 'marina', label: 'Marina', family: 'nature', palette: 'marina', tier: 'pro', status: 'live', order: 4,
+            swatch: Object.freeze(['#071219', '#2b5a72', '#6fb3d2']), metaThemeColor: '#071219', spriteKey: 'nature', sceneSet: 'nature', since: 2 }),
+        Object.freeze({ id: 'fictional', label: 'Fictional', family: 'nature', palette: 'fictional', tier: 'pro', status: 'live', order: 5,
+            swatch: Object.freeze(['#140a0b', '#6e2a35', '#e3826f']), metaThemeColor: '#140a0b', spriteKey: 'nature', sceneSet: 'nature', since: 2 })
     ]);
 
     const byId = id => THEMES.find(t => t.id === id) || null;
@@ -55,7 +63,8 @@
     function allowedFromStatus(status, now) {
         const plan = planFromStatus(status, now);
         const liveIds = live().map(t => t.id);
-        const server = status && status.themes && Array.isArray(status.themes.allowed) ? status.themes.allowed : null;
+        // A Worker on an older catalog (e.g. still listing blue/green) is ignored: the plan decides until it is redeployed.
+        const server = status && status.themes && Array.isArray(status.themes.allowed) && Number(status.themes.catalog_version) >= CATALOG_VERSION ? status.themes.allowed : null;
         const list = server ? server.filter(id => liveIds.includes(id)) : themesAllowed(plan);
         // Defence in depth: an inactive plan never unlocks a Pro theme, whatever the list says.
         const safe = list.filter(id => byId(id).tier === 'free' || isProPlan(plan));

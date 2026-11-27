@@ -3,18 +3,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const read = f => fs.readFileSync(new URL('./' + f, import.meta.url), 'utf8');
-const animals = read('icons.js').match(/const ANIMALS = \[([^\]]+)\]/)[1].match(/'([a-z]+)'/g).map(a => a.slice(1, -1));
+// Phase 6.7: five packs of 9 animals; footprints are shared archetypes (PRINT_OF in icons.js).
+const icons67 = read('icons.js');
+const animals = icons67.match(/const PACKS = Object\.freeze\(\{([\s\S]*?)\n    \}\);/)[1].match(/'([a-z]+)'/g).map(a => a.slice(1, -1));
+const printOf = Object.fromEntries([...icons67.match(/const PRINT_OF = Object\.freeze\(\{([\s\S]*?)\n    \}\);/)[1].matchAll(/([a-z]+): '([a-z]+)'/g)].map(m => [m[1], m[2]]));
 
-test('every animal has a footprint symbol and a print- key', () => {
+test('every animal maps to a footprint archetype that exists in the sprite', () => {
     const sprite = read('image/nature_sprites/sprite.svg');
     const icons = read('icons.js');
-    assert.equal(animals.length, 16);
+    assert.equal(animals.length, 45);
+    assert.equal(new Set(animals).size, 45, 'animal names are unique across packs');
     for (const a of animals) {
-        const m = sprite.match(new RegExp('<symbol id="nt-f-' + a + '" viewBox="0 0 100 100">([\\s\\S]*?)</symbol>'));
-        assert.ok(m, 'nt-f-' + a);
-        assert.match(m[1], /<path[^>]+d="M[^"]{8,}"/, a + ' has path data');
+        const kind = printOf[a];
+        assert.ok(kind, a + ' has an archetype');
+        const m = sprite.match(new RegExp('<symbol id="nt-f-' + kind + '" viewBox="0 0 100 100">([\\s\\S]*?)</symbol>'));
+        assert.ok(m, 'nt-f-' + kind);
+        assert.match(m[1], /<path[^>]+d="M[^"]{8,}"/, kind + ' has path data');
     }
-    assert.match(icons, /MAPS\[fam\]\['print-' \+ a\] = 'nt-f-' \+ a/);
+    assert.match(icons, /MAPS\[fam\]\['print-' \+ p\] = 'nt-f-' \+ p/);
     assert.ok(!/<script|on[a-z]+=|javascript:/i.test(sprite), 'sprite stays inert');
 });
 

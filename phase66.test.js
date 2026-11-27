@@ -43,7 +43,7 @@ test('defaults: ordinary devices start in Normal, low-memory and OS reduce-motio
 });
 
 test('a device that already chose a mode keeps it, even when low-memory', () => {
-    const { A } = boot({ lowEnd: true, stored: { v: 1, theme: 'blue', effective: 'blue', anim: { mode: 'normal' } } });
+    const { A } = boot({ lowEnd: true, stored: { v: 1, theme: 'savannah', effective: 'savannah', anim: { mode: 'normal' } } });
     assert.equal(A.read().anim.mode, 'normal');
 });
 
@@ -108,7 +108,7 @@ test('motion.js: bubble and wipe respect the switches; script is loaded and prec
     for (const page of ['index.html', 'settings.html', 'components.html', 'legal.html', 'login.html']) assert.match(read(page), /src="motion\.js"/, page);
     const sw = read('sw.js');
     assert.match(sw, /\.\/motion\.js/); assert.match(sw, /\.\/ai-notice\.js/);
-    assert.match(sw, /CACHE_NAME = 'taskitator-phase4-v68'/);
+    assert.match(sw, /CACHE_NAME = 'taskitator-phase4-v69'/);
 });
 
 test('AI notice: provider company, Universe = Google, hosted = Anthropic, generic fallback', () => {

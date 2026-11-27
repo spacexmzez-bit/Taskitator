@@ -1510,7 +1510,7 @@ window.TaskitatorComponents = Object.freeze({
             btn.classList.toggle('is-done', done);
             btn.classList.toggle('is-ai-locked', Boolean(task?.ai_locked));
             btn.textContent = '';
-            if (window.TaskitatorIcons && task) btn.appendChild(window.TaskitatorIcons.animal(window.TaskitatorIcons.animalForId(task.id)));
+            if (window.TaskitatorIcons && task) btn.appendChild(window.TaskitatorIcons.taskAnimal(task.id));
             btn.setAttribute?.('aria-label', done ? 'Mark "' + (task?.title || '') + '" as not done' : 'Complete "' + (task?.title || '') + '"');
         }
         function tickGrace() {

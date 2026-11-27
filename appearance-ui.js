@@ -15,15 +15,16 @@
         const tab = document.getElementById('tabbtn-ai');
         if (tab) { tab.click(); tab.scrollIntoView({ block: 'nearest' }); } else location.hash = 'ai';
     }
-    function showLocked(theme) {
-        if (!note) return;
-        note.replaceChildren(document.createTextNode(theme.label + ' is a Pro theme. '));
+    function showLocked(theme, target, text) {
+        const out = target || note;
+        if (!out) return;
+        out.replaceChildren(document.createTextNode(text || theme.label + ' is a Pro theme. '));
         const link = document.createElement('a');
         link.href = 'settings.html#ai';
         link.textContent = 'See AI & Pro';
         link.addEventListener('click', openProTab);
-        note.append(link);
-        note.hidden = false;
+        out.append(link);
+        out.hidden = false;
         fx()?.deny?.();
     }
 
@@ -63,6 +64,49 @@
                 if (note) note.hidden = true;
                 if (app.setTheme(theme.id)) fx()?.tap?.();
                 renderThemes();
+            });
+            return btn;
+        }));
+    }
+
+    // Phase 6.7 Icon mix (Pro): one box per theme pack. The current theme's pack is always on and cannot be unticked;
+    // each box shows the share of tasks it gets now (WEIGHTS in icons.js).
+    const mixBox = document.getElementById('iconMixOptions');
+    const mixNote = document.getElementById('iconMixNote');
+    function renderMix() {
+        if (!mixBox || !icons?.PACKS) return;
+        const state = app.read();
+        const pro = app.mixAllowed();
+        const inUse = app.packs();
+        const share = icons.WEIGHTS[inUse.length] || [100];
+        mixBox.replaceChildren(...reg.live().filter(t => icons.PACKS[t.id]).map(theme => {
+            const main = theme.id === state.effective;
+            const idx = inUse.indexOf(theme.id);
+            const on = main || idx > -1;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'tk-mix-option' + (on ? ' is-on' : '') + (main ? ' is-main' : '') + (!pro && !main ? ' is-locked' : '');
+            btn.setAttribute('role', 'checkbox');
+            btn.setAttribute('aria-checked', String(on));
+            btn.dataset.pack = theme.id;
+            if (main || !pro) btn.setAttribute('aria-disabled', 'true');
+            const art = icons.node('animal-' + icons.PACKS[theme.id][0], 'tk-mix-art');
+            const label = document.createElement('span');
+            label.className = 'tk-theme-label';
+            label.textContent = theme.label;
+            const meta = document.createElement('span');
+            meta.className = 'tk-mix-share';
+            meta.textContent = main ? 'Theme' : (on ? share[idx] + '%' : '');
+            if (on) meta.title = share[idx] + '%';
+            btn.append(art, label, meta);
+            btn.addEventListener('click', () => {
+                if (main) return;
+                if (!pro) { showLocked(theme, mixNote, 'Icon mix is a Pro feature. '); return; }
+                if (mixNote) mixNote.hidden = true;
+                const extras = state.mix.filter(id => id !== state.effective);
+                const next = extras.includes(theme.id) ? extras.filter(id => id !== theme.id) : [...extras, theme.id];
+                if (app.setMix(next)) fx()?.tap?.();
+                renderMix();
             });
             return btn;
         }));
@@ -112,7 +156,8 @@
         });
     }
 
-    window.addEventListener('taskitator-appearance', () => { renderThemes(); renderAppearance(); });
+    window.addEventListener('taskitator-appearance', () => { renderThemes(); renderMix(); renderAppearance(); });
     renderThemes();
+    renderMix();
     renderAppearance();
 })();

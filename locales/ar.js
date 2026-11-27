@@ -14,6 +14,15 @@
     // Built only when the UI is Arabic (register() calls this function lazily).
     const build = () => ({
         "Universe": "يونيفيرس",
+        "Savannah": "السافانا",
+        "Desert": "الصحراء",
+        "Jungle": "الغابة",
+        "Marina": "البحر",
+        "Fictional": "الخيال",
+        "Icon mix": "مزيج الأيقونات",
+        "Add animals from other themes to your completion buttons. Your theme's own animals always appear most.": "أضف حيوانات من سمات أخرى إلى أزرار الإنجاز. تظهر حيوانات سمتك دائمًا أكثر من غيرها.",
+        "Icon mix is a Pro feature.": "مزيج الأيقونات ميزة برو.",
+        "Themes and Icon mix": "السمات ومزيج الأيقونات",
         "AI services are handled by {0}, a third-party company. AI can make mistakes, so check answers and results.": "تتم معالجة خدمات الذكاء الاصطناعي من قبل شركة \u2068{0}\u2069 الخارجية. قد ينتج الذكاء الاصطناعي أخطاء، راجع الإجابات والنتائج.",
         "AI services are handled by a third party. AI can make mistakes, so check answers and results.": "تتم معالجة خدمات الذكاء الاصطناعي من قبل طرف ثالث. قد ينتج الذكاء الاصطناعي أخطاء، راجع الإجابات والنتائج.",
         "Animations & effects": "الحركات والتأثيرات",

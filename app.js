@@ -3226,7 +3226,7 @@ window.TaskitatorApp = (() => {
                     checkBtn.className = 'check-circle' + (task.ai_locked ? ' is-ai-locked' : '');
                     checkBtn.textContent = isDone ? '✓' : '';
                     // Random animal, stable per task (hash of the id). Ring colour still follows priority.
-                    if (window.TaskitatorIcons) checkBtn.appendChild(window.TaskitatorIcons.animal(window.TaskitatorIcons.animalForId(task.id)));
+                    if (window.TaskitatorIcons) checkBtn.appendChild(window.TaskitatorIcons.taskAnimal(task.id));
                     checkBtn.setAttribute('aria-label', isDone ? `Mark "${task.title}" as not done` : `Complete "${task.title}"`);
                     checkBtn.addEventListener('click', (e) => {
                         e.stopPropagation();

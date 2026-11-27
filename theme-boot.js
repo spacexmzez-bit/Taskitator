@@ -3,7 +3,9 @@
    External file on purpose: editing it never changes the CSP inline-script hashes.
 
    Storage: localStorage 'taskitator_appearance' (per device, never synced):
-     { v:1, theme, effective, anim:{particles,clouds,animals,bird,parallax,bubbles,wipe,mode}, bird_speed, notice }
+     { v:1, theme, effective, mix, anim:{particles,clouds,animals,bird,parallax,bubbles,wipe,mode}, bird_speed, notice }
+   - mix        = extra animal packs (theme ids) shown on top of the theme's own pack (Phase 6.7, Pro). Kept when
+                  Pro lapses; only packs the account may use are applied (see packs()).
    - anim.mode  = 'normal' (default) | 'custom' | 'reduced' | 'static' (Phase 6.6). The switches are kept per key; Normal shows them
                   all on, Custom uses them, Reduced and Static turn every decorative effect off and collapse CSS motion.
    - theme      = what the user picked (preferred)
@@ -45,7 +47,7 @@
     function defaults() {
         return { v: VERSION, theme: reg.DEFAULT_THEME, effective: reg.DEFAULT_THEME,
             anim: { particles: true, clouds: true, animals: true, bird: true, parallax: true, bubbles: true, wipe: true, mode: defaultMode() },
-            bird_speed: 7, notice: null };
+            bird_speed: 7, notice: null, mix: [] };
     }
     // Validate + migrate any stored value. Unknown fields are dropped; bad values fall back.
     function normalize(raw) {
@@ -54,6 +56,7 @@
         const out = { ...base };
         out.theme = reg.validTheme(raw.theme);
         out.effective = reg.validTheme(raw.effective ?? raw.theme);
+        out.mix = Array.isArray(raw.mix) ? [...new Set(raw.mix.filter(id => typeof id === 'string' && reg.byId(id)?.status === 'live'))] : [];
         const anim = raw.anim && typeof raw.anim === 'object' ? raw.anim : {};
         out.anim = {};
         for (const k of SWITCH_KEYS) out.anim[k] = typeof anim[k] === 'boolean' ? anim[k] : base.anim[k];
@@ -203,6 +206,23 @@
             return true;
         },
         effective: () => effectiveAnim(read()),
+        // Phase 6.7 Icon mix: the animal packs in use now. The theme's own pack is always first and cannot be removed;
+        // extras count only while the account may use them (Pro), so a lapse falls back to the theme's pack alone.
+        packs() {
+            const app = read();
+            return [app.effective, ...app.mix.filter(id => id !== app.effective && allowed.includes(id))];
+        },
+        setMix(ids) {
+            if (!Array.isArray(ids)) return false;
+            const clean = [...new Set(ids)];
+            if (!api.mixAllowed() || clean.some(id => reg.validTheme(id) !== id || !allowed.includes(id))) return false;
+            const app = read();
+            app.mix = clean;
+            save(app); emit(app);
+            return true;
+        },
+        // Pro check for the mix: any Pro theme allowed means the plan is Pro.
+        mixAllowed: () => allowed.some(id => reg.byId(id)?.tier !== 'free'),
         // 'static' | 'reduced' | 'normal' (Custom counts as normal motion). The OS setting counts as at least Reduced.
         motionLevel() {
             const m = read().anim.mode;

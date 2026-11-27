@@ -612,6 +612,20 @@ html[data-family="nature"] .tk-login-logo { width: min(260px, 80%); margin: 0 0 
 .tk-pro-note { margin: 10px 0 0; font-size: .85rem; color: #d9a43e; }
 .tk-pro-note a { color: inherit; font-weight: 800; }
 #appearanceCard .setting-row.is-muted { opacity: .45; }
+.tk-mix { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--tk-line, var(--border-color)); }
+.tk-mix-title { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: .95rem; }
+.tk-mix-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 10px; }
+.tk-mix-option {
+    display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 8px 10px;
+    border: 1px solid var(--border-color); border-radius: 10px; background: transparent;
+    color: var(--text-color); font: inherit; font-weight: 700; cursor: pointer; text-align: start;
+    transition: border-color .18s ease, background .18s ease;
+}
+.tk-mix-option.is-on { border-color: var(--tk-accent, var(--primary)); background: color-mix(in srgb, var(--tk-accent, var(--primary)) 10%, transparent); }
+.tk-mix-option.is-main { cursor: default; }
+.tk-mix-option.is-locked { opacity: .55; }
+.tk-mix-art { width: 26px; height: 26px; flex: none; color: var(--tk-accent, var(--primary)); }
+.tk-mix-share { flex: none; font-size: .78rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 html[data-family="nature"] .switch { transition: background-color .22s ease; }
 
 /* Focus timer tag and legacy Pomodoro button: same flat language as the other floating buttons */
