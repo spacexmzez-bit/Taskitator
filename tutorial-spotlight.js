@@ -43,6 +43,7 @@
     for (const s of list) {
       let n = null;
       try { n = document.querySelector(s); } catch { /* bad selector */ }
+      if (n) { try { window.TaskitatorFold?.reveal(n); } catch { /* cosmetic */ } }   // Phase 6.7.1: open the Settings section that holds it
       if (visible(n)) return n;
     }
     return null;

@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-phase4-v69';
+const CACHE_NAME = 'taskitator-phase4-v70';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -80,7 +80,7 @@ const STATIC_ASSETS = [
     './icons.js',
     './nature.js',
     './motion.js',
-    './ai-notice.js',
+    './ai-notice.js', './settings-fold.js',
     './appearance-ui.js',
     './palettes.css',
     './family-nature.css',

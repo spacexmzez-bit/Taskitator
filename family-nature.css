@@ -603,6 +603,7 @@ html[data-family="nature"] .tk-login-logo { width: min(260px, 80%); margin: 0 0 
 .tk-theme-option:active { transform: scale(.98); }
 .tk-theme-option.is-on { border-color: var(--tk-accent, var(--primary)); background: color-mix(in srgb, var(--tk-accent, var(--primary)) 10%, transparent); }
 .tk-theme-option.is-locked { opacity: .55; }
+.tk-theme-option.is-pending::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #d9a43e; flex: none; }
 .tk-theme-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tk-swatch { display: inline-flex; width: 30px; height: 22px; border-radius: 7px; overflow: hidden; border: 1px solid rgba(255, 255, 255, .15); flex: none; }
 .tk-swatch i { flex: 1; }

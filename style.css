@@ -5635,7 +5635,9 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .icon-btn.btn-warning{background:var(--alert-orange);border-color:var(--alert-orange);color:#1f1300}
 .status-mode-group{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px}
 .status-mode-opt{display:flex;align-items:center;justify-content:center;min-height:40px;padding:6px 8px;border:1.5px solid var(--border-color);border-radius:8px;font-size:.85rem;cursor:pointer;text-align:center}
-.status-mode-opt input{position:absolute;opacity:0;pointer-events:none}
+.status-mode-opt input{position:absolute;opacity:0;pointer-events:none;width:0;height:0;margin:0}
+/* Phase 6.7.1: a disabled mode kept showing its radio dot. ".settings-page :is(button,input,select):disabled { opacity: .5 }" is more specific than the rule above. */
+.settings-page .status-mode-opt input:disabled{opacity:0}
 .status-mode-opt:has(input:checked){border-color:var(--primary);background:var(--card-subtle);font-weight:600}
 .status-mode-opt:has(input:disabled){opacity:.45;cursor:not-allowed}
 .status-mode-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -6174,3 +6176,23 @@ html[dir="rtl"] .fx-fold[open] > summary::after { transform: rotate(-90deg); }
 /* Phase 6.6: AI notice (ai-notice.js). */
 .ai-notice { display: flex; gap: 6px; align-items: flex-start; margin: 8px 0; font-size: .74rem; line-height: 1.4; color: var(--text-muted); }
 .ai-notice::before { content: 'ⓘ'; flex: none; font-size: .85rem; line-height: 1.2; color: var(--accent, var(--primary)); }
+
+/* Phase 6.7.1: collapsible Settings sections (settings-fold.js). The header stays; every other child folds away. */
+.settings-card.fold-card:not(.is-open) > :not(.fold-head) { display: none !important; }
+.settings-card.fold-card > .fold-head { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.settings-card.fold-card > .fold-head.card-title-row, .settings-card.fold-card > .fold-head.status-mode-head { gap: 8px; }
+.settings-card.fold-card:not(.is-open) > .fold-head { margin-bottom: 0; }
+.fold-head > .fold-toggle {
+    flex: none; display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; padding: 0; margin: 0;
+    border: 1px solid var(--border-color); border-radius: 8px; background: transparent; color: var(--text-muted);
+    cursor: pointer; transition: transform .18s ease, border-color .18s ease;
+}
+.fold-head > .fold-toggle:hover { border-color: var(--border-hover); }
+.fold-card.is-open > .fold-head > .fold-toggle { transform: rotate(90deg); }
+[dir="rtl"] .fold-head > .fold-toggle svg { transform: scaleX(-1); }
+.fold-head > .card-title { flex: 1 1 auto; min-width: 0; }
+.card-title-row.fold-head, .status-mode-head.fold-head { justify-content: flex-start; }
+.card-title-row.fold-head > :nth-child(2), .status-mode-head.fold-head > :nth-child(2) { flex: 1 1 auto; }
+.card-title-row.fold-head > :nth-child(n+3), .status-mode-head.fold-head > :nth-child(n+3) { flex: none; }
+html[data-motion="static"] .fold-head > .fold-toggle, html[data-motion="reduced"] .fold-head > .fold-toggle { transition: none; }

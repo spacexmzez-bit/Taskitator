@@ -28,17 +28,30 @@
         fx()?.deny?.();
     }
 
+    // Phase 6.7.1: a theme or Icon mix pick waits for "Save changes" (settings.html). Nothing is applied, stored or
+    // synced until then; Discard or leaving the page drops it. { theme: id|null, mix: [ids]|null }
+    let pending = null;
+    const markDirty = () => window.dispatchEvent(new CustomEvent('taskitator-settings-dirty'));
+    const shownTheme = state => pending?.theme ?? state.effective;
+    const shownMix = state => pending?.mix ?? state.mix;
+    const packsShown = state => {
+        const main = shownTheme(state);
+        return [main, ...shownMix(state).filter(id => id !== main && app.isAllowed(id))];
+    };
+
     function renderThemes() {
         const state = app.read();
         const allowed = app.allowed();
+        const current = shownTheme(state);
         options.replaceChildren(...reg.live().map(theme => {
             const locked = !allowed.includes(theme.id);
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'tk-theme-option' + (locked ? ' is-locked' : '');
             btn.setAttribute('role', 'radio');
-            btn.setAttribute('aria-checked', String(state.theme === theme.id && !locked) );
-            if (state.effective === theme.id) btn.classList.add('is-on');
+            btn.setAttribute('aria-checked', String(current === theme.id && !locked));
+            if (current === theme.id) btn.classList.add('is-on');
+            if (pending?.theme === theme.id) btn.classList.add('is-pending');
             btn.dataset.theme = theme.id;
             const sw = document.createElement('span');
             sw.className = 'tk-swatch';
@@ -62,8 +75,12 @@
             btn.addEventListener('click', () => {
                 if (locked) { showLocked(theme); return; }
                 if (note) note.hidden = true;
-                if (app.setTheme(theme.id)) fx()?.tap?.();
+                if (theme.id === current) return;
+                pending = { theme: theme.id, mix: pending?.mix ?? null };
+                fx()?.tap?.();
+                markDirty();
                 renderThemes();
+                renderMix();
             });
             return btn;
         }));
@@ -77,10 +94,11 @@
         if (!mixBox || !icons?.PACKS) return;
         const state = app.read();
         const pro = app.mixAllowed();
-        const inUse = app.packs();
+        const inUse = packsShown(state);
         const share = icons.WEIGHTS[inUse.length] || [100];
+        const mainId = shownTheme(state);
         mixBox.replaceChildren(...reg.live().filter(t => icons.PACKS[t.id]).map(theme => {
-            const main = theme.id === state.effective;
+            const main = theme.id === mainId;
             const idx = inUse.indexOf(theme.id);
             const on = main || idx > -1;
             const btn = document.createElement('button');
@@ -103,9 +121,11 @@
                 if (main) return;
                 if (!pro) { showLocked(theme, mixNote, 'Icon mix is a Pro feature. '); return; }
                 if (mixNote) mixNote.hidden = true;
-                const extras = state.mix.filter(id => id !== state.effective);
+                const extras = shownMix(state).filter(id => id !== mainId);
                 const next = extras.includes(theme.id) ? extras.filter(id => id !== theme.id) : [...extras, theme.id];
-                if (app.setMix(next)) fx()?.tap?.();
+                pending = { theme: pending?.theme ?? null, mix: next };
+                fx()?.tap?.();
+                markDirty();
                 renderMix();
             });
             return btn;
@@ -156,6 +176,20 @@
         });
     }
 
+    // Save changes applies the waiting pick; Discard / a reload of the settings drops it (events fired by settings.html).
+    window.addEventListener('taskitator-settings-commit', () => {
+        if (!pending) return;
+        const p = pending;
+        pending = null;
+        if (p.theme) app.setTheme(p.theme);
+        if (p.mix) app.setMix(p.mix);
+        renderThemes(); renderMix();
+    });
+    window.addEventListener('taskitator-settings-reset', () => {
+        if (!pending) return;
+        pending = null;
+        renderThemes(); renderMix();
+    });
     window.addEventListener('taskitator-appearance', () => { renderThemes(); renderMix(); renderAppearance(); });
     renderThemes();
     renderMix();

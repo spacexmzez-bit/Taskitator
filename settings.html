@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html lang="en" class="auth-pending">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-ckE6TJwTdkTfYDgiOGu+wzbUp8z/6HGBTiMUnzTOd5E=' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com; font-src 'self' data: https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-L2DI9Caj1Ln29nIcqz8W41DjdpMVF6cGNhYjADss0/g=' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com; font-src 'self' data: https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
 <style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -31,6 +31,7 @@
 <script defer src="nature.js"></script>
 <script defer src="motion.js"></script>
 <script defer src="ai-notice.js"></script>
+<script defer src="settings-fold.js"></script>
 </head>
 <body class="settings-page">
 
@@ -133,21 +134,6 @@
                 </div>
             </div>
 
-            <!-- Colour theme and Appearance: saved on this device only (appearance-ui.js). -->
-            <div class="settings-card tk-theme-card" id="themeCard">
-                <h4 class="card-title">Colour theme</h4>
-                <p class="setting-hint">Saved on this device only. Your other devices keep their own choice.</p>
-                <div class="tk-theme-options" id="themeOptions" role="radiogroup" aria-label="Colour theme"></div>
-                <p class="tk-pro-note" id="themeProNote" role="status" hidden></p>
-                <!-- Phase 6.7: Icon mix (Pro). Extra animal packs on top of the theme's own pack, which cannot be removed. -->
-                <div class="tk-mix" id="iconMix">
-                    <h5 class="tk-mix-title">Icon mix <span class="tk-pro-badge">Pro</span></h5>
-                    <p class="setting-hint">Add animals from other themes to your completion buttons. Your theme's own animals always appear most.</p>
-                    <div class="tk-mix-options" id="iconMixOptions" role="group" aria-label="Icon mix"></div>
-                    <p class="tk-pro-note" id="iconMixNote" role="status" hidden></p>
-                </div>
-            </div>
-
             <div class="settings-card">
                 <h4 class="card-title">Copilot</h4>
                 <div class="form-group">
@@ -218,6 +204,21 @@
                 <p class="setting-hint" style="margin-bottom:10px">Short guided tours of the app. Replay any of them whenever you like.</p>
                 <p class="setting-hint" style="margin-bottom:10px"><a href="index.html#help">Read the full help guide →</a> (every feature, with examples)</p>
                 <div id="tutorialHub" class="tour-list" role="list"></div>
+            </div>
+
+            <!-- Colour theme + Icon mix (Phase 6.7.1: second-last in General, applied by Save changes; appearance-ui.js). -->
+            <div class="settings-card tk-theme-card" id="themeCard">
+                <h4 class="card-title">Colour theme</h4>
+                <p class="setting-hint">Press Save changes to apply. Saved on this device only; your other devices keep their own choice.</p>
+                <div class="tk-theme-options" id="themeOptions" role="radiogroup" aria-label="Colour theme"></div>
+                <p class="tk-pro-note" id="themeProNote" role="status" hidden></p>
+                <!-- Phase 6.7: Icon mix (Pro). Extra animal packs on top of the theme's own pack, which cannot be removed. -->
+                <div class="tk-mix" id="iconMix">
+                    <h5 class="tk-mix-title">Icon mix <span class="tk-pro-badge">Pro</span></h5>
+                    <p class="setting-hint">Add animals from other themes to your completion buttons. Your theme's own animals always appear most.</p>
+                    <div class="tk-mix-options" id="iconMixOptions" role="group" aria-label="Icon mix"></div>
+                    <p class="tk-pro-note" id="iconMixNote" role="status" hidden></p>
+                </div>
             </div>
 
             <!-- Phase 6.6: every animation control in one collapsed section, last in General (saved on this device only, appearance-ui.js). -->
@@ -498,6 +499,8 @@
                 <a href="index.html#blocker-guide" class="icon-btn btn-md btn-solid-primary btn-primary link-guarded">Open guide →</a>
             </div>
 
+            <p class="setting-hint macrodroid-note" id="macrodroidDisclaimer">Taskitator is not affiliated with, endorsed by or sponsored by MacroDroid. Using MacroDroid is still subject to its own limits and terms.</p>
+
             <div class="settings-card" id="macrodroidCard">
                 <h4 class="card-title">Connection</h4>
                 <p id="phoneAccessStatus" class="phone-status unknown">Checking your phone connection…</p>
@@ -640,7 +643,7 @@
                 </div>
             </div>
 
-            <div class="settings-card danger-zone">
+            <div class="settings-card danger-zone" data-fold-open>
                 <h4 class="card-title"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-warning"></use></svg> Danger zone</h4>
                 <p class="card-desc">Download a backup before using any of these.</p>
 
@@ -973,6 +976,8 @@ function markUnsaved() {
     setSaveBarVisible(true);
     if (!wasDirty) replayClass(settingsSaveBar, 'just-opened');
 }
+
+window.addEventListener('taskitator-settings-dirty', () => markUnsaved());   // Phase 6.7.1: theme / Icon mix picks (appearance-ui.js)
 
 function markSaved() {
     hasUnsavedChanges = false;
@@ -1364,6 +1369,7 @@ function loadSettings() {
     updateEmergencyDisplay();
     updateBreakPlanningStatus();
     updateWorkweekNotice();
+    window.dispatchEvent(new CustomEvent('taskitator-settings-reset'));    // Phase 6.7.1: drops a waiting theme / Icon mix pick
     markSaved();
 }
 
@@ -1408,6 +1414,7 @@ async function saveSettings(silent = false) {
 
     updateBreakPlanningStatus();
     updateWorkweekNotice();
+    window.dispatchEvent(new CustomEvent('taskitator-settings-commit'));   // Phase 6.7.1: applies a waiting theme / Icon mix pick
     markSaved();
 
     if (!silent) notify('Settings saved.', 'success');

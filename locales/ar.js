@@ -14,6 +14,9 @@
     // Built only when the UI is Arabic (register() calls this function lazily).
     const build = () => ({
         "Universe": "يونيفيرس",
+        "Press Save changes to apply. Saved on this device only; your other devices keep their own choice.": "اضغط «حفظ التغييرات» للتطبيق. تُحفظ على هذا الجهاز فقط، وتحتفظ أجهزتك الأخرى باختيارها.",
+        "Taskitator is not affiliated with, endorsed by or sponsored by MacroDroid. Using MacroDroid is still subject to its own limits and terms.": "Taskitator غير تابع لـ MacroDroid ولا معتمد منه ولا برعايته. استخدام MacroDroid يخضع لحدوده وشروطه الخاصة.",
+        "Taskitator is not affiliated with MacroDroid, and using MacroDroid is still subject to its own limits and terms.": "Taskitator غير تابع لـ MacroDroid، واستخدام MacroDroid يخضع لحدوده وشروطه الخاصة.",
         "Savannah": "السافانا",
         "Desert": "الصحراء",
         "Jungle": "الغابة",
