@@ -3474,7 +3474,8 @@ window.TaskitatorApp = (() => {
             if (currentView === 'general') return true;
 
             const due = String(t.due_date || '').trim().toLowerCase();
-            const compDate = t.completed_at ? t.completed_at.split('T')[0] : '';
+            const doneMs = typeof t.completed_at === 'number' ? t.completed_at : Date.parse(t.completed_at || '');
+            const compDate = Number.isFinite(doneMs) ? new Date(doneMs).toISOString().split('T')[0] : '';
             return due === 'today' || due === todayStr || compDate === todayStr;
         });
 

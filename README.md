@@ -2,7 +2,7 @@
 
 Taskitator is a browser task manager with nested tasks, projects, scheduled and flexible breaks, offline personal editing, proof-based completion, a focus timer, an AI Copilot, cloud synchronization, phone-blocking integration, and collaborative workspaces called **Universes**. The frontend is static HTML/CSS/JavaScript. Its authenticated backend runs in a Cloudflare Worker and a Durable Object; Universe records use D1, and Universe attachments use R2.
 
-This guide describes the source as of **Phase 7.0 (27 November 2026)**: 236 files, including 28 PNG assets. **Part 1** is the user guide: every feature of Taskitator on the web, where it is, how to use it step by step, and the rules and limits behind it. **Part 2** is the code and architecture guide. The source describes the app's behavior; live configuration, credentials and provider availability depend on the deployment. Older Part 2 sections describe the code as it was first inspected (commit `99b4282`, 5 November 2026) plus the phase notes that followed; where a statement and the current code differ, the code wins.
+This guide describes the source as of **Phase 7.1 (27 November 2026)**: 237 files, including 28 PNG assets. **Part 1** is the user guide: every feature of Taskitator on the web, where it is, how to use it step by step, and the rules and limits behind it. **Part 2** is the code and architecture guide. The source describes the app's behavior; live configuration, credentials and provider availability depend on the deployment. Older Part 2 sections describe the code as it was first inspected (commit `99b4282`, 5 November 2026) plus the phase notes that followed; where a statement and the current code differ, the code wins.
 
 ## Contents
 
@@ -1156,8 +1156,9 @@ These scripts execute in browser and Worker contexts through a `window`/`globalT
   - **Overview:** `GET /friends` adds `collab_invites` and `collabs` (current D1 members only).
   - **Pro gate:** `FriendsService.gate` runs in the Worker before every Universe request. For a group with a `collab:` record, any non-GET needs Pro for every current member (403 `COLLAB_PRO`). Leave, group delete, `DELETE` and withdrawing phone-blocking consent stay open.
   - **Limits:** collabs count toward Universe caps (own 2, join 7) because those caps are database triggers, and changing them was judged too risky.
-  - **Browser:** Friends gets a **Collabs** section (invites with Join/Decline, list with Open, a Start a collab form). `components.html?view=universe&group=<id>` opens a group directly. Tests in `uni/collab.test.js` run the real `UniverseRules` on an in-memory D1. Cache `taskitator-phase4-v75`.
+  - **Browser:** Friends gets a **Collabs** section (invites with Join/Decline, list with Open, a Start a collab form). `components.html?view=universe&group=<id>` opens a group directly. Tests in `uni/collab.test.js` run the real `UniverseRules` on an in-memory D1. Cache `taskitator-phase4-v76`.
 
+- **Stats fix (Phase 7.1):** `views/stats.js` `renderStats` (1) uses the app's logical day (`TaskitatorRecurrence.today`, Riyadh time shifted by `day_start_hour`, the same rule as Today, Points and recurrence) for Done Today, Pending Today and the 7-day bars, instead of the UTC date; (2) reads timestamps as ISO strings or numbers; (3) draws each card in its own guarded part (`statsPart`), so one bad value (a history entry without `tasks`, a break that can't be timed) is logged and the rest still draws, where before a single throw left every number at its HTML default of 0; (4) takes today's breaks from the Worker's answer (`BreakEngine.current()`: Scheduled windows and reserved minutes, or Flexible minutes used), falling back to the saved record; (5) redraws while open on `taskitator-synced`, `taskitator-tasks-updated`, `taskitator-breaks-changed`, `taskitator-auth-ready` and cross-tab `storage`. Tests: `stats.test.js`. Cache `taskitator-phase4-v76`.
 ### `uni/focus-timer.js`
 
 Despite its folder, this timer is used by the personal pages as well as shared-workspace pages. `fresh` supplies initial state; `valid` rejects corrupt/out-of-range state; `advance` reconstructs elapsed work/rest/large-break phases from timestamps. `read`/`save` use the current account's local timer key. `exclusive` uses browser locks when available; `tick` and `action` reconstruct state before rendering or changing it.
@@ -1718,6 +1719,7 @@ Paths are relative to the repository root. This is the complete file list as of 
 | [`saved-criteria.js`](saved-criteria.js) | Saved criteria policy shared by the editor, the Test lab and the Worker. |
 | [`scratchpad-plan-a.test.js`](scratchpad-plan-a.test.js) | Required today/overdue and inherited-date scratchpad gate tests. |
 | [`security.test.js`](security.test.js) | Worker security, vault/AI/deletion/sync/protection and backend integration fixtures. |
+| [`stats.test.js`](stats.test.js) | Stats view: malformed data, guarded cards, logical-day counts and redraw events. |
 | [`friends-backend.js`](friends-backend.js) | Phase 7.0 friends service on the Worker (requests, block, privacy, cheers, overview with points). |
 | [`friends-ui.js`](friends-ui.js) | Phase 7.0 Friends view: add by username, requests, leaderboard, cheers, privacy. |
 | [`points.js`](points.js) | Phase 7.0 points, ranks, streak and free-day rules shared by the Worker (awards) and the browser. |

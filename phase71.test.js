@@ -44,7 +44,7 @@ test('Worker wiring, view, nav, Universe button, cache', () => {
     assert.match(read('app.js'), /friends: 'stats'/);
     assert.match(read('uni/universe-ui.js'), /window\.TaskitatorAuth\.api\('\/friends\/request',\{method:'POST',body:JSON\.stringify\(\{username:m\.username\}\)\}\)/);
     assert.match(read('sw.js'), /'\.\/friends-ui\.js'/);
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v75'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v76'/);
     assert.match(read('index.html'), /id="help-friends"/);
     assert.match(read('README.md'), /\*\*Friends \(Phase 7\.0\):\*\*/);
     for (const k of ['Friends', 'Send request', 'Duo streak {0}', 'Unfriend @{0}?']) assert.ok(read('locales/ar.js').includes('"' + k + '"'), k);
