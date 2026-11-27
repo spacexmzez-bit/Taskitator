@@ -2,7 +2,7 @@
 
 Taskitator is a browser task manager with nested tasks, projects, scheduled and flexible breaks, offline personal editing, proof-based completion, a focus timer, an AI Copilot, cloud synchronization, phone-blocking integration, and collaborative workspaces called **Universes**. The frontend is static HTML/CSS/JavaScript. Its authenticated backend runs in a Cloudflare Worker and a Durable Object; Universe records use D1, and Universe attachments use R2.
 
-This guide describes the source as of **Phase 6.9 (27 November 2026)**: 228 files, including 28 PNG assets. **Part 1** is the user guide: every feature of Taskitator on the web, where it is, how to use it step by step, and the rules and limits behind it. **Part 2** is the code and architecture guide. The source describes the app's behavior; live configuration, credentials and provider availability depend on the deployment. Older Part 2 sections describe the code as it was first inspected (commit `99b4282`, 5 November 2026) plus the phase notes that followed; where a statement and the current code differ, the code wins.
+This guide describes the source as of **Phase 7.0 (27 November 2026)**: 236 files, including 28 PNG assets. **Part 1** is the user guide: every feature of Taskitator on the web, where it is, how to use it step by step, and the rules and limits behind it. **Part 2** is the code and architecture guide. The source describes the app's behavior; live configuration, credentials and provider availability depend on the deployment. Older Part 2 sections describe the code as it was first inspected (commit `99b4282`, 5 November 2026) plus the phase notes that followed; where a statement and the current code differ, the code wins.
 
 ## Contents
 
@@ -47,6 +47,9 @@ Everything is free unless the table says otherwise. Pro comes from a Keyo licens
 | Tasks, subtasks, Shield, bonus tasks, Dynamic Priority, Dynamic Bonus, drafts, Early task | Yes | Yes |
 | Projects, Calendar, Statistics, Trash, repeating tasks | Yes | Yes |
 | Breaks, strict modes, Emergency Bypass, Scratchpad, Focus timer | Yes | Yes |
+| Points, ranks and streak | Yes | Yes |
+| Friends, leaderboard, cheers, duo streak | Yes | Yes |
+| Collab (shared space with friends) | No | Yes, every member needs Pro |
 | Phone lock (MacroDroid) and Sleep Lock | Yes, 3 phone devices | Yes, 12 phone devices |
 | Backup, restore, sync, offline editing | Yes | Yes |
 | AI with your own Gemini or Claude key (Copilot, criteria checks, proof reviews, note cleanup) | Yes, within 10 credits a day and 220 a calendar month (Riyadh time). Shown as Available / Caution / Critical, never as numbers | Yes, not limited or metered by Taskitator; your provider bills you |
@@ -80,6 +83,7 @@ Everything is free unless the table says otherwise. Pro comes from a Keyo licens
 | Universe | 20 members besides the owner; own 2; join 2 (Free) or 7 (Pro); proof files up to 3 per submission, 5 MiB each |
 | Username | 3–20 letters, numbers or underscores; unique, case does not matter |
 | Copilot name | 20 characters |
+| Friends | 50 friends; 20 waiting requests; 30 requests a day; requests expire after 30 days |
 
 ### Time rules
 
@@ -284,6 +288,27 @@ Menu → Calendar.
 - Early tasks show **Early · due {date}**.
 - **Unscheduled Tasks** lists undated tasks with **Assign to Today**.
 
+### Collab (Pro)
+
+A small shared space where friends work on tasks together, with the same proof checks and phone blocking a Universe has. Everyone in a collab needs Pro.
+
+**Start one**
+1. Menu → **Friends** → **Collabs** → **Start a collab**.
+2. Name it and tick up to 5 friends. You and every friend you pick need active Pro.
+3. Press **Create collab**. Each friend gets an invitation under **Collabs** on their Friends page for 7 days.
+
+**Join one**
+1. On your Friends page, under **Collabs**, press **Join** (or **Decline**).
+2. Press **Open** next to a collab to work in it.
+
+**Working in a collab**
+- A collab opens in the Universe workspace and appears in your Universe list with a purple **Collab** badge.
+- The person who started it is the owner; friends join as admins, so everyone can add projects and tasks.
+- Tasks, assignments, AI or friend reviews, deadlines and phone blocking (each person turns on **Allow Universe phone blocking**) work exactly as in a Universe. See *Universe*.
+- **Pro for everyone:** if anyone's Pro ends, nobody can change anything until it's renewed. You can still read the collab, leave it or withdraw phone-blocking consent.
+- A collab counts toward your Universe limits (own 2, join 7 on Pro).
+- Unfriending someone doesn't remove them from a collab. Leave it, or the owner removes them, from the collab's settings.
+
 ### Colour themes and Icon mix
 
 Settings → General → **Colour theme** (second-to-last section, collapsed). Per device. Picks wait for **Save changes**.
@@ -369,7 +394,7 @@ It costs AI usage like a real review; there are no free tests. On Pro hosted AI 
 
 ### Day & week settings
 
-Settings → **Day & week**: **New day begins at** (00:00–04:00), **Weekend starts** and **Weekend ends**, the Emergency Bypass counter ("4 of 4 left this week"), and **Break limits & strict modes**. These need **Save changes** (break settings have their own Save button).
+Settings → **Day & week**: **New day begins at** (00:00–04:00), **Weekend starts** and **Weekend ends**, the Emergency Bypass counter ("4 of 4 left this week"), **Streak free days**, and **Break limits & strict modes**. These need **Save changes** (break settings have their own Save button).
 
 ### Drafts (tasks)
 
@@ -423,6 +448,36 @@ Tap the timer button.
 3. While running: **Pause/Resume**, **End timer**, **Restart**, **⛶ Full screen** (phones turn landscape), **Scratchpad**, **Floating timer** (picture-in-picture, in browsers that support it; keep the tab open).
 
 It keeps running when you switch pages and is saved per account on this device. Tap a timer button once to allow sound. It has nothing to do with breaks or the phone lock.
+
+### Friends
+
+Add other Taskitator users as friends to compare points and keep each other going. Free. Friends never see your tasks, only your points, rank, streak, this week's points and whether you've finished a task today. Friendship has nothing to do with Universe. Needs a connection.
+
+**Add a friend**
+1. Menu → **Friends**.
+2. You need a username first (**Set username**), so people know who the request is from.
+3. Type your friend's **exact** username (capitals don't matter) and press **Send request**. There is no search by part of a name.
+4. They see it under **Requests** and press **Accept**, **Decline** or **Block**. If they had already sent you a request, yours accepts it.
+5. From a Universe: open the Universe's member list and press **Add friend** next to a member who has a username.
+
+**Manage requests**
+- **Withdraw** cancels a request you sent.
+- **Declining is silent:** the sender keeps seeing "Pending" until the request expires after 30 days.
+- A red number next to **Friends** in the menu counts requests waiting for you.
+
+**Leaderboard and friends**
+- **Leaderboard** ranks you and your friends by **All time** points or **This week** (the week starts the day after your weekend).
+- Each friend shows their rank, points, streak (lit flame = finished a task today) and **Done today** or **Not yet today**.
+- **Duo streak**: days in a row you both finished at least one task. A day either of you marked free is skipped.
+- **Cheer**: once a day per friend. They get a "cheered you on" notice the next time they open Taskitator.
+
+**Unfriend and block**
+- **Unfriend** ends the friendship for both of you. Either of you can send a new request later.
+- **Block** ends the friendship, cancels requests both ways, and silently drops their future requests: they see "Pending", you see nothing. Unblock under **Privacy → Blocked**. You must unblock someone before sending them a request.
+
+**Privacy:** who can send you requests: **Anyone who knows my username** (default), **Only people in my Universes**, or **Nobody**. A refused request looks sent to the other person.
+
+**Limits:** 50 friends, 20 requests waiting at once, 30 requests a day.
 
 ### General Tasks
 
@@ -508,6 +563,36 @@ No-token Bridge: open its **Local Variables**, set **user token** to your token 
 **Device changes** (add, remove, **Remove all devices**) are only allowed when today's tasks are done, during a break, or with Emergency Bypass. Free: 3 devices; Pro: 12.
 
 **Troubleshooting:** import fails → update MacroDroid and pick the real `.macro` file. 401 → wrong or replaced token; add a device again. UnknownHostException → no internet. Nothing blocks → App Blocker enabled, imported first, original name, apps listed.
+
+### Points, ranks and streak
+
+Completing tasks earns points and keeps a daily streak. Free for everyone. The strip above your Today list shows your streak (flame), rank and progress; tap it for details.
+
+**How points are earned**
+1. Complete a task (tap its circle). Points count on the day you complete it, not its due date, so early, overdue and General-list completions all count.
+2. Your highest priority gives **5** points and your lowest **1**, evenly spaced and rounded (3 levels: 5 / 3 / 1; 10 levels: 5, 5, 4, 4, 3, 3, 2, 2, 1, 1). With one level every task gives 3. A task without a priority gives 1. Dynamic Priority doesn't change it.
+3. Points arrive when Taskitator syncs (about 15 seconds later). A toast shows **+N points**, a new rank or a new streak.
+
+**Rules**
+- Only the task you tap counts. Subtasks completed together with their parent earn nothing.
+- Each task earns once. Reopening and completing it again adds nothing.
+- At most **150 points a day**.
+- Tasks completed offline count when you sync, for up to 7 days.
+- Points are kept on Taskitator's server, so restoring a backup, clearing completed tasks or reopening tasks never removes them.
+
+**Ranks:** Seedling (0), Sprout (15), Sapling (40), Scout (90), Tracker (180), Ranger (350), Hunter (650), Pathfinder (1,100), Warden (1,800), Alpha (3,000), Apex (5,000), Legend (8,000).
+
+**Streak**
+- Finish at least one task before your day ends (Settings → Day & week → **New day begins at**) and the streak grows by one.
+- Miss a day and it goes back to 0. Your best streak is kept.
+- Today doesn't break it until the day is over.
+
+**Free days**
+1. Settings → Day & week → **Streak free days**. Your weekend is selected until you change it.
+2. Tick the days. You can choose up to your weekend days plus 2.
+3. Press **Save changes**. The change starts next week (the day after your weekend), so today can't be made free after you've missed it.
+
+On a free day, not finishing a task doesn't break your streak, and completing tasks adds no points and no streak day.
 
 ### Priorities and tags
 
@@ -1055,6 +1140,23 @@ These scripts execute in browser and Worker contexts through a `window`/`globalT
 - **Settings polish (Phase 6.7.1):** (1) **Colour theme and Icon mix picks now wait for Save changes** (`pending` in `appearance-ui.js`; Settings fires `taskitator-settings-dirty` / `-commit` / `-reset`; Discard or leaving drops the pick; nothing applied, stored or synced before Save). (2) The Colour theme card is second-last in General, right before Animations. (3) **Every Settings section folds** (`settings-fold.js`): collapsed by default, only the card with `data-fold-open` (Danger zone) starts open; the header button toggles, the header's own buttons keep their job, re-rendered cards (Break limits) re-mark themselves, `TaskitatorFold.reveal(el)` opens the card holding an element (tutorial spotlight and `#hash` links use it). Not folded: the Taskitator Pro plan card (`#pro-settings-container`, always visible) and a card with no header. Open state is not remembered. (4) MacroDroid disclaimer (Phone lock tab, always visible, and in Help). (5) The stray dot over disabled Phone lock counting modes was the native radio: `.settings-page :is(button,input,select):disabled { opacity:.5 }` out-ranked `opacity:0`. Cache `taskitator-phase4-v70`.
 - **Slow loading and offline fallback (Phase 6.8):** The sign-in bootstrap (`auth-bootstrap.js` in `core.js`) runs one watchdog from page start. At **10 s** the loading screen adds "Taking longer than usual…". At **45 s** it stops waiting and opens the copy saved on this device offline (`TaskitatorOffline.enterBootOffline`) with a lasting notice and a **Reconnect** button (page reload). A **Skip and open offline** button at the bottom of the "Loading" and "Updating secure app files…" screens does the same at once. Both exist only where offline can open (`canOfferOffline()`: a cached account owned by this device, no logout in progress, not the login, deletion or public pages); elsewhere 45 s shows "Taskitator couldn't connect…" with Try again. The skip deliberately bypasses the reachability probe. The old 30 s secure-files error is gone. Skipping an update sets `reloadOnRecover`: when the server is back the notice says so and Reconnect reloads, so older cached files never reconnect in place. `loadClerk()` runs once, so a reconnect joins a still-running load. **Slow AI:** `TaskitatorSlow` (core.js) shows "AI is taking longer than usual…" while any model request (`/ai/generate`, `/pro/ai/review|batch-review|personal-review|batch-confirm`, Universe `…/submit`) has waited 10 s; the Copilot bubble says it instead (the pill hides while Copilot is open). **Sync dot:** the unreachable gray "Local only" state was removed (the app needs sign-in); unconfigured falls back to Pending, and the guide's red entry is now "Sync Failed" (offline has its own gray ring). Cache `taskitator-phase4-v71`.
 - **Steps-based Help with live guides (Phase 6.9):** The Help view (`#shellView-help`) was rebuilt from Part 1 of this guide: 63 sections in seven units (Start here, Tasks, Focus breaks and your phone, AI, Pro features, Universe, Settings sync and your data), numbered steps, the limit tables and the cross-feature rules. Earlier **Show example** boxes were kept. Old section ids still work (`help-today`, `help-create`, `help-p-study`, `help-p-themes`…; renamed ones keep an `.hp-alias` anchor: `help-free`, `help-p-get`, `help-p-ai`, `help-p-dyn`, `help-p-test`). Removed stale statements: the grey "this device only" sync state, a saved-criteria limit of 6 and "reference files cost double". Jumping from the index flashes the section (`help-tours.js`). **Try it live** buttons (`data-help-tour`) start guides on the real screen using the tour engine's new live steps (`tutorial-spotlight.js` v3); see *Styles, tutorials, data, and assets*. A new **Colour themes** tour joins the Settings hub, Settings tours can be launched from Help, and the Getting started sync legend no longer shows the removed grey state. Fixed: `ai-notice.js` passed the `DOMContentLoaded`/`load` event in as its root and threw. Cache `taskitator-phase4-v72`.
+- **Points, ranks and streak (Phase 7.0):** `points.js` (shared by Worker and browser, `TaskitatorPoints`) holds the rules; the Worker awards. Inside the sync push transaction, after every guard and before `saveSnapshot`, `TaskitatorPoints.record(state, previous, snapshot, now)` finds tasks that changed to completed. A task scores at its `completed_at` logical day (Riyadh time, day-start hour), never its due date. Each task id scores once (ids are kept 21 days, longer than any reopen window). A subtask with the same `completed_at` as its newly completed parent is a cascade and scores nothing. Weight comes from the task's own `priority_id`, using the rank order of `custom_priorities`: `round(1 + 4 × below ÷ (levels − 1))` with halves up, one level = 3, none or unknown = 1. The cap is 150 a day. Completions older than 7 days or more than 5 minutes in the future are ignored. The ledger is one Durable Object record per account, `points:<account user>` (`{total, best, days{date:{p,n}}, awarded{id:day}, free[{from,days}], hour}`), outside the snapshot, so restore, merge, clear and reopen can't change it. Account deletion removes it. The push reply carries `points` (summary + `gained`), and `GET /points` returns the summary. **Streak**: a logical day with at least one completion. Free days (`settings.streak_free_days`, weekdays 0–6; default the weekend; at most weekend days + 2, max 5) neither add nor break and earn 0 points. Today never breaks the streak. The free schedule is server-side: the first value applies at once, and later changes start from `nextWeekStart` (the day after the weekend ends); changing back before then cancels. **Browser**: `core.js` dispatches `taskitator-points` after a push. `points-ui.js` shows `#pointsStrip` on the Tasks view (streak flame, rank, progress) and the **Points & streak** panel (rank progress, streak/best, today vs cap, last 7 days, free days, rules, rank ladder). It refreshes `/points` at most once a minute. Its cache is `taskitator_points_cache`, per account and in `ACCOUNT_KEYS`. Toasts show +N points, a new rank or a streak. Settings → Day & week has **Streak free days** (saved only once touched, so an untouched choice keeps following the weekend). Cache `taskitator-phase4-v73`.
+- **Friends (Phase 7.0):** `friends-backend.js` (`FriendsService`, Worker) keeps one Durable Object record per person, keyed by Clerk user id: `friends:<uid>` = `{friends, out, in, blocked, cheers, cheered, privacy, sent}`. Routes: `GET /friends` (overview: you, friends sorted by points with rank, streak, this-week points, done today and duo streak, incoming/outgoing/blocked, cheers) and `POST /friends/request|respond|withdraw|remove|block|unblock|cheer|privacy`, rate-limited at 30/min.
+  - **Find:** exact username only (`pro:username:map:<norm>`); the sender needs a username.
+  - **Silent drops:** a request the recipient blocked, or refused by their privacy (`nobody`, or `universe` without a shared Universe from D1 `universe_members`), is stored only on the sender's side as `dropped`, and gets the same reply. Declining marks the sender's copy `dropped`, so they keep seeing "pending". Pending requests expire after 30 days.
+  - **Block** removes friendship and requests both ways; you must unblock before requesting. If the other person already asked you, your request accepts it.
+  - **Limits:** 50 friends, 20 waiting, 30 requests a day. A cheer is once per friend per Riyadh day and kept 7 days.
+  - **Duo streak:** consecutive days both ledgers have a completion, skipping days either marked free.
+  - **Deleted accounts:** they drop out on read; deleting an account removes its `friends:` record. The view never returns task data.
+  - **Browser:** `friends-ui.js` renders the `#friends` shell view (Add a friend, Requests, Leaderboard All time / This week, Your friends with Cheer / Unfriend / Block, Cheers, Privacy, Blocked). A background load after sign-in sets the menu request badge (`data-friends-count`) and shows cheer toasts once (`taskitator_friends_seen`). Universe member rows get **Add friend**. Ari treats the view as read-only (`friends: 'stats'`). Cache `taskitator-phase4-v74`.
+- **Collab (Phase 7.0):** built on the Universe backend; no new tables and no migration.
+  - **Create:** `POST /friends/collab/create {title, ids}` (`FriendsService.collab`) checks that every chosen person is a mutual friend (1–5 of them) and that the creator and each friend have Pro (`UniverseService.entitlement`). It then creates a Universe group as the creator (purpose `Collab · …`, which drives the purple **Collab** badge in the Universe list) and one 7-day **admin** invitation per friend through the normal Universe endpoints, so every Universe rule and trigger applies.
+  - **Storage:** the token is stored only in the friend's `friends:` record (`collab_in`) and `collab:<gid>` = `{owner, title, members, at}`.
+  - **Join:** `collab/accept` (needs Pro) calls `/universe/invitations/accept` as the friend; `collab/decline` drops the invitation.
+  - **Overview:** `GET /friends` adds `collab_invites` and `collabs` (current D1 members only).
+  - **Pro gate:** `FriendsService.gate` runs in the Worker before every Universe request. For a group with a `collab:` record, any non-GET needs Pro for every current member (403 `COLLAB_PRO`). Leave, group delete, `DELETE` and withdrawing phone-blocking consent stay open.
+  - **Limits:** collabs count toward Universe caps (own 2, join 7) because those caps are database triggers, and changing them was judged too risky.
+  - **Browser:** Friends gets a **Collabs** section (invites with Join/Decline, list with Open, a Start a collab form). `components.html?view=universe&group=<id>` opens a group directly. Tests in `uni/collab.test.js` run the real `UniverseRules` on an in-memory D1. Cache `taskitator-phase4-v75`.
 
 ### `uni/focus-timer.js`
 
@@ -1616,6 +1718,10 @@ Paths are relative to the repository root. This is the complete file list as of 
 | [`saved-criteria.js`](saved-criteria.js) | Saved criteria policy shared by the editor, the Test lab and the Worker. |
 | [`scratchpad-plan-a.test.js`](scratchpad-plan-a.test.js) | Required today/overdue and inherited-date scratchpad gate tests. |
 | [`security.test.js`](security.test.js) | Worker security, vault/AI/deletion/sync/protection and backend integration fixtures. |
+| [`friends-backend.js`](friends-backend.js) | Phase 7.0 friends service on the Worker (requests, block, privacy, cheers, overview with points). |
+| [`friends-ui.js`](friends-ui.js) | Phase 7.0 Friends view: add by username, requests, leaderboard, cheers, privacy. |
+| [`points.js`](points.js) | Phase 7.0 points, ranks, streak and free-day rules shared by the Worker (awards) and the browser. |
+| [`points-ui.js`](points-ui.js) | Phase 7.0 points & streak strip on Today and its details panel. |
 | [`help-tours.js`](help-tours.js) | Phase 6.9 Help "Try it live" guides and the index jump highlight. |
 | [`settings-fold.js`](settings-fold.js) | Phase 6.7.1 collapsible Settings sections and `TaskitatorFold.reveal`. |
 | [`settings.html`](settings.html) | Settings/backup/phone/Pro/account markup and inline preferences controller. |

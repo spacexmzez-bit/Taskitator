@@ -21,6 +21,7 @@
         'study-plans': { title: '', doc: 'Study plans — Taskitator' },
         'test-lab': { title: '', doc: 'Test lab — Taskitator' },
         sleep: { title: '', doc: 'Sleep Lock — Taskitator' },
+        friends: { title: '', doc: 'Friends — Taskitator' },
         help: { title: '', doc: 'Help — Taskitator' }
     };
     const ALIASES = { guide: 'blocker-guide', blocker_guide: 'blocker-guide', study_plans: 'study-plans', plans: 'study-plans', test_lab: 'test-lab', lab: 'test-lab' };
@@ -88,6 +89,7 @@
             else if (view === 'study-plans') window.TaskitatorStudyPlansView?.show();
             else if (view === 'test-lab') window.TaskitatorTestLabView?.show();
             else if (view === 'sleep') window.TaskitatorSleepView?.show();
+            else if (view === 'friends') window.TaskitatorFriendsView?.show();
         } catch (err) { console.error('Taskitator view could not refresh', view, err); }
     }
     function show() {

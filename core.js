@@ -1136,7 +1136,7 @@ const SyncEngine = {
         'taskitator_collapsed_nodes', 'taskitator_distraction_notes', 'taskitator_archived_notes',
         'taskitator_emergency_state', 'taskitator_local_revision', 'taskitator_sync_dirty',
         'taskitator_remote_version', 'taskitator_version_pending', 'taskitator_pending_rotation', 'taskitator_auto_sync_deadline',
-        'taskitator_pending_sync_download', 'taskitator_recurrence_state', 'taskitator_pending_grace'
+        'taskitator_pending_sync_download', 'taskitator_recurrence_state', 'taskitator_pending_grace', 'taskitator_points_cache'
     ],
     sessionId: null,
     pushQueue: Promise.resolve(),
@@ -1412,6 +1412,7 @@ const SyncEngine = {
             localStorage.setItem(this.STORAGE_KEY_SETTINGS, JSON.stringify(settings));
             const pending = revision !== localStorage.getItem(this.STORAGE_KEY_REVISION);
             if(!pending&&data.today_breaks){localStorage.setItem(this.STORAGE_KEY_BREAKS,JSON.stringify(data.today_breaks));window.dispatchEvent(new CustomEvent('taskitator-breaks-changed'));}
+            if(data.points&&typeof data.points==='object')window.dispatchEvent(new CustomEvent('taskitator-points',{detail:data.points})); // Phase 7.0
             this.hasUnsavedChanges = pending;
             localStorage.setItem(this.STORAGE_KEY_DIRTY, String(pending));
             this.notify(pending ? 'pending' : 'synced', { timestamp: settings.last_synced });
@@ -2706,7 +2707,7 @@ if (document.documentElement?.classList?.contains('auth-pending')) {
                 const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1000);
                 channel.port1.onmessage = event => {
                     clearTimeout(timer); channel.port1.close();
-                    resolve(event.data?.version === 'taskitator-phase4-v72');
+                    resolve(event.data?.version === 'taskitator-phase4-v75');
                 };
                 controller.postMessage({ type: 'TASKITATOR_SECURITY_VERSION' }, [channel.port2]);
             });

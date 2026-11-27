@@ -2644,3 +2644,63 @@ test('Phase 6.1.1: older clients must refresh before syncing recurring templates
  assert.equal((await save(f,a,tasks,{recurrence_state:state})).status,428);
  assert.equal((await save(f,a,tasks,{recurrence_state:state,dynamic_bonus_schema:1})).status,200);
 });
+test('Phase 7.0: a completion synced through the Worker earns points once, and /points reads the ledger', async () => {
+    const f = fixture(), a = await create(f);
+    const base = { username: a.user, settings: { streak_free_days: [] }, recurrence_schema: 1 }; // no free days: the test must not depend on today's weekday
+    const t = { id: 'pt1', title: 'Points', status: 'active', priority_id: 'prio_high' };
+    let r = await f.call('/sync/push', a.token, 'POST', { ...base, tasks: [t], base_version: 0, mutation_id: 'mutation-pts-1' });
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.points.total, 0);
+    const doneTask = { ...t, status: 'completed', completed_at: new Date().toISOString() };
+    r = await f.call('/sync/push', a.token, 'POST', { ...base, tasks: [doneTask], base_version: 1, mutation_id: 'mutation-pts-2' });
+    assert.equal(r.status, 200); assert.equal(r.body.points.gained, 5, JSON.stringify(r.body.points)); assert.equal(r.body.points.total, 5); assert.equal(r.body.points.today.done, true);
+    r = await f.call('/sync/push', a.token, 'POST', { ...base, tasks: [t], base_version: 2, mutation_id: 'mutation-pts-3' });
+    r = await f.call('/sync/push', a.token, 'POST', { ...base, tasks: [{ ...doneTask, completed_at: new Date().toISOString() }], base_version: 3, mutation_id: 'mutation-pts-4' });
+    assert.equal(r.body.points.gained, 0, 'reopen + complete earns nothing');
+    // A restore that wipes the tasks keeps the points
+    r = await f.call('/sync/push', a.token, 'POST', { ...base, tasks: [], base_version: 4, mutation_id: 'mutation-pts-5' });
+    const got = await f.call('/points', a.token);
+    assert.equal(got.status, 200); assert.equal(got.body.points.total, 5); assert.equal(got.body.points.rank.name, 'Seedling');
+});
+test('Phase 7.1: friends by exact username, silent block and decline, points visible, cheers once a day', async () => {
+    const f = fixture(), a = await create(f, 'user_A'), b = await create(f, 'user_B'), c = await create(f, 'user_C');
+    const name = async (uid, n) => { await f.storage.put('pro:username:map:' + n, { accountId: uid, username: n }); await f.storage.put('pro:user:username:' + uid, { username: n, normalizedUsername: n }); };
+    await name('user_A', 'alice'); await name('user_B', 'bob'); await name('user_C', 'cara');
+    const post = (t, p, body) => f.call('/friends/' + p, t.token, 'POST', body);
+    const get = t => f.call('/friends', t.token);
+    assert.equal((await post(a, 'request', { username: 'nobody_here' })).status, 404);
+    assert.equal((await post(a, 'request', { username: 'Bob' })).body.status, 'pending', 'case-insensitive exact match');
+    assert.equal((await get(b)).body.incoming[0].username, 'alice');
+    assert.equal((await get(a)).body.outgoing[0].username, 'bob');
+    assert.equal((await post(b, 'respond', { id: 'user_A', accept: true })).body.status, 'friends');
+    // Points show up for friends
+    await f.call('/sync/push', b.token, 'POST', { username: b.user, settings: { streak_free_days: [] }, recurrence_schema: 1, tasks: [{ id: 'bt', title: 'x', status: 'active', priority_id: 'prio_high' }], base_version: 0, mutation_id: 'mutation-fr-1' });
+    await f.call('/sync/push', b.token, 'POST', { username: b.user, settings: { streak_free_days: [] }, recurrence_schema: 1, tasks: [{ id: 'bt', title: 'x', status: 'completed', completed_at: new Date().toISOString(), priority_id: 'prio_high' }], base_version: 1, mutation_id: 'mutation-fr-2' });
+    let ov = (await get(a)).body;
+    assert.equal(ov.friends.length, 1); assert.equal(ov.friends[0].username, 'bob'); assert.equal(ov.friends[0].total, 5); assert.equal(ov.friends[0].done_today, true);
+    assert.equal(JSON.stringify(ov).includes('"title"'), false, 'no task data');
+    // Cheer once a day
+    assert.equal((await post(a, 'cheer', { id: 'user_B' })).status, 200);
+    assert.equal((await post(a, 'cheer', { id: 'user_B' })).status, 429);
+    assert.equal((await get(b)).body.cheers[0].username, 'alice');
+    // Block: friendship ends; a request from the blocked person looks sent but never arrives
+    await post(b, 'block', { id: 'user_A' });
+    assert.equal((await get(a)).body.friends.length, 0);
+    assert.equal((await post(a, 'request', { username: 'bob' })).body.status, 'pending');
+    assert.equal((await get(a)).body.outgoing.length, 1);
+    assert.equal((await get(b)).body.incoming.length, 0, 'nothing reaches the blocker');
+    assert.equal((await post(b, 'request', { username: 'alice' })).status, 409, 'unblock first');
+    // Decline is silent; withdraw removes both sides
+    await post(c, 'request', { username: 'alice' });
+    await post(a, 'respond', { id: 'user_C', accept: false });
+    assert.equal((await get(c)).body.outgoing.length, 1, 'sender still sees pending');
+    assert.equal((await get(a)).body.incoming.length, 0);
+    await post(c, 'withdraw', { id: 'user_A' });
+    assert.equal((await get(c)).body.outgoing.length, 0);
+    // Privacy "nobody": request is dropped silently
+    await post(c, 'privacy', { privacy: 'nobody' });
+    assert.equal((await post(a, 'request', { username: 'cara' })).body.status, 'pending');
+    assert.equal((await get(c)).body.incoming.length, 0);
+    // A user without a username can't send requests
+    const d = await create(f, 'user_D');
+    assert.equal((await post(d, 'request', { username: 'alice' })).status, 403);
+});

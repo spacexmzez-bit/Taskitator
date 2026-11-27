@@ -139,5 +139,5 @@ test('Settings: Icon mix sits in the Colour theme card; help and README describe
     assert.match(ui, /Icon mix is a Pro feature\. /);
     assert.match(read('index.html'), /id="help-p-themes"/);
     assert.match(read('README.md'), /Five themes and Icon mix \(Phase 6\.7\)/);
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v72'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v75'/);
 });

@@ -323,7 +323,7 @@ test('sidebar: same order on every page (Drafts only where the editor exists); S
   const read=f=>{const nav=/<nav class="drawer-links" id="drawerNavLinks">([\s\S]*?)<\/nav>/.exec(readFileSync(f,'utf8'))[1];return [...nav.matchAll(/<a [^>]*>([\s\S]*?)<\/a>/g)].map(m=>({icon:/#ic-([\w-]+)/.exec(m[1])[1],label:m[1].replace(/<[^>]*>/g,'').trim()}));};
   const pages=['index.html','components.html','settings.html'].map(read),ref=pages[0].map(i=>i.label);
   for(const p of pages)assert.deepEqual(p.map(i=>i.label),ref.filter(l=>p.some(i=>i.label===l)));
-  assert.deepEqual(ref,['Today','General Tasks','Calendar','Projects','Stats','Trash','Drafts','Universe','Sleep Lock','Study plans','Test lab','Help','Settings']);
+  assert.deepEqual(ref,['Today','General Tasks','Calendar','Projects','Stats','Friends','Trash','Drafts','Universe','Sleep Lock','Study plans','Test lab','Help','Settings']);
   for(const p of pages)assert.notEqual(p.find(i=>i.label==='Study plans').icon,p.find(i=>i.label==='Help').icon);
 });
 

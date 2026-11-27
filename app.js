@@ -83,7 +83,7 @@ window.TaskitatorAgent = (() => {
             return 'projects';
         }
         // Phase 3.0 shell views of index.html (#calendar, #stats, ...): read-only for Ari, like the old components.html views.
-        const shellViews = { stats: 'stats', trash: 'trash', 'blocker-guide': 'blocker_guide', guide: 'blocker_guide', projects: 'projects', calendar: 'calendar', 'study-plans': 'study_plans', 'test-lab': 'study_plans', sleep: 'sleep', help: 'help' };
+        const shellViews = { stats: 'stats', trash: 'trash', 'blocker-guide': 'blocker_guide', guide: 'blocker_guide', projects: 'projects', calendar: 'calendar', 'study-plans': 'study_plans', 'test-lab': 'study_plans', sleep: 'sleep', friends: 'stats', help: 'help' };
         if (shell) {
             const route = shell.routeOf(hash);
             return route.view === 'tasks' ? (hash === 'general' ? 'general' : 'today') : shellViews[route.view];

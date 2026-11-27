@@ -108,7 +108,7 @@ test('motion.js: bubble and wipe respect the switches; script is loaded and prec
     for (const page of ['index.html', 'settings.html', 'components.html', 'legal.html', 'login.html']) assert.match(read(page), /src="motion\.js"/, page);
     const sw = read('sw.js');
     assert.match(sw, /\.\/motion\.js/); assert.match(sw, /\.\/ai-notice\.js/);
-    assert.match(sw, /CACHE_NAME = 'taskitator-phase4-v72'/);
+    assert.match(sw, /CACHE_NAME = 'taskitator-phase4-v75'/);
 });
 
 test('AI notice: provider company, Universe = Google, hosted = Anthropic, generic fallback', () => {

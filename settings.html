@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html lang="en" class="auth-pending">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-L2DI9Caj1Ln29nIcqz8W41DjdpMVF6cGNhYjADss0/g=' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com; font-src 'self' data: https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-mJAsOWlxccZBYfhky5+Aff0gwnhRyj4wwQ9LacIMfRg=' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com; font-src 'self' data: https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
 <style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -45,6 +45,7 @@
         <a href="index.html#calendar"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-calendar"></use></svg> Calendar</a>
         <a href="index.html#projects"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-projects"></use></svg> Projects</a>
         <a href="index.html#stats"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-stats"></use></svg> Stats</a>
+        <a href="index.html#friends"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-person"></use></svg> Friends</a>
         <a href="index.html#trash"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-trash"></use></svg> Trash</a>
         <a href="components.html?view=universe"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-universe"></use></svg> Universe</a>
         <a href="index.html#sleep"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-nav-sleep"></use></svg> Sleep Lock</a>
@@ -421,6 +422,22 @@
                     </div>
                 </div>
                 <p class="setting-hint" id="workweekCalcNotice"></p>
+            </div>
+
+            <!-- Phase 7.0: streak free days (points.js). Saved with Save changes; the Worker applies a change from next week. -->
+            <div class="settings-card" id="streakFreeCard">
+                <h4 class="card-title">Streak free days</h4>
+                <p class="card-desc">On a free day, not finishing a task doesn't break your streak. Free days earn no points. Your weekend is free unless you change it.</p>
+                <div class="streak-free-days" id="streakFreeDays" role="group" aria-label="Streak free days">
+                    <label><input type="checkbox" value="0"> Sunday</label>
+                    <label><input type="checkbox" value="1"> Monday</label>
+                    <label><input type="checkbox" value="2"> Tuesday</label>
+                    <label><input type="checkbox" value="3"> Wednesday</label>
+                    <label><input type="checkbox" value="4"> Thursday</label>
+                    <label><input type="checkbox" value="5"> Friday</label>
+                    <label><input type="checkbox" value="6"> Saturday</label>
+                </div>
+                <p class="setting-hint" id="streakFreeHint">You can choose up to your weekend days plus 2. A change starts next week, after your weekend.</p>
             </div>
         </section>
 
@@ -811,6 +828,7 @@
     <script type="text/taskitator-script" src="pro/study-plan.js"></script>
     <script type="text/taskitator-script" src="pro/study-schedule.js"></script>
     <script type="text/taskitator-script" src="pro/status-count.js"></script>
+    <script type="text/taskitator-script" src="points.js?v=pts-v1"></script>
     <script type="text/taskitator-script" src="saved-criteria.js"></script>
     <script type="text/taskitator-script" src="components.js"></script>
     <script type="text/taskitator-script" src="uni/focus-timer.js"></script>
@@ -1347,6 +1365,7 @@ function loadSettings() {
 
     if (weekendStartSelect) weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
     if (weekendEndSelect) weekendEndSelect.value = settings.weekend_end !== undefined ? settings.weekend_end : '6';
+    renderStreakFree(settings);
     if (dayStartHourSelect) dayStartHourSelect.value = settings.day_start_hour !== undefined ? String(settings.day_start_hour) : '0';
 
     // Load or initialize tags
@@ -1393,6 +1412,8 @@ async function saveSettings(silent = false) {
     settings.worker_url = HARDCODED_WORKER_URL;
     settings.weekend_start = weekendStartSelect ? parseInt(weekendStartSelect.value, 10) : 5;
     settings.weekend_end = weekendEndSelect ? parseInt(weekendEndSelect.value, 10) : 6;
+    // Phase 7.0: an untouched choice keeps following the weekend (nothing stored).
+    if (streakFreeBox && (streakFreeExplicit || settings.streak_free_days !== undefined)) settings.streak_free_days = streakFreeValue();
     settings.day_start_hour = isNaN(chosenDayStart) ? 0 : chosenDayStart;
 
     // Attach updated registries
@@ -1589,6 +1610,31 @@ if (toggleTokenVisibilityBtn && macroBearerToken) {
         toggleTokenVisibilityBtn.textContent = isPass ? 'Hide' : 'Show';
     });
 }
+
+// Phase 7.0: streak free days (Day & week). At most weekend days + 2; the Worker starts a change next week.
+const streakFreeBox = document.getElementById('streakFreeDays');
+let streakFreeExplicit = false;
+function streakWeekend() {
+    const w = { weekend_start: weekendStartSelect?.value, weekend_end: weekendEndSelect?.value };
+    return window.TaskitatorPoints ? window.TaskitatorPoints.weekend(w).days : [5, 6];
+}
+function streakFreeValue() { return [...(streakFreeBox?.querySelectorAll('input:checked') || [])].map(i => Number(i.value)).sort(); }
+function streakFreeLimit() {
+    const max = Math.min(5, streakWeekend().length + 2), count = streakFreeValue().length;
+    streakFreeBox?.querySelectorAll('input').forEach(i => { i.disabled = !i.checked && count >= max; });
+}
+function renderStreakFree(settings) {
+    if (!streakFreeBox) return;
+    streakFreeExplicit = Array.isArray(settings?.streak_free_days);
+    const days = streakFreeExplicit ? settings.streak_free_days.map(Number) : streakWeekend();
+    streakFreeBox.querySelectorAll('input').forEach(i => { i.checked = days.includes(Number(i.value)); });
+    streakFreeLimit();
+}
+streakFreeBox?.addEventListener('change', () => { streakFreeExplicit = true; streakFreeLimit(); markUnsaved(); });
+[weekendStartSelect, weekendEndSelect].forEach(el => el?.addEventListener('change', () => {
+    if (!streakFreeExplicit && streakFreeBox) { const d = streakWeekend(); streakFreeBox.querySelectorAll('input').forEach(i => { i.checked = d.includes(Number(i.value)); }); }
+    streakFreeLimit();
+}));
 
 [soundEffectsToggle, hapticsToggle, copilotNameInput, strictCriteriaToggle, autoPageRefreshToggle, weekendStartSelect, weekendEndSelect, dayStartHourSelect].forEach(el => {
     if (el) {

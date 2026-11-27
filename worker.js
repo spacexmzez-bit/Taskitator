@@ -6,6 +6,7 @@ import './pro/study-manage.js';
 import './pro/criteria-edit.js';
 import './pro/study-plan.js';
 import './saved-criteria.js';
+import './points.js';
 // ============================================================================
 // Taskitator Consolidated Cloudflare Worker & Security Engine (worker.js)
 // Combines: recurrence-core, break-core, auth, ai-models, verification,
@@ -13,6 +14,7 @@ import './saved-criteria.js';
 // ============================================================================
 import { ProGateway, TaskProtection, liveAccount, POLICY, planOf, periods, entitlementFor, clientOf, refreshKeyo, LargeBodies, hostedGlobalKey, hostedGlobalAdd } from './pro-backend.js';
 import { BreakSystems } from './break-systems.js';
+import { FriendsService } from './friends-backend.js';
 import { proofRequestBody } from './pro-proof-payload.js';
 
 // File: recurrence-core.js
@@ -762,7 +764,7 @@ export class AccountDeletion {
                 // A recovery record contains only a digest-keyed, status-only expiry.
                 await tx.put('phone:'+device.digest,{scope:'deleted-unlock',expires:recoveryUntil});
             }
-            await tx.delete([phoneOwnerKey(link.user),phoneDevicesKey(link.user)]);
+            await tx.delete([phoneOwnerKey(link.user),phoneDevicesKey(link.user),pointsKey(link.user),'friends:'+identity.userId]);
             current.status='consumed'; await tx.put(proofKey,current);
             await tx.put(markerKey,{status:'pending',receipt:body.receipt,phone_recovery_until:recoveryUntil});
             if (meta.legacy_disabled) await tx.put('deleted-legacy:'+await sha256(link.user),{expires:recoveryUntil});
@@ -1513,6 +1515,7 @@ const json = (value, status = 200) => new Response(JSON.stringify(value), {
 class HTTPError extends Error {
     constructor(status, message) { super(message); this.status = status; }
 }
+const pointsKey = user => 'points:' + user; // Phase 7.0 ledger, one record per account
 function dayHour(settings) {
     const hour = Number.parseInt(settings?.day_start_hour, 10);
     return Number.isInteger(hour) && hour >= 0 && hour <= 4 ? hour : 0;
@@ -1774,6 +1777,7 @@ export class TaskitatorSync {
         this.protection = new TaskProtection(this);
         this.pro = new ProGateway(this);
         this.universe = new (universeCommunity())(this);
+        this.friends = new FriendsService(this); // Phase 7.0
         this.breaks = new BreakSystems(this);
     }
 
@@ -2091,8 +2095,10 @@ export class TaskitatorSync {
             const studyRoute = path === '/study-plan';
             const studyManage = path === '/study-plan/manage';
             const criteriaEdit = path === '/criteria/edit';
+            const pointsRoute = method === 'GET' && path === '/points'; // Phase 7.0
+            const friendsRoute = path === '/friends' || path.startsWith('/friends/'); // Phase 7.0
             if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
-                !proofStart && !proofPassword && !proofSignin && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute && !sleepRoute && !breaksRoute && !studyManage && !studyRoute && !criteriaEdit) {
+                !proofStart && !proofPassword && !proofSignin && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute && !pointsRoute && !friendsRoute && !sleepRoute && !breaksRoute && !studyManage && !studyRoute && !criteriaEdit) {
                 return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
             }
             await this.rateLimit(request);
@@ -2128,7 +2134,11 @@ export class TaskitatorSync {
                     await this.rateLimit(request,'universe:'+identity.userId,60);
                     const upload=/^\/universe\/groups\/[A-Za-z0-9_-]+\/work\/files\/[A-Za-z0-9_-]+\/upload$/.test(path);
                     const transfer=path==='/universe/imports'||/^\/universe\/(?:imports|groups\/[^/]+\/(?:transfer|archive))\/[^/]+\/file$/.test(path);
-                    return json(await this.universe.handle(identity,path,method,method==='GET'?{}:await readJson(request,upload?8*1024*1024:transfer?21*1024*1024:65536)));
+                    const ubody=method==='GET'?{}:await readJson(request,upload?8*1024*1024:transfer?21*1024*1024:65536);
+                    // Phase 7.0: inside a collab, changes need Pro for every member.
+                    const collabBlock=await this.friends.gate(identity,path,method,ubody);
+                    if(collabBlock)return json({error:collabBlock.message,code:collabBlock.code},collabBlock.status);
+                    return json(await this.universe.handle(identity,path,method,ubody));
                 }
                 if (proRoute) {
                     const account = await this.accountFor(identity);
@@ -2283,6 +2293,19 @@ export class TaskitatorSync {
                 }
                 if (account && this.vault.ready()) await this.migrateVault(identity);
                 if (me) return json({ account });
+                if (friendsRoute) {
+                    if (!account) throw new HTTPError(403, 'Use your connected account to use friends.');
+                    if (method === 'POST') await this.rateLimit(request, 'friends:' + identity.userId, 30);
+                    const meta = await this.storage.get(accountKey(account.user));
+                    const settings = method === 'GET' && meta ? (await loadSnapshot(this.storage, account.user, meta))?.settings : null;
+                    const out = await this.friends.handle(identity, path, method, method === 'POST' ? await readJson(request, 4096) : null, settings);
+                    if (out?.__error) return json({ error: out.__error.message, code: out.__error.code }, out.__error.status);
+                    return json(out);
+                }
+                if (pointsRoute) {
+                    if (!account) throw new HTTPError(403, 'Use your connected account to see points.');
+                    return json({ points: globalThis.TaskitatorPoints.summary(await this.storage.get(pointsKey(account.user)), Date.now()) });
+                }
                 if (!account) throw new HTTPError(403, 'Connect your Taskitator account on the login page first.');
                 user = account.user;
                 if (phoneAdmin) return await this.phoneAccess(request, user, identity);
@@ -2422,13 +2445,17 @@ export class TaskitatorSync {
                     // Breaks are changed only through /breaks. Sync keeps the stored copy, so a stale or
                     // modified device cannot erase a system lock, edit a schedule or restore spent allowance.
                     snapshot.today_breaks = globalThis.TaskitatorBreaks.normalize(previous?.today_breaks || {}, null);
+                    // Phase 7.0: points and streak live outside the snapshot, so restore, clear and reopen can't change them.
+                    const P=globalThis.TaskitatorPoints,pk=pointsKey(user),awarded=P.record(await tx.get(pk),previous,snapshot,Date.now());
+                    if(awarded.changed)await tx.put(pk,awarded.state);
+                    const points={...P.summary(awarded.state,Date.now()),gained:awarded.gained};
                     snapshot.updated_at = now;
                     await saveSnapshot(tx, user, meta, snapshot);
                     meta.version++;
                     meta.saved_at = now;
                     meta.last_write = { mutation_id: body.mutation_id, hash: snapshotHash, base_version: body.base_version, version:meta.version, saved_at:now };
                     await tx.put(accountKey(user), meta);
-                    return json({ success: true, version: meta.version, updated_at: now,today_breaks:await this.breaks.overlay(tx,identity.userId,snapshot.today_breaks) });
+                    return json({ success: true, version: meta.version, updated_at: now,today_breaks:await this.breaks.overlay(tx,identity.userId,snapshot.today_breaks),points });
                 }
                 throw new HTTPError(405, 'Method not allowed.');
             });

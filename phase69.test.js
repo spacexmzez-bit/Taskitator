@@ -121,7 +121,7 @@ test('Settings tours from Help, themes tour, legend, loading and cache', () => {
     assert.doesNotMatch(t, /This device only/);
     assert.match(index, /src="tutorial-integration\.js\?v=tour-v3"><\/script>\n<script type="text\/taskitator-script" src="help-tours\.js\?v=help-v1"><\/script>/);
     assert.match(read('sw.js'), /'\.\/help-tours\.js'/);
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v72'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v75'/);
     assert.match(read('ai-notice.js'), /addEventListener\('DOMContentLoaded', \(\) => refresh\(\)\)/);
     const ar = read('locales/ar.js');
     for (const k of ['Do it for me', 'Use the highlighted part to continue.', 'Shrink the guide card', 'Colour themes', 'Sync failed']) assert.ok(ar.includes('"' + k + '"'), k);
