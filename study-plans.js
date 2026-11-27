@@ -321,9 +321,11 @@ function infoTab(plan, d, panel, list, edit) {
     el('p', plan.auditedOpen > 0 ? tr('This plan has AI criteria: deleting costs 2 Emergency Bypass uses (1 if a bypass window is open).') : (plan.audited ? tr('Free: every AI-checked unit in this plan is already finished.') : tr('Allowed: this plan has no AI criteria, so deleting it is free.')), del, 'plan-hint');
 }
 
+const aiNote = scope => { if (window.TaskitatorAiNotice) return window.TaskitatorAiNotice.node(scope); const p = document.createElement('p'); p.className = 'ai-notice'; if (p.dataset) p.dataset.aiNotice = scope === 'universe' ? 'universe' : 'user'; p.textContent = 'AI services are handled by a third party. AI can make mistakes, so check answers and results.'; return p; };
 function aiTab(plan, d, panel, edit) {
     const open = M.openUnits(plan);
     if (!open.length) { el('p', tr('All units are finished, so there is nothing left to audit.'), panel, 'plan-hint'); return; }
+    panel.append(aiNote());
     const fs = el('fieldset', undefined, panel, 'plan-fs'); fs.disabled = !edit; fs.style.cssText = 'border:0;padding:0;margin:0;min-width:0';
     const criteria = field(tr('Proof criteria for the units. Use {num} for each unit number.'), fs, d.ai.criteria, 'textarea'); criteria.maxLength = 4000; criteria.rows = 4;
     const ex = field(tr('Exclude units from the criteria (optional)'), fs, d.ai.exclude); ex.placeholder = '8, 10-12'; ex.dir = 'ltr'; ex.inputMode = 'numeric';

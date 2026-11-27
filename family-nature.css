@@ -573,13 +573,7 @@ html[data-family="nature"][data-fx-off~="parallax"] #tk-scene .tk-layer { transf
 html[data-family="nature"][data-fx-off~="clouds"] #tk-clouds .tk-cloud { display: none; }
 html[data-family="nature"][data-fx-off~="particles"] .tk-leaf,
 html[data-family="nature"][data-fx-off~="bird"] .tk-bird { display: none; }
-html[data-family="nature"][data-motion="reduce"] *,
-html[data-family="nature"][data-motion="reduce"] *::before,
-html[data-family="nature"][data-motion="reduce"] *::after {
-    animation-duration: 1ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 1ms !important;
-}
+/* Reduced and Static motion rules are global now (style.css, Phase 6.6). */
 @media (prefers-reduced-motion: reduce) {
     html[data-family="nature"] .tk-leaf, html[data-family="nature"] .tk-bird { display: none; }
     html[data-family="nature"] #tk-scene .tk-layer { transform: none !important; }

@@ -109,12 +109,12 @@ test('appearance storage validates, migrates and falls back to blue', () => {
     assert.equal(n.bird_speed, 7); assert.equal(A.normalize({ bird_speed: 2 }).bird_speed, 7); assert.equal(A.setBirdSpeed, undefined); assert.equal(n.extra, undefined); assert.equal(n.v, 1);
 });
 
-test('low-memory devices start with motion effects off; animals stay on', () => {
+test('low-memory devices start in Reduced mode (Phase 6.6); the effect switches stay on for when they pick Normal', () => {
     const { A, html } = boot({ lowEnd: true });
-    const a = A.read().anim;
-    assert.equal(a.particles, false); assert.equal(a.clouds, false); assert.equal(a.bird, false); assert.equal(a.parallax, false);
-    assert.equal(a.animals, true);
-    assert.match(html.dataset.fxOff, /clouds/);
+    const s = A.read().anim;
+    assert.equal(s.mode, 'reduced');
+    assert.equal(s.particles, true); assert.equal(s.animals, true);
+    assert.equal(html.dataset.motion, 'reduced');
 });
 
 test('appearance key is per device: never in sync, snapshots, account archives or cleanSettings', () => {

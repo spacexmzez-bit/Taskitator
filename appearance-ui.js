@@ -69,13 +69,27 @@
     }
 
     const toggles = [...document.querySelectorAll('#appearanceCard input[data-fx]')];
+    const modeBoxes = [...document.querySelectorAll('#fxModes .fx-mode')];
+    const MODE_LABEL = { static: 'Static', reduced: 'Reduced', normal: 'Normal', custom: 'Custom' };
+    // Phase 6.6: the four mode boxes and the effect switches. Switches only act in Normal and Custom; Normal shows them all on.
     function renderAppearance() {
         const state = app.read();
+        const mode = state.anim.mode;
+        const eff = app.effective();
+        const locked = mode === 'static' || mode === 'reduced';
+        modeBoxes.forEach(b => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
+        const summary = document.getElementById('fxModeSummary');
+        if (summary) summary.textContent = MODE_LABEL[mode] || '';
         toggles.forEach(t => {
-            t.checked = Boolean(state.anim[t.dataset.fx]);
-            if (t.dataset.fx !== 'reduce') t.closest('.setting-row')?.classList.toggle('is-muted', state.anim.reduce);
+            t.checked = Boolean(eff[t.dataset.fx]);
+            t.disabled = locked;
+            t.closest('.setting-row')?.classList.toggle('is-muted', locked);
         });
     }
+    modeBoxes.forEach(b => b.addEventListener('click', () => {
+        if (app.setMode(b.dataset.mode)) fx()?.tap?.();
+        renderAppearance();
+    }));
     toggles.forEach(t => t.addEventListener('change', () => {
         app.setAnim(t.dataset.fx, t.checked);
         fx()?.tap?.();

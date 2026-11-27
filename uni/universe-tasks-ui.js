@@ -1,6 +1,7 @@
 (() => {
  const ask=message=>window.UniverseDialog?.confirm(message)??Promise.resolve(confirm(message));
  const node=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;};
+ const aiNote=scope=>{if(window.TaskitatorAiNotice)return window.TaskitatorAiNotice.node(scope);const p=document.createElement('p');p.className='ai-notice';if(p.dataset)p.dataset.aiNotice='universe';p.textContent='AI services are handled by a third party. AI can make mistakes, so check answers and results.';return p;};
  const date=value=>value?new Date(value+10800000).toISOString().slice(0,16):'';
  // Space kit (uni/universe-space.js). Every use is optional: without it the page keeps plain text.
  const space=()=>window.UniverseSpace;
@@ -140,7 +141,7 @@
    projectMembers(!t);project.addEventListener('change',()=>projectMembers(true));assignees.open=!t;
 
    // 3. Auditing: audit type, criteria, reviewers, completion requirement, dates
-   const auditing=box(editorBody,'Auditing','review');
+   const auditing=box(editorBody,'Auditing','review');auditing.append(aiNote('universe'));
    const audit=select(auditing,'Audit mode',[['none','No audit'],['human','Human only'],['ai','AI only'],['either','AI or human — member chooses'],['both','AI then human']],t?.audit_mode??'none');audit.parentElement.hidden=true;
    const criteria=input(auditing,'Review criteria',t?.criteria??'','textarea',4000);
    if(t&&g.role!=='owner'){criteria.disabled=true;audit.disabled=true;}
@@ -283,7 +284,7 @@
    if(a.state==='pending'&&d.submissions.some(s=>s.id===a.submission_id&&Date.now()-s.created_at>=86400000))body.append(node('p','Review is overdue. This assignment stays released from phone blocking while the review is pending.'));
    for(const s of d.submissions)if(s.actor_id===window.Clerk?.user?.id)for(const fid of s.files||[]){button(body,'Allow this proof attachment in Universe exports',async()=>{if(await ask('Allow this attachment to be downloaded in Universe backups by an owner or admin? Withdrawing permission cannot recall files already downloaded.'))await assignmentSend('/universe/groups/'+g.id+'/transfer/'+fid,{allowed:true});});button(body,'Withdraw export permission for this attachment',()=>assignmentSend('/universe/groups/'+g.id+'/transfer/'+fid,{allowed:false}));}
    if(t.ai_required){
-    const aiBase='/universe/groups/'+g.id+'/ai';body.append(node('h4','Universe AI review'),node('p',t.human_required?'AI approval is followed by a human decision.':'AI makes the completion decision.'));
+    const aiBase='/universe/groups/'+g.id+'/ai';body.append(node('h4','Universe AI review'),node('p',t.human_required?'AI approval is followed by a human decision.':'AI makes the completion decision.'),aiNote('universe'));
     if(d.can_request_ai&&writable&&a.state==='pending'){
      const mode=select(body,'Review payment',t.mode==='shared'?[['hosted','Group Shared credits']]:[['personal','My saved Gemini key'],['hosted','My Universe credits (Pro)']]);
      button(body,'Get review quote',async()=>{await assignmentSend(aiBase+'/'+id+'/quote',{mode:mode.value});await assignment(id);});

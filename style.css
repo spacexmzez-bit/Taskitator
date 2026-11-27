@@ -6120,5 +6120,57 @@ html[data-shell="study-plans"] .top-navbar #emergencyTriggerBtn { display: none;
     .auto-create-wrap { transition: none !important; }
     .consec-help { animation: none; }
 }
-html[data-motion="reduce"] .auto-create-wrap { transition: none !important; }
-html[data-motion="reduce"] .consec-help { animation: none; }
+
+
+/* Phase 6.6: motion modes. data-motion is set by theme-boot.js: "reduced" or "static" (Normal and Custom have no attribute).
+   Both collapse every animation and transition to 1 ms (the same trick as prefers-reduced-motion, so transitionend still
+   fires). Reduced then gives back the essential ones: loading spinners and progress bars. */
+html[data-motion="static"] *, html[data-motion="static"] *::before, html[data-motion="static"] *::after,
+html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-motion="reduced"] *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+}
+html[data-motion="reduced"] .is-loading::before { animation: spin .7s linear infinite !important; }
+html[data-motion="reduced"] #universeWorkspace button.is-busy::after { animation: uni-spin 1.4s linear infinite !important; }
+html[data-motion="reduced"] :is(.pro-progress-fill, .flex-allowance-fill) { transition-duration: .4s !important; }
+
+/* Phase 6.6: tap bubbles and the icon wipe (motion.js). */
+#tk-bubbles { position: fixed; inset: 0; pointer-events: none; z-index: 2147483300; overflow: hidden; }
+.tk-bubble { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: color-mix(in srgb, var(--text-color, #fff) 34%, transparent); animation: tkBubble .5s ease-out forwards; }
+@keyframes tkBubble { from { transform: scale(.3); opacity: .6; } to { transform: scale(2.4); opacity: 0; } }
+.tk-wipe { animation: tkWipe .4s ease-out both; }
+html[dir="rtl"] .tk-wipe { animation-name: tkWipeRtl; }
+@keyframes tkWipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes tkWipeRtl { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0 0 0 0); } }
+.settings-tab[aria-selected="true"] .settings-tab-label { font-weight: 700; }
+
+/* Phase 6.6: Animations & effects, a collapsed card at the end of General. The mode boxes copy Universe's choice-box look. */
+.fx-fold > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.fx-fold > summary::-webkit-details-marker { display: none; }
+.fx-fold > summary .card-title { margin: 0; flex: 1; }
+.fx-fold > summary::after { content: '▸'; color: var(--text-muted); transition: transform var(--dur-med) var(--ease-out); }
+html[dir="rtl"] .fx-fold > summary::after { content: '◂'; }
+.fx-fold[open] > summary::after { transform: rotate(90deg); }
+html[dir="rtl"] .fx-fold[open] > summary::after { transform: rotate(-90deg); }
+.fx-fold > summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; border-radius: 6px; }
+.fx-fold-hint { font-size: .78rem; color: var(--text-muted); }
+.fx-fold-body { margin-top: 12px; animation: settingsCardIn var(--dur-med) var(--ease-out); }
+.fx-modes { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; margin: 10px 0 12px; }
+.fx-mode { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; min-height: 128px; margin: 0; padding: 12px 12px 14px; border: 1.5px solid var(--border-color); border-radius: var(--radius-l, 14px); background: var(--card-bg); color: var(--text-color); text-align: start; box-shadow: 0 3px 0 var(--depth, rgba(0,0,0,.35)); cursor: pointer; font: inherit; transition: border-color var(--dur-fast), background var(--dur-fast), transform var(--dur-fast); }
+.fx-mode .tk-ic { width: 22px; height: 22px; color: var(--text-muted); }
+.fx-mode strong { font-size: 14px; line-height: 1.25; }
+.fx-mode span { color: var(--text-muted); font-size: 12px; font-weight: 500; line-height: 1.4; }
+.fx-mode:hover { border-color: var(--border-hover); }
+.fx-mode:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--depth, rgba(0,0,0,.35)); }
+.fx-mode[aria-checked="true"], .fx-mode[aria-checked="true"]:hover { border-color: var(--primary); background: var(--accent-light); box-shadow: 0 3px 0 var(--depth-primary, var(--primary)); }
+.fx-mode[aria-checked="true"] .tk-ic { color: var(--primary-hover, var(--primary)); }
+.fx-mode:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.fx-perf-note { padding: 8px 10px; border-radius: 8px; background: var(--card-subtle); border: 1px solid var(--border-color); }
+
+/* Phase 6.6: AI notice (ai-notice.js). */
+.ai-notice { display: flex; gap: 6px; align-items: flex-start; margin: 8px 0; font-size: .74rem; line-height: 1.4; color: var(--text-muted); }
+.ai-notice::before { content: 'ⓘ'; flex: none; font-size: .85rem; line-height: 1.2; color: var(--accent, var(--primary)); }

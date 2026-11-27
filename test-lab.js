@@ -280,6 +280,7 @@
     }
     function load() { ui.title.value = rec.taskTitle; ui.unit.value = unitOf(rec.unit); ui.context.value = rec.context; renderFiles(); paintAll(); for (const k of ['a', 'b']) ui[k].savePane.hidden = true; }
 
+    const aiNote = scope => { if (window.TaskitatorAiNotice) return window.TaskitatorAiNotice.node(scope); const p = document.createElement('p'); p.className = 'ai-notice'; if (p.dataset) p.dataset.aiNotice = scope === 'universe' ? 'universe' : 'user'; p.textContent = 'AI services are handled by a third party. AI can make mistakes, so check answers and results.'; return p; };
     function build() {
         const rootEl = $('labRoot'); rootEl.textContent = '';
         const head = el('header', undefined, rootEl, 'plans-header');
@@ -287,6 +288,7 @@
         el('span', 'PRO', h, 'tag-chip');
         el('p', tr('Try proof criteria before you use them. Validate scores the wording; Test runs a real audit on your sample proof. Nothing here saves or locks a task. Both use credits.'), rootEl, 'plans-note');
         ui.locked = el('p', tr('The Test lab is a Taskitator Pro feature.'), rootEl, 'plans-notice'); ui.locked.hidden = true;
+        rootEl.append(aiNote());
         const wb = ui.wb = el('div', undefined, rootEl, 'lab-bench');
         // Sticky switcher: change tests without scrolling.
         const top = el('div', undefined, wb, 'lab-topbar');

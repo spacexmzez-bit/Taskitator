@@ -176,7 +176,9 @@
   // The plural is automatic ("Chapter" gives "Chapters") unless Copilot supplied one for the unit it named.
   const pluralOf=()=>initial.plural&&unit.value===(initial.unit||'Chapter')?initial.plural:unit.value.trim()+'s';
   // -- AI criteria --
-  const ai=panels.ai,audit=field('Enable AI audits for unit subtasks only',false,'checkbox',ai);audit.checked=false;
+  const ai=panels.ai;
+  {const n=window.TaskitatorAiNotice?window.TaskitatorAiNotice.node():node('p','AI services are handled by a third party. AI can make mistakes, so check answers and results.');n.className='ai-notice';if(n.dataset)n.dataset.aiNotice='user';ai.append(n);}
+  const audit=field('Enable AI audits for unit subtasks only',false,'checkbox',ai);audit.checked=false;
   const aiBody=node('div',undefined,ai);aiBody.hidden=true;
   const criteria=field('Proof criteria for the units. Use {num} for each unit number.','','textarea',aiBody);criteria.maxLength=4000;
   const exclude=field('Exclude units from the criteria (optional)','','text',aiBody);exclude.placeholder='8, 10-12';exclude.dir='ltr';exclude.inputMode='numeric';

@@ -1134,7 +1134,9 @@ window.TaskitatorApp = (() => {
 
     const UIFX = {
         reducedMotion() {
-            return Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+            // Phase 6.6: the Animations mode (Reduced or Static) counts as well as the OS setting.
+            const level = window.TaskitatorAppearance?.motionLevel?.();
+            return (level !== undefined && level !== 'normal') || Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
         },
         hapticsOn() {
             try {

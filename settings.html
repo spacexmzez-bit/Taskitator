@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html lang="en" class="auth-pending">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-phBsPp8o1DnqIziFjhsljQVaiAk85t+1wf5IFqD27Ys=' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com; font-src 'self' data: https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-ckE6TJwTdkTfYDgiOGu+wzbUp8z/6HGBTiMUnzTOd5E=' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com; font-src 'self' data: https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
 <style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -29,6 +29,8 @@
 <script src="locales/ar.js"></script>
 <script defer src="icons.js"></script>
 <script defer src="nature.js"></script>
+<script defer src="motion.js"></script>
+<script defer src="ai-notice.js"></script>
 </head>
 <body class="settings-page">
 
@@ -139,53 +141,6 @@
                 <p class="tk-pro-note" id="themeProNote" role="status" hidden></p>
             </div>
 
-            <div class="settings-card" id="appearanceCard">
-                <h4 class="card-title">Appearance</h4>
-                <p class="setting-hint">Nature effects on this device. Reduce motion turns them all off at once.</p>
-                <div class="setting-row">
-                    <div class="setting-text">
-                        <label for="fx-particles" class="setting-label">Falling leaves</label>
-                        <p class="setting-hint" id="fx-particles-hint">A short leaf burst when you finish a task.</p>
-                    </div>
-                    <input type="checkbox" id="fx-particles" class="switch" role="switch" data-fx="particles" aria-describedby="fx-particles-hint">
-                </div>
-                <div class="setting-row">
-                    <div class="setting-text">
-                        <label for="fx-clouds" class="setting-label">Clouds</label>
-                        <p class="setting-hint" id="fx-clouds-hint">Clouds part when you move between pages.</p>
-                    </div>
-                    <input type="checkbox" id="fx-clouds" class="switch" role="switch" data-fx="clouds" aria-describedby="fx-clouds-hint">
-                </div>
-                <div class="setting-row">
-                    <div class="setting-text">
-                        <label for="fx-animals" class="setting-label">Animals</label>
-                        <p class="setting-hint" id="fx-animals-hint">Animals inside the completion buttons. Off shows a plain tick.</p>
-                    </div>
-                    <input type="checkbox" id="fx-animals" class="switch" role="switch" data-fx="animals" aria-describedby="fx-animals-hint">
-                </div>
-                <div class="setting-row">
-                    <div class="setting-text">
-                        <label for="fx-bird" class="setting-label">Bird</label>
-                        <p class="setting-hint" id="fx-bird-hint">A bird flies past when you add a task.</p>
-                    </div>
-                    <input type="checkbox" id="fx-bird" class="switch" role="switch" data-fx="bird" aria-describedby="fx-bird-hint">
-                </div>
-                <div class="setting-row">
-                    <div class="setting-text">
-                        <label for="fx-parallax" class="setting-label">Parallax</label>
-                        <p class="setting-hint" id="fx-parallax-hint">The background moves gently as you scroll.</p>
-                    </div>
-                    <input type="checkbox" id="fx-parallax" class="switch" role="switch" data-fx="parallax" aria-describedby="fx-parallax-hint">
-                </div>
-                <div class="setting-row">
-                    <div class="setting-text">
-                        <label for="fx-reduce" class="setting-label">Reduce motion</label>
-                        <p class="setting-hint" id="fx-reduce-hint">Turns off every animation above.</p>
-                    </div>
-                    <input type="checkbox" id="fx-reduce" class="switch" role="switch" data-fx="reduce" aria-describedby="fx-reduce-hint">
-                </div>
-            </div>
-
             <div class="settings-card">
                 <h4 class="card-title">Copilot</h4>
                 <div class="form-group">
@@ -257,6 +212,75 @@
                 <p class="setting-hint" style="margin-bottom:10px"><a href="index.html#help">Read the full help guide →</a> (every feature, with examples)</p>
                 <div id="tutorialHub" class="tour-list" role="list"></div>
             </div>
+
+            <!-- Phase 6.6: every animation control in one collapsed section, last in General (saved on this device only, appearance-ui.js). -->
+            <details class="settings-card fx-fold" id="appearanceCard">
+                <summary class="fx-fold-summary">
+                    <h4 class="card-title">Animations &amp; effects</h4>
+                    <span class="fx-fold-hint" id="fxModeSummary">Normal</span>
+                </summary>
+                <div class="fx-fold-body">
+                    <p class="setting-hint">How much Taskitator moves on this device.</p>
+                    <div class="fx-modes" id="fxModes" role="radiogroup" aria-label="Animation mode">
+                        <button type="button" class="fx-mode" role="radio" aria-checked="false" data-mode="static"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-mountain"></use></svg><strong>Static</strong><span>Nothing moves.</span></button>
+                        <button type="button" class="fx-mode" role="radio" aria-checked="false" data-mode="reduced"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-moon"></use></svg><strong>Reduced</strong><span>Only essential motion: loading and progress.</span></button>
+                        <button type="button" class="fx-mode" role="radio" aria-checked="false" data-mode="normal"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-butterfly"></use></svg><strong>Normal</strong><span>Every animation. Smoothest on newer devices.</span></button>
+                        <button type="button" class="fx-mode" role="radio" aria-checked="false" data-mode="custom"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-settings"></use></svg><strong>Custom</strong><span>Normal, with your own effect switches.</span></button>
+                    </div>
+                    <p class="setting-hint fx-perf-note" id="fxPerfNote">Animations can make Taskitator feel slower, especially on older or low-memory devices. If it feels slow, choose Reduced or Static.</p>
+                    <p class="setting-hint" id="fxSwitchNote">Effect switches apply in Normal and Custom. Turning one off switches to Custom.</p>
+                    <div class="setting-row">
+                        <div class="setting-text">
+                            <label for="fx-particles" class="setting-label">Falling leaves</label>
+                            <p class="setting-hint" id="fx-particles-hint">A short leaf burst when you finish a task.</p>
+                        </div>
+                        <input type="checkbox" id="fx-particles" class="switch" role="switch" data-fx="particles" aria-describedby="fx-particles-hint">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-text">
+                            <label for="fx-clouds" class="setting-label">Clouds</label>
+                            <p class="setting-hint" id="fx-clouds-hint">Clouds part when you move between pages.</p>
+                        </div>
+                        <input type="checkbox" id="fx-clouds" class="switch" role="switch" data-fx="clouds" aria-describedby="fx-clouds-hint">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-text">
+                            <label for="fx-animals" class="setting-label">Animals</label>
+                            <p class="setting-hint" id="fx-animals-hint">Animals inside the completion buttons. Off shows a plain tick.</p>
+                        </div>
+                        <input type="checkbox" id="fx-animals" class="switch" role="switch" data-fx="animals" aria-describedby="fx-animals-hint">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-text">
+                            <label for="fx-bird" class="setting-label">Bird</label>
+                            <p class="setting-hint" id="fx-bird-hint">A bird flies past when you add a task.</p>
+                        </div>
+                        <input type="checkbox" id="fx-bird" class="switch" role="switch" data-fx="bird" aria-describedby="fx-bird-hint">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-text">
+                            <label for="fx-parallax" class="setting-label">Parallax</label>
+                            <p class="setting-hint" id="fx-parallax-hint">The background moves gently as you scroll.</p>
+                        </div>
+                        <input type="checkbox" id="fx-parallax" class="switch" role="switch" data-fx="parallax" aria-describedby="fx-parallax-hint">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-text">
+                            <label for="fx-bubbles" class="setting-label">Tap bubbles</label>
+                            <p class="setting-hint" id="fx-bubbles-hint">A soft bubble appears where you press a button.</p>
+                        </div>
+                        <input type="checkbox" id="fx-bubbles" class="switch" role="switch" data-fx="bubbles" aria-describedby="fx-bubbles-hint">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-text">
+                            <label for="fx-wipe" class="setting-label">Icon wipe</label>
+                            <p class="setting-hint" id="fx-wipe-hint">The icon of a selected tab is drawn in from the side.</p>
+                        </div>
+                        <input type="checkbox" id="fx-wipe" class="switch" role="switch" data-fx="wipe" aria-describedby="fx-wipe-hint">
+                    </div>
+                </div>
+            </details>
+
         </section>
 
         <!-- ================================================================= -->
@@ -400,6 +424,7 @@
                 <h3>AI &amp; Pro</h3>
                 <p>Choose which AI Taskitator uses and manage your keys. Changes here save immediately.</p>
             </header>
+            <p class="ai-notice" data-ai-notice="user">AI services are handled by a third party. AI can make mistakes, so check answers and results.</p>
 
             <!-- Taskitator Pro (rendered by pro.js) -->
             <div id="pro-settings-container"></div>
@@ -753,6 +778,7 @@
         </div>
     </div>
 
+    <p class="ai-notice" data-ai-notice="user">AI services are handled by a third party. AI can make mistakes, so check answers and results.</p>
     <form class="copilot-footer" id="copilotForm">
         <input type="text" id="copilotInput" placeholder="Ask Copilot..." autocomplete="off" required>
         <button type="submit" class="icon-btn" style="background: var(--primary); color: #fff; border: none; font-weight: 700; padding: 8px 16px;">Send</button>
@@ -1024,6 +1050,7 @@ function activateTab(targetId, { focus = false, instant = false } = {}) {
 
     const btn = tabButtons[index];
     placeTabIndicator(btn, instant);
+    if (!instant) window.TaskitatorMotion?.wipe(btn.querySelector('.settings-tab-icon .tk-ic'));
     // Scroll only the tab bar sideways; the page goes back to the top of the new section.
     if (btn.parentElement) {
         const bar = btn.parentElement, x = btn.offsetLeft - (bar.clientWidth - btn.offsetWidth) / 2;

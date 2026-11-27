@@ -133,12 +133,12 @@ test('CSS: pop-down is driven by the Consecutive checkbox, animated, reduced-mot
     assert.match(css, /\.form-group:has\(#detailConsecutiveToggle:checked\) > \.auto-create-wrap/);
     assert.match(css, /\.auto-create-wrap \{\s*grid-template-rows: 0fr;[\s\S]*?transition: grid-template-rows \.2s/);
     assert.match(css, /prefers-reduced-motion: reduce\) \{\s*\.auto-create-wrap \{ transition: none !important; \}/);
-    assert.match(css, /html\[data-motion="reduce"\] \.auto-create-wrap/);
+    assert.match(css, /html\[data-motion="reduced"\] \*/, 'Phase 6.6 motion modes collapse the pop-down transition globally');
     assert.match(css, /\.auto-create-label \{ padding-inline-start: 10px; border-inline-start/);
 });
 
 test('help: Pro help section and README describe Auto create; cache moved', () => {
     assert.match(html, /<b>Auto create \(Pro\)<\/b>/);
     assert.match(read('README.md'), /Auto create \(Phase 6\.5\)/);
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v67'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v68'/);
 });

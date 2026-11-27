@@ -3,7 +3,9 @@
    External file on purpose: editing it never changes the CSP inline-script hashes.
 
    Storage: localStorage 'taskitator_appearance' (per device, never synced):
-     { v:1, theme, effective, anim:{particles,clouds,animals,bird,parallax,reduce}, bird_speed, notice }
+     { v:1, theme, effective, anim:{particles,clouds,animals,bird,parallax,bubbles,wipe,mode}, bird_speed, notice }
+   - anim.mode  = 'normal' (default) | 'custom' | 'reduced' | 'static' (Phase 6.6). The switches are kept per key; Normal shows them
+                  all on, Custom uses them, Reduced and Static turn every decorative effect off and collapse CSS motion.
    - theme      = what the user picked (preferred)
    - effective  = what is applied now (falls back to the free default when Pro lapses)
    It is not in SyncEngine.ACCOUNT_KEYS, SNAPSHOT_KEYS, cleanSettings or backups, so it
@@ -23,7 +25,10 @@
     'use strict';
     const KEY = 'taskitator_appearance';
     const VERSION = 1;
-    const ANIM_KEYS = ['particles', 'clouds', 'animals', 'bird', 'parallax', 'reduce'];
+    const SWITCH_KEYS = ['particles', 'clouds', 'animals', 'bird', 'parallax', 'bubbles', 'wipe'];
+    const MODES = ['static', 'reduced', 'normal', 'custom'];
+    // Effects that Reduced and Static turn off (animals are art, not motion, so they keep their own switch).
+    const DECORATIVE = ['particles', 'clouds', 'bird', 'parallax', 'bubbles', 'wipe'];
     const reg = window.TaskitatorThemes;
     const html = document.documentElement;
     if (!reg) return;
@@ -34,10 +39,12 @@
             return (Number.isFinite(mem) && mem > 0 && mem <= 2) || navigator.connection?.saveData === true;
         } catch { return false; }
     };
+    const osReduced = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
+    // A device that never chose a mode: low-end or OS "reduce motion" starts in Reduced, everyone else in Normal.
+    const defaultMode = () => (lowEnd() || osReduced() ? 'reduced' : 'normal');
     function defaults() {
-        const motion = !lowEnd();
         return { v: VERSION, theme: reg.DEFAULT_THEME, effective: reg.DEFAULT_THEME,
-            anim: { particles: motion, clouds: motion, animals: true, bird: motion, parallax: motion, reduce: false },
+            anim: { particles: true, clouds: true, animals: true, bird: true, parallax: true, bubbles: true, wipe: true, mode: defaultMode() },
             bird_speed: 7, notice: null };
     }
     // Validate + migrate any stored value. Unknown fields are dropped; bad values fall back.
@@ -49,10 +56,26 @@
         out.effective = reg.validTheme(raw.effective ?? raw.theme);
         const anim = raw.anim && typeof raw.anim === 'object' ? raw.anim : {};
         out.anim = {};
-        for (const k of ANIM_KEYS) out.anim[k] = typeof anim[k] === 'boolean' ? anim[k] : base.anim[k];
+        for (const k of SWITCH_KEYS) out.anim[k] = typeof anim[k] === 'boolean' ? anim[k] : base.anim[k];
+        const anyOff = SWITCH_KEYS.some(k => out.anim[k] === false);
+        let mode = MODES.includes(anim.mode) ? anim.mode : null;
+        // Older data had a Reduce motion switch (= Static) and per-effect switches (some off = Custom).
+        if (!mode) mode = anim.reduce === true ? 'static' : (anyOff ? 'custom' : base.anim.mode);
+        if (mode === 'normal' && anyOff) mode = 'custom';
+        out.anim.mode = mode;
         out.bird_speed = base.bird_speed;   // fixed at 7: any stored value is ignored
         out.notice = typeof raw.notice === 'string' && reg.byId(raw.notice) ? raw.notice : null;
         return out;
+    }
+    // The switches as they act right now: Normal = all on, Custom = stored, Reduced/Static = decorative off.
+    function effectiveAnim(app) {
+        const m = app.anim.mode, e = {};
+        for (const k of SWITCH_KEYS) {
+            if (m === 'normal') e[k] = true;
+            else if (m === 'custom') e[k] = app.anim[k];
+            else e[k] = DECORATIVE.includes(k) ? false : app.anim[k];
+        }
+        return e;
     }
     function read() {
         try { return normalize(JSON.parse(localStorage.getItem(KEY))); } catch { return defaults(); }
@@ -69,10 +92,10 @@
         html.dataset.theme = theme.id;
         const space = universeOpen() ? reg.FAMILIES.space : null;
         html.dataset.family = space ? space.id : theme.family;
-        const off = ANIM_KEYS.filter(k => k !== 'reduce' && !app.anim[k]);
-        if (app.anim.reduce) off.push('particles', 'clouds', 'bird', 'parallax');
-        if (off.length) html.dataset.fxOff = [...new Set(off)].join(' '); else delete html.dataset.fxOff;
-        if (app.anim.reduce) html.dataset.motion = 'reduce'; else delete html.dataset.motion;
+        const eff = effectiveAnim(app);
+        const off = SWITCH_KEYS.filter(k => !eff[k]);
+        if (off.length) html.dataset.fxOff = off.join(' '); else delete html.dataset.fxOff;
+        if (app.anim.mode === 'static' || app.anim.mode === 'reduced') html.dataset.motion = app.anim.mode; else delete html.dataset.motion;
         html.style.setProperty('--tk-bird-speed', String(app.bird_speed));
         let meta = document.querySelector('meta[name="theme-color"]');
         if (!meta && document.head) {
@@ -160,18 +183,38 @@
             save(app); apply(app); emit(app);
             return true;
         },
+        // Switches only change anything in Normal and Custom. In Normal every effect shows as on, so the first switch
+        // you turn off starts from "all on" and the mode becomes Custom; all on again returns to Normal.
         setAnim(key, on) {
-            if (!ANIM_KEYS.includes(key)) return false;
+            if (!SWITCH_KEYS.includes(key)) return false;
             const app = read();
+            const m = app.anim.mode;
+            if (m === 'normal') for (const k of SWITCH_KEYS) app.anim[k] = true;
             app.anim[key] = Boolean(on);
+            if (m === 'normal' || m === 'custom') app.anim.mode = SWITCH_KEYS.every(k => app.anim[k]) ? 'normal' : 'custom';
             save(app); apply(app); emit(app);
             return true;
         },
+        setMode(mode) {
+            if (!MODES.includes(mode)) return false;
+            const app = read();
+            app.anim.mode = mode;
+            save(app); apply(app); emit(app);
+            return true;
+        },
+        effective: () => effectiveAnim(read()),
+        // 'static' | 'reduced' | 'normal' (Custom counts as normal motion). The OS setting counts as at least Reduced.
+        motionLevel() {
+            const m = read().anim.mode;
+            if (m === 'static') return 'static';
+            if (m === 'reduced' || osReduced()) return 'reduced';
+            return 'normal';
+        },
         motionAllowed(key) {
             const app = read();
-            if (app.anim.reduce) return false;
-            try { if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false; } catch {}
-            return key ? app.anim[key] !== false : true;
+            if (app.anim.mode === 'static' || app.anim.mode === 'reduced') return false;
+            if (osReduced()) return false;
+            return key ? effectiveAnim(app)[key] !== false : true;
         },
         onStatus,
         apply: () => apply(read())
