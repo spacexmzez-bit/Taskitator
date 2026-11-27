@@ -83,15 +83,22 @@ function fixture() {
     const service = new TaskitatorSync({ storage }, env);
     let verificationOverrides = {};
     let revoked = false, verificationStatus='complete', deleteFailure=false, googleToken=null, providerStatus=200;
+    let openaiResponse={model:'gpt-6-luna',status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'Hello from ChatGPT'}]}],usage:{input_tokens:12,output_tokens:4}};
     let claudeResponse={model:'claude-haiku-5-5',stop_reason:'end_turn',content:[{type:'text',text:'Hello from Claude'}],usage:{input_tokens:12,output_tokens:4}};
     const providerCalls=[],countCalls=[];let countStatus=200,countTokens=12;
     const deletedUsers=new Set(),sessionOwners=new Map();
     globalThis.fetch = async (url,options={}) => {
         // Free personal-key metering counts input tokens first; tracked separately from generations.
-        if(String(url).endsWith('/count_tokens')||String(url).endsWith(':countTokens')){
+        if(String(url).endsWith('/count_tokens')||String(url).endsWith(':countTokens')||String(url).endsWith('/responses/input_tokens')){
             countCalls.push({url:String(url),options});
             if(countStatus!==200)return Response.json({error:{message:'count failed'}},{status:countStatus});
             return Response.json(String(url).endsWith(':countTokens')?{totalTokens:countTokens}:{input_tokens:countTokens});
+        }
+        if(String(url).startsWith('https://api.openai.com/v1/')){
+            providerCalls.push({url:String(url),options});
+            if(providerStatus!==200)return Response.json({error:{message:'provider diagnostic secret'}},{status:providerStatus});
+            if(String(url).includes('/models/'))return Response.json({id:'gpt-6-luna',object:'model'});
+            return Response.json(typeof openaiResponse==='function'?await openaiResponse(options):openaiResponse);
         }
         if(String(url).startsWith('https://api.anthropic.com/v1/')){
             providerCalls.push({url:String(url),options});
@@ -140,7 +147,7 @@ function fixture() {
     return { storage, kv, env, service, call, deletedUsers, sessionOwners, revoke: () => { revoked = true; },
         setVerificationResponse:value=>{verificationOverrides=value},
         setVerificationStatus:value=>{verificationStatus=value},setDeleteFailure:value=>{deleteFailure=value},
-        setGoogleToken:value=>{googleToken=value},providerCalls,countCalls,setCountStatus:value=>{countStatus=value},setCountTokens:value=>{countTokens=value},setProviderStatus:value=>{providerStatus=value},setClaudeResponse:value=>{claudeResponse=value} };
+        setGoogleToken:value=>{googleToken=value},providerCalls,countCalls,setCountStatus:value=>{countStatus=value},setCountTokens:value=>{countTokens=value},setProviderStatus:value=>{providerStatus=value},setOpenAIResponse:value=>{openaiResponse=value},setClaudeResponse:value=>{claudeResponse=value} };
 }
 async function create(f, user = 'user_A') {
     const token = await jwt(user);
@@ -2703,4 +2710,119 @@ test('Phase 7.1: friends by exact username, silent block and decline, points vis
     // A user without a username can't send requests
     const d = await create(f, 'user_D');
     assert.equal((await post(d, 'request', { username: 'alice' })).status, 403);
+});
+test('Phase 7.2: make today required once; anything finished before never counts', async () => {
+    const f = fixture(), a = await create(f);
+    const wd = new Date(Date.now() + 3 * 3600000).getUTCDay(); // today's Riyadh weekday (day starts at 00:00)
+    const base = { username: a.user, settings: { streak_free_days: [wd] }, recurrence_schema: 1 };
+    const t1 = { id: 'rq1', title: 'Before', status: 'active', priority_id: 'prio_high' }, t2 = { id: 'rq2', title: 'After', status: 'active', priority_id: 'prio_high' };
+    let r = await f.call('/sync/push', a.token, 'POST', { ...base, tasks: [t1, t2], base_version: 0, mutation_id: 'mutation-req-1' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const d1 = { ...t1, status: 'completed', completed_at: new Date().toISOString() };
+    r = await f.call('/sync/push', a.token, 'POST', { ...base, tasks: [d1, t2], base_version: 1, mutation_id: 'mutation-req-2' });
+    assert.equal(r.body.points.gained, 0); assert.equal(r.body.points.today.free, true); assert.equal(r.body.points.today.can_require, true);
+    r = await f.call('/points/require', a.token, 'POST', {});
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.excluded, 1);
+    assert.equal(r.body.points.today.required, true); assert.equal(r.body.points.today.free, false); assert.equal(r.body.points.today.can_require, false); assert.equal(r.body.points.today.count, 0);
+    assert.equal((await f.call('/points/require', a.token, 'POST', {})).status, 409, 'once per free day');
+    const later = new Date(Date.now() + 1000).toISOString();
+    r = await f.call('/sync/push', a.token, 'POST', { ...base, tasks: [{ ...t1 }, t2], base_version: 2, mutation_id: 'mutation-req-3' });
+    r = await f.call('/sync/push', a.token, 'POST', { ...base, tasks: [{ ...d1, completed_at: later }, { ...t2, status: 'completed', completed_at: later }], base_version: 3, mutation_id: 'mutation-req-4' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.points.gained, 5, 'only the task finished after the press earns'); assert.equal(r.body.points.today.count, 1); assert.equal(r.body.points.today.done, true);
+});
+
+// ---- Phase 7.3: ChatGPT (OpenAI Responses API, gpt-6-luna) as a third personal-key provider ----
+test('Phase 7.3: ChatGPT keeps its own encrypted key, checks it with zero generation and Bearer auth',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);
+    await saveKey(f,a);await saveKey(f,a,'sk-proj-openai-secret-123456','openai');
+    const state=(await f.call('/ai/keys?provider=openai',a.token)).body;
+    assert.equal(state.provider,'openai');assert.deepEqual(state.models,['gpt-6-luna']);
+    assert.equal(state.providers.gemini.saved,true);assert.equal(state.providers.openai.saved,true);assert.equal(state.providers.claude.saved,false);
+    assert.equal(JSON.stringify([...f.storage.map]).includes('sk-proj-openai-secret'),false);
+    assert.equal((await f.call('/ai/provider',a.token,'POST',{provider:'openai'})).body.selected_provider,'openai');
+    const before=f.providerCalls.length,test=await f.call('/ai/keys/test',a.token,'POST',{provider:'openai'});
+    assert.equal(test.status,200);assert.equal(test.body.generated_tokens,0);
+    const call=f.providerCalls[before];
+    assert.equal(call.url,'https://api.openai.com/v1/models/gpt-6-luna');assert.equal(call.options.body,undefined);assert.equal(call.options.headers.Authorization,'Bearer sk-proj-openai-secret-123456');
+    const remove=await keyProof(f,a,'api-key-delete',null,'openai');
+    assert.equal((await f.call('/ai/keys',a.token,'DELETE',{...remove,provider:'claude'})).status,403,'proof is bound to the provider');
+});
+test('Phase 7.3: ChatGPT chat uses the Responses API, store:false, no reasoning, only gpt-6-luna, no fallback',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a);await saveKey(f,a,'sk-proj-chat-1234','openai');
+    await f.call('/ai/provider',a.token,'POST',{provider:'openai'});
+    const payload={systemInstruction:{parts:[{text:'You are Ari.'}]},contents:[{role:'user',parts:[{text:'Hello'}]}],generationConfig:{temperature:0.2,maxOutputTokens:800}};
+    const request={provider:'openai',model:'gpt-6-luna',payload};
+    const result=await f.call('/ai/generate',a.token,'POST',request);
+    assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.candidates[0].content.parts[0].text,'Hello from ChatGPT');
+    const call=f.providerCalls.at(-1),body=JSON.parse(call.options.body);
+    assert.equal(call.url,'https://api.openai.com/v1/responses');assert.equal(call.options.headers.Authorization,'Bearer sk-proj-chat-1234');
+    assert.equal(body.model,'gpt-6-luna');assert.equal(body.store,false);assert.deepEqual(body.reasoning,{effort:'none'});assert.equal(body.instructions,'You are Ari.');
+    assert.equal(body.temperature,undefined);assert.deepEqual(body.input[0],{role:'user',content:[{type:'input_text',text:'Hello'}]});
+    assert.equal((await f.call('/ai/generate',a.token,'POST',{...request,model:'gpt-6-sol'})).status,400);
+    assert.equal((await f.call('/ai/generate',a.token,'POST',{model:'gemini-3.5-flash-lite',payload})).status,409);
+    f.setProviderStatus(429);assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,429);
+});
+test('Phase 7.3: ChatGPT tool turns map to function_call / function_call_output and back',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a,'sk-proj-tools-1234','openai');await f.call('/ai/provider',a.token,'POST',{provider:'openai'});
+    const tools=[{functionDeclarations:[{name:'get_tasks',description:'List tasks',parameters:{type:'OBJECT',properties:{scope:{type:'STRING'}}}}]}];
+    const payload={tools,contents:[{role:'user',parts:[{text:'What is due?'}]},{role:'model',parts:[{text:'Checking.'},{functionCall:{id:'call_1',name:'get_tasks',args:{scope:'today'}}}]},
+        {role:'user',parts:[{functionResponse:{id:'call_1',name:'get_tasks',response:{tasks:[]}}}]}],generationConfig:{maxOutputTokens:500}};
+    f.setOpenAIResponse({model:'gpt-6-luna',status:'completed',output:[{type:'function_call',call_id:'call_2',name:'get_tasks',arguments:'{"scope":"all"}'}],usage:{input_tokens:30,output_tokens:9}});
+    const result=await f.call('/ai/generate',a.token,'POST',{provider:'openai',model:'gpt-6-luna',payload});
+    assert.equal(result.status,200,JSON.stringify(result.body));
+    assert.deepEqual(result.body.candidates[0].content.parts[0].functionCall,{id:'call_2',name:'get_tasks',args:{scope:'all'}});
+    const body=JSON.parse(f.providerCalls.at(-1).options.body);
+    assert.deepEqual(body.input.map(i=>i.type||i.role),['user','assistant','function_call','function_call_output']);
+    assert.equal(body.input[2].call_id,'call_1');assert.equal(body.input[2].arguments,'{"scope":"today"}');assert.equal(body.input[3].output,'{"tasks":[]}');
+    assert.equal(body.tools[0].type,'function');assert.equal(body.tools[0].parameters.type,'object');assert.equal(body.tools[0].parameters.properties.scope.type,'string');
+    assert.equal(body.parallel_tool_calls,false);
+    f.setOpenAIResponse({status:'completed',output:[{type:'function_call',call_id:'call_3',name:'get_tasks',arguments:'not json'}]});
+    assert.equal((await f.call('/ai/generate',a.token,'POST',{provider:'openai',model:'gpt-6-luna',payload})).status,502);
+});
+test('Phase 7.3: ChatGPT proof review sends images/PDF, uses strict schemas and low effort; bad, refused or cut-off answers never approve',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a,'sk-proj-audit-1234','openai');await f.call('/ai/provider',a.token,'POST',{provider:'openai'});
+    const payload={taskitatorFormat:'proof',contents:[{parts:[{text:'Review evidence'},{inline_data:{mime_type:'image/png',data:'aGVsbG8='}},{inline_data:{mime_type:'application/pdf',data:'cGRm'}}]}],generationConfig:{responseMimeType:'application/json'}};
+    const request={provider:'openai',model:'gpt-6-luna',payload};
+    const answer=text=>({status:'completed',output:[{type:'reasoning',summary:[]},{type:'message',role:'assistant',content:[{type:'output_text',text}]}],usage:{input_tokens:20,output_tokens:10}});
+    f.setOpenAIResponse(answer('{"verdict":"approved","confidence":0.9,"critique":"Evidence matches"}'));
+    assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,200);
+    const body=JSON.parse(f.providerCalls.at(-1).options.body),parts=body.input[0].content;
+    assert.equal(parts[1].type,'input_image');assert.equal(parts[1].image_url,'data:image/png;base64,aGVsbG8=');
+    assert.equal(parts[2].type,'input_file');assert.equal(parts[2].file_data,'data:application/pdf;base64,cGRm');
+    assert.equal(body.text.format.type,'json_schema');assert.equal(body.text.format.strict,true);assert.equal(body.text.format.schema.additionalProperties,false);
+    assert.deepEqual(body.reasoning,{effort:'low'});
+    for(const raw of [null,{verdict:'approved'},{verdict:'approved',confidence:2,critique:'bad'}]){
+        f.setOpenAIResponse(answer(JSON.stringify(raw)));assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,502);
+    }
+    f.setOpenAIResponse({status:'completed',output:[{type:'message',role:'assistant',content:[{type:'refusal',refusal:'no'}]}]});
+    assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,422);
+    f.setOpenAIResponse({status:'incomplete',incomplete_details:{reason:'max_output_tokens'},output:[]});
+    assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,502);
+    const heic={...payload,contents:[{parts:[{text:'x'},{inline_data:{mime_type:'image/heic',data:'aGVsbG8='}}]}]};
+    assert.equal((await f.call('/ai/generate',a.token,'POST',{...request,payload:heic})).status,415);
+});
+test('Phase 7.3: ChatGPT batch proof wraps the array schema in {results} and unwraps the answer',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a,'sk-proj-batch-1234','openai');await f.call('/ai/provider',a.token,'POST',{provider:'openai'});
+    const payload={taskitatorFormat:'batch-proof',contents:[{parts:[{text:'Review'}]}],generationConfig:{responseMimeType:'application/json'}};
+    const rows=[{task_id:'t1',status:'eligible',verdict:'approved',reason:'ok'}];
+    f.setOpenAIResponse({status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:JSON.stringify({results:rows})}]}],usage:{input_tokens:5,output_tokens:5}});
+    const result=await f.call('/ai/generate',a.token,'POST',{provider:'openai',model:'gpt-6-luna',payload});
+    assert.equal(result.status,200,JSON.stringify(result.body));
+    assert.deepEqual(JSON.parse(result.body.candidates[0].content.parts[0].text),rows);
+    const schema=JSON.parse(f.providerCalls.at(-1).options.body).text.format.schema;
+    assert.equal(schema.type,'object');assert.equal(schema.properties.results.type,'array');assert.deepEqual(schema.required,['results']);
+});
+test('Phase 7.3: Free ChatGPT use is counted before sending and priced at GPT-6 Luna rates; a missing count endpoint falls back to an upper estimate',async()=>{
+    const f=fixture(),a=await create(f);enableVault(f);await saveKey(f,a,'sk-proj-free-1234','openai');await f.call('/ai/provider',a.token,'POST',{provider:'openai'});
+    const request={provider:'openai',model:'gpt-6-luna',payload:{contents:[{role:'user',parts:[{text:'Hi'}]}],generationConfig:{maxOutputTokens:400}}};
+    const before=f.countCalls.length;
+    assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,200);
+    const count=f.countCalls[before];
+    assert.equal(count.url,'https://api.openai.com/v1/responses/input_tokens');
+    const sent=JSON.parse(count.options.body);assert.equal(sent.max_output_tokens,undefined);assert.equal(sent.store,undefined);assert.equal(sent.model,'gpt-6-luna');
+    f.setCountStatus(404);
+    assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,200,'404 count → estimate, request still runs');
+    f.setCountStatus(500);
+    assert.equal((await f.call('/ai/generate',a.token,'POST',request)).status,503,'other count failures stop uncharged');
 });

@@ -79,7 +79,7 @@ export class FriendsService {
         const P = globalThis.TaskitatorPoints;
         if (!a || !b) return 0;
         const today = P.logicalDate(now, 0);
-        const done = (s, d) => (s.days?.[d]?.n || 0) > 0, free = (s, d) => P.freeOn(s.free, d);
+        const done = (s, d) => P.dayDone(s, d), free = (s, d) => P.isFree(s, d); // 7.2: streak mode + required days
         const shift = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
         let n = 0;
         if (done(a, today) && done(b, today) && !free(a, today) && !free(b, today)) n = 1;

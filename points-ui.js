@@ -41,7 +41,7 @@
         const bar = el('span', 'pts-bar'); bar.setAttribute('aria-hidden', 'true');
         const fill = el('i'); fill.style.width = progress(data).pct + '%'; bar.append(fill);
         strip.append(streak, rank, bar);
-        const label = data.today.free ? t('Free day') : data.today.done ? t('Streak kept today') : t('Finish one task today to keep your streak');
+        const label = data.today.free ? t('Free day') + (data.today.can_require ? ' · ' + t('Make today required') : '') : data.today.done ? t('Streak kept today') : t('Finish one task today to keep your streak');
         strip.setAttribute('aria-label', `${t('Streak')}: ${data.streak}. ${t('Rank')}: ${t(data.rank.name)}, ${data.total} ${t('points')}. ${label}. ${t('Open points and streak')}`);
         strip.title = label;
     }
@@ -67,6 +67,29 @@
         lastFetch = Date.now();
         try { const r = await auth.api('/points'); update(r?.points, false); }
         catch { /* older Worker or offline: keep the cached copy */ }
+    }
+
+    const MODE_NAME = { tight: 'Tight', normal: 'Normal', loose: 'Loose' };
+    const MODE_TEXT = { tight: 'Only AI-locked tasks keep your streak.', normal: 'Required (non-bonus) tasks keep your streak.', loose: 'Any task, bonus included, keeps your streak.' };
+
+    // Phase 7.2: one press per free date. Syncs first so tasks finished on this device are known to the Worker.
+    async function makeRequired(btn) {
+        const confirm = o => (typeof window.TaskitatorConfirm === 'function' ? window.TaskitatorConfirm(o) : Promise.resolve(window.confirm(o.message)));
+        const done = data?.today?.count || 0;
+        const msg = t('Today stops being a free day. From now on, tasks you finish earn points and count toward your streak, and if you finish none, your streak breaks tonight.') + ' ' +
+            (done ? t('The {0} tasks you already finished today won’t count, even if you reopen and finish them again.').replace('{0}', num(done)) : t('Nothing you finished before pressing this counts.')) + ' ' +
+            t('This can’t be undone. Next week’s free days stay free.');
+        if (!await confirm({ title: t('Make today a required day?'), message: msg, confirmLabel: t('Make required'), cancelLabel: t('Keep it free'), tone: 'danger' })) return;
+        btn.disabled = true;
+        try {
+            await window.SyncEngine?.syncNow?.({ origin: 'manual' });
+            const r = await window.TaskitatorAuth.api('/points/require', { method: 'POST', body: '{}' });
+            update(r?.points, false);
+            window.TaskitatorNotify?.(t('Today is now a required day.'), 'success');
+        } catch (e) {
+            btn.disabled = false;
+            window.TaskitatorNotify?.(e?.message || t('Couldn’t make today required. Try again online.'), 'error');
+        }
     }
 
     function row(label, value) { const r = el('div', 'pts-row'); r.append(el('span', '', label), el('b', '', value)); return r; }
@@ -97,11 +120,22 @@
         const st = el('div', 'pts-streakbox');
         st.append(row(t('Current streak'), num(data.streak) + ' ' + t(data.streak === 1 ? 'day' : 'days')), row(t('Best streak'), num(data.best) + ' ' + t(data.best === 1 ? 'day' : 'days')),
             row(t('Today'), data.today.free ? t('Free day (no points)') : num(data.today.points) + ' / ' + num(data.cap) + ' ' + t('points') + ' · ' + num(data.today.count) + ' ' + t(data.today.count === 1 ? 'task' : 'tasks')));
-        if (!data.today.free && !data.today.done) st.append(el('p', 'pts-hint', t('Finish one task before your day ends to keep your streak.')));
+        const mode = data.mode || 'loose';
+        st.append(row(t('Streak counting'), t(MODE_NAME[mode])));
+        st.append(el('p', 'pts-sub', t(MODE_TEXT[mode]) + (data.mode_next ? ' ' + t('From {0}: {1}').replace('{0}', data.mode_next.from).replace('{1}', t(MODE_NAME[data.mode_next.mode])) : '')));
+        if (data.today.required) st.append(el('p', 'pts-hint', t('Today is a required day: it earns points and counts toward your streak.')));
+        if (!data.today.free && !data.today.done) st.append(el('p', 'pts-hint', t(mode === 'tight' ? 'Finish one AI-locked task before your day ends to keep your streak.' : mode === 'normal' ? 'Finish one required task before your day ends to keep your streak.' : 'Finish one task before your day ends to keep your streak.')));
+        if (data.today.can_require) {
+            const req = el('button', 'icon-btn pts-require', t('Make today required'));
+            req.type = 'button'; req.id = 'pointsRequireBtn';
+            req.disabled = !!window.TaskitatorOffline?.active;
+            req.addEventListener('click', () => makeRequired(req));
+            st.append(req, el('p', 'pts-sub', t('Earn points today and count it toward your streak. Once per free day; tasks already finished today don’t count.')));
+        }
 
         const week = el('div', 'pts-week'); week.setAttribute('aria-label', t('Last 7 days'));
         for (const d of data.week || []) {
-            const c = el('div', 'pts-day' + (d.count ? ' is-done' : '') + (d.free ? ' is-free' : '') + (d.date === data.today.date ? ' is-today' : ''));
+            const c = el('div', 'pts-day' + ((d.done ?? d.count) ? ' is-done' : '') + (d.free ? ' is-free' : '') + (d.date === data.today.date ? ' is-today' : ''));
             c.append(el('span', 'pts-day-name', t(SHORT[new Date(d.date + 'T00:00:00Z').getUTCDay()])), el('b', '', d.free ? '—' : num(d.points)));
             c.title = d.date + (d.free ? ' · ' + t('Free day') : '') + ' · ' + d.count + ' ' + t(d.count === 1 ? 'task' : 'tasks');
             week.append(c);
@@ -111,7 +145,7 @@
         const names = list => list.length ? list.map(i => t(DAYS[i])).join(', ') : t('None');
         free.append(el('h4', '', t('Free days')), el('p', '', names(data.free_days || [])));
         if (data.free_next) free.append(el('p', 'pts-sub', t('From {0}: {1}').replace('{0}', data.free_next.from).replace('{1}', names(data.free_next.days))));
-        const link = el('a', 'pts-link', t('Change free days in Settings → Day & week')); link.href = 'settings.html#schedule';
+        const link = el('a', 'pts-link', t('Change free days and streak counting in Settings → Day & week')); link.href = 'settings.html#schedule';
         free.append(link);
 
         const how = el('details', 'pts-how');
@@ -121,7 +155,8 @@
          'Only the task you tap counts. Subtasks finished with their parent earn nothing.',
          'Each task earns once. Reopening and completing again adds nothing.',
          'Up to 150 points a day. Points count on the day you complete a task, not its due date.',
-         'Free days earn no points and never break your streak.',
+         'Free days earn no points and never break your streak. “Make today required” turns today into a normal day, once per free day.',
+         'Streak counting (Settings → Day & week): Loose counts any task, Normal only required tasks, Tight only AI-locked tasks. Points always count every task.',
          'Points arrive when Taskitator syncs. Offline completions count for up to 7 days.'].forEach(s => ul.append(el('li', '', t(s))));
         const ranks = el('ol', 'pts-ranks');
         P?.RANKS.forEach((r, i) => { const li = el('li', i === data.rank.index ? 'is-current' : i < data.rank.index ? 'is-past' : ''); li.append(el('span', '', t(r.name)), el('b', '', num(r.min))); ranks.append(li); });

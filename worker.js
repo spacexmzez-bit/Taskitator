@@ -475,10 +475,11 @@ export async function verifiedEmail(env, userId) {
 
 export const PROVIDERS = {
     gemini: {name:'Gemini',models:['gemini-3.5-flash-lite','gemini-3.1-flash-lite']},
-    claude: {name:'Claude',models:['claude-haiku-5-5']}
+    claude: {name:'Claude',models:['claude-haiku-5-5']},
+    openai: {name:'ChatGPT',models:['gpt-6-luna']} // Phase 7.3: OpenAI API key (platform.openai.com), Responses API
 };
 export function providerId(value='gemini') {
-    if(typeof value!=='string' || !Object.hasOwn(PROVIDERS,value))throw new SecurityError(400,'Choose Gemini or Claude.');
+    if(typeof value!=='string' || !Object.hasOwn(PROVIDERS,value))throw new SecurityError(400,'Choose Gemini, Claude or ChatGPT.');
     return value;
 }
 
@@ -1052,8 +1053,8 @@ export class KeyVault {
         providerId(provider);
         let response;
         const model=PROVIDERS[provider].models[0],name=PROVIDERS[provider].name;
-        const url=provider==='claude'?'https://api.anthropic.com/v1/models/'+model:'https://generativelanguage.googleapis.com/v1beta/models/'+model;
-        const headers=provider==='claude'?{'x-api-key':key,'anthropic-version':'2023-06-01'}:{'x-goog-api-key':key};
+        const url=provider==='claude'?'https://api.anthropic.com/v1/models/'+model:provider==='openai'?'https://api.openai.com/v1/models/'+model:'https://generativelanguage.googleapis.com/v1beta/models/'+model;
+        const headers=provider==='claude'?{'x-api-key':key,'anthropic-version':'2023-06-01'}:provider==='openai'?{Authorization:'Bearer '+key}:{'x-goog-api-key':key};
         try{response=await fetch(url,{headers,signal:AbortSignal.timeout(15000)});}
         catch{throw new SecurityError(503,name+' connection could not be checked. Try again.');}
         if(!response.ok){
@@ -1271,6 +1272,121 @@ export function fromClaudeResponse(data){
     return {candidates:[{content:{role:'model',parts},finishReason:'STOP'}],modelVersion:data.model||PROVIDERS.claude.models[0],
         usageMetadata:{promptTokenCount:data.usage?.input_tokens||0,candidatesTokenCount:data.usage?.output_tokens||0}};
 }
+/* Phase 7.3: ChatGPT (OpenAI Responses API, model gpt-6-luna). Same Gemini-shaped payload in, same Gemini-shaped
+   result out, like the Claude adapter. store:false (OpenAI keeps no conversation); reasoning effort "none" for Copilot
+   tool conversations (no reasoning state to carry between turns) and "low" for one-shot structured reviews.
+   Strict structured outputs need an object at the root, so array schemas (batch proof) are wrapped in {results}. */
+export function toOpenAIRequest(payload){
+    const input=[],waiting=new Map();let callNumber=0;
+    for(const message of payload.contents){
+        if(message.role && !['user','model'].includes(message.role))throw new SecurityError(400,'Unsupported AI message role.');
+        const assistant=message.role==='model';
+        let content=[];
+        const flush=()=>{
+            if(!content.length)return;
+            input.push(assistant?{role:'assistant',content:content.map(c=>c.text).join('')}:{role:'user',content});
+            content=[];
+        };
+        // Tool results go before ordinary text in a user turn, as for Claude.
+        const parts=assistant?message.parts:[...message.parts].sort((a,b)=>((a.functionResponse||a.function_response)?0:1)-((b.functionResponse||b.function_response)?0:1));
+        for(const part of parts){
+            const fn=part.functionCall||part.function_call,result=part.functionResponse||part.function_response,file=part.inlineData||part.inline_data;
+            if(fn){
+                if(!assistant || typeof fn.name!=='string' || !object(fn.args||{}))throw new SecurityError(400,'Invalid AI tool call.');
+                const id=fn.id||'call_taskitator_'+(++callNumber);
+                if(!/^[A-Za-z0-9_-]{1,128}$/.test(id) || waiting.has(id))throw new SecurityError(400,'Invalid or duplicate AI tool call identifier.');
+                waiting.set(id,fn.name);flush();
+                input.push({type:'function_call',call_id:id,name:fn.name,arguments:JSON.stringify(fn.args||{})});
+            }else if(result){
+                if(assistant)throw new SecurityError(400,'Tool results must be user messages.');
+                const id=result.id||[...waiting].find(([,name])=>name===result.name)?.[0];
+                if(!id || waiting.get(id)!==result.name)throw new SecurityError(400,'Tool result does not match an earlier tool call.');
+                waiting.delete(id);flush();
+                input.push({type:'function_call_output',call_id:id,output:JSON.stringify(result.response??{})});
+            }else if(file){
+                if(assistant)throw new SecurityError(400,'Reference files must be user messages.');
+                const type=file.mimeType||file.mime_type;
+                if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(type))throw new SecurityError(415,'ChatGPT accepts JPG, PNG, WebP and PDF here. Convert HEIC photos or switch to Gemini.');
+                content.push(type==='application/pdf'?{type:'input_file',filename:'proof.pdf',file_data:'data:application/pdf;base64,'+file.data}:
+                    {type:'input_image',image_url:'data:'+type+';base64,'+file.data,detail:'auto'});
+            }else if(typeof part.text==='string' && !part.thought){
+                if(part.text)content.push(assistant?{text:part.text}:{type:'input_text',text:part.text});
+            }else if(part.thought || part.thoughtSignature || part.thought_signature){
+                throw new SecurityError(400,'Start a new conversation after changing AI providers.');
+            }else throw new SecurityError(400,'Unsupported ChatGPT message content.');
+        }
+        flush();
+    }
+    const last=input.at(-1);
+    if(waiting.size || !last || !(last.role==='user' || last.type==='function_call_output'))
+        throw new SecurityError(400,'Start or continue the AI conversation with a user message and complete tool results.');
+    const result={model:PROVIDERS.openai.models[0],input,max_output_tokens:payload.generationConfig.maxOutputTokens,store:false,
+        reasoning:{effort:payload.taskitatorFormat?'low':'none'}};
+    const system=payload.systemInstruction||payload.system_instruction;
+    if(system){
+        if(!Array.isArray(system.parts) || system.parts.some(part=>typeof part.text!=='string'))throw new SecurityError(400,'Invalid AI system instructions.');
+        result.instructions=system.parts.map(part=>part.text).join('\n');
+    }
+    const tools=(payload.tools||[]).flatMap(tool=>tool.functionDeclarations||tool.function_declarations||[]);
+    if(tools.length){
+        if(tools.length>32 || tools.some(tool=>typeof tool.name!=='string' || !/^[A-Za-z0-9_-]{1,64}$/.test(tool.name)))throw new SecurityError(400,'Invalid AI tool definitions.');
+        result.tools=tools.map(tool=>({type:'function',name:tool.name,description:String(tool.description||''),
+            parameters:translateSchema(tool.parameters||{type:'object',properties:{}}),strict:false}));
+        result.tool_choice='auto';result.parallel_tool_calls=false;
+    }
+    if(payload.taskitatorFormat){
+        const schema=OUTPUT_SCHEMAS[payload.taskitatorFormat];
+        result.text={format:{type:'json_schema',name:'taskitator_'+payload.taskitatorFormat.replace(/-/g,'_'),strict:true,
+            schema:schema.type==='array'?jsonSchema({results:schema}):schema}};
+    }else if(payload.generationConfig.responseMimeType==='application/json'){
+        result.instructions=(result.instructions||'')+'\nRespond only with valid JSON matching the requested schema. No markdown fences.';
+    }
+    return result;
+}
+export function fromOpenAIResponse(data,format){
+    if(data?.status==='incomplete'){
+        if(data.incomplete_details?.reason==='content_filter')throw new SecurityError(422,'ChatGPT declined this request. No AI approval was issued.');
+        throw new SecurityError(502,'ChatGPT reached its output limit. No partial answer or tool action was accepted.');
+    }
+    if(data?.status!=='completed' || !Array.isArray(data.output))throw new SecurityError(502,'ChatGPT returned an unsupported or incomplete response.');
+    const parts=[];
+    for(const item of data.output){
+        if(item?.type==='reasoning')continue;
+        if(item?.type==='message'){
+            for(const c of item.content||[]){
+                if(c?.type==='output_text' && typeof c.text==='string'){if(c.text)parts.push({text:c.text});}
+                else if(c?.type==='refusal')throw new SecurityError(422,'ChatGPT declined this request. No AI approval was issued.');
+                else throw new SecurityError(502,'ChatGPT returned unsupported response content.');
+            }
+        }else if(item?.type==='function_call' && typeof item.call_id==='string' && typeof item.name==='string'){
+            let args=null;try{args=JSON.parse(item.arguments||'{}');}catch{}
+            if(!object(args))throw new SecurityError(502,'ChatGPT returned invalid tool arguments.');
+            parts.push({functionCall:{id:item.call_id,name:item.name,args}});
+        }else throw new SecurityError(502,'ChatGPT returned unsupported response content.');
+    }
+    if(!parts.length)throw new SecurityError(502,'ChatGPT returned an empty response.');
+    if(format && OUTPUT_SCHEMAS[format]?.type==='array'){
+        let parsed=null;try{parsed=JSON.parse(parts.map(p=>p.text||'').join(''));}catch{}
+        if(!object(parsed) || !Array.isArray(parsed.results))throw new SecurityError(502,'AI returned invalid JSON. No approval was accepted.');
+        parts.splice(0,parts.length,{text:JSON.stringify(parsed.results)});
+    }
+    return {candidates:[{content:{role:'model',parts},finishReason:'STOP'}],modelVersion:data.model||PROVIDERS.openai.models[0],
+        usageMetadata:{promptTokenCount:data.usage?.input_tokens||0,candidatesTokenCount:data.usage?.output_tokens||0}};
+}
+// Upper-bound input estimate, used only if OpenAI's input-token count endpoint is missing (404/405).
+// The hold must not be lower than the real use, because the final charge is capped at the hold.
+export function estimateOpenAIInput(forward){
+    let chars=String(forward.instructions||'').length+JSON.stringify(forward.tools||[]).length+JSON.stringify(forward.text||{}).length,extra=0;
+    for(const item of forward.input||[]){
+        if(!Array.isArray(item.content)){chars+=JSON.stringify(item).length;continue;}
+        for(const c of item.content){
+            if(c.type==='input_image')extra+=3000;
+            else if(c.type==='input_file')extra+=Math.ceil(String(c.file_data||'').length*3/4/40);
+            else chars+=String(c.text||'').length;
+        }
+    }
+    return Math.ceil(chars/2)+extra+64;
+}
 function validateOutput(data,format){
     if(!format)return;
     const parts=data.candidates?.[0]?.content?.parts||[];
@@ -1301,6 +1417,10 @@ async function countInputTokens(provider,model,forward,key,largeProof=false){
         const {max_tokens,output_config,...rest}=forward;
         url='https://api.anthropic.com/v1/messages/count_tokens';
         headers={'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'};body=rest;
+    }else if(provider==='openai'){
+        const {max_output_tokens,store,...rest}=forward;
+        url='https://api.openai.com/v1/responses/input_tokens';
+        headers={'Content-Type':'application/json','Authorization':'Bearer '+key};body=rest;
     }else{
         const request={model:'models/'+model};
         for(const field of ['contents','systemInstruction','system_instruction','tools','toolConfig','tool_config','generationConfig','safetySettings'])
@@ -1313,9 +1433,10 @@ async function countInputTokens(provider,model,forward,key,largeProof=false){
     catch{throw Object.assign(new SecurityError(503,name+' could not check the request size. Nothing was charged; retry later.'),{code:'TOKEN_COUNT_UNAVAILABLE'});}
     if(!response.ok){
         try{await response.body?.cancel();}catch{}
+        if(provider==='openai' && [404,405].includes(response.status))return estimateOpenAIInput(forward);
         throw Object.assign(new SecurityError(response.status===429?429:503,name+' could not check the request size. Nothing was charged; retry later.'),{code:'TOKEN_COUNT_UNAVAILABLE'});
     }
-    const data=await responseJSON(response,key),count=provider==='claude'?data.input_tokens:data.totalTokens;
+    const data=await responseJSON(response,key),count=provider==='gemini'?data.totalTokens:data.input_tokens;
     if(!Number.isSafeInteger(count)||count<0)throw Object.assign(new SecurityError(503,name+' returned an invalid request size. Nothing was charged.'),{code:'TOKEN_COUNT_UNAVAILABLE'});
     return count;
 }
@@ -1329,6 +1450,12 @@ export function providerUsage(provider,raw){
         const cache=[u.cache_creation_input_tokens,u.cache_read_input_tokens].map(v=>v??0);
         if(!cache.every(int))return null;
         return {input:u.input_tokens+cache[0]+cache[1],output:u.output_tokens};
+    }
+    if(provider==='openai'){
+        // input_tokens already includes cached tokens; output_tokens includes reasoning tokens.
+        const u=raw?.usage;
+        if(!u||!int(u.input_tokens)||!int(u.output_tokens))return null;
+        return {input:u.input_tokens,output:u.output_tokens};
     }
     const u=raw?.usageMetadata;
     if(!u||!int(u.promptTokenCount))return null;
@@ -1432,7 +1559,7 @@ export class AIGateway {
         const payload=validatePayload(body.payload,{proofReview});
         await this.service.vault.assertOwner(this.service.storage,identity);
         if(await this.service.vault.selectedProvider(identity)!==provider)throw new SecurityError(409,'AI provider changed. Refresh AI status in Settings and start a new request.');
-        const forward=provider==='claude'?toClaudeRequest(payload):{...payload};
+        const forward=provider==='claude'?toClaudeRequest(payload):provider==='openai'?toOpenAIRequest(payload):{...payload};
         delete forward.taskitatorFormat;
         const credits=this.service.pro?.credits;
         if(!credits)throw new SecurityError(503,'AI credit accounting is unavailable. No request was sent.');
@@ -1449,18 +1576,20 @@ export class AIGateway {
             await credits.refreshLicense(identity.userId);
             const {ledger}=await credits.state(this.service.storage,identity.userId,Date.now(),clientOf(identity));
             if(ledger.plan!=='pro'){
-                const maxOutput=provider==='claude'?forward.max_tokens:forward.generationConfig.maxOutputTokens;
+                const maxOutput=provider==='claude'?forward.max_tokens:provider==='openai'?forward.max_output_tokens:forward.generationConfig.maxOutputTokens;
                 const input=Math.ceil(await countInputTokens(provider,body.model,forward,key,largeProof)*1.2);
                 hold=await credits.reserveByok(identity.userId,{model:body.model,inputTokens:input,maxOutput},clientOf(identity));
                 if(hold){
                     if(provider==='claude')forward.max_tokens=hold.maxOutput;
+                    else if(provider==='openai')forward.max_output_tokens=hold.maxOutput;
                     else forward.generationConfig={...forward.generationConfig,maxOutputTokens:hold.maxOutput};
                     // A lost or timed-out response may already be billed by the provider: keep the hold.
                     charge=hold.hold;
                 }
             }
-            const url=provider==='claude'?'https://api.anthropic.com/v1/messages':'https://generativelanguage.googleapis.com/v1beta/models/'+body.model+':generateContent';
-            const headers=provider==='claude'?{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'}:{'Content-Type':'application/json','x-goog-api-key':key};
+            const url=provider==='claude'?'https://api.anthropic.com/v1/messages':provider==='openai'?'https://api.openai.com/v1/responses':'https://generativelanguage.googleapis.com/v1beta/models/'+body.model+':generateContent';
+            const headers=provider==='claude'?{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'}:
+                provider==='openai'?{'Content-Type':'application/json','Authorization':'Bearer '+key}:{'Content-Type':'application/json','x-goog-api-key':key};
             let response;
             try{response=await fetch(url,{method:'POST',headers,body:proofRequestBody(forward,largeProof),signal:AbortSignal.timeout(55000)});}
             catch{throw new SecurityError(504,config.name+' request timed out or could not connect. Retry carefully; provider usage may already have occurred.');}
@@ -1480,7 +1609,7 @@ export class AIGateway {
                 const reason=raw.candidates?.[0]?.finishReason;
                 if(raw.promptFeedback?.blockReason || (reason && reason!=='STOP'))throw new SecurityError(502,'Gemini did not return a complete accepted answer. No partial approval or tool action was accepted.');
             }
-            const data=provider==='claude'?fromClaudeResponse(raw):raw;
+            const data=provider==='claude'?fromClaudeResponse(raw):provider==='openai'?fromOpenAIResponse(raw,payload.taskitatorFormat):raw;
             validateOutput(data,payload.taskitatorFormat);
             await this.service.vault.assertOwner(this.service.storage,identity);
             const current=await this.service.storage.get(await this.service.vault.recordKey(identity,provider));
@@ -2095,7 +2224,7 @@ export class TaskitatorSync {
             const studyRoute = path === '/study-plan';
             const studyManage = path === '/study-plan/manage';
             const criteriaEdit = path === '/criteria/edit';
-            const pointsRoute = method === 'GET' && path === '/points'; // Phase 7.0
+            const pointsRoute = (method === 'GET' && path === '/points') || (method === 'POST' && path === '/points/require'); // Phase 7.0 / 7.2
             const friendsRoute = path === '/friends' || path.startsWith('/friends/'); // Phase 7.0
             if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
                 !proofStart && !proofPassword && !proofSignin && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute && !pointsRoute && !friendsRoute && !sleepRoute && !breaksRoute && !studyManage && !studyRoute && !criteriaEdit) {
@@ -2304,6 +2433,18 @@ export class TaskitatorSync {
                 }
                 if (pointsRoute) {
                     if (!account) throw new HTTPError(403, 'Use your connected account to see points.');
+                    if (method === 'POST') { // Phase 7.2: make today's free day required (once per free date)
+                        const P = globalThis.TaskitatorPoints, pk = pointsKey(account.user);
+                        const out = await this.storage.transaction(async tx => {
+                            const meta = await tx.get(accountKey(account.user));
+                            const snapshot = meta && !meta.deleting ? await loadSnapshot(tx, account.user, meta) : null;
+                            const r = P.requireDay(await tx.get(pk), snapshot, Date.now());
+                            if (r.error) throw new HTTPError(409, r.error);
+                            await tx.put(pk, r.state);
+                            return r;
+                        });
+                        return json({ points: P.summary(out.state, Date.now()), excluded: out.excluded });
+                    }
                     return json({ points: globalThis.TaskitatorPoints.summary(await this.storage.get(pointsKey(account.user)), Date.now()) });
                 }
                 if (!account) throw new HTTPError(403, 'Connect your Taskitator account on the login page first.');

@@ -426,10 +426,10 @@ window.TaskitatorSafety = {
     const auth = () => window.TaskitatorAuth;
     const byId = id => document.getElementById(id);
     const pendingKey = 'taskitator_key_verification';
-    const models={gemini:['gemini-3.5-flash-lite','gemini-3.1-flash-lite'],claude:['claude-haiku-5-5']};
-    const names={gemini:'Gemini',claude:'Claude'};
+    const models={gemini:['gemini-3.5-flash-lite','gemini-3.1-flash-lite'],claude:['claude-haiku-5-5'],openai:['gpt-6-luna']};
+    const names={gemini:'Gemini',claude:'Claude',openai:'ChatGPT'};
     let metadata = {ready:false,saved:false,pending:[]}, owner = null, revealed = '', revealTimer;
-    let providers={gemini:metadata,claude:{ready:false,saved:false,pending:[]}},activeProvider='gemini',viewedProvider='gemini',inflight=0,hosted=false;
+    let providers={gemini:metadata,claude:{ready:false,saved:false,pending:[]},openai:{ready:false,saved:false,pending:[]}},activeProvider='gemini',viewedProvider='gemini',inflight=0,hosted=false;
     let operation = null, proofId = null, verified = false, busy = false;
     const api = (path,body,method='POST',extra={}) => auth().api(path,{method,...extra,...(body?{body:JSON.stringify(body)}:{})});
     function status(message, isTest = null) {
@@ -503,6 +503,8 @@ window.TaskitatorSafety = {
         }
         if(byId('vaultModelInfo'))byId('vaultModelInfo').textContent=viewedProvider==='claude'?
             'Uses Claude. It never falls back to Gemini on its own. Accepts JPG, PNG, WebP and PDF. Convert HEIC photos first, or use Gemini for them.':
+            viewedProvider==='openai'?
+            'Uses ChatGPT (GPT-6 Luna). Needs an OpenAI API key from platform.openai.com with billing set up. A ChatGPT Plus or Pro subscription doesn’t include API access. It never falls back to another provider. Accepts JPG, PNG, WebP and PDF. Convert HEIC photos first, or use Gemini for them. Universe AI reviews still use your Gemini key.':
             'Uses Gemini. If it hits its quota or is unavailable, Taskitator retries with a lighter Gemini model. It never switches to Claude on its own.';
         byId('vaultRecovered').replaceChildren();
         for(const item of metadata.pending||[]){
@@ -595,7 +597,7 @@ window.TaskitatorSafety = {
         clearReveal();operation={kind,stageId,provider:viewedProvider};proofId=null;verified=false;
         byId('vaultPassword').value='';byId('vaultNewKey').value='';
         byId('vaultDialogTitle').textContent=({save:stageId?'Use recovered key':'Add or replace your '+names[viewedProvider]+' key',delete:stageId?'Remove recovered key':'Delete your '+names[viewedProvider]+' key',reveal:'Show your '+names[viewedProvider]+' key',copy:'Copy your '+names[viewedProvider]+' key'})[kind];
-        if(byId('vaultNewKeyLabel'))byId('vaultNewKeyLabel').textContent='New '+names[viewedProvider]+' API key';
+        if(byId('vaultNewKeyLabel'))byId('vaultNewKeyLabel').textContent=viewedProvider==='openai'?'New OpenAI API key (platform.openai.com)':'New '+names[viewedProvider]+' API key';
         dialogMessage('First, confirm it\'s you with your password or the Google account linked to this login. Each confirmation covers this one action.');
         byId('vaultConfirmBtn').textContent=kind==='delete'?'Delete key':kind==='save'?'Save key':'Continue';
         byId('vaultDialog').showModal();updateDialog();
@@ -649,7 +651,7 @@ window.TaskitatorSafety = {
                 if(!operation.stageId)body.key=byId('vaultNewKey').value;
                 const result=await api('/ai/keys',body);acceptMetadata(result);status(result.test.message+(activeProvider===viewedProvider?'':' To start using it, press “Switch to '+names[viewedProvider]+'”.'));
             }else if(operation.kind==='delete'){
-                acceptMetadata(await api('/ai/keys',body,'DELETE'));status('Key deleted from Taskitator. It still works elsewhere until you revoke it in '+(operation.provider==='claude'?'Claude Console.':'Google AI Studio.'));
+                acceptMetadata(await api('/ai/keys',body,'DELETE'));status('Key deleted from Taskitator. It still works elsewhere until you revoke it in '+(operation.provider==='claude'?'Claude Console.':operation.provider==='openai'?'the OpenAI platform (platform.openai.com).':'Google AI Studio.'));
             }else{
                 const result=await api('/ai/keys/reveal',body);revealed=result.key;
                 byId('vaultRevealedKey').value=revealed;byId('vaultRevealArea').hidden=false;
@@ -975,10 +977,10 @@ const TaskitatorEngine = {
         },
 
         async encodeProofFile(file, provider) {
-            // Claude accepts at most 10 MB of base64 per image. Resize only photos that
-            // would exceed that cap. PDFs and Gemini uploads can keep their original bytes.
+            // Claude accepts at most 10 MB of base64 per image; ChatGPT (7.3) gets the same cap. Resize only photos that
+            // would exceed it. PDFs and Gemini uploads can keep their original bytes.
             const maxInlinePhotoBytes = 7_500_000;
-            if (provider === 'claude' && !this.isPdf(file) && file.type !== 'image/heic' && file.size > maxInlinePhotoBytes) {
+            if ((provider === 'claude' || provider === 'openai') && !this.isPdf(file) && file.type !== 'image/heic' && file.size > maxInlinePhotoBytes) {
                 try {
                     const image = await createImageBitmap(file);
                     const canvas = document.createElement('canvas');
@@ -998,7 +1000,7 @@ const TaskitatorEngine = {
                         canvas.width = canvas.height = 0;
                     }
                 } catch {
-                    throw new Error('This photo could not be prepared for Claude. Try a smaller JPG, PNG or WebP.');
+                    throw new Error('This photo could not be prepared for ' + (provider === 'openai' ? 'ChatGPT' : 'Claude') + '. Try a smaller JPG, PNG or WebP.');
                 }
             }
             return (await this.fileToBase64(file)).inline_data;

@@ -14,7 +14,16 @@
      streak and earns no points. Today not yet done never breaks it. Missing a day resets it to 0; best is kept.
    - Free days: weekdays (0 = Sunday). Default = your weekend. At most weekend days + 2 (max 5). A change takes
      effect from the start of the next week (the day after your weekend ends), so today can't be made free after
-     missing it. */
+     missing it.
+   Phase 7.2
+   - Streak counting mode (settings.streak_mode): loose (default, every task incl. bonus), normal (required non-bonus
+     tasks only), tight (AI-locked tasks only). Points always count every task. A change starts next week, like free
+     days, so a streak can't be saved by loosening late in the day. Days stored before 7.2 have no per-kind counts and
+     count as done in every mode.
+   - Required free day: once per free date, the person can make today required (POST /points/require). From then on
+     it earns points and counts toward (and can break) the streak. Everything finished today before the press, and
+     the same tasks finished again later, count for nothing. The weekly free days are unchanged, so next week's free
+     day is free again. */
 (function (root) {
     'use strict';
     const DAILY_CAP = 150, BACKFILL_DAYS = 7, AWARD_KEEP_DAYS = 21, DAY_KEEP = 400, FUTURE_SLACK_MS = 5 * 60000;
@@ -78,11 +87,34 @@
         return days.includes(weekday(date));
     }
 
-    function emptyState() { return { v: 1, total: 0, best: 0, days: {}, awarded: {}, free: [], hour: 0 }; }
+    const MODES = Object.freeze(['tight', 'normal', 'loose']);
+    const streakMode = settings => (MODES.includes(settings?.streak_mode) ? settings.streak_mode : 'loose');
+    function modeOn(schedule, date) {
+        let mode = 'loose';
+        for (const s of schedule || []) if (s.from <= date) mode = s.mode;
+        return mode;
+    }
+    // A weekly free day stops being free on a date the person made required.
+    function isFree(state, date) { return freeOn(state?.free, date) && !(state?.required && Object.hasOwn(state.required, date)); }
+    // A day counts toward the streak when it has a completion of the kind the mode in effect that day asks for.
+    function dayDone(state, date) {
+        const r = state?.days?.[date];
+        if (!r || !(r.n > 0)) return false;
+        const mode = modeOn(state.modes, date);
+        if (mode === 'loose') return true;
+        const v = mode === 'tight' ? r.a : r.r;
+        return v === undefined ? true : v > 0; // pre-7.2 day: done in every mode
+    }
+
+    function emptyState() { return { v: 1, total: 0, best: 0, days: {}, awarded: {}, free: [], modes: [], required: {}, hour: 0 }; }
     function normalize(state) {
         const s = state && state.v === 1 ? state : emptyState();
         return { v: 1, total: Math.max(0, Math.floor(s.total) || 0), best: Math.max(0, Math.floor(s.best) || 0), days: { ...(s.days || {}) },
-            awarded: { ...(s.awarded || {}) }, free: Array.isArray(s.free) ? s.free.map(x => ({ from: x.from, days: [...x.days] })) : [], hour: dayHour({ day_start_hour: s.hour }) };
+            awarded: { ...(s.awarded || {}) }, free: Array.isArray(s.free) ? s.free.map(x => ({ from: x.from, days: [...x.days] })) : [],
+            modes: Array.isArray(s.modes) ? s.modes.filter(x => x && MODES.includes(x.mode)).map(x => ({ from: x.from, mode: x.mode })) : [],
+            required: Object.fromEntries(Object.entries(s.required && typeof s.required === 'object' ? s.required : {})
+                .map(([d, x]) => [d, { at: Number(x?.at) || 0, ex: Array.isArray(x?.ex) ? [...x.ex] : [] }])),
+            hour: dayHour({ day_start_hour: s.hour }) };
     }
     const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 
@@ -103,13 +135,29 @@
         return true;
     }
 
+    // Mode changes follow the free-day rule: they start next week (first one included; the default is loose).
+    function scheduleMode(state, settings, today) {
+        const want = streakMode(settings), list = state.modes;
+        const last = list[list.length - 1];
+        if (last && last.from > today) {
+            if (last.mode === want) return false;
+            const before = list.length > 1 ? list[list.length - 2].mode : 'loose';
+            if (before === want) { list.pop(); return true; }
+            last.mode = want; return true;
+        }
+        if ((last ? last.mode : 'loose') === want) return false;
+        list.push({ from: nextWeekStart(today, settings), mode: want });
+        while (list.length > 12) list.splice(0, 1);
+        return true;
+    }
+
     function streakOf(state, today) {
-        const done = d => (state.days[d]?.n || 0) > 0;
+        const done = d => dayDone(state, d);
         let cur = 0;
-        if (done(today) && !freeOn(state.free, today)) cur = 1;
+        if (done(today) && !isFree(state, today)) cur = 1;
         let d = shift(today, -1);
         for (let guard = 0; guard < DAY_KEEP; guard++, d = shift(d, -1)) {
-            if (freeOn(state.free, d)) continue;
+            if (isFree(state, d)) continue;
             if (!done(d)) break;
             cur++;
         }
@@ -126,6 +174,7 @@
         let changed = state.hour !== hour;
         state.hour = hour;
         if (scheduleFree(state, settings, today)) changed = true;
+        if (scheduleMode(state, settings, today)) changed = true;
         const before = new Map((previous?.tasks || []).map(t => [t.id, t]));
         const byId = new Map((snapshot?.tasks || []).map(t => [t.id, t]));
         const fresh = (snapshot?.tasks || []).filter(t => t && t.status === 'completed' && before.get(t.id)?.status !== 'completed');
@@ -138,10 +187,14 @@
             const parent = t.parent_id ? byId.get(t.parent_id) : null;
             if (parent && freshIds.has(parent.id) && parent.completed_at === t.completed_at) continue; // cascade, not a tap
             const day = logicalDate(at, hour);
-            const row = state.days[day] || { p: 0, n: 0 };
-            const free = freeOn(state.free, day);
+            const req = state.required[day];
+            if (req && (at <= req.at || req.ex.includes(t.id))) { state.awarded[t.id] = dayNumber(day); changed = true; continue; } // finished before "make required"
+            const row = state.days[day] || { p: 0, n: 0, r: 0, a: 0 };
+            const free = isFree(state, day);
             const pts = free ? 0 : Math.max(0, Math.min(weight(t.priority_id, settings), DAILY_CAP - row.p));
-            row.p += pts; row.n += 1; state.days[day] = row;
+            if (row.r === undefined) row.r = row.n; // a pre-7.2 row keeps counting in every mode
+            if (row.a === undefined) row.a = row.n;
+            row.p += pts; row.n += 1; row.r += t.is_bonus ? 0 : 1; row.a += t.ai_locked ? 1 : 0; state.days[day] = row;
             state.total += pts; gained += pts;
             state.awarded[t.id] = dayNumber(day);
             changed = true;
@@ -151,9 +204,30 @@
         for (const [id, n] of Object.entries(state.awarded)) if (n < keepFrom) { delete state.awarded[id]; changed = true; }
         const dayFrom = shift(today, -DAY_KEEP);
         for (const d of Object.keys(state.days)) if (d < dayFrom) { delete state.days[d]; changed = true; }
+        for (const d of Object.keys(state.required)) if (d < dayFrom) { delete state.required[d]; changed = true; }
         const cur = streakOf(state, today);
         if (cur > state.best) { state.best = cur; changed = true; }
         return { state, gained, changed };
+    }
+
+    /* "Make today required": once per free date. Blocks everything already finished today (by time and by id).
+       Returns {state, excluded} or {error}. */
+    function requireDay(stateIn, snapshot, now) {
+        const state = normalize(stateIn), settings = snapshot?.settings || {};
+        const hour = dayHour(settings), today = logicalDate(now, hour);
+        state.hour = hour;
+        scheduleFree(state, settings, today); scheduleMode(state, settings, today);
+        if (!freeOn(state.free, today)) return { error: 'Today isn’t a free day.' };
+        if (Object.hasOwn(state.required, today)) return { error: 'Today is already required.' };
+        const n = dayNumber(today), ex = new Set();
+        for (const [id, d] of Object.entries(state.awarded)) if (d === n) ex.add(id);
+        for (const t of snapshot?.tasks || []) {
+            const at = stamp(t?.completed_at);
+            if (t?.status === 'completed' && Number.isFinite(at) && logicalDate(at, hour) === today) ex.add(t.id);
+        }
+        state.required[today] = { at: now, ex: [...ex].slice(0, 5000) };
+        state.days[today] = { p: 0, n: 0, r: 0, a: 0 };
+        return { state, excluded: ex.size };
     }
 
     function summary(stateIn, now) {
@@ -161,17 +235,21 @@
         const row = state.days[today] || { p: 0, n: 0 };
         const streak = streakOf(state, today);
         const upcoming = state.free.find(s => s.from > today) || null;
+        const modeNext = state.modes.find(s => s.from > today) || null;
+        const required = Object.hasOwn(state.required, today), weeklyFree = freeOn(state.free, today);
         let current = [];
         for (const s of state.free) if (s.from <= today) current = s.days;
         const week = [];
-        for (let i = 6; i >= 0; i--) { const d = shift(today, -i), r = state.days[d] || { p: 0, n: 0 }; week.push({ date: d, points: r.p, count: r.n, free: freeOn(state.free, d) }); }
+        for (let i = 6; i >= 0; i--) { const d = shift(today, -i), r = state.days[d] || { p: 0, n: 0 }; week.push({ date: d, points: r.p, count: r.n, free: isFree(state, d), done: dayDone(state, d) }); }
         return {
             total: state.total, rank: rankFor(state.total), streak, best: Math.max(state.best, streak), cap: DAILY_CAP,
-            today: { date: today, points: row.p, count: row.n, free: freeOn(state.free, today), done: row.n > 0 },
+            today: { date: today, points: row.p, count: row.n, free: weeklyFree && !required, done: dayDone(state, today), required, can_require: weeklyFree && !required },
+            mode: modeOn(state.modes, today), mode_next: modeNext ? { from: modeNext.from, mode: modeNext.mode } : null,
             free_days: current, free_next: upcoming ? { from: upcoming.from, days: upcoming.days } : null, week
         };
     }
 
     root.TaskitatorPoints = Object.freeze({ RANKS, DAILY_CAP, BACKFILL_DAYS, AWARD_KEEP_DAYS, rankFor, weight, priorities, freeDays, maxFree, weekend,
-        nextWeekStart, freeOn, streakOf, record, summary, emptyState, logicalDate });
+        nextWeekStart, freeOn, streakOf, record, summary, emptyState, logicalDate,
+        MODES, streakMode, modeOn, isFree, dayDone, requireDay });
 })(typeof window === 'undefined' ? globalThis : window);

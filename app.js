@@ -80,10 +80,11 @@ window.TaskitatorAgent = (() => {
             if (view === 'calendar') return 'calendar';
             if (view === 'legal' || view === 'privacy' || view === 'terms') return 'legal';
             if (view === 'compare') return 'compare';
+            if (view === 'universe') return 'universe'; // Phase 7.3: own Copilot knowledge (read-only)
             return 'projects';
         }
         // Phase 3.0 shell views of index.html (#calendar, #stats, ...): read-only for Ari, like the old components.html views.
-        const shellViews = { stats: 'stats', trash: 'trash', 'blocker-guide': 'blocker_guide', guide: 'blocker_guide', projects: 'projects', calendar: 'calendar', 'study-plans': 'study_plans', 'test-lab': 'study_plans', sleep: 'sleep', friends: 'stats', help: 'help' };
+        const shellViews = { stats: 'stats', trash: 'trash', 'blocker-guide': 'blocker_guide', guide: 'blocker_guide', projects: 'projects', calendar: 'calendar', 'study-plans': 'study_plans', 'test-lab': 'study_plans', sleep: 'sleep', friends: 'friends', help: 'help' };
         if (shell) {
             const route = shell.routeOf(hash);
             return route.view === 'tasks' ? (hash === 'general' ? 'general' : 'today') : shellViews[route.view];
@@ -166,8 +167,8 @@ window.TaskitatorAgent = (() => {
         } else if (page === 'settings') {
             contextDirectives += (
                 "CURRENT PAGE: Settings (settings.html).\n" +
-                "ROLE: Technical Configuration Assistant.\n" +
-                "Explain Gemini (Google AI Studio) and Claude (Claude Console) API keys, separate encrypted provider keys, password/Google confirmation, the \"Switch to <provider>\" button, the zero-cost \"Test key\" check, and Cloudflare sync. Settings sections: General (Copilot name, sound, vibration, distraction note timer, sync), Tasks (tags, priorities, criteria check), Day & week (day start, weekend, emergency unlocks, break window), AI & Pro (provider, keys, Pro credits), Phone lock (MacroDroid status URL and token), Account & data (login, backup/restore, Privacy/Terms links, danger zone). Most settings need the Save changes bar; AI keys, Pro and phone access save immediately. Never ask a user to send an API key or password in chat.\n" +
+                "ROLE: Technical Configuration Assistant. Use the KNOWLEDGE below for the open tab.\n" +
+                "Explain Gemini (Google AI Studio), Claude (Claude Console) and ChatGPT (OpenAI API key from platform.openai.com) API keys, separate encrypted provider keys, password/Google confirmation, the \"Switch to <provider>\" button, the zero-cost \"Test key\" check, and Cloudflare sync. Settings sections: General (Copilot name, sound, vibration, distraction note timer, sync), Tasks (tags, priorities, criteria check), Day & week (day start, weekend, emergency unlocks, break window), AI & Pro (provider, keys, Pro credits), Phone lock (MacroDroid status URL and token), Account & data (login, backup/restore, Privacy/Terms links, danger zone). Most settings need the Save changes bar; AI keys, Pro and phone access save immediately. Never ask a user to send an API key or password in chat.\n" +
                 "CRITICAL RESTRICTION: You DO NOT have task manipulation tools on this page. If the user asks you to create, update, complete, or trash a task, you MUST explicitly refuse and instruct them to switch to the Today or General Tasks page first."
             );
         } else if (page === 'blocker_guide') {
@@ -191,6 +192,10 @@ window.TaskitatorAgent = (() => {
                 "CRITICAL RESTRICTION: You DO NOT have task manipulation tools on this page. If the user asks to create, edit, or trash tasks, instruct them to switch to Today or General Tasks first."
             );
         }
+
+        // Phase 7.3: condensed product knowledge for this page only (copilot-knowledge.js; budget-tested).
+        const knowledge = window.TaskitatorCopilotKnowledge?.forPage?.(page);
+        if (knowledge) contextDirectives += '\nKNOWLEDGE (answer from this; if it does not cover the question, say so and point to Help):\n' + knowledge;
 
         return `${contextDirectives}\n\n${baseText}`;
     }

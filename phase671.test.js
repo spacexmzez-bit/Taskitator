@@ -73,6 +73,6 @@ test('Arabic strings and cache for 6.7.1', () => {
     const ar = ctx.module.exports;
     assert.ok(ar['Press Save changes to apply. Saved on this device only; your other devices keep their own choice.']);
     assert.ok(ar['Taskitator is not affiliated with, endorsed by or sponsored by MacroDroid. Using MacroDroid is still subject to its own limits and terms.']);
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v76'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v78'/);
     assert.match(read('README.md'), /Phase 6\.7\.1/);
 });

@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html lang="en" class="auth-pending">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-mJAsOWlxccZBYfhky5+Aff0gwnhRyj4wwQ9LacIMfRg=' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com; font-src 'self' data: https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-RDSJWXUjORVYdspY3Yg6+F3ERZnrBEpKYSYhX1bwBKQ=' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://img.clerk.com; font-src 'self' data: https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; connect-src 'self' https://taskitator-sync.spacexmzez.workers.dev https://*.protect.clerk.com:* https://clerk-telemetry.com https://*.clerk-telemetry.com https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; frame-src https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self' https://*.clerk.accounts.com https://*.clerk.com https://clerk.mazendev.com https://challenges.cloudflare.com; upgrade-insecure-requests">
 <style>.auth-pending body > :not(#authLoadingStatus){visibility:hidden}</style>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -343,10 +343,10 @@
                     <p>Tasks with no due date never count toward the phone lock.</p>
                     <p>AI-locked tasks always count. Loosening this setting or unchecking tasks is locked until all of today's tasks are finished or Emergency Bypass is on. Breaks don't unlock it. Tightening is always allowed.</p>
                 </div>
-                <div class="status-mode-group" role="radiogroup" aria-label="Phone lock counting">
-                    <label class="status-mode-opt"><input type="radio" name="statusMode" value="harsh"> Harsh</label>
-                    <label class="status-mode-opt"><input type="radio" name="statusMode" value="normal"> Normal</label>
-                    <label class="status-mode-opt"><input type="radio" name="statusMode" value="limited"> Limited</label>
+                <div class="status-mode-group tk-choices" role="radiogroup" aria-label="Phone lock counting">
+                    <label class="status-mode-opt tk-choice"><input type="radio" name="statusMode" value="harsh"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-siren"></use></svg><strong>Harsh</strong><span>Every task due today counts. Default.</span></label>
+                    <label class="status-mode-opt tk-choice"><input type="radio" name="statusMode" value="normal"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-tag"></use></svg><strong>Normal</strong><span>Only tasks with “Count toward phone lock” checked.</span></label>
+                    <label class="status-mode-opt tk-choice"><input type="radio" name="statusMode" value="limited"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-owl"></use></svg><strong>Limited</strong><span>Only AI-locked tasks count.</span></label>
                 </div>
                 <div class="setting-row" id="statusBonusRow" hidden>
                     <div class="setting-text">
@@ -439,6 +439,17 @@
                 </div>
                 <p class="setting-hint" id="streakFreeHint">You can choose up to your weekend days plus 2. A change starts next week, after your weekend.</p>
             </div>
+            <!-- Phase 7.2: which finished tasks keep the streak (points.js streak_mode). Points always count every task. -->
+            <div class="settings-card" id="streakModeCard">
+                <h4 class="card-title">Streak counting</h4>
+                <p class="card-desc">Which finished tasks keep your streak alive. Points always count every task.</p>
+                <div class="tk-choices" id="streakModeGroup" role="radiogroup" aria-label="Streak counting">
+                    <label class="tk-choice"><input type="radio" name="streakMode" value="tight"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-owl"></use></svg><strong>Tight</strong><span>Only AI-locked tasks keep your streak.</span></label>
+                    <label class="tk-choice"><input type="radio" name="streakMode" value="normal"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-pine"></use></svg><strong>Normal</strong><span>Required tasks only. Bonus tasks don’t count.</span></label>
+                    <label class="tk-choice"><input type="radio" name="streakMode" value="loose"><svg class="tk-ic" aria-hidden="true" focusable="false"><use href="#ic-leaves"></use></svg><strong>Loose</strong><span>Any task, bonus included. Default.</span></label>
+                </div>
+                <p class="setting-hint" id="streakModeHint">A change starts next week, after your weekend, so it can’t rescue today’s streak.</p>
+            </div>
         </section>
 
         <!-- ================================================================= -->
@@ -456,11 +467,11 @@
 
             <div class="settings-card">
                 <h4 class="card-title">AI provider</h4>
-                <p class="card-desc">Powers Copilot, criteria checks, proof reviews and note extraction. Gemini and Claude each keep their own key, so switching never erases one.</p>
+                <p class="card-desc">Powers Copilot, criteria checks, proof reviews and note extraction. Gemini, Claude and ChatGPT each keep their own key, so switching never erases one.</p>
                 <div class="form-group">
                     <label for="aiProviderSelect">Provider</label>
                     <div class="inline-field">
-                        <select id="aiProviderSelect"><option value="gemini">Gemini</option><option value="claude">Claude</option></select>
+                        <select id="aiProviderSelect"><option value="gemini">Gemini</option><option value="claude">Claude</option><option value="openai">ChatGPT</option></select>
                         <button type="button" class="icon-btn btn-md btn-square" id="vaultModelInfoBtn" aria-expanded="false" aria-controls="vaultModelInfo" aria-label="Show models and supported files" title="Models and supported files">ⓘ</button>
                     </div>
                     <p id="vaultModelInfo" class="info-box" hidden></p>
@@ -833,6 +844,7 @@
     <script type="text/taskitator-script" src="components.js"></script>
     <script type="text/taskitator-script" src="uni/focus-timer.js"></script>
     <script type="text/taskitator-script" src="macro-bridge.js"></script>
+    <script type="text/taskitator-script" src="copilot-knowledge.js?v=ck-1"></script>
     <script type="text/taskitator-script" src="app.js"></script>
     <script type="text/taskitator-script" src="tutorial-spotlight.js?v=tour-v3"></script>
     <script type="text/taskitator-script" src="tutorial-integration.js?v=tour-v3"></script>
@@ -1366,6 +1378,7 @@ function loadSettings() {
     if (weekendStartSelect) weekendStartSelect.value = settings.weekend_start !== undefined ? settings.weekend_start : '5';
     if (weekendEndSelect) weekendEndSelect.value = settings.weekend_end !== undefined ? settings.weekend_end : '6';
     renderStreakFree(settings);
+    renderStreakMode(settings);
     if (dayStartHourSelect) dayStartHourSelect.value = settings.day_start_hour !== undefined ? String(settings.day_start_hour) : '0';
 
     // Load or initialize tags
@@ -1414,6 +1427,8 @@ async function saveSettings(silent = false) {
     settings.weekend_end = weekendEndSelect ? parseInt(weekendEndSelect.value, 10) : 6;
     // Phase 7.0: an untouched choice keeps following the weekend (nothing stored).
     if (streakFreeBox && (streakFreeExplicit || settings.streak_free_days !== undefined)) settings.streak_free_days = streakFreeValue();
+    // Phase 7.2: only stored once chosen; default loose.
+    if (streakModeGroup && (streakModeExplicit || settings.streak_mode !== undefined)) settings.streak_mode = streakModeValue();
     settings.day_start_hour = isNaN(chosenDayStart) ? 0 : chosenDayStart;
 
     // Attach updated registries
@@ -1631,6 +1646,24 @@ function renderStreakFree(settings) {
     streakFreeLimit();
 }
 streakFreeBox?.addEventListener('change', () => { streakFreeExplicit = true; streakFreeLimit(); markUnsaved(); });
+// Phase 7.2: streak counting mode. Tight asks first: a day with no AI-locked task breaks the streak.
+const streakModeGroup = document.getElementById('streakModeGroup');
+let streakModeExplicit = false, streakModeShown = 'loose';
+function streakModeValue() { return streakModeGroup?.querySelector('input:checked')?.value || 'loose'; }
+function renderStreakMode(settings) {
+    if (!streakModeGroup) return;
+    streakModeExplicit = typeof settings?.streak_mode === 'string';
+    streakModeShown = ['tight', 'normal', 'loose'].includes(settings?.streak_mode) ? settings.streak_mode : 'loose';
+    streakModeGroup.querySelectorAll('input').forEach(i => { i.checked = i.value === streakModeShown; });
+}
+streakModeGroup?.addEventListener('change', async e => {
+    const pick = e.target?.value;
+    if (pick === 'tight' && !await ask({ title: 'Switch to Tight?', message: 'From next week, only AI-locked tasks keep your streak. A day with no AI-locked task finished breaks it, even if you finished other tasks.', confirmLabel: 'Use Tight', cancelLabel: 'Cancel', tone: 'danger' })) {
+        streakModeGroup.querySelectorAll('input').forEach(i => { i.checked = i.value === streakModeShown; });
+        return;
+    }
+    streakModeShown = pick; streakModeExplicit = true; markUnsaved();
+});
 [weekendStartSelect, weekendEndSelect].forEach(el => el?.addEventListener('change', () => {
     if (!streakFreeExplicit && streakFreeBox) { const d = streakWeekend(); streakFreeBox.querySelectorAll('input').forEach(i => { i.checked = d.includes(Number(i.value)); }); }
     streakFreeLimit();

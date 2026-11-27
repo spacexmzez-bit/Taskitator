@@ -2,7 +2,7 @@
 
 Taskitator is a browser task manager with nested tasks, projects, scheduled and flexible breaks, offline personal editing, proof-based completion, a focus timer, an AI Copilot, cloud synchronization, phone-blocking integration, and collaborative workspaces called **Universes**. The frontend is static HTML/CSS/JavaScript. Its authenticated backend runs in a Cloudflare Worker and a Durable Object; Universe records use D1, and Universe attachments use R2.
 
-This guide describes the source as of **Phase 7.1 (27 November 2026)**: 237 files, including 28 PNG assets. **Part 1** is the user guide: every feature of Taskitator on the web, where it is, how to use it step by step, and the rules and limits behind it. **Part 2** is the code and architecture guide. The source describes the app's behavior; live configuration, credentials and provider availability depend on the deployment. Older Part 2 sections describe the code as it was first inspected (commit `99b4282`, 5 November 2026) plus the phase notes that followed; where a statement and the current code differ, the code wins.
+This guide describes the source as of **Phase 7.3 (27 November 2026)**: 240 files, including 28 PNG assets. **Part 1** is the user guide: every feature of Taskitator on the web, where it is, how to use it step by step, and the rules and limits behind it. **Part 2** is the code and architecture guide. The source describes the app's behavior; live configuration, credentials and provider availability depend on the deployment. Older Part 2 sections describe the code as it was first inspected (commit `99b4282`, 5 November 2026) plus the phase notes that followed; where a statement and the current code differ, the code wins.
 
 ## Contents
 
@@ -52,7 +52,7 @@ Everything is free unless the table says otherwise. Pro comes from a Keyo licens
 | Collab (shared space with friends) | No | Yes, every member needs Pro |
 | Phone lock (MacroDroid) and Sleep Lock | Yes, 3 phone devices | Yes, 12 phone devices |
 | Backup, restore, sync, offline editing | Yes | Yes |
-| AI with your own Gemini or Claude key (Copilot, criteria checks, proof reviews, note cleanup) | Yes, within 10 credits a day and 220 a calendar month (Riyadh time). Shown as Available / Caution / Critical, never as numbers | Yes, not limited or metered by Taskitator; your provider bills you |
+| AI with your own Gemini, Claude or ChatGPT key (Copilot, criteria checks, proof reviews, note cleanup) | Yes, within 10 credits a day and 220 a calendar month (Riyadh time). Shown as Available / Caution / Critical, never as numbers | Yes, not limited or metered by Taskitator; your provider bills you |
 | Hosted Taskitator AI (no key needed) | No | Yes, daily and 30-day allowance from the license |
 | Test your criteria (single task) | Yes, costs AI usage | Yes, credit estimate first |
 | Batch proof review (up to 20 tasks) | No | Yes |
@@ -172,7 +172,7 @@ A task that can only be completed by submitting proof that an AI accepts.
 
 **Complete it**
 1. Tap its completion circle. The **Submit AI Verification Proof** dialog opens.
-2. Upload 1–5 files (JPG, PNG, WebP or PDF; 8 MB per photo, 30 MB per PDF). Claude does not accept HEIC photos; convert them or use Gemini.
+2. Upload 1–5 files (JPG, PNG, WebP or PDF; 8 MB per photo, 30 MB per PDF). Claude and ChatGPT don't accept HEIC photos; convert them or use Gemini.
 3. Optional: add a note. The note is context only; the criteria stay binding.
 4. Press **Submit Proof**. On Pro hosted AI you first see a credit estimate and approve it.
 5. The AI scores the proof; **7/10 passes** and the task completes. "Insufficient proof" means the proof was genuine but incomplete (add a page, take a clearer photo).
@@ -188,15 +188,15 @@ A task that can only be completed by submitting proof that an AI accepts.
 
 ### AI notice
 
-Every screen that uses AI shows: "AI services are handled by {company}, a third-party company. AI can make mistakes, so check answers and results." The company is Google for Gemini and Anthropic for Claude or hosted Taskitator AI; Universe reviews show Google. When the provider is unknown it says "a third party".
+Every screen that uses AI shows: "AI services are handled by {company}, a third-party company. AI can make mistakes, so check answers and results." The company is Google for Gemini, Anthropic for Claude or hosted Taskitator AI, and OpenAI for ChatGPT; Universe reviews show Google. When the provider is unknown it says "a third party".
 
 ### AI providers and keys (your own key)
 
 Free accounts need their own key for any AI. Pro accounts can use one instead of hosted credits.
 
 1. Settings → **AI & Pro** → **AI provider**.
-2. Choose **Gemini** or **Claude**. Each keeps its own key; switching never erases one.
-3. **Add or replace key**: confirm with your password or Google (one confirmation covers that action for five minutes), then paste a key from Google AI Studio or the Claude Console. Keys are encrypted on Taskitator's server.
+2. Choose **Gemini**, **Claude** or **ChatGPT**. Each keeps its own key; switching never erases one.
+3. **Add or replace key**: confirm with your password or Google (one confirmation covers that action for five minutes), then paste a key from Google AI Studio, the Claude Console or platform.openai.com. Keys are encrypted on Taskitator's server.
 4. **Test key** checks it works and uses none of your quota.
 5. Press the button that makes this provider active ("Gemini is active").
 
@@ -204,6 +204,7 @@ Other buttons: **Show** (visible for 30 seconds), **Copy**, **Refresh**, **Delet
 
 - Gemini: if it hits its quota or is unavailable, Taskitator retries with a lighter Gemini model. It never switches to Claude by itself.
 - Claude: never falls back to Gemini. Accepts JPG, PNG, WebP and PDF.
+- ChatGPT: uses GPT-6 Luna through your OpenAI API key. Get it at platform.openai.com with billing set up; a ChatGPT Plus or Pro subscription does not include API access. Never falls back to another provider. Accepts JPG, PNG, WebP and PDF (convert HEIC first). Universe AI reviews still use your Gemini key.
 - Changing provider starts a new Copilot conversation.
 
 On Pro, hosted Taskitator AI runs on Claude by Anthropic, whichever provider is selected, unless you tick **Use my own API key instead of credits** in the Pro section. Switching does not reset hosted credits.
@@ -553,7 +554,7 @@ No-token Bridge: open its **Local Variables**, set **user token** to your token 
 - Sleep Lock is reported separately and overrides "unlocked".
 - Tasks with no due date never count. A subtask uses its nearest dated parent's date.
 
-**Phone lock counting** (Settings → Tasks)
+**Phone lock counting** (Settings → Tasks; three choice boxes)
 - **Harsh** (default): every task due today counts. Bonus tasks count only with **Count bonus tasks** on.
 - **Normal**: only tasks with **Count toward phone lock** ticked count. New required tasks start ticked; new bonus tasks start ticked only with Count bonus tasks on.
 - **Limited**: only AI-locked tasks count. Bonus never counts.
@@ -593,6 +594,17 @@ Completing tasks earns points and keeps a daily streak. Free for everyone. The s
 3. Press **Save changes**. The change starts next week (the day after your weekend), so today can't be made free after you've missed it.
 
 On a free day, not finishing a task doesn't break your streak, and completing tasks adds no points and no streak day.
+
+**Make today required** (once per free day)
+1. On a free day, open the points strip and press **Make today required**.
+2. Confirm. Taskitator syncs first, then today becomes a normal day: tasks you finish from now on earn points and count toward your streak, and finishing none breaks it tonight.
+3. Tasks you already finished today don't count, even if you reopen and finish them again. It can't be undone. Your weekly free days don't change, so next week's free day is free again.
+
+**Streak counting** (Settings → Day & week)
+- **Loose** (default): any finished task keeps the streak, bonus tasks included.
+- **Normal:** only required (non-bonus) tasks keep it.
+- **Tight:** only AI-locked tasks keep it. Choosing it asks first.
+- Points always count every task. A change starts next week, after your weekend, like free days. Days from before Phase 7.2 count as kept in every mode.
 
 ### Priorities and tags
 
@@ -1158,6 +1170,8 @@ These scripts execute in browser and Worker contexts through a `window`/`globalT
   - **Limits:** collabs count toward Universe caps (own 2, join 7) because those caps are database triggers, and changing them was judged too risky.
   - **Browser:** Friends gets a **Collabs** section (invites with Join/Decline, list with Open, a Start a collab form). `components.html?view=universe&group=<id>` opens a group directly. Tests in `uni/collab.test.js` run the real `UniverseRules` on an in-memory D1. Cache `taskitator-phase4-v76`.
 
+- **ChatGPT and Copilot knowledge (Phase 7.3):** `worker.js` `PROVIDERS.openai` (`ChatGPT`, model `gpt-6-luna`): own vault slot like Claude; key check `GET https://api.openai.com/v1/models/gpt-6-luna` (Bearer, no generation); `toOpenAIRequest` turns the Gemini-shaped payload into a Responses API body (`store:false`; `instructions`; `input` with `input_text`/`input_image`/`input_file` data URLs, `function_call`/`function_call_output` by `call_id`; tools `type:function, strict:false`, `parallel_tool_calls:false`; `reasoning.effort` `none` for Copilot, `low` for structured reviews; strict `json_schema` output, array schemas wrapped in `{results}`) and `fromOpenAIResponse` maps it back (reasoning items skipped; refusal/content filter 422; `incomplete` 502; invalid tool arguments 502). Free metering: `POST /v1/responses/input_tokens` (a 404/405 falls back to `estimateOpenAIInput`, an upper bound), usage `input_tokens`/`output_tokens`, price `BYOK_RATES['gpt-6-luna']` ($0.10/$0.50 per 1M, ×2/×1.5 over 272K). Client: `pro.js` provider maps, key texts (an OpenAI API key, not a ChatGPT subscription), large-photo resize as for Claude; `settings.html` option; `ai-notice.js` OpenAI. Universe AI stays Gemini-only. `copilot-knowledge.js` (`TaskitatorCopilotKnowledge`): `MAP` (where everything is, ~120 tokens) + one condensed entry per page (`PAGES`) and per Settings tab (`SETTINGS`, open tab only, read from `#settingsTabs [aria-selected]`); `app.js` appends `forPage(page)` to the system prompt; Friends and Universe now have their own page keys (read-only). Budgets tested: MAP ≤ 560 chars, a page ≤ 1,900, Settings ≤ 2,300. Tests: `phase73.test.js` and `security.test.js` "Phase 7.3". Cache `taskitator-phase4-v78`.
+- **Streak modes and required free day (Phase 7.2):** `points.js`: ledger rows are now `{p,n,r,a}` (all / required non-bonus / AI-locked completions); `modes[{from,mode}]` scheduled from `settings.streak_mode` (`tight|normal|loose`, default loose) by `scheduleMode`, a change starting at `nextWeekStart` like free days; `dayDone(state,date)` reads the count for that day's mode (rows without `r`/`a`, from before 7.2, count in every mode). `required{date:{at,ex}}`: `POST /points/require` (Worker, in a storage transaction with the stored snapshot) runs `requireDay` once per free date: records the press time and every task id finished today (awarded today or `completed_at` today), and resets today's row. `record` then gives nothing for completions at or before `at` or with an id in `ex` (marked awarded, so a later reopen adds nothing either). `isFree(state,date)` = weekly free and not required; streak, summary, week and duo streak (`friends-backend.js`) use `isFree`/`dayDone`. Summary adds `mode`, `mode_next`, `today.required`, `today.can_require`. Browser: Points panel shows the mode and the **Make today required** button (syncs first, confirm shows how many finished tasks won't count); Settings → Day & week **Streak counting** card; Phone lock counting and Streak counting use `.tk-choices`/`.tk-choice` (style.css), the look of Universe's choice boxes. Tests: `phase72b.test.js`. Cache `taskitator-phase4-v77`.
 - **Stats fix (Phase 7.1):** `views/stats.js` `renderStats` (1) uses the app's logical day (`TaskitatorRecurrence.today`, Riyadh time shifted by `day_start_hour`, the same rule as Today, Points and recurrence) for Done Today, Pending Today and the 7-day bars, instead of the UTC date; (2) reads timestamps as ISO strings or numbers; (3) draws each card in its own guarded part (`statsPart`), so one bad value (a history entry without `tasks`, a break that can't be timed) is logged and the rest still draws, where before a single throw left every number at its HTML default of 0; (4) takes today's breaks from the Worker's answer (`BreakEngine.current()`: Scheduled windows and reserved minutes, or Flexible minutes used), falling back to the saved record; (5) redraws while open on `taskitator-synced`, `taskitator-tasks-updated`, `taskitator-breaks-changed`, `taskitator-auth-ready` and cross-tab `storage`. Tests: `stats.test.js`. Cache `taskitator-phase4-v76`.
 ### `uni/focus-timer.js`
 
@@ -1720,10 +1734,13 @@ Paths are relative to the repository root. This is the complete file list as of 
 | [`scratchpad-plan-a.test.js`](scratchpad-plan-a.test.js) | Required today/overdue and inherited-date scratchpad gate tests. |
 | [`security.test.js`](security.test.js) | Worker security, vault/AI/deletion/sync/protection and backend integration fixtures. |
 | [`stats.test.js`](stats.test.js) | Stats view: malformed data, guarded cards, logical-day counts and redraw events. |
+| [`phase72b.test.js`](phase72b.test.js) | Phase 7.2: streak modes, Make today required, choice boxes. |
+| [`phase73.test.js`](phase73.test.js) | Phase 7.3: ChatGPT adapter, pricing, client wiring; Copilot knowledge budgets and coverage. |
 | [`friends-backend.js`](friends-backend.js) | Phase 7.0 friends service on the Worker (requests, block, privacy, cheers, overview with points). |
 | [`friends-ui.js`](friends-ui.js) | Phase 7.0 Friends view: add by username, requests, leaderboard, cheers, privacy. |
 | [`points.js`](points.js) | Phase 7.0 points, ranks, streak and free-day rules shared by the Worker (awards) and the browser. |
 | [`points-ui.js`](points-ui.js) | Phase 7.0 points & streak strip on Today and its details panel. |
+| [`copilot-knowledge.js`](copilot-knowledge.js) | Phase 7.3 condensed per-page Copilot knowledge (`TaskitatorCopilotKnowledge`). |
 | [`help-tours.js`](help-tours.js) | Phase 6.9 Help "Try it live" guides and the index jump highlight. |
 | [`settings-fold.js`](settings-fold.js) | Phase 6.7.1 collapsible Settings sections and `TaskitatorFold.reveal`. |
 | [`settings.html`](settings.html) | Settings/backup/phone/Pro/account markup and inline preferences controller. |

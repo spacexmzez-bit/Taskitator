@@ -1,6 +1,6 @@
 // File: sw.js
 // Taskitator Service Worker
-const CACHE_NAME = 'taskitator-phase4-v76';
+const CACHE_NAME = 'taskitator-phase4-v78';
 
 self.addEventListener('message', event => {
     if (event.data?.type === 'TASKITATOR_SECURITY_VERSION') {
@@ -66,6 +66,7 @@ const STATIC_ASSETS = [
     './components.js',
     './root-completion.js',
     './app.js',
+    './copilot-knowledge.js',
     './manifest.json',
     './SYSTEM_PROMPT.md',
     './CRITERIA_TEMPLATES.json',

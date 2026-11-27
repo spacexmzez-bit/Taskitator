@@ -5623,13 +5623,9 @@ html[data-tier="pro"] .copilot-model-chip::before { content: '\25C6\00A0'; color
 .confirm-warning{border-color:rgba(245,158,11,.6)}
 .confirm-warning .confirm-sheet-title{color:var(--alert-orange)}
 .icon-btn.btn-warning{background:var(--alert-orange);border-color:var(--alert-orange);color:#1f1300}
-.status-mode-group{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px}
-.status-mode-opt{display:flex;align-items:center;justify-content:center;min-height:40px;padding:6px 8px;border:1.5px solid var(--border-color);border-radius:8px;font-size:.85rem;cursor:pointer;text-align:center}
 .status-mode-opt input{position:absolute;opacity:0;pointer-events:none;width:0;height:0;margin:0}
 /* Phase 6.7.1: a disabled mode kept showing its radio dot. ".settings-page :is(button,input,select):disabled { opacity: .5 }" is more specific than the rule above. */
 .settings-page .status-mode-opt input:disabled{opacity:0}
-.status-mode-opt:has(input:checked){border-color:var(--primary);background:var(--card-subtle);font-weight:600}
-.status-mode-opt:has(input:disabled){opacity:.45;cursor:not-allowed}
 .status-mode-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .status-mode-lock{margin:8px 0 0;font-size:.8rem;color:var(--alert-orange)}
 .status-mode-lock[hidden],.status-mode-help[hidden],#statusBulkRow[hidden]{display:none}
@@ -6300,3 +6296,20 @@ html[data-shell]:not([data-shell="tasks"]) .points-strip{display:none}
 .fr-pick label:has(input:disabled){opacity:.45}
 .fr-collab-form .icon-btn,.fr-start{width:auto;justify-self:start;padding:8px 14px;margin-top:8px}
 .uni-collab-badge{padding:1px 8px;border-radius:99px;font-size:.72rem;font-weight:800;background:#7c3aed;color:#fff}
+
+/* Phase 7.2: square choice boxes, the same look as Universe's .uni-choice-pick, for a label + hidden radio.
+   Used by Phone lock counting and Streak counting (settings.html). */
+.tk-choices{display:flex;gap:10px;margin:10px 0 4px;padding:2px 2px 10px;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:var(--border-hover) transparent}
+.tk-choice{position:relative;flex:1 0 136px;scroll-snap-align:start;display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-height:128px;margin:0;padding:12px 12px 14px;border:1.5px solid var(--border-color);border-radius:14px;background:var(--card-bg);color:var(--text-color);text-align:start;box-shadow:0 3px 0 var(--depth);cursor:pointer;transition:border-color var(--dur-fast),background var(--dur-fast),transform var(--dur-fast)}
+.tk-choice input{position:absolute;opacity:0;pointer-events:none;width:0;height:0;margin:0}
+.tk-choice .tk-ic{width:22px;height:22px;color:var(--text-muted)}
+.tk-choice strong{font-size:14px;line-height:1.25}
+.tk-choice span{color:var(--text-muted);font-size:12px;font-weight:500;line-height:1.4}
+.tk-choice:hover{border-color:var(--border-hover)}
+.tk-choice:active{transform:translateY(2px);box-shadow:0 1px 0 var(--depth)}
+.tk-choice:has(input:checked){border-color:var(--primary);background:var(--accent-light);box-shadow:0 3px 0 var(--depth-primary)}
+.tk-choice:has(input:checked) .tk-ic{color:var(--primary-hover)}
+.tk-choice:has(input:focus-visible){outline:2px solid var(--primary);outline-offset:2px}
+.tk-choice:has(input:disabled){opacity:.45;cursor:not-allowed;transform:none}
+/* Phase 7.2: Make today required (points panel) */
+.pts-require{margin-top:10px;width:100%;justify-content:center}

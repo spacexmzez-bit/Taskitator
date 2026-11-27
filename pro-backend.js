@@ -44,7 +44,9 @@ export const FREE_BYOK = Object.freeze({ daily: 10, monthly: 220 });
 export const BYOK_RATES = Object.freeze({
     'claude-haiku-5-5': [{ upTo: 100_000, input: 100, output: 500 }, { upTo: Infinity, input: 500, output: 2500 }],
     'gemini-3.5-flash-lite': [{ upTo: Infinity, input: 300, output: 2500 }],
-    'gemini-3.1-flash-lite': [{ upTo: Infinity, input: 250, output: 1500 }]
+    'gemini-3.1-flash-lite': [{ upTo: Infinity, input: 250, output: 1500 }],
+    // Phase 7.3: $0.10 / $0.50 per 1M; prompts over 272K: 2x input, 1.5x output. Cached input billed at the full rate.
+    'gpt-6-luna': [{ upTo: 272_000, input: 10, output: 50 }, { upTo: Infinity, input: 20, output: 75 }]
 });
 export function modelCost(model, input, output) {
     const tiers = BYOK_RATES[model];

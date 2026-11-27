@@ -6,7 +6,7 @@
 (function () {
     'use strict';
     if (typeof document === 'undefined' || window.TaskitatorAiNotice) return;
-    const COMPANY = { gemini: 'Google', claude: 'Anthropic' };
+    const COMPANY = { gemini: 'Google', claude: 'Anthropic', openai: 'OpenAI' }; // 7.3: ChatGPT
     // Hosted Universe review runs on Gemini (UNIVERSE_GEMINI_API_KEY in docs/worker-configuration.md). Keep in step with the server.
     const UNIVERSE_COMPANY = 'Google';
     // Hosted Taskitator AI runs on the Anthropic key (ANTHROPIC_API_KEY in docs/worker-configuration.md).
