@@ -1,11 +1,19 @@
-# Taskitator — code and architecture guide
+# Taskitator — complete guide (features A–Z, code and architecture)
 
 Taskitator is a browser task manager with nested tasks, projects, scheduled and flexible breaks, offline personal editing, proof-based completion, a focus timer, an AI Copilot, cloud synchronization, phone-blocking integration, and collaborative workspaces called **Universes**. The frontend is static HTML/CSS/JavaScript. Its authenticated backend runs in a Cloudflare Worker and a Durable Object; Universe records use D1, and Universe attachments use R2.
 
-This guide describes the source at [`99b4282`](https://github.com/spacexmzez-bit/Taskitator/tree/99b42829c17fb4a5921b1f51c85020556e70abab), inspected on **5 November 2026**. The catalogue covers all 106 tracked files: 82 text files and 24 PNG assets. The source describes the app's behavior. Live configuration, credentials and provider availability depend on the deployment.
+This guide describes the source as of **Phase 6.9 (27 November 2026)**: 228 files, including 28 PNG assets. **Part 1** is the user guide: every feature of Taskitator on the web, where it is, how to use it step by step, and the rules and limits behind it. **Part 2** is the code and architecture guide. The source describes the app's behavior; live configuration, credentials and provider availability depend on the deployment. Older Part 2 sections describe the code as it was first inspected (commit `99b4282`, 5 November 2026) plus the phase notes that followed; where a statement and the current code differ, the code wins.
 
 ## Contents
 
+**Part 1 — Taskitator web from A to Z**
+- [Plans, limits and what needs a connection](#plans-limits-and-what-needs-a-connection)
+- [Getting started](#getting-started)
+- [The main screen](#the-main-screen)
+- [Feature reference (A–Z)](#feature-reference-az)
+- [Rules that apply across features](#rules-that-apply-across-features)
+
+**Part 2 — Code and architecture**
 - [System structure](#system-structure)
 - [Startup and browser contracts](#startup-and-browser-contracts)
 - [Offline mode and reconnection](#offline-mode-and-reconnection)
@@ -23,6 +31,737 @@ This guide describes the source at [`99b4282`](https://github.com/spacexmzez-bit
 - [Maintenance boundaries](#maintenance-boundaries)
 - [Alphabetical file catalogue](#alphabetical-file-catalogue)
 - [Source navigation index](#source-navigation-index)
+
+# Part 1 — Taskitator web from A to Z
+
+This part describes what a person using Taskitator on the web can do, where each control is, the steps to use it, and the rules the app enforces. Part 2 explains how the code does it. Where the two disagree, the code is right; report the difference.
+
+## Plans, limits and what needs a connection
+
+### Free and Pro
+
+Everything is free unless the table says otherwise. Pro comes from a Keyo license key (Settings → AI & Pro → **Activate Pro**). An Android "App Pro" source also exists for the app build; on the website it counts the same way.
+
+| Feature | Free | Pro |
+| --- | --- | --- |
+| Tasks, subtasks, Shield, bonus tasks, Dynamic Priority, Dynamic Bonus, drafts, Early task | Yes | Yes |
+| Projects, Calendar, Statistics, Trash, repeating tasks | Yes | Yes |
+| Breaks, strict modes, Emergency Bypass, Scratchpad, Focus timer | Yes | Yes |
+| Phone lock (MacroDroid) and Sleep Lock | Yes, 3 phone devices | Yes, 12 phone devices |
+| Backup, restore, sync, offline editing | Yes | Yes |
+| AI with your own Gemini or Claude key (Copilot, criteria checks, proof reviews, note cleanup) | Yes, within 10 credits a day and 220 a calendar month (Riyadh time). Shown as Available / Caution / Critical, never as numbers | Yes, not limited or metered by Taskitator; your provider bills you |
+| Hosted Taskitator AI (no key needed) | No | Yes, daily and 30-day allowance from the license |
+| Test your criteria (single task) | Yes, costs AI usage | Yes, credit estimate first |
+| Batch proof review (up to 20 tasks) | No | Yes |
+| Consecutive subtasks `{num==X}` and Auto create ranges | No | Yes |
+| Study plans (create, edit, re-plan, import, Soft reschedule, Early Appearance) | No (existing plans: view, finish, delete) | Yes |
+| Pull from tomorrow | No | Yes |
+| Test lab | No | Yes |
+| Colour themes | Savannah only | Savannah, Desert, Jungle, Marina, Fictional, plus Icon mix |
+| Saved criteria | 5, of which 4 may have a reference file | 100, of which 10 may have a reference file |
+| Universe | Join up to 2 | Join up to 7; create Universes (own up to 2); Context files; images in Community posts; Universe AI credits |
+
+**When Pro ends:** the theme returns to Savannah with a one-time toast ("Pro ended, theme set to Savannah.") and the Icon mix is ignored (both are kept for renewal). Study plans can still be viewed, finished and deleted, but not edited. Only the first 3 phone devices keep working; the rest show as revoked until you renew. Existing Universes keep working; renaming, adding members and Context need the owner's active Pro.
+
+### Hard limits
+
+| Item | Limit |
+| --- | --- |
+| Tasks per account (synced) | 10,000 |
+| Nesting depth | 64 levels |
+| Title, description, criteria text | 10,000 characters each (criteria edits on locked tasks and study criteria: 4,000) |
+| New-task drafts | 50 |
+| Study plan drafts | 10 |
+| Reference exemplar on a task | 1 file, 5 MB, image or PDF |
+| Proof per review | 1–5 files; 8 MB per photo, 30 MB per PDF; 40 MB in total including reference files |
+| Phone devices | Free 3, Pro 12 |
+| Study plan | 1–1,000 units, up to 365 study days, bonus 1–500; imported plans up to 500 units and 2 MB |
+| Auto create | 100 subtasks per entry; asks first above 20 |
+| Universe | 20 members besides the owner; own 2; join 2 (Free) or 7 (Pro); proof files up to 3 per submission, 5 MiB each |
+| Username | 3–20 letters, numbers or underscores; unique, case does not matter |
+| Copilot name | 20 characters |
+
+### Time rules
+
+- **Your day** starts at the hour set in Settings → Day & week → **New day begins at** (00:00 to 04:00). Anything done before that hour counts toward the previous day, for tasks and breaks.
+- Break days use your device's time zone, pinned for each day once the day is decided.
+- **Riyadh time (UTC+3)** is used for: repeating-task dates, Sleep Lock schedules, Universe dates and deadlines, AI allowance resets (midnight), and the Free monthly allowance (1st of each month).
+- **Weekend** (Settings → Day & week) decides when Emergency Bypass uses refill and the default study weekdays.
+
+### What needs an internet connection
+
+Works offline (saved on this device, synced later): creating, editing, completing and deleting ordinary tasks; projects; drafts; scratchpad notes; the focus timer.
+
+Needs a connection: anything that uses AI (Copilot, criteria checks, proof reviews, tests, note cleanup); creating or changing AI-locked tasks; submitting proof; breaks; Emergency Bypass; phone devices and tokens; Sleep Lock settings; Pro activation; Universe (it never queues offline changes as personal sync); importing or creating study plans (they need a successful sync first). Tasks completed offline do not unlock your phone until this device syncs.
+
+## Getting started
+
+### Sign in and create an account
+
+1. Open the site. The sign-in page shows **Sign in** and **Create account**. Use email and password or Google.
+2. After the first sign-in you see **Set up your workspace**:
+   - **Start with an empty workspace** for a new account.
+   - **Import an older Taskitator account** if you used Taskitator before the secure sign-in update: enter the old username and password once (this is an import, not another login). Pause your phone's blocking macro first, because its old token is replaced.
+3. **Use another login** switches to a different sign-in.
+4. A new account starts the **Getting started** tour automatically.
+
+### Loading screen
+
+While Taskitator checks your sign-in you see **Loading . . .** (or **Updating secure app files…** after an update).
+
+- After 10 seconds it adds **Taking longer than usual…**.
+- **Skip and open offline** at the bottom opens the copy saved on this device immediately. It only appears on a device that already holds your account.
+- After 45 seconds Taskitator stops waiting by itself. With a saved copy it opens offline with a notice and a **Reconnect** button (reloads the page). Without one it shows "Taskitator couldn't connect…" with **Try again**.
+- If you skipped an update, Taskitator never reconnects in place; when the connection is back the notice asks you to press Reconnect.
+
+### Username
+
+Tap **Set username** under the page title (it then shows `@name`). Use 3–20 letters, numbers or underscores. Names are unique and case-insensitive. The username is a display name; you still sign in with your login.
+
+### Install as an app
+
+Taskitator is a web app with a manifest (`standalone` display). Use your browser's **Install** or **Add to Home screen**.
+
+### Language
+
+Settings → General → **Language**: English or العربية (Arabic). Changing it reloads the page.
+
+- Arabic is right-to-left: the menu opens from the right, Copilot from the left.
+- **Time format**: Automatic, 12-hour or 24-hour. Automatic uses 12-hour in Arabic.
+- Dates are always Gregorian with Western digits.
+- Your own text (task titles, tags, notes, project names, Copilot replies) is never translated.
+- The Help page, Privacy Policy and Terms stay in English; Arabic shows a one-line notice.
+- The language is saved on this device only.
+
+## The main screen
+
+**Header (left to right):** menu button, **Completed** (opens today's completed tasks; in General, all completed tasks), **Breaks** pill, **Scratchpad**, the sync dot (with an auto-sync countdown under it), **Emergency bypass**, a **Today** jump button (on views that need it), and **Copilot**.
+
+**Menu:** Today, General Tasks, Calendar, Projects, Stats, Trash, Drafts, Universe, Sleep Lock, Study plans, Test lab, Help, Settings, and **Recurring tasks** (the history and list of repeating series). On wide screens (1,180 px and more) the menu becomes a permanent rail.
+
+**Floating controls:** **+ New task**, and the **Focus timer** button (shows the running clock).
+
+**Under the title:** **Multiselect**, **Pull from tomorrow** (only when it applies), **Filter**, and the sort button (⇅).
+
+## Feature reference (A–Z)
+
+### AI-locked tasks (proof verification)
+
+A task that can only be completed by submitting proof that an AI accepts.
+
+**Turn it on**
+1. In **Create New Task** (or Task Details → **AI Audit**), tick **Require AI Proof Verification (Irrevocable)**.
+2. Write **Proof Criteria**: what the proof must show. Make it visual and checkable ("photo of 2 handwritten pages showing the full outline", not "studied well").
+3. Optional: **Recommended** opens templates and your saved criteria.
+4. Optional: **Attach Reference Exemplar** (1 image or PDF, 5 MB). Say in the criteria how the proof relates to it.
+5. Press **Validate Criteria**. The AI scores clarity out of 10 and suggests a rewrite. With **Check criteria before locking** on (Settings → Tasks) you need 7/10 to save.
+6. Optional: **Test your criteria** (see below).
+7. Press **Save Task** and confirm the warning.
+
+**After it is locked**
+- It cannot be un-ticked. The title cannot change and the task cannot be deleted without Emergency Bypass. Description and tags stay editable.
+- Overdue AI-locked tasks are protected from being postponed. Removing the due date needs Emergency Bypass. An undated AI-locked task has **Assign to today** (no bypass needed).
+- It can't be bonus work or Dynamic Bonus.
+- It always counts toward the phone lock.
+- It can't be created or changed offline.
+- To change its criteria, use **Edit criteria** (see *Criteria editing on locked tasks*).
+
+**Complete it**
+1. Tap its completion circle. The **Submit AI Verification Proof** dialog opens.
+2. Upload 1–5 files (JPG, PNG, WebP or PDF; 8 MB per photo, 30 MB per PDF). Claude does not accept HEIC photos; convert them or use Gemini.
+3. Optional: add a note. The note is context only; the criteria stay binding.
+4. Press **Submit Proof**. On Pro hosted AI you first see a credit estimate and approve it.
+5. The AI scores the proof; **7/10 passes** and the task completes. "Insufficient proof" means the proof was genuine but incomplete (add a page, take a clearer photo).
+
+**Rules**
+- Every review uses AI usage, even when rejected. There are no refunds. Cancelling at the price preview costs nothing.
+- A parent can't be completed while an AI-locked task under it is unfinished; submit those first.
+- If the reference file is missing on this device, restore it before submitting.
+- Proof can't be submitted offline.
+- A completed AI-locked task can't be reopened without Emergency Bypass.
+
+**Title variables.** Write `{name==value}` in a title and `{name}` in the criteria. The title shows the value; the criteria get it filled in. Example: title `Read chapter {ch==3}`, criteria "Photo of the summary of chapter {ch}". Validation refuses criteria with a variable the title doesn't define. Subtasks added in Task Details copy the parent's criteria and fill in their own variables (they are not locked).
+
+### AI notice
+
+Every screen that uses AI shows: "AI services are handled by {company}, a third-party company. AI can make mistakes, so check answers and results." The company is Google for Gemini and Anthropic for Claude or hosted Taskitator AI; Universe reviews show Google. When the provider is unknown it says "a third party".
+
+### AI providers and keys (your own key)
+
+Free accounts need their own key for any AI. Pro accounts can use one instead of hosted credits.
+
+1. Settings → **AI & Pro** → **AI provider**.
+2. Choose **Gemini** or **Claude**. Each keeps its own key; switching never erases one.
+3. **Add or replace key**: confirm with your password or Google (one confirmation covers that action for five minutes), then paste a key from Google AI Studio or the Claude Console. Keys are encrypted on Taskitator's server.
+4. **Test key** checks it works and uses none of your quota.
+5. Press the button that makes this provider active ("Gemini is active").
+
+Other buttons: **Show** (visible for 30 seconds), **Copy**, **Refresh**, **Delete key** (it still works elsewhere until you revoke it with the provider). Changes in this tab save immediately.
+
+- Gemini: if it hits its quota or is unavailable, Taskitator retries with a lighter Gemini model. It never switches to Claude by itself.
+- Claude: never falls back to Gemini. Accepts JPG, PNG, WebP and PDF.
+- Changing provider starts a new Copilot conversation.
+
+On Pro, hosted Taskitator AI runs on Claude by Anthropic, whichever provider is selected, unless you tick **Use my own API key instead of credits** in the Pro section. Switching does not reset hosted credits.
+
+### Animations and effects
+
+Settings → General → **Animations & effects** (last section, collapsed). Per device.
+
+- **Static**: nothing moves. **Reduced**: only loading spinners and progress bars. **Normal**: everything (default). **Custom**: set automatically when you switch one effect off; switching all back on returns to Normal; choosing Custom again restores your last set.
+- Effect switches (work in Normal and Custom only): Falling leaves, Clouds, Animals (off shows a plain tick), Bird, Parallax, Tap bubbles, Icon wipe.
+- Low-memory devices and devices with the system "reduce motion" setting start in Reduced until you choose.
+- Animations can make Taskitator slower on older devices; choose Reduced or Static if it feels slow.
+
+### Auto create (Pro)
+
+Creates a numbered range of subtasks at once.
+
+1. In Create Task (Quick Subtasks) or Task Details (Subtasks Under This Task), tick **Consecutive {num==X}**, then **Auto create {num==1-15}**.
+2. Type a title with a range, e.g. `Lesson {num==1-15}`, and press Enter or +.
+3. Skips go after underscores: `{num==1-15_5_7}` leaves out 5 and 7. A skip outside the range, or equal to the first or last number, is ignored.
+
+Up to 100 subtasks per entry; more than 20 asks first. The range must go up. Without Auto create ticked, a range creates nothing (you get a hint). Each subtask keeps the surrounding text, so variables, criteria and `$$` work as usual. The **?** next to the subtask heading explains it with an example.
+
+### Backup and restore
+
+Settings → Account & data → **Back up & restore**.
+
+- **Download** saves one `.json` file with tasks, projects, settings, breaks, saved criteria and review history from this browser. Secrets are removed. Reference files kept only in this browser may not be included.
+- **Restore from a backup**: pick a Taskitator `.json` file, then **Merge** (adds the backup's tasks; nothing is deleted) or **Replace everything** (wipes this browser's data and uses the backup). Invalid repeating-task data is refused.
+
+### Batch proof review (Pro)
+
+1. Tap **Multiselect** and tick AI-locked tasks (up to 20).
+2. Tap **Batch review selected tasks**.
+3. Attach 1–5 files that cover all of them (8 MB per photo, 30 MB per PDF) and submit.
+4. Check the price preview and approve.
+
+One combined review usually costs less than separate reviews; you pay its real cost, shared across the tasks. Works with hosted credits or, on Pro, with your own key.
+
+### Bonus tasks
+
+Optional work. A bonus task never blocks its parent, even under a Shield.
+
+- Tick **Bonus Subtask (Excluded from Shield)** in the editor, or start a quick subtask's text with or include `$$` (removed from the title).
+- Change many at once: Multiselect → **Bonus** → **Make bonus** or **Make required**. Tasks that can't change are skipped.
+- An AI-audited task can't be bonus. Required work protected by a Shield can't become bonus.
+- Phone lock: bonus tasks count only when **Count bonus tasks** is on (Harsh or Normal); never in Limited.
+
+### Breaks
+
+Tap the **Breaks** pill. You get one daily allowance (3 hours by default) shared by two systems. Each day uses only one system; choosing one locks the other until the day resets. While a break runs your tasks don't lock your phone; Sleep Lock is not lifted by breaks. A break never continues into the next day. Each system has a **?** help panel.
+
+**Scheduled**
+1. Press **Start planning**. You get a 10-minute planning window from that moment. It can be started until 6 hours before the day resets.
+2. **+ Add Break**: up to 3 breaks with start and end times, not overlapping, within the allowance.
+3. Press **Save schedule**. Saved minutes come off the allowance at once. You can edit and save again until the window ends; then the last save is final. Closing without saving cancels the window.
+4. **Lock Scheduled for Today** commits the day to Scheduled without planning.
+
+**Reserved breaks** (part of Scheduled): **+ Add Reserved** in the same planning window, at most 2 a day. Each has a length (10 minutes or more, in 5-minute steps) and a start window (at least 5 minutes wide, inside today, not over, not overlapping a scheduled break or another window). The full length is taken from the allowance when you save. When the window opens, **Start now** appears; the break then runs its full length and can't be ended early. If the window passes unused, that time is gone. A scheduled break that begins during it cuts it off; the rest is lost.
+
+**Flexible**
+1. Choose **30 min**, **45 min**, **1 hour**, **Custom** (whole minutes from 10 up to what is left) or **Until allowance ends**.
+2. It starts immediately. You need at least 10 minutes of allowance and 10 minutes before the day resets. One break at a time.
+3. It can't be ended in its first 10 minutes (or your strict minimum). After that press **End break**, or let it stop at its length, when the allowance runs out, or at the day reset.
+
+Every started minute counts in full (30 min 1 s = 31 minutes).
+
+**Break limits & strict modes** (Settings → Day & week)
+- **Daily break maximum**: 1 to 3 hours in 15-minute steps.
+- **Flexible Strict Mode**: minimum length 30–60 minutes (never above the maximum); shorter presets disappear; the same gap must pass between one break's end and the next start. A warning shows if this leaves very few breaks.
+- **Scheduled Strict Mode**: if you haven't chosen a system by the **Deadline** (1 to 18 hours after day start, 15-minute steps), Scheduled locks with that weekday's plan: the **Default plan**, **Its own plan**, or **Not covered (normal rules)**. A covered day without a plan means zero breaks. The deadline applies even if the app is closed.
+- These settings can only be changed when today's required (non-bonus) tasks are done or Emergency Bypass is on. If today's system is already chosen, changes apply from tomorrow. Press **Save break settings**.
+
+The pill shows the state: Breaks, Plan (countdown), On break · minutes left, Next scheduled break at…, Scheduled Breaks locked for today. Its colour follows the remaining allowance (green above 35 %, yellow 10–35 %, red below).
+
+### Calendar
+
+Menu → Calendar.
+
+- Month grid with ‹ › to change month and **Today** to jump back. Tap a date to list its tasks in **Agenda**.
+- Tap a task to open it. Tasks **can't be completed** from the calendar; complete them in Today or General.
+- Early tasks show **Early · due {date}**.
+- **Unscheduled Tasks** lists undated tasks with **Assign to Today**.
+
+### Colour themes and Icon mix
+
+Settings → General → **Colour theme** (second-to-last section, collapsed). Per device. Picks wait for **Save changes**.
+
+- **Savannah** (sage green, free, default), **Desert** (sand and gold), **Jungle** (dark oily green), **Marina** (ocean blue), **Fictional** (volcanic red) — all but Savannah are Pro. A theme recolours the whole app and brings its own 9 animals for the completion buttons. Animal colour still follows the task's priority.
+- **Icon mix (Pro)**: tick other packs to mix in their animals. Your theme's pack can't be unticked and always appears most: 60/40 with two packs, 40/30/30, 34/22/22/22, 28/18/18/18/18 with all five. Each box shows its share.
+- A task keeps its animal while theme and mix stay the same.
+- Completing a task stamps the animal's footprint on its circle (unless animations are off).
+
+### Completing, reopening and the 10-second undo
+
+- Tap a task's circle. The task and all its subtasks complete. A sound plays (if on) and **Undo** shows for 10 seconds.
+- **Top-level task:** its unfinished subtasks that are not protected move to **Trash**. Bonus, AI-audited and shielded work (and anything leading to it) stays. Reopening the task brings the trashed ones back.
+- A completed top-level task can be reopened until its day ends. After that it and its branch disappear from task views (Statistics still count it).
+- **Blocked** when a Shield has unfinished required work, or an AI-audited task under it is unfinished.
+- **AI-locked** tasks open the proof dialog instead.
+- Tap a completed task's circle to reopen it (AI-locked tasks need Emergency Bypass).
+- In Task Details a completed task can only have its title and description edited.
+
+### Consecutive subtasks `{num==X}` (Pro)
+
+1. In Create Task or Task Details, tick **Consecutive {num==X}** next to the subtask field.
+2. Type a title with `{num==1}`, e.g. `Lesson {num==1}`, and press Enter.
+3. The field refills with `{num==2}`. Keep pressing Enter.
+
+Without Pro, add subtasks one at a time; existing numbered subtasks stay. For ranges see *Auto create*.
+
+### Copilot
+
+The assistant panel. Default name **Focus Copilot**; rename it in Settings → General → **Copilot** → Name (20 characters).
+
+1. Tap **Copilot** in the header.
+2. Press **Start Conversation** and type.
+
+It needs an AI key on Free; on Pro it works without one. It needs a connection. After 10 seconds without a reply the bubble says "Taking longer than usual…".
+
+What it can do depends on the page:
+- **Today and General Tasks:** read your tasks, show today's progress, create ordinary tasks and subtasks, change a task's title, description or due date, move a task to Trash, and propose a study plan (Pro). It can't create AI-locked tasks, approve proof, complete AI-locked work or activate a bypass. It respects locks.
+- **Statistics:** explains your numbers; no task changes.
+- **Settings:** explains keys, providers and settings.
+- **Phone blocker guide:** helps with the MacroDroid setup.
+- **Trash and other views:** explains the feature; asks you to go to Today or General for changes.
+
+**Study plan through Copilot (Pro):** say you want a study plan. It asks for the title, total units and study days, then opens the editable preview. Nothing is created until you confirm there. Copilot can't set AI audits or criteria.
+
+### Credits (Pro hosted AI)
+
+Settings → AI & Pro shows **AI credits today** and **AI credits this 30-day cycle**, from your license. Daily credits refill at midnight Riyadh time; the cycle refills every 30 days from activation.
+
+- Before a review you see an estimate and the most it could cost. That maximum is held; the unused part returns at once.
+- You pay the real provider usage. There are no multipliers and no batch discount, but a batch is one combined request, so it usually costs less.
+- What costs more: every PDF page is read; large photos cost more; a reference file adds what the AI must read.
+- Every charge rounds up to the next 0.5 credit. **View details** shows the exact usage to 4 decimals.
+- "Insufficient proof" is charged half the real usage, rounded up to 0.5. Free accounts using their own key don't get this discount.
+- A finished review costs credits even if rejected.
+
+Copilot, criteria checks and note cleanup on hosted AI have separate hidden daily caps; reaching one answers "Service unavailable temporarily".
+
+### Criteria editing on locked tasks
+
+1. Open an unfinished AI-locked task → **Edit criteria**.
+2. Write the new criteria (up to 4,000 characters; variables are not allowed here).
+3. One AI request validates it (needs 7/10) and compares it with the **original** criteria.
+
+**Same** or **stricter** applies for free. **Weaker** or **different** is refused with the reason, unless Emergency Bypass is active. A failed validation is always refused. Repeating tasks change criteria through **Recurrence & future criteria**.
+
+### Criteria templates and saved criteria
+
+In the task editor press **Recommended**.
+
+- **Templates**: 11 pre-verified study templates (Handwritten Summary Notes, Mind Map / Flowchart Diagram, Feynman Method Explanation Sheet, Question Bank / Online Quiz, Handwritten Worked Problems, Post-Quiz Mistake Audit, Full Mock Exam / Timed Section, Spaced Repetition / Anki Deck, Blurting / Free-Recall Sheet, Active Reading & Margin Annotations, Formula Derivation / Pathway Ledger). Choosing one counts as verified 10/10.
+- **Saved Criteria**: your own criteria that scored 8/10 or more. After validating, press **Save Criteria**, give a title (40 characters) and confirm. Free: 5 saved, 4 with a reference file. Pro: 100 and 10. A saved reference file is at most 4 MB, all together 8 MB. You can search, rename and delete. Criteria saved from the Test lab show a flask mark.
+- Editing applied criteria drops its verification; validate again.
+
+### Criteria test
+
+Runs a real audit on a sample proof without saving, completing or locking anything.
+
+1. In the task editor, after validating (7/10 needed when strict checking is on), press **Test your criteria**.
+2. Attach 1–5 test files and an optional note. **Run test**.
+
+It costs AI usage like a real review; there are no free tests. On Pro hosted AI you see an estimate first. Once a task is locked, tests need Emergency Bypass. A passing test doesn't guarantee the real audit passes.
+
+### Day & week settings
+
+Settings → **Day & week**: **New day begins at** (00:00–04:00), **Weekend starts** and **Weekend ends**, the Emergency Bypass counter ("4 of 4 left this week"), and **Break limits & strict modes**. These need **Save changes** (break settings have their own Save button).
+
+### Drafts (tasks)
+
+Park an unfinished task. A draft is not a task: not on Today, not overdue, no phone lock.
+
+- **New task:** fill in what you have (only the title is required) and press **Draft**. Nothing is created or locked and no AI is used.
+- Menu → **Drafts**: **Open** refills the form; **Delete** removes it. **Save Task** on an opened draft publishes it and removes the draft; **Draft** again updates it.
+- **Existing task:** Task Details → **Draft** keeps your edits without changing the task. Next time you open the task a notice offers **Restore** or **Discard draft**. Save Changes removes the draft. Restoring only fills fields you may change.
+- Drafts sync and are in backups. Up to 50 new-task drafts.
+- Stored: title, description, due date, project, priority, tags, bonus, Shield, AI proof choice, criteria text, Mr. Study fields, Dynamic Priority choice and typed subtasks. Not stored: reference file, validation score, repeat schedule. Edit drafts don't include subtask changes.
+
+### Dynamic options (Dynamic Priority, Dynamic Bonus)
+
+In the editor, **Dynamic options** (**?** explains both).
+
+- **Dynamic Priority** (free): choose a level under "While no unfinished required work remains, use priority". The task uses it while no required subtask is unfinished (a task without subtasks uses it at once) and returns to its own priority when required work becomes unfinished. The stored priority never changes.
+- **Dynamic Bonus**: the task becomes bonus work once all its required subtasks are done. It can't be combined with Bonus or AI audit, and can't be turned on once a Shield protects the task (turning it off is free). Saving it on a task without required subtasks asks first, because it would never apply. New study-plan days have it on.
+
+### Early task
+
+Show a task on an earlier day as optional work. Free.
+
+- Task Details → **Early task** → pick a date → Save. **Remove** clears it.
+- Many at once: Multiselect → **Due** → tick **Show early as bonus (keep due date)**, or **Remove early date from selected**.
+- The date must be before the due date (own or inherited) and not in the past. Only active, non-repeating tasks.
+- The due date doesn't change. Finish it early and it's done; skip it and it stays due on its date. Shields, locks and AI checks still apply.
+
+### Emergency Bypass
+
+For real emergencies. Tap **Emergency bypass** → **Activate 15m**.
+
+- Lasts 15 minutes. 4 uses a week; they refill at 00:00 on the day after your weekend ends.
+- While active: edit or delete protected tasks; change their criteria (including weaker edits); test criteria on locked tasks; change an AI task's title or remove its date; reopen AI-locked tasks; loosen phone-lock settings; change break settings; move or rename AI-audited study units. Your phone unlocks and Sleep Lock lifts.
+- It never ends a break or changes your break allowance.
+- Deleting a study plan with AI criteria uses 2 uses.
+- The header shows "Emergency Mode Active" with a countdown. It needs a connection.
+
+### Filter, sort and date filter
+
+- **Filter** → choose **Projects**, **Priorities**, **Tags** and **Date** (Any date, Overdue, Today, Next 7 days, No date, Custom range), and **Match**: AND (all) or OR (any). **Apply Filters**; **Clear All** resets. Parents of matches stay visible. The date filter doesn't apply on Today.
+- The date drop-down above General and Projects lists filters by effective due date (own or inherited; early tasks also match their early date).
+- **⇅** sorts by **Priority**, **Alphabetical** or **Required, then priority**. Saved on this device.
+- Numbers in titles sort as numbers (Chapter 2 before Chapter 10). A leading label like `5.10` or `5.1-0-1` is read as numbers segment by segment.
+
+### Focus timer
+
+Tap the timer button.
+
+1. **Timer settings**: Study minutes (1–90), Break minutes (1–15), Large break minutes (1–35), Sessions before large break (1–4), Sound, Vibration, Keep screen awake, Volume.
+2. **Start timer**. It runs Study → Break → … → Large break, then shows "Sessions complete".
+3. While running: **Pause/Resume**, **End timer**, **Restart**, **⛶ Full screen** (phones turn landscape), **Scratchpad**, **Floating timer** (picture-in-picture, in browsers that support it; keep the tab open).
+
+It keeps running when you switch pages and is saved per account on this device. Tap a timer button once to allow sound. It has nothing to do with breaks or the phone lock.
+
+### General Tasks
+
+Menu → General Tasks: every active task in its hierarchy, with due-date badges, filters, the date drop-down and sorting. Collapse a branch with its arrow.
+
+### Help and tutorials
+
+Menu → **Help** (or Settings → Help & tutorials → **Read the full help guide**). The Help page holds the user guide in seven units: Start here, Tasks, Focus breaks and your phone, AI, Pro features, Universe, and Settings sync and your data.
+
+**Find a section**
+1. Pick a unit in the **Index** at the top, then a section from the unit's list.
+2. The section you jump to flashes briefly (a coloured bar and glow; an outline in Reduced or Static motion) so you can see where it starts.
+3. **↑ Back to the index** ends each unit. Some sections keep a **Show example**.
+
+**Try it live** (on sections such as Create and edit, Subtasks, Drafts, Multiselect, Filter, Overdue, Projects, Calendar, Breaks, Scratchpad, AI-locked tasks and Copilot)
+1. Press **Try it live**. Taskitator opens the real screen (Today unless the section is about another view) and fades out everything except the control you need. Taps outside it are ignored.
+2. Use the highlighted control. When you press it, the next part opens up: pressing **+ New task** unfades the whole Create Task panel so you can fill it in.
+3. The card points you to the **?** buttons that already explain options, instead of repeating them. **Do it for me** presses the highlighted control. **–** shrinks the card.
+4. What you do is real: a task you save is created. If you close a panel too early, the guide steps back. If a confirmation or picker opens on top, the guide hides until it closes.
+5. **Skip tour** stops; the last step offers **Back to Help**.
+
+Sections about Settings (AI keys, phone lock, Pro, Colour themes) have **Show me in Settings**, which opens Settings and runs that tour there.
+
+**Guided tours:** Settings → General → **Help & tutorials** lists the tours to replay: Getting started, Breaks & emergencies, Set up AI, Link your phone, Taskitator Pro and Colour themes. A Universe tour runs inside a Universe.
+
+### Mr. Study link
+
+Create New Task has **Link to Mr. Study Rule** (creation time only) with XP and Banch fields, meant to credit an external Mr. Study app when the task is verified. The current Worker bridge returns no rules, so only "None (Standard Task)" is offered.
+
+### Multiselect and batch actions
+
+1. Tap **Multiselect** and tick tasks (**Select all** ticks everything shown).
+2. Choose an action:
+   - **Tags**: replaces the tags of every selected task.
+   - **Priority**: one level for all.
+   - **Due**: one date for all; overdue AI-locked tasks are protected from postponement. Also the Early task options.
+   - **Bonus**: Make bonus or Make required.
+   - **Phone lock**: Count or Don't count (only when **Allow changing many tasks at once** is on in Settings → Tasks). Unchecking today's tasks is skipped while locked.
+   - **Delete**: shows **Apply · delete N**; nothing is deleted until you press it. Protected tasks are skipped.
+   - **Batch review selected tasks** (Pro).
+3. The selection clears after an action; selection mode stays on until you tap Multiselect again.
+
+### Offline mode
+
+When Taskitator can't reach the server, the sync dot becomes a grey ring and a short notice appears. Ordinary editing continues and syncs later. Actions that need the server explain why they're off. Taskitator checks again in the background and reconnects by itself. After more than 7 days without contact you must sign in again before syncing.
+
+### Overdue tasks
+
+The banner on Today counts overdue tasks.
+
+1. Tap **Reschedule to date…**.
+2. Pick **Target Due Date** (today or later) → **Reschedule Tasks**. Eligible, non-locked overdue tasks move.
+
+If AI-checked tasks are overdue, ordinary rescheduling is blocked and the button becomes **Bring AI Tasks to Today**. Study plans with overdue units are handled on the Study plans page (link in the dialog; their names show in red).
+
+### Phone lock (MacroDroid)
+
+Android only. MacroDroid blocks chosen apps while today's tasks are unfinished. Taskitator is not affiliated with MacroDroid; MacroDroid's own limits and terms apply.
+
+**Set up (once)**
+1. Settings → **Phone lock** → **Open guide** (or menu → phone blocker guide).
+2. In **Devices**, type a device name → **Add device**. Its token starts with `tkp_`.
+3. **Download Bridge (with your token)** and **Download App Blocker**.
+4. In MacroDroid: Import/Export → import the **App Blocker first**, then the Bridge; open each, three dots → **Save macro**. Grant accessibility and notification permissions.
+5. Choose blocked apps in the App Blocker's **Application Launched** trigger (defaults: TikTok, Instagram, X). Never block the dialer, SMS, Android Settings, MacroDroid or the browser you use for Taskitator.
+6. Don't rename "App Blocker"; the Bridge finds it by name. Keep both macros enabled.
+
+No-token Bridge: open its **Local Variables**, set **user token** to your token (without "Bearer"). Manual build: the guide's step-by-step checklist (HTTP GET to the **Status URL**, header `Authorization: Bearer <token>`, If response contains `device_locked = false` → disable App Blocker, else enable).
+
+**How it decides**
+- The Bridge checks every 5 minutes, when the screen turns on and when MacroDroid opens.
+- Locked while counted tasks due today or overdue are unfinished. Unlocked during a break, while Emergency Bypass is on, or when everything counted is done. Eligible Universe assignments can also lock it (with your consent).
+- Sleep Lock is reported separately and overrides "unlocked".
+- Tasks with no due date never count. A subtask uses its nearest dated parent's date.
+
+**Phone lock counting** (Settings → Tasks)
+- **Harsh** (default): every task due today counts. Bonus tasks count only with **Count bonus tasks** on.
+- **Normal**: only tasks with **Count toward phone lock** ticked count. New required tasks start ticked; new bonus tasks start ticked only with Count bonus tasks on.
+- **Limited**: only AI-locked tasks count. Bonus never counts.
+- AI-locked tasks always count.
+- **Loosening is locked** until today's tasks are finished or Emergency Bypass is on (breaks don't unlock it): a looser mode, turning Count bonus tasks off, unticking today's tasks, removing or moving counted bonus work, or turning counted required work into bonus. Tightening is always allowed.
+
+**Device changes** (add, remove, **Remove all devices**) are only allowed when today's tasks are done, during a break, or with Emergency Bypass. Free: 3 devices; Pro: 12.
+
+**Troubleshooting:** import fails → update MacroDroid and pick the real `.macro` file. 401 → wrong or replaced token; add a device again. UnknownHostException → no internet. Nothing blocks → App Blocker enabled, imported first, original name, apps listed.
+
+### Priorities and tags
+
+Settings → **Tasks**.
+
+- **Tags**: type and **+ Add**; remove with ✕. Used in the editor and filters.
+- **Priorities**: **+ Add level**, rename, colour, reorder with arrows (#1 is highest), delete. A task's ring and animal take its priority colour.
+- **Task checks**: **Check criteria before locking** (AI must rate criteria 7/10 before a task can lock).
+- Press **Save changes**.
+
+### Projects
+
+Menu → **Projects**. Every account has an **Inbox**.
+
+- The **+** chip creates a project: name, icon (emoji) and theme colour → **Save Project**.
+- Tap a chip to open that project: its tasks in hierarchy, the date drop-down and **+ New task** (created in this project).
+- **✎** edits the active project (not the Inbox). **Delete Project** asks what happens to its tasks: divert to Inbox, reassign to another project, or delete them all.
+
+### Pull from tomorrow (Pro)
+
+Appears on Today when a study plan has units due tomorrow.
+
+1. Tap **Pull from tomorrow**.
+2. Each plan shows its units for tomorrow. A plan is locked until its units on today's list and every AI-audited task due today are done.
+3. Set **How many** or tick units → **Pull N to today**.
+
+Pulled units keep tomorrow's due date and show today as optional work.
+
+### Recurring tasks
+
+Make a task and its subtasks come back.
+
+**Set up**
+- Create New Task → **Repeat**, or Task Details → **Set up recurrence** (active tasks only).
+- Schedules: Daily, Selected weekdays, Monthly (start-date day), Date of month (1–31), Every six months, Yearly. **Start date** and optional **End date**.
+
+**How it repeats**
+- The next occurrence is created when the current one is completed or deleted, not when it becomes overdue. Its date is the next scheduled date after the latest of: the current due date, the day you finished it, today. Missed days don't pile up.
+- Subtasks repeat with their parent (dated subtasks keep their offset). A repeating branch can't contain another repeating series, and a child must stay inside its branch.
+- **Apply ordinary task edits to**: This occurrence, or This and future occurrences. Due-date changes apply to this occurrence only.
+- **Recurrence & future criteria** changes future dates, proof criteria (needs 7/10) and reference files; the current occurrence keeps its requirements.
+- **Stop future repetition**: you can still finish the current task. The series also stops at its end date or when its parent is completed or removed.
+
+**Overview:** menu → **Recurring tasks** lists the series and the history of the latest 500 occurrences.
+
+### Scratchpad (Distraction Dump)
+
+Park a distracting thought.
+
+1. Tap **Scratchpad**. A timer starts (90 s by default; 30 s–5 min in Settings → General → Distraction note timer).
+2. Type, then **Dump & Return**. It also saves when the timer ends.
+
+Notes expire after 48 hours. **View notes** stays locked until required tasks due today or overdue are completed, moved or trashed. In the notes view you can title each note, **Extract All** (AI cleans spelling and grammar, generates missing titles, downloads `.txt` or `.md`, and moves the notes to the **Distraction Archive** on Stats; needs AI), **Delete All**, or **+ New Dump**. The Focus timer has a Scratchpad button that returns you to the timer.
+
+### Settings
+
+Settings has six tabs: **General**, **Tasks**, **Day & week**, **AI & Pro**, **Phone lock**, **Account & data**.
+
+- Every section folds and starts collapsed, except Danger zone. Links and tours open the right section.
+- General, Tasks and Day & week changes wait for **Save changes** in the bar at the bottom (**Discard** drops them). AI & Pro and Phone lock save immediately.
+- Language, colour theme, Icon mix and animations are saved on this device only.
+
+General: Language, Copilot name, Sounds, vibration & notes (Sound effects, Vibration on Android, Pomodoro/focus-timer volume, Distraction note timer), Sync (Refresh after sync, Sync now), Help & tutorials, Colour theme, Animations & effects.
+
+Tasks: Tags, Priorities, Task checks, Phone lock counting.
+
+Account & data: Account (signed-in name, **Manage account & password**, **Log out**), Contact (info@mazendev.com), Back up & restore, Privacy & terms, Danger zone.
+
+### Shield (Require all subtasks first)
+
+Tick **Require all subtasks first (Irreversible Shield)**. The task can't be completed until every required (non-bonus) task under it is finished.
+
+- It can't be turned off.
+- A shielded task can't be moved out of its parent, and its required work can't become bonus.
+- A shielded task with unfinished subtasks can't be deleted without Emergency Bypass.
+- Completing a top-level task never trashes shielded work.
+
+### Sleep Lock
+
+Menu → **Sleep Lock**. Blocks your phone during your sleep hours with the same MacroDroid setup.
+
+1. Set up MacroDroid first (a phone token is required).
+2. Tick **Enable Sleep Lock**, set **Bedtime** and **Wake-up time** (Riyadh time, even when travelling) → **Save schedule**.
+3. Optional: **Delay sleep for today** by 30 or 60 minutes, once per night across all devices. Wake-up stays the same.
+4. The gear opens **Sleep Lock settings**: **Firm mode** and **Today only** (different times tonight; reverts after tonight).
+
+**Firm mode:** from 2 hours before bedtime until wake-up you can't delay sleep, and turning Sleep Lock or Firm mode off, or moving bedtime or wake-up later, needs Emergency Bypass. Earlier times are always free. Breaks never lift Sleep Lock; Emergency Bypass does.
+
+### Statistics
+
+Menu → **Stats**.
+
+- **Done Today**, **Pending Today**, **Rigor Ratio** (AI-verified share of all completed tasks), **Active Total**.
+- **7-Day Completion Velocity**, **Project Allocation**, **Break & Focus Adherence**, **AI verification** (AI Verified vs Standard Done).
+- **Distraction Archive**: extracted scratchpad notes (cleaned text, **View raw original**, delete one, **Clear Archive**).
+
+### Study plans (Pro)
+
+A study plan spreads numbered units over study days. Each study day is a shielded parent task with one subtask per unit; bonus units are the last units of a day.
+
+**Create**
+1. Menu → **Study plans** → **+** (New study plan), or ask Copilot.
+2. **Task info**: Title, Unit name, Total units (1–1,000), Bonus units (optional), Description, chapter labels (units per chapter and label, e.g. `Ch 3 · Lesson.17`; no extra tasks), and parent and unit priorities (units can't outrank the parent).
+3. **AI criteria** (optional): **Enable AI audits for unit subtasks only**, criteria with `{num}` for the unit number, units to exclude. Validate (7/10). Audited units are locked; changing them later needs Emergency Bypass, and deleting the plan costs 2 bypass uses.
+4. **Scheduling**: Starting date; **Number of study days** (1–365) or **Units per day**; Start from unit; study weekdays (none = every day); **Specific amount per weekday**; **Skipped units** (lists and ranges, e.g. `8, 10-12`). Press **Preview new schedule**, then tap dates to adjust. A changed date creates a surplus or shortage you settle by editing other dates or **Auto redistribute** (asks first).
+5. **Early bonus** (optional, Early Appearance): show required units early on chosen earlier dates, with tools (take from the next date, level to a number per day, move first or last units from one date to an earlier one, and options A/B/C to lighten the original date, the next weekend or chosen dates). Each early appearance expires at the end of its day; unfinished work stays required on its date.
+6. **Summary** (read-only calendar or list) → **Create plan**. Your workspace must sync successfully first. **Save draft** keeps it in the Drafts tab.
+
+**Manage** (Study plans page)
+- Each plan shows progress, badges (bonus, AI audited, early), dates, and red names when overdue.
+- **Preview**: calendar or list (Main blue, Bonus orange, Early purple).
+- **Edit**: rename the plan or unit, chapter labels, priorities; add AI criteria to unfinished units (permanent); re-plan unfinished units over new study days. Renaming audited units needs bypass. Plans with Early Appearance dates can't be re-planned.
+- **Bonus units**: add (1–500, continue the numbering on remaining days), remove, move a missed bonus to the next day, **Convert bonus to required**. When all required units are done the plan stays open until you complete it, finish the bonus units or convert them.
+- **Overdue**: **Soft reschedule** (Pro) hands overdue units out one at a time over the coming study days, so no day loses units; once a day per plan. **Move overdue to today** (free) stacks them on today. Moving AI-audited units needs bypass.
+- **Export JSON** and **Import** (folder button): *Use as template* (new start date, all unfinished, gaps kept) or *Restore* (original dates; units done in the file are marked done after sync). Every problem is listed and nothing is created until the file is valid. AI-audited units import as normal units; early dates are dropped.
+- **Delete**: removes the plan and all its tasks (finished ones still count in stats). Free unless it has AI criteria (2 bypass uses).
+- **Drafts** tab: up to 10 unfinished plans and unsaved edits.
+- The page has its own **Emergency bypass** button.
+
+Without Pro: view, finish and delete only.
+
+### Subtasks
+
+- **Quick Subtasks** (Create Task) or **Subtasks Under This Task** (Task Details): type and press Enter or +. `$$` marks bonus. **+ Add Subtask** opens a full form for one.
+- **Sort** (A to Z, By priority, Required first then priority, Default order) is applied once; **Arrange** lets you order them with arrows. Subtasks added later go to the end.
+- **Hierarchy / Parent Task** → **Change** opens a parent picker with its own filters and sort; subtasks move with their parent. You can't move a task into its own subtask; shielded tasks stay under their parent.
+- On Today, a dated subtask under undated parents shows alone with a small path above it (e.g. School › Biology).
+
+### Sync
+
+The dot near the top shows sync state:
+- **Green**: up to date. **Yellow**: changes waiting. **Red**: sync failed. **Grey ring**: offline.
+
+Changes sync 15 seconds after you close the last editing panel (the countdown shows under the dot; opening another panel pauses it). Tap the dot → **Force Sync Now**, or Settings → General → **Sync now**. **Refresh after sync** reloads the page when changes arrive from another device.
+
+- **Conflicts**: edits merge field by field; tags from both sides are kept. If the same field changed differently on two devices (or a task was deleted on one and edited on another), a panel asks **This device** or **Cloud** for each. Nothing uploads until **Save**. **Decide later** keeps your edits on this device. If the copies can't be combined, it shows what's different and lets you keep one.
+- **Blocked changes**: if the server refuses a change to a protected task (shield, AI check, phone-lock rule), only that task goes back to the cloud version and a message names it; other changes still sync. If that repeats, **Some changes are blocked** offers *Put them back and sync*, *Try again* and *Emergency bypass*.
+
+### Tasks: create and edit
+
+**Create**
+1. Tap **+ New task**.
+2. **Task Title** (required). Optional: Description, Project, Priority, Tags (+ Add), Due Date (starts as today when you create from Today), Repeat, Shield, Count toward phone lock (Normal mode), Bonus, Dynamic options, AI proof, Quick Subtasks.
+3. **Save Task**, or **Draft**, or **Cancel** / ✕.
+
+**Edit:** tap a task to open **Task Details**, change fields, then **Save Changes**. Nothing applies until you save. Task Details adds: Hierarchy / Parent Task, Assign to today (undated AI tasks), Early task, the AI Audit card (Inherit criteria from a sibling, Edit criteria, reference file), the subtask list, **Delete Task** and **Draft**.
+
+**Delete:** ✕ on the row or **Delete Task** → the task and its subtasks go to Trash. AI-locked branches and shielded tasks with unfinished subtasks need Emergency Bypass.
+
+### Test lab (Pro)
+
+Menu → **Test lab**. A workbench for proof criteria; nothing here saves or locks a task.
+
+1. Write criteria (optionally a second version **B** to compare).
+2. **Test inputs**: Task title (helps the AI; variables work as in tasks), Unit number (fills `{num}`), up to 5 proof files, optional reference file, optional note.
+3. **Validate** scores the wording; **Test** runs a real audit. Both use credits, and a confirmation shows how many calls.
+4. **Save to criteria library** (needs 8/10 for that exact text) adds it to Saved Criteria with a flask mark.
+
+Tests are stored on this device only; the oldest is removed when storage is full.
+
+### Today
+
+Menu → **Today**: tasks due today or overdue.
+
+- Undated tasks never appear. Give a task a date to commit to it.
+- A dated task under a dated parent shows inside the parent, not twice.
+- Early tasks and pulled study units appear as optional work; early study units without a parent due today appear under a header like "Plan 5.1" (the day after plan day 5).
+- The overdue banner, **Pull from tomorrow**, filters (without the date filter) and sorting work here.
+
+### Trash
+
+Menu → **Trash**.
+
+- **Restore** brings back a task and its trashed subtasks. If its parent is gone or trashed, it becomes top-level.
+- **Delete Forever** removes it and its subtasks permanently; **Empty trash** removes everything.
+- Settings → Account & data → **Clear completed & trash** permanently deletes finished and trashed tasks and their reference files.
+
+### Universe (shared workspaces)
+
+A workspace for a group. Menu → **Universe**. It needs a connection; changes save on the server at once and the view refreshes every 15 seconds while you're not editing.
+
+**Join or create**
+- The list has **Joined** and **Created** tabs.
+- **Join**: paste an invitation link or token → **Join Universe**.
+- **Create (Pro)**: Name and Purpose → **Create Universe**.
+
+**Roles:** owner, admin, reviewer, member. Owners and admins see **Controls**.
+
+**Tabs:** My dashboard (your assigned work grouped by Overdue, Today, Upcoming, No date, Complete), Projects, Community, Context, My stats, Controls (managers), Settings. Community and Context appear when the server supports them.
+
+**Create work (owners and admins)**
+1. Projects → ＋ (create a project first).
+2. **Task details**: project, parent, title, description, tags, priority.
+3. **Assignment**: *Everyone's — separate assignments* (each assignee completes their own copy; late entries possible) or *Shared — one completion* (any assignee completes it for everyone). The type can't change later. Pick assignees.
+4. **Auditing**: Marked complete without a review; A reviewer checks the proof; AI checks the proof against the criteria; The member chooses who reviews; AI first, then a reviewer confirms. Add review criteria, reviewers and the completion requirement (all assignees, at least X assignees, or specific assignees).
+5. **Dates and late entries**: Opens, Due (a subtask without its own uses its parent's), late entries and an optional cutoff. Riyadh time.
+6. **Shield and bonus**: a shielded task can't be submitted until its required subtasks are finished; only the owner can turn a Shield off or change bonus status.
+7. **Quick subtasks** copy the task's assignment and audit settings.
+8. An outline box creates many tasks at once: one per line, indent with spaces for subtasks (no audits, shields or dates).
+
+**Do work (members)**
+1. Open the assignment → attach up to 3 files (5 MiB each) → **Submit proof**.
+2. States: Open → Submitted → In review → Approved, or Needs changes (fix and resubmit).
+3. You can allow a proof attachment to be included in Universe exports.
+
+**AI review** costs credits: pay with your saved Gemini key (your provider bills you) or your Universe credits (Pro). The maximum is held and unused credits return.
+
+**Phone blocking from a Universe:** Settings → **Allow Universe phone blocking** (you can withdraw it). Eligible assignments then block your phone after their deadline plus a 24-hour notice; you can accept shorter notice for one assignment. A pending review releases the block. Breaks and Emergency Bypass still apply.
+
+**Community:** admins post news and material; they choose which roles may comment (admins and the owner always can). Attachments up to 5 MB each, 8 MB per post; images need your own Pro. Posts can have an end date (removed at 23:59 Riyadh time).
+
+**Context:** files and photos shared by admins (10 MB per file); needs the owner's active Pro.
+
+**Controls:** People (change roles, remove members), Invitations (single-use links that reserve a seat until accepted, cancelled or expired; optional label; copy the link at once, it can't be shown again), Labels (tags and priorities for task editors; save with Save).
+
+**Settings:** your preferences; Universe details (owner); **Require validated AI criteria** (owner; criteria must score 7/10); ownership transfer to a member with active Pro and free capacity (you become admin); export projects and tasks; replace from a JSON backup plus attachments ZIP (resets progress and submissions, keeps members); delete (owner) or leave.
+
+**Limits and lifecycle:** 20 members besides the owner; own 2 Universes; join 2 (Free) or 7 (Pro). A Universe with no other member is deleted after 7 days unless someone joins. If the owner's Pro lapses, existing work continues; renaming, adding members and Context need it back.
+
+### Universe hosted AI credits
+
+Hosted Universe review uses its own ledger (an account allowance of 45 credits and a shared-group allowance of 100, with larger long-period limits), separate from personal credits. The checked-in Worker configuration turns hosted Universe AI off.
+
+## Rules that apply across features
+
+### What "protected" means
+
+| Protection | Blocks without Emergency Bypass |
+| --- | --- |
+| AI-locked task | Delete, rename, remove due date, postpone when overdue, reopen when completed, weaker criteria edits, criteria tests (it can never be bonus or Dynamic Bonus, even with bypass) |
+| Shield | Completion until required subtasks are done, turning it off, moving out of the parent, deletion with unfinished subtasks, making required work bonus |
+| Phone-lock counting | Loosening while today's tasks are unfinished |
+| Break settings | Changes while today's required tasks are unfinished |
+| Sleep Lock Firm mode | Later times, turning off, delays inside the locking period |
+| Study plan AI units | Renaming, moving, deleting the plan (2 uses) |
+
+### Saved on this device only
+
+Language, time format, colour theme, Icon mix, animations, focus timer, sort mode, collapsed branches, Test lab tests, reference files (until synced as part of a task or saved criteria). Everything else in Settings syncs with your account.
+
+### Account and data removal
+
+- **Log out** (Settings → Account & data): tasks are put away on this browser with a copy for a quick sign-back-in. Tick **Also erase everything** on shared computers (unsynced changes are lost).
+- **Clear this browser** (Danger zone): type `RESET`. Removes Taskitator data from this browser and signs you out; the cloud account stays.
+- **Delete account** (Danger zone):
+  1. Turn off Taskitator blocking in MacroDroid on every device.
+  2. Confirm it's you (password or Google).
+  3. Tick that every blocking macro is off and type `Macrodroid disabled` (pasting is disabled).
+  4. **Delete my account**.
+
+  This deletes the cloud workspace, saved AI keys, login and this browser's data. Universes you own are deleted for all members. For 7 days old phone tokens report "unlocked", then stop working. A receipt lets you **Check deletion status**.
+- Privacy policy, Terms and Data deletion links are in Settings → Account & data → **Privacy & terms**.
+
+# Part 2 — Code and architecture
 
 ## System structure
 
@@ -62,7 +801,7 @@ Its bootstrap performs the following work:
 5. Activate the inert scripts **sequentially in document order**, preserving classic-script dependencies. Initialize the vault, dispatch `taskitator-auth-ready`, and reveal the page.
 6. Watch Clerk session changes. A changed session clears in-memory vault state, archives the old local workspace, clears active local data, and returns to login.
 
-On `index.html`, the script order is Pro suite, Smart Study, study plan, shared components, focus timer, app controller, and tutorials. `components.html` additionally declares the Universe browser helpers before the common scripts. Those helpers defer authenticated work through their own lifecycle/event checks. `settings.html` also contains a large inert inline settings controller.
+On `index.html`, the script order is the Pro suite (`pro.js` and the `pro/` rules), date filter, criteria edit, plan calendar, study plan and schedule, drafts, saved criteria, parent picker, shared components, root completion, focus timer, app controller, the shell views (`views/*.js`, Study plans, Test lab, Sleep Lock), `shell-router.js` and tutorials; `core.js` is the deferred bootstrap. Blocking head scripts (`registry.js`, `theme-boot.js`, `i18n.js`, `locales/ar.js`) and deferred cosmetic scripts (`icons.js`, `nature.js`, `motion.js`, `ai-notice.js`) run before it. `components.html` is now only the Universe page and declares the Universe browser helpers before the common scripts. Those helpers defer authenticated work through their own lifecycle/event checks. `settings.html` also contains a large inert inline settings controller.
 
 ### Shared browser interfaces
 
@@ -315,6 +1054,7 @@ These scripts execute in browser and Worker contexts through a `window`/`globalT
 - **Five themes and Icon mix (Phase 6.7):** Blue and Green are replaced by **Savannah** (free, default), **Desert**, **Jungle**, **Marina** and **Fictional** (Pro). Each theme is a full palette (`palettes.css`, all pairs WCAG AA, priority rings ≥ 3:1) and its own pack of 9 animals (`PACKS` in `icons.js`, traced into `nt-a-*` in the nature sprite; the old 16 animals and their prints were deleted). Footprints (6.4 stamp) are 12 shared archetypes (`PRINT_OF`, `nt-f-*`). No migration: a stored `blue`/`green` falls back to Savannah. **Icon mix (Pro)**, Settings > General > Colour theme: tick other packs to mix their animals in; the theme's pack is always on and leads by weight (60/40, 40/30/30, 34/22/22/22, 28/18/18/18/18). One hash of the task id picks the pack by weight, a second picks the animal, so a task keeps its animal while theme and mix stay the same; a change redraws open rows in place. Per device (`taskitator_appearance.mix`), never synced; ignored while not Pro and kept for renewal. Scenes, leaves, clouds and bird stay nature for now. Registry `CATALOG_VERSION` 2: a Worker still on catalog 1 is ignored and the plan decides, so deploy order does not lock Pro users out. Cache `taskitator-phase4-v69`.
 - **Settings polish (Phase 6.7.1):** (1) **Colour theme and Icon mix picks now wait for Save changes** (`pending` in `appearance-ui.js`; Settings fires `taskitator-settings-dirty` / `-commit` / `-reset`; Discard or leaving drops the pick; nothing applied, stored or synced before Save). (2) The Colour theme card is second-last in General, right before Animations. (3) **Every Settings section folds** (`settings-fold.js`): collapsed by default, only the card with `data-fold-open` (Danger zone) starts open; the header button toggles, the header's own buttons keep their job, re-rendered cards (Break limits) re-mark themselves, `TaskitatorFold.reveal(el)` opens the card holding an element (tutorial spotlight and `#hash` links use it). Not folded: the Taskitator Pro plan card (`#pro-settings-container`, always visible) and a card with no header. Open state is not remembered. (4) MacroDroid disclaimer (Phone lock tab, always visible, and in Help). (5) The stray dot over disabled Phone lock counting modes was the native radio: `.settings-page :is(button,input,select):disabled { opacity:.5 }` out-ranked `opacity:0`. Cache `taskitator-phase4-v70`.
 - **Slow loading and offline fallback (Phase 6.8):** The sign-in bootstrap (`auth-bootstrap.js` in `core.js`) runs one watchdog from page start. At **10 s** the loading screen adds "Taking longer than usual…". At **45 s** it stops waiting and opens the copy saved on this device offline (`TaskitatorOffline.enterBootOffline`) with a lasting notice and a **Reconnect** button (page reload). A **Skip and open offline** button at the bottom of the "Loading" and "Updating secure app files…" screens does the same at once. Both exist only where offline can open (`canOfferOffline()`: a cached account owned by this device, no logout in progress, not the login, deletion or public pages); elsewhere 45 s shows "Taskitator couldn't connect…" with Try again. The skip deliberately bypasses the reachability probe. The old 30 s secure-files error is gone. Skipping an update sets `reloadOnRecover`: when the server is back the notice says so and Reconnect reloads, so older cached files never reconnect in place. `loadClerk()` runs once, so a reconnect joins a still-running load. **Slow AI:** `TaskitatorSlow` (core.js) shows "AI is taking longer than usual…" while any model request (`/ai/generate`, `/pro/ai/review|batch-review|personal-review|batch-confirm`, Universe `…/submit`) has waited 10 s; the Copilot bubble says it instead (the pill hides while Copilot is open). **Sync dot:** the unreachable gray "Local only" state was removed (the app needs sign-in); unconfigured falls back to Pending, and the guide's red entry is now "Sync Failed" (offline has its own gray ring). Cache `taskitator-phase4-v71`.
+- **Steps-based Help with live guides (Phase 6.9):** The Help view (`#shellView-help`) was rebuilt from Part 1 of this guide: 63 sections in seven units (Start here, Tasks, Focus breaks and your phone, AI, Pro features, Universe, Settings sync and your data), numbered steps, the limit tables and the cross-feature rules. Earlier **Show example** boxes were kept. Old section ids still work (`help-today`, `help-create`, `help-p-study`, `help-p-themes`…; renamed ones keep an `.hp-alias` anchor: `help-free`, `help-p-get`, `help-p-ai`, `help-p-dyn`, `help-p-test`). Removed stale statements: the grey "this device only" sync state, a saved-criteria limit of 6 and "reference files cost double". Jumping from the index flashes the section (`help-tours.js`). **Try it live** buttons (`data-help-tour`) start guides on the real screen using the tour engine's new live steps (`tutorial-spotlight.js` v3); see *Styles, tutorials, data, and assets*. A new **Colour themes** tour joins the Settings hub, Settings tours can be launched from Help, and the Getting started sync legend no longer shows the removed grey state. Fixed: `ai-notice.js` passed the `DOMContentLoaded`/`load` event in as its root and threw. Cache `taskitator-phase4-v72`.
 
 ### `uni/focus-timer.js`
 
@@ -330,18 +1070,17 @@ Defines Today/Inbox/Upcoming task containers, shared navigation, the compact “
 
 ### `components.html`
 
-Consolidates formerly separate pages into route-selected panes: projects, calendar, statistics, trash, blocker guide, comparison/legal, and Universe. Its inline controllers are substantial application code:
+Since Phase 3.0 this is **only the Universe page** (`components.html?view=universe`, controller `universe-page.js`). Calendar, Projects, Statistics, Trash, the blocker guide, Study plans, Test lab, Sleep Lock and Help are views of the `index.html` single-page shell (`shell-router.js`, `views/*.js`, `study-plans.js`, `test-lab.js`, `sleep.js`); old `components.html?view=…` addresses are redirected by `legacy-redirect.js`, and the legal and Free-vs-Pro pages live in `legal.html`. The table below describes the views that used to be inline here and now live in `views/*.js`:
 
-| Inline area | Functions and relationships |
+| View (now in) | Functions and relationships |
 | --- | --- |
-| Projects | Workspace permission guard, `renderProjectStrip`, `renderProjectWorkspace`, recursive `buildNode`, `openProjectModal`, emoji/color pickers and Copilot drawer setup. Uses `TaskitatorApp` project/task operations and shared components. Exposes `refreshCurrentProjectView` for editor callbacks. |
-| Calendar | `loadData`, `saveDataAndSync`, date/recurrence helpers, `renderCalendar`, `renderAgenda`, recursive agenda rows and unscheduled backlog. Converts selected dates into the task editor's create/edit actions. Exposes `renderCalendarView`. |
-| Notes archive | Reads `taskitator_archived_notes`, renders archived entries and binds archive actions. This is a distinct access surface from capture on Today; a capture gate alone should not be described as a complete archive security boundary. |
-| Statistics | `renderStats` reads task/ledger/break data and builds productivity summaries; the private-workspace guard prevents signed-out cached data from becoming a public view. |
-| Trash | `loadTasks`, `saveTasksAndPush`, `renderTrash`, `restoreTask`, recursive child restore and permanent branch deletion. Restoration/permanent deletion remain subject to the applicable tree/protection checks and later server sync rules. |
-| Blocker instructions | Phase-one/phase-two progress getters/setters, major/minor/substep toggles, rollup/auto-advance/reset functions and screenshot references. This is setup guidance/progress UI, not the server unlock evaluator. |
-| View router | `isAuthenticatedWorkspace` and `activateComponentView` select panes from query/hash, update headings/navigation and invoke the relevant rendering hooks. Public routes are also isolated by the `core.js` bootstrap. |
-| Universe | Supplies `#universeWorkspace`; loads the dedicated browser modules rather than routing collaborative tasks through personal localStorage. |
+| Projects (`views/projects.js`) | Workspace permission guard, `renderProjectStrip`, `renderProjectWorkspace`, recursive `buildNode`, `openProjectModal`, emoji/color pickers. Uses `TaskitatorApp` project/task operations and shared components. |
+| Calendar (`views/calendar.js`) | `loadData`, `saveDataAndSync`, date/recurrence helpers, `renderCalendar`, `renderAgenda`, recursive agenda rows and unscheduled backlog with Assign to Today. Completion is blocked from the calendar. |
+| Notes archive and Statistics (`views/stats.js`) | Reads `taskitator_archived_notes` and task/ledger/break data; renders the Distraction Archive and productivity summaries behind the private-workspace guard. |
+| Trash (`views/trash.js`) | `loadTasks`, `saveTasksAndPush`, `renderTrash`, `restoreTask` (re-roots a task whose parent is gone), recursive child restore, permanent branch deletion and Empty trash. |
+| Blocker instructions (`views/blocker-guide.js`) | Download-or-build choice, phase checklists with progress, screenshots (`image/phase1`, `image/phase2`). Setup guidance only, not the server unlock evaluator. |
+| View router (`shell-router.js`) | Hash routes, page titles, scroll memory, legacy query conversion and a once-a-minute freshness sync when switching views. |
+| Universe (`components.html`) | Supplies `#universeWorkspace`; loads the dedicated browser modules rather than routing collaborative tasks through personal localStorage. |
 
 ### `settings.html`
 
@@ -359,9 +1098,9 @@ Contains general/schedule/AI/phone/Pro settings, import/export and account-delet
 
 Provides sign-in/sign-up mount points, signed-in account controls, legacy migration form, recovered-copy download area and Continue action. Behavior is in `core.js`. It also declares the Pro/components helpers needed for feedback, recurrence and key migration.
 
-### `sleep.html`
+### Sleep Lock view (`sleep.js`, formerly `sleep.html`)
 
-A small authenticated page with inline controller for enabled state, bedtime, wake time and a revision number. `load` fetches `/sleep-lock`; `values`/baseline and dirty checks protect unsaved edits; `controls`/`run` serialize actions and disable unavailable controls; `showDelay` displays the night's delay state. Saving sends the current revision. Delay actions request 30 or 60 minutes; bypass uses the server-managed emergency flow. It is independent of the focus timer and ordinary task snapshot settings.
+The Sleep Lock view runs inside the `index.html` shell (`#sleep`); `sleep.html` only redirects. `load` fetches `/sleep-lock`; values/baseline and dirty checks protect unsaved edits; `controls`/`run` serialize actions and disable unavailable controls; `showDelay` displays the night's delay state. Saving sends the current revision. Delay actions request 30 or 60 minutes; bypass uses the server-managed emergency flow. The gear opens Firm mode and the "Today only" override. It is independent of the focus timer and ordinary task snapshot settings.
 
 ### `uni/setup.html`
 
@@ -399,7 +1138,7 @@ The top of the file embeds server copies of recurrence and break rules. Their AP
 
 `validatePayload` restricts request shape, message parts, tools, supported output formats and generation limits. `toClaudeRequest` translates the Gemini-shaped client contract into Anthropic messages/tools/files/system blocks, preserving tool identifiers and refusing incomplete tool turns. `fromClaudeResponse` translates accepted Claude results and usage back into the common result shape. Output-schema validation rejects malformed or incomplete proof/criteria/notes responses. Bounded response reading avoids exposing provider credentials in forwarded errors.
 
-`AIGateway.generate` validates provider/model, verifies account/key ownership and selected provider, rate-limits account requests, permits at most two in-flight requests per account in its current service instance, decrypts the saved key server-side and makes the provider call. After the response, it rechecks ownership, provider and key version before returning results. It supports Gemini and Claude; a provider switch does not silently use the other provider's secret. **This current gateway does not implement the proposed Free 10/220 credit quota.**
+`AIGateway.generate` validates provider/model, verifies account/key ownership and selected provider, rate-limits account requests, permits at most two in-flight requests per account in its current service instance, decrypts the saved key server-side and makes the provider call. After the response, it rechecks ownership, provider and key version before returning results. It supports Gemini and Claude; a provider switch does not silently use the other provider's secret. Free accounts are metered against the Free BYOK allowance (10 credits a Riyadh day, 220 a calendar month; see `docs/credit-limits.md`); verified Pro personal-key use is unmetered.
 
 **Pro hosted AI.** For an active Pro account not in personal-key mode, `AIGateway.generate` routes Copilot, notes cleanup and criteria validation (including study-plan and Universe criteria) to Taskitator's hosted Claude key (`HOSTED_AI.model`), so no personal key is needed; `/ai/keys` reports `hosted: true` and the browser vault treats AI as available. Usage is limited by hidden per-account daily caps (`HOSTED_AI.daily`: 30 validations, 500 Copilot/notes requests, Asia/Riyadh day) plus a silent daily provider-spend backstop and a 30,000-token input cap; these are separate from credit allowances, are not exposed to clients, and a reached cap returns `503 Service unavailable temporarily.` The gateway holds worst-case spend before sending the request, settles to reported usage, releases the hold on definite provider refusal, and retains it on uncertain loss. A request that produced no usable response body can release its request slot even when estimated spend remains charged. Proof reviews use the separate hosted review service and its credit ledger.
 
@@ -429,19 +1168,17 @@ This module imports shared security/provider definitions from `worker.js`; the W
 
 `liveAccount` checks identity/workspace ownership and deletion fences. `fail` supplies HTTP status/code errors; `digest` hashes canonical request data. `prepare` validates proof/exemplar files and builds bounded canonical provider payloads. `parseResult` rejects unsupported/truncated/malformed AI results. `newOperation`/`operationTime` create/validate bounded-age operation IDs. `calculateAuditCharge` implements the insufficient-proof adjustment.
 
-Personal hosted audits use `hosted-credits-v5`: verified Keyo `d_allow` per Riyadh day and `m_allow` per activation-anchored 30-day cycle, plus a separate 2,000,000,000-nanodollar provider-spend ceiling per calendar month. Audit payload bounds include 20,000 input tokens, five proof files, five MiB per file, twenty MiB combined, and five-minute quotes.
+Personal hosted audits use `hosted-credits-v5` (model `claude-haiku-5-5`): verified Keyo `d_allow` per Riyadh day and `m_allow` per activation-anchored 30-day cycle, plus a separate 2,000,000,000-nanodollar provider-spend ceiling per calendar month. Audit payload bounds (`POLICY`): 20,000 input tokens, five proof files, 8 MiB per photo, 30 MiB per PDF, 5 MiB per reference exemplar, 40 MiB combined, and five-minute quotes.
 
 `KeyoLicenses` verifies entitlement binding and allowances. Its configured fallback origin is for network failures. `CreditLedger` derives the current plan and period keys, reserves allowance before inference, and settles into the original reservation keys even if the plan changes while the request runs. Confirmed Free/Pro transitions open a new epoch. Routine verification, allowance edits, and network failure do not reset usage. Personal-key inference is unmetered for verified Pro. Free BYOK uses internal daily and calendar-month allowances (10/220), half-credit rounding, and provider token counting before the hold. The Free UI receives availability states without numeric balances. `worker.js` applies Free BYOK metering to its personal-key gateway, and `uni/universe-ai.js` integrates it for Free personal-key Universe reviews. Hosted Universe reviews use separate D1 limits.
 
-`providerCost(I,O)` calculates `I × 100 + O × 500` in internal nanodollar accounting units. For each task in a batch of `N`, `charges` computes:
+`providerCost(I,O)` calculates `I × 100 + O × 500` in internal nanodollar accounting units. `charges` shares the real cost equally across the tasks of a request, with **no multipliers and no discounts** (an earlier version doubled tasks with a reference file and discounted batches by 25 %; both were removed):
 
 ```text
-taskCredits = cost × exemplarMultiplier × batchMultiplier / (1,500,000 × N)
-exemplarMultiplier = 2 when that task has a reference, otherwise 1
-batchMultiplier = 0.75 for a batch with at least two tasks, otherwise 1
+taskCredits = cost / (1,500,000 × N)        N = tasks in the request
 ```
 
-`totalCredits` sums unrounded per-task charges. `calculateAuditCharge` halves an `incomplete` verdict before rounding the charged request total up to the next half-credit. These credits differ from provider token counts. `periods` supplies the Riyadh day and calendar month independently of the user's task day-start hour. The Pro allowance cycle is calculated separately.
+A reference file or a batch changes the cost only through the tokens actually sent. `totalCredits` sums unrounded per-task charges. `calculateAuditCharge` halves an `incomplete` verdict before rounding the charged request total up to the next half-credit. These credits differ from provider token counts. `periods` supplies the Riyadh day and calendar month independently of the user's task day-start hour. The Pro allowance cycle is calculated separately.
 
 #### `KeyoLicenses`
 
@@ -630,9 +1367,10 @@ The exact allowed methods/fields are validated in their handlers; this table loc
 - **Universe Community (`uni/universe-community.js`, `uni/universe-community-ui.js`):** Own tab when the Worker reports `capabilities.community`. Owners and admins post (8000 characters) and choose who may comment: members, reviewers and/or the assignees of chosen projects (admins and the owner always can). The feed loads 5 posts at a time with cursor paging and an end state. Comments open in a thread view; each stores the author's role at the time (frozen). Authors edit a comment for 30 minutes and delete it any time; admins remove members' and reviewers' comments, only the owner removes an admin's. Removed comments are tombstones (text cleared, row kept). Post edit: author or owner; post delete: author, another admin (not the owner's posts) or the owner; deleting a post deletes its comments. Community writes are replay-safe but do not raise the Universe revision, so busy threads never make task edits stale. The old Discussion section is hidden; its write routes answer `410 MOVED`. `worker.js` builds the class through `universeCommunity()` to avoid an import cycle with `universe-rules.js`.
 - **Community attachments, links and end dates (3B):** Owners and admins attach files (PDF, text, CSV, Word, Excel, PowerPoint) and images (PNG, JPEG, WebP), up to 5 MB each and 8 MB per post, counted on the server from stored sizes. Uploads are checked (type, size, SHA-256) and staged for an hour until a post uses them. Images need the uploader's own active Pro (Worker `entitlement()`); any new attachment needs the owner's active Pro, so after an owner lapse new posts are text-only and old attachments stay. Downloads return the bytes to the app, which saves files as `application/octet-stream` with a download name and never opens them in the page; only PNG/JPEG/WebP are shown inline. Links in posts and comments (http/https only) open with `rel="noopener noreferrer"` and show the real domain beside them. End dates: 3, 7, 14 or 30 days, or a date, ending at 23:59 Riyadh; expired posts are hidden at read time and removed with their comments and files by the hourly cleanup. Deleted posts, removed attachments and deleted Universes queue their R2 keys in `universe_r2_trash` in the same batch, and cleanup deletes them. Capability: `community_files`.
 - **Universe Context (3C):** A Context tab where owners and admins share files and photos (same types as posts, up to 10 MB each) for every member to download. Quota: 200 MB per Universe, checked before upload and again inside the commit. Access needs the owner's active Pro; another member's Pro does not count. When the owner's Pro lapses the tab shows when the files will be deleted (3 months after `lapse_at` in `universe_lifecycle`) and the hourly cleanup deletes the rows and R2 objects at that point; it also re-checks owners with Context files once a day so a lapse is noticed without visits. Renewing, or transferring ownership to a member with Pro, restores access. A renewal clears the lapse, so a later lapse starts a new 3-month period. Existing posts stay visible while the owner is lapsed; new posts are text-only. Capability: `context`.
-- **`tutorial-spotlight.js`:** `start`/`stop` own one active tour. `findTarget`, `rich`, `buildVisual`, positioning/render/step navigation and finish handlers handle optional/missing targets, safe bold/code fragments, keyboard navigation, asynchronous step preparation, reduced motion and focus restoration. It refuses to cover an existing modal/sign-in overlay.
-- **`tutorial-integration.js`:** Defines account, breaks, AI, phone, Pro and role-aware Universe tours. `state`, `progress`, `mark` store progress in synced settings; tab helpers select/recover Settings context; onboarding and help-hub logic starts/replays tours while avoiding immediate restart loops. Universe tours switch panes and retain per-Universe completion keys.
-- **`tutorial-spotlight.css`:** Tour veil/ring/arrow/card/step controls/visuals, responsive and reduced-motion rules; `.tt-universe` supplies the collaborative theme.
+- **`tutorial-spotlight.js`:** (v3, Phase 6.9) adds **live steps** (`live`, `until`, `act`, `actLabel`, `lost`, `dock`): the veil lets taps through and four `.tt-block` panes around the hole block the rest; `until` is polled every 250 ms and moves on; `act` backs **Do it for me**; `lost` steps back when the highlighted panel closes; `foreign()` hides the tour while another dialog/overlay is open (`.tt-paused`); `dock:'top'` keeps a panel's footer free; **–** shrinks the card (`.tt-mini`); keys inside the app are left to the app. A selector may be a function. `start`/`stop` own one active tour. `findTarget`, `rich`, `buildVisual`, positioning/render/step navigation and finish handlers handle optional/missing targets, safe bold/code fragments, keyboard navigation, asynchronous step preparation, reduced motion and focus restoration. It refuses to cover an existing modal/sign-in overlay.
+- **`tutorial-integration.js`:** Defines account, breaks, AI, phone, Pro, Colour themes (Phase 6.9, live cards) and role-aware Universe tours. `launch` sends a Settings tour started elsewhere to settings.html through `taskitator_tutorial_next`. `state`, `progress`, `mark` store progress in synced settings; tab helpers select/recover Settings context; onboarding and help-hub logic starts/replays tours while avoiding immediate restart loops. Universe tours switch panes and retain per-Universe completion keys.
+- **`tutorial-spotlight.css`:** Tour veil/ring/arrow/card/step controls/visuals, responsive and reduced-motion rules; `.tt-universe` supplies the collaborative theme; Phase 6.9 adds `.tt-live`, `.tt-block`, `.tt-paused`, `.tt-hint`, `.tt-min`, `.tt-mini`.
+- **`help-tours.js`** (Phase 6.9): the Help page's **Try it live** guides (`LIVE`: create, details, complete, subtasks, drafts, multi, filter, overdue, projects, calendar, breakpanel, scratch, proof, copilot) and the index highlight (`flash`, `.hp-flash`, also on a repeated click of the same link). `run(key, from)` opens the view, waits for `TaskitatorShell`, then starts the steps (retrying while a panel is open); `account`/`breaks` run as index tours and any other key goes to `TaskitatorTutorials.launch`. Each guide ends with **Back to Help** (`#<section>`). `TaskitatorHelpTours`.
 - **`SYSTEM_PROMPT.md`:** External Copilot identity and tool policy. Loaded/validated by `TaskitatorAgent`; task text/tool responses are untrusted data. It does not grant tools that the runtime withheld.
 - **`CRITERIA_TEMPLATES.json`:** Eleven editable starter proof-criteria records (`id`, `category`, `label`, `template`) for notes, maps, questions, exams, recall and other work. The shared editor loads them; a template is not automatic validation or approval.
 - **`manifest.json`:** PWA name, launch URL, standalone display, colors/orientation and two icon references.
@@ -755,33 +1493,53 @@ For break policy, inspect `break-systems.js`, the embedded date helpers, `pro.js
 
 ## Alphabetical file catalogue
 
-Paths are relative to the repository root. This is the complete inspected file list. PNG assets are catalogued by reference/use rather than treated as executable code.
+Paths are relative to the repository root. This is the complete file list as of Phase 6.8 (screenshots in `image/phase1` and `image/phase2` belong to the blocker guide). PNG assets are catalogued by reference/use rather than treated as executable code.
 
 | File | Role |
 | --- | --- |
 | [`.github/workflows/deploy-worker-security.yml`](.github/workflows/deploy-worker-security.yml) | Tests and deploys the Worker on pushes to `main` or manual dispatch. |
+| [`.github/workflows/security-review.yml`](.github/workflows/security-review.yml) | Runs the Sentry security review on pushes and same-repository pull requests to `main`. |
 | [`.github/workflows/test.yml`](.github/workflows/test.yml) | Runs root and Universe regression suites on pull requests and non-main pushes. |
 | [`.gitignore`](.gitignore) | Excludes installed `node_modules/` from tracking. |
+| [`ai-notice.js`](ai-notice.js) | Phase 6.6 AI disclaimer (`TaskitatorAiNotice`): names Google or Anthropic from the active provider; Universe shows Google. |
+| [`android-auth.test.js`](android-auth.test.js) | Android app sign-in and account-deletion contracts (no production tokens). |
+| [`app-pro.test.js`](app-pro.test.js) | Per-source Pro (website Keyo license and Android App Pro) and the development switch rules. |
 | [`app.js`](app.js) | Copilot engine, personal views/tree/sorting/completion, scratchpad and guarded legacy timer. |
+| [`appearance-ui.js`](appearance-ui.js) | Settings → General Language, Colour theme (with Icon mix, applied on Save changes) and Animations & effects cards. |
+| [`break-help.test.js`](break-help.test.js) | Break help dialogs state the real limits from `break-systems.js`; Copilot icon usage. |
 | [`break-systems.js`](break-systems.js) | Durable Object break state machine, strict settings, daily limits, phone access and cleanup. |
 | [`break-systems.test.js`](break-systems.test.js) | Server day locking, planning, flexible allowance, strict rules, time zones and status integration. |
 | [`build.mjs`](build.mjs) | Rebuilds root HTML CSP hashes; no JavaScript bundling. |
 | [`bulk-delete.test.js`](bulk-delete.test.js) | Shared deletion guards, bulk confirmation and subtree trashing. |
 | [`client.test.js`](client.test.js) | Browser/auth/sync/provider/Copilot/editor/study regression fixtures. |
 | [`CNAME`](CNAME) | Static-host custom domain declaration. |
-| [`components.html`](components.html) | Consolidated projects/calendar/stats/trash/guide/legal/Universe page with inline controllers. |
+| [`components.html`](components.html) | The Universe page (since Phase 3.0); other old views redirect to the `index.html` shell. |
 | [`components.js`](components.js) | Shared feedback, recurrence core/UI and draft-based task editor/audit components. |
 | [`consecutive-grant.test.js`](consecutive-grant.test.js) | Editor-scoped Pro numbering grant reuse, expiry and invalidation. |
 | [`copilot-today.test.js`](copilot-today.test.js) | Scoped progress fields and logical-day selection tests. |
 | [`core.js`](core.js) | Public auth configuration, Clerk client, personal sync, deletion/login/bootstrap. |
 | [`credit-limits.test.js`](credit-limits.test.js) | Verified Keyo allowances, credit periods and transitions, metering, reservations and settlement. |
-| [`CRITERIA_TEMPLATES.json`](CRITERIA_TEMPLATES.json) | Eleven structured starter proof-criteria templates consumed by the editor. |
 | [`criteria-test.test.js`](criteria-test.test.js) | Single-task criteria test prompt, task lock and Emergency Bypass checks. |
+| [`CRITERIA_TEMPLATES.json`](CRITERIA_TEMPLATES.json) | Eleven structured starter proof-criteria templates consumed by the editor. |
+| [`date-filter.js`](date-filter.js) | Display-only date filter for task lists (effective or inherited due date, early date, ancestors kept). |
+| [`date-filter.test.js`](date-filter.test.js) | Date-filter quick picks and inclusive, open-ended custom ranges. |
 | [`docs/credit-limits.md`](docs/credit-limits.md) | Implementation notes, period behavior and historical merge review for the credit update. |
+| [`docs/worker-configuration.md`](docs/worker-configuration.md) | Every Worker variable and secret, with production values and what must not be set. |
 | [`dynamic-priority.test.js`](dynamic-priority.test.js) | Derived task priority plus UI and server entitlement/target guards. |
+| [`early-bonus.test.js`](early-bonus.test.js) | Early task rules: due date kept, ineligible tasks skipped with reasons, inherited dates. |
+| [`early-move.test.js`](early-move.test.js) | Pull from tomorrow: plan lock rules and tomorrow's unit order. |
+| [`family-nature.css`](family-nature.css) | Nature family look: scenes, frames, task rows, completion rings, footprints, theme cards, Icon mix, loader card. |
+| [`GLOSSARY.md`](GLOSSARY.md) | Locked Arabic glossary and translation rules enforced by `i18n.test.js`. |
+| [`help.html`](help.html) | Redirect stub; Help is the `#help` view of `index.html`. |
 | [`hosted-ai.test.js`](hosted-ai.test.js) | General hosted AI routing, daily limits, spend holds, and refusal and timeout behavior. |
+| [`i18n.js`](i18n.js) | Language runtime: dictionary lookup, `{0}` patterns, DOM translation, RTL switch, Gregorian dates and Western digits. |
+| [`i18n.test.js`](i18n.test.js) | Arabic dictionary coverage, glossary terms and translation rules. |
 | [`icon/icon-192.png`](icon/icon-192.png) | PWA branding image referenced by manifest.json and service-worker precache. |
 | [`icon/icon-512.png`](icon/icon-512.png) | PWA branding image referenced by manifest.json and service-worker precache. |
+| [`icons.js`](icons.js) | Icon system: semantic keys to sprite symbols, five animal packs, Icon mix weights, task animals, footprint stamp. |
+| [`image/nature_sprites/favicon.svg`](image/nature_sprites/favicon.svg) | Letter-mark favicon. |
+| [`image/nature_sprites/sprite.svg`](image/nature_sprites/sprite.svg) | Nature sprite: interface icons, 45 animals (`nt-a-*`), 12 footprints (`nt-f-*`), brand symbols. |
+| `image/nature_sprites/Taskitator_Hybrid_Logo.png, Taskitator_Icon_Logo.png, Taskitator_Letter_Logo.png, Taskitator_Text_Logo.png` | Brand source images traced into the sprite. |
 | [`image/phase1/Ph1_S1.png`](image/phase1/Ph1_S1.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
 | [`image/phase1/Ph1_S2.png`](image/phase1/Ph1_S2.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
 | [`image/phase1/Ph1_S3.png`](image/phase1/Ph1_S3.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
@@ -804,8 +1562,14 @@ Paths are relative to the repository root. This is the complete inspected file l
 | [`image/phase2/Ph2_S7.png`](image/phase2/Ph2_S7.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
 | [`image/phase2/Ph2_S8.png`](image/phase2/Ph2_S8.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
 | [`image/phase2/Ph2_S9.png`](image/phase2/Ph2_S9.png) | Instructional screenshot referenced by the blocker/Cloud Bridge guide in components.html. |
-| [`index.html`](index.html) | Personal task shell, controls, dialogs and authenticated script declarations. |
+| [`image/space_sprites/sprite.svg`](image/space_sprites/sprite.svg) | Space sprite: celestial bodies and Universe line icons. |
+| [`index.html`](index.html) | Single-page shell: Today/General, Calendar, Projects, Stats, Trash, blocker guide, Study plans, Test lab, Sleep Lock and Help views, all task dialogs, and the authenticated script declarations. |
+| [`legacy-redirect.js`](legacy-redirect.js) | Sends old page addresses (`components.html?view=…`, `sleep.html`, `study-plans.html`, `help.html`) to their current views. |
+| [`legal.html`](legal.html) | Public Privacy Policy and Terms, and Free vs Pro (`?view=compare`). |
+| [`legal.js`](legal.js) | Controller for `legal.html`; works without signing in. |
 | [`LICENSE`](LICENSE) | MIT license text. |
+| [`locales/ar.js`](locales/ar.js) | Arabic dictionary (key = exact English text). |
+| [`locales/clerk-ar.js`](locales/clerk-ar.js) | Arabic text for the Clerk sign-in widget (from `@clerk/localizations`, MIT). |
 | [`login.html`](login.html) | Clerk sign-in/up and workspace connection/migration markup. |
 | [`macro-bridge.js`](macro-bridge.js) | Settings download helper that inserts a scoped token into raw MacroDroid template text. |
 | [`macro-bridge.test.js`](macro-bridge.test.js) | Template integrity, 64-bit identifiers and combined task/sleep blocking behavior. |
@@ -813,27 +1577,70 @@ Paths are relative to the repository root. This is the complete inspected file l
 | [`macros/Taskitator_Cloud_Bridge.macro`](macros/Taskitator_Cloud_Bridge.macro) | Token template that polls text status and controls the App Blocker. |
 | [`manifest.json`](manifest.json) | PWA installation metadata and icon references. |
 | [`merge.test.js`](merge.test.js) | Three-way merge, conflict choices, orphan handling and sync fallback. |
+| [`motion.js`](motion.js) | Phase 6.6 tap bubble and selected-tab icon wipe; cosmetic only, gated by the motion mode. |
+| [`native-clerk-auth.test.js`](native-clerk-auth.test.js) | Native Clerk JWT compatibility. |
+| [`nature.js`](nature.js) | Nature family runtime: scenes, parallax, cloud page transitions, loader card, leaf burst, bird. |
 | [`offline.test.js`](offline.test.js) | Offline account ownership, signed Pro, seven-day reauthentication, connectivity gates and cache coverage. |
 | [`package-lock.json`](package-lock.json) | Exact Wrangler installation and transitive dependency graph for local and CI use. |
 | [`package.json`](package.json) | ES-module/Node version declaration and test/build/deploy commands. |
+| [`palettes.css`](palettes.css) | Colour palettes, one block per theme (Savannah, Desert, Jungle, Marina, Fictional). |
+| [`parent-picker.js`](parent-picker.js) | "Choose a parent" popup with its own AND/OR filters and sort; editor supplies the move rules. |
+| `patch373.test.js … patch426.test.js` | Regression tests for Phases 3.7.3–4.2.6 (per-date bonus, Today refresh, calendar editing, subtask order, AND/OR filters and parent picker, Test lab variables and layout, audit wrapper and note handling). |
+| `phase611.test.js … phase68.test.js` | Regression tests for Phases 6.1.1–6.8 (phone-lock counting and Dynamic Bonus, labels and importer, sync conflicts, UI fixes, footprints, Auto create, motion modes and AI notice, themes and Icon mix, Settings folding, boot watchdog and slow-AI notice). |
 | [`phone-access-date.test.js`](phone-access-date.test.js) | Phone-status inherited-date and exception tests. |
+| [`plan-calendar.test.js`](plan-calendar.test.js) | Read-only plan calendar: main, bonus and early entries. |
 | [`pro-backend.js`](pro-backend.js) | Hosted policy, Keyo licenses, task protection/audits, Pro API and Universe foundation. |
+| [`pro-proof-payload.js`](pro-proof-payload.js) | Streams large base64 proof files in chunks for hashing and provider calls. |
 | [`pro.js`](pro.js) | Browser safety, references, breaks, key vault client, audit/Pro/profile/tier interfaces. |
 | [`pro.test.js`](pro.test.js) | Personal hosted/protection/UI/license regression tests and consolidated frontend checks. |
+| [`pro/criteria-edit.js`](pro/criteria-edit.js) | Editing criteria of an AI-locked task: one AI check validates (7/10) and compares with the original (same, stricter, weaker, different). |
+| [`pro/early-bonus.js`](pro/early-bonus.js) | Early task (`early_date`): validation and the optional earlier appearance. |
+| [`pro/early-move.js`](pro/early-move.js) | Pull from tomorrow rules (Pro). |
+| [`pro/labels.js`](pro/labels.js) | Numeric title labels ordering and study-plan early-group headers. |
+| [`pro/plan-calendar.js`](pro/plan-calendar.js) | Read-only Calendar/List schedule shared by the plan builder Summary and the Study plans Preview. |
 | [`pro/smart-study.js`](pro/smart-study.js) | Shared early-opportunity validation, decoration, completion adjustment and sync guard. |
+| [`pro/status-count.js`](pro/status-count.js) | Phone-lock counting modes, Count bonus tasks, Dynamic Bonus ids and the loosening locks (browser and Worker). |
+| [`pro/study-import.js`](pro/study-import.js) | Study plan JSON importer (template or restore mode). |
+| [`pro/study-manage.js`](pro/study-manage.js) | Study plan management: rename, relabel, priorities, criteria, re-plan, bonus units, Soft reschedule, export. |
 | [`pro/study-plan.js`](pro/study-plan.js) | Shared finite study-plan generator and Pro browser preview/authorization. |
+| [`pro/study-schedule.js`](pro/study-schedule.js) | Scheduling tab shared by plan creation and re-planning (days, units per day, weekdays, skips, balance cards). |
+| [`projects-collapse.test.js`](projects-collapse.test.js) | Projects view collapse state. |
 | [`protected-date-regression.test.js`](protected-date-regression.test.js) | Invalid inherited dates cannot unlock protected phone-blocking work. |
 | [`README.md`](README.md) | Architecture, behavior, operations, tests and source navigation for Taskitator. |
+| [`registry.js`](registry.js) | Theme registry: themes, tiers, default, catalog version and allowed-theme helpers (browser and Worker). |
+| [`restricted-revert.test.js`](restricted-revert.test.js) | Server names every refused protected task; only those revert. |
+| [`root-completion.js`](root-completion.js) | Top-level completion: unprotected unfinished subtasks go to Trash; reopen until the day ends; hidden afterwards. |
+| [`root-completion.test.js`](root-completion.test.js) | Root completion rules. |
+| [`rtl.css`](rtl.css) | Right-to-left overrides for Arabic. |
+| [`saved-criteria-lab.test.js`](saved-criteria-lab.test.js) | Saved criteria limits (Free 5/4, Pro 100/10, 8 MB total, 4 MB per file), rename and search. |
+| [`saved-criteria.js`](saved-criteria.js) | Saved criteria policy shared by the editor, the Test lab and the Worker. |
 | [`scratchpad-plan-a.test.js`](scratchpad-plan-a.test.js) | Required today/overdue and inherited-date scratchpad gate tests. |
 | [`security.test.js`](security.test.js) | Worker security, vault/AI/deletion/sync/protection and backend integration fixtures. |
+| [`help-tours.js`](help-tours.js) | Phase 6.9 Help "Try it live" guides and the index jump highlight. |
+| [`settings-fold.js`](settings-fold.js) | Phase 6.7.1 collapsible Settings sections and `TaskitatorFold.reveal`. |
 | [`settings.html`](settings.html) | Settings/backup/phone/Pro/account markup and inline preferences controller. |
-| [`sleep.html`](sleep.html) | Authenticated revisioned Sleep Lock UI and one-night delay controls. |
+| [`shell-clouds.test.js`](shell-clouds.test.js) | Cloud transition between views of the single-page shell. |
+| [`shell-router.js`](shell-router.js) | Single-page shell: hash routes for Tasks, Calendar, Projects, Stats, Trash, blocker guide, Study plans, Test lab, Sleep Lock and Help. |
+| [`sleep.html`](sleep.html) | Redirect stub; Sleep Lock is the `#sleep` view of `index.html` (`sleep.js`). |
+| [`sleep.js`](sleep.js) | Sleep Lock view controller. |
+| `smart-bonus.test.js, smart-bulk.test.js, soft-reschedule.test.js, study-bonus-edit.test.js, study-bonus.test.js, study-chapters.test.js, study-input.test.js, study-manage.test.js, study-weekday-amounts.test.js, summary-tab.test.js` | Study plan regression tests: early appearances with bonus units, bulk tools, Soft reschedule, bonus add/remove, chapter labels, input parsing, management, weekday amounts, Summary tab. |
 | [`smart-study.test.js`](smart-study.test.js) | Smart Study schedule, audit timing, replay and tampering tests. |
+| [`study-plans.html`](study-plans.html) | Redirect stub; Study plans is a view of `index.html`. |
+| [`study-plans.js`](study-plans.js) | Study plans view: plan list, preview, edit, bonus units, overdue tools, import/export, drafts, page bypass button. |
 | [`style.css`](style.css) | Shared theme/layout/components/motion and timer styling. |
 | [`sw.js`](sw.js) | Versioned PWA cache and network/offline resource strategies. |
 | [`SYSTEM_PROMPT.md`](SYSTEM_PROMPT.md) | Validated external Focus Copilot system prompt; consumed by app.js. |
+| [`task-drafts.js`](task-drafts.js) | New-task and edit drafts stored in synced settings (no task created, nothing locked). |
+| [`task-drafts.test.js`](task-drafts.test.js) | Draft storage and sync. |
+| [`test-lab.js`](test-lab.js) | Test lab (Pro): criteria versions A/B, Validate and Test, saving to the criteria library. |
+| [`theme-boot.js`](theme-boot.js) | Blocking head script: theme and appearance store, motion modes, no-flash boot, Universe family switch, clickjacking defence. |
+| [`themes.test.js`](themes.test.js) | Theme registry, appearance storage, lapse rules, sprite integrity, contrast and Universe protection. |
 | [`today-visibility.test.js`](today-visibility.test.js) | Today root selection, subtree rendering and undated branches. |
+| [`tools/css-logical.py`](tools/css-logical.py) | Dev tool: converts physical CSS properties to logical ones for RTL. |
 | [`tools/offline-pro-keygen.mjs`](tools/offline-pro-keygen.mjs) | Generates ES256 signing and verification JWKs for offline Pro setup. |
+| [`tools/purge-legacy-kv.mjs`](tools/purge-legacy-kv.mjs) | Operator tool: deletes leftover pre-Clerk records from the KV namespace. |
+| `tools/security-review/package.json, package-lock.json` | Dependencies for the security review workflow. |
+| `tools/trace-icons.py, tools/trace-logo.py` | Dev tools: trace art sheets and logos into the sprite. |
 | [`tutorial-integration.js`](tutorial-integration.js) | Page/role-specific tour content, synced progress and help/replay integration. |
 | [`tutorial-spotlight.css`](tutorial-spotlight.css) | Spotlight overlays/cards/visuals/responsive/motion styles. |
 | [`tutorial-spotlight.js`](tutorial-spotlight.js) | Accessible step-based tutorial renderer and target positioning. |
@@ -841,22 +1648,23 @@ Paths are relative to the repository root. This is the complete inspected file l
 | [`uni/setup.html`](uni/setup.html) | Static operator setup and historical phase guide; does not execute migrations. |
 | [`uni/universe-ai.js`](uni/universe-ai.js) | UniverseAI server layer: Gemini quotes, consent, separate budgets and attestations. |
 | [`uni/universe-archive.js`](uni/universe-archive.js) | Restricted flat ZIP, CRC, hash and byte encoding helpers in the browser. |
+| [`uni/universe-community-ui.js`](uni/universe-community-ui.js) | Community tab: feed, composer, thread view. |
+| `uni/universe-community-ui.test.js, uni/universe-community.test.js` | Universe Community and Context: browser behaviour and Worker rules. |
+| [`uni/universe-community.js`](uni/universe-community.js) | Community Worker routes (posts, comments) on top of `UniverseRules`. |
 | [`uni/universe-interface.test.js`](uni/universe-interface.test.js) | Collaborative picker/task/project/dashboard interface regression fixtures. |
 | [`uni/universe-membership.js`](uni/universe-membership.js) | UniverseMembership server layer: membership/lifecycle/role/deletion guards. |
+| [`uni/universe-phase1.test.js`](uni/universe-phase1.test.js) | Boxed task panel, label editor, universal Save bar and invitation-label interface fixtures. |
+| [`uni/universe-phase10.sql`](uni/universe-phase10.sql) | Optional invitation-label table and phase marker. |
+| [`uni/universe-phase11.sql`](uni/universe-phase11.sql) | Community posts/comments and legacy discussion copy. |
+| [`uni/universe-phase12.sql`](uni/universe-phase12.sql) | Community attachments, end dates and the R2 deletion queue. |
+| [`uni/universe-phase13.sql`](uni/universe-phase13.sql) | Context files table and phase marker. |
 | [`uni/universe-phase2.sql`](uni/universe-phase2.sql) | Lifecycle, group deletion/cleanup and guarded-write schema/triggers. |
+| [`uni/universe-phase2.test.js`](uni/universe-phase2.test.js) | Shield/bonus panel, outline to tasks, batch labels, sync and Phase 0 list-tool fixtures. |
 | [`uni/universe-phase3.sql`](uni/universe-phase3.sql) | Projects/tasks/assignments/submissions/evidence metadata schema. |
 | [`uni/universe-phase4.sql`](uni/universe-phase4.sql) | AI operations/attestations/budget/safety/membership-epoch schema. |
 | [`uni/universe-phase5.sql`](uni/universe-phase5.sql) | Phone consent/eligibility, discussion and transfer schema. |
 | [`uni/universe-phase6-7.sql`](uni/universe-phase6-7.sql) | Tree state, solo lifecycle, settings/catalogue/profile/criteria schema and colors. |
 | [`uni/universe-phase9.sql`](uni/universe-phase9.sql) | Guarded owner-transfer and overwrite-import capability schema. |
-| [`uni/universe-phase10.sql`](uni/universe-phase10.sql) | Optional invitation-label table and phase marker. |
-| [`uni/universe-phase11.sql`](uni/universe-phase11.sql) | Community posts/comments and legacy discussion copy. |
-| [`uni/universe-phase12.sql`](uni/universe-phase12.sql) | Community attachments, end dates and the R2 deletion queue. |
-| [`uni/universe-phase13.sql`](uni/universe-phase13.sql) | Context files table and phase marker. |
-| [`uni/universe-community.js`](uni/universe-community.js) | Community Worker routes (posts, comments) on top of `UniverseRules`. |
-| [`uni/universe-community-ui.js`](uni/universe-community-ui.js) | Community tab: feed, composer, thread view. |
-| [`uni/universe-phase1.test.js`](uni/universe-phase1.test.js) | Boxed task panel, label editor, universal Save bar and invitation-label interface fixtures. |
-| [`uni/universe-phase2.test.js`](uni/universe-phase2.test.js) | Shield/bonus panel, outline to tasks, batch labels, sync and Phase 0 list-tool fixtures. |
 | [`uni/universe-polish.test.js`](uni/universe-polish.test.js) | Editor/role-settings/overlay/async-picker behavior fixtures. |
 | [`uni/universe-release-ui.js`](uni/universe-release-ui.js) | Browser consent/discussion/backup/transfer and ownership controls. |
 | [`uni/universe-release.js`](uni/universe-release.js) | UniverseRelease server layer: locks, discussion, exports/import foundations and retention. |
@@ -866,13 +1674,19 @@ Paths are relative to the repository root. This is the complete inspected file l
 | [`uni/universe-schema.sql`](uni/universe-schema.sql) | Foundational D1 tables, version markers, membership/capacity/operation triggers. |
 | [`uni/universe-shell.js`](uni/universe-shell.js) | Universe navigation/tab/connection/dirty-form shell and confirmation dialogs. |
 | [`uni/universe-shell.test.js`](uni/universe-shell.test.js) | Shell roles, connection labels, dirty navigation and dialog tests. |
+| [`uni/universe-space.js`](uni/universe-space.js) | Space kit: sprite loader, celestial completion bodies, Universe icons, labels for server values. |
 | [`uni/universe-tasks-ui.js`](uni/universe-tasks-ui.js) | Collaborative project/task editor, tree/dashboard, assignments/proof/review UI. |
 | [`uni/universe-tasks.js`](uni/universe-tasks.js) | UniverseTasks server layer: relational work/evidence/human review and R2 cleanup. |
 | [`uni/universe-ui.js`](uni/universe-ui.js) | Universe browser entry: group picker, authenticated API/retry wrappers, feature mounting. |
 | [`uni/universe-widgets.js`](uni/universe-widgets.js) | Shared Universe overlays/focus/viewport, feedback, skeletons and error messages. |
 | [`uni/universe.css`](uni/universe.css) | Universe space theme (single token block), task/editor/shell/mobile/motion styling. |
-| [`uni/universe-space.js`](uni/universe-space.js) | Space kit: sprite loader, celestial completion bodies, Universe icons, labels for server values. |
-| [`image/space_sprites/sprite.svg`](image/space_sprites/sprite.svg) | Space sprite: celestial bodies and Universe line icons. |
+| [`universe-page.js`](universe-page.js) | `components.html` controller: the Universe page. |
+| [`views/blocker-guide.js`](views/blocker-guide.js) | Phone blocker guide view (download and manual setup checklists). |
+| [`views/calendar.js`](views/calendar.js) | Calendar view: month grid, agenda, unscheduled list. |
+| [`views/projects.js`](views/projects.js) | Projects view: project chips, project task tree, project editor. |
+| [`views/stats.js`](views/stats.js) | Statistics view and Distraction Archive. |
+| [`views/trash.js`](views/trash.js) | Trash view: restore, delete forever, empty trash. |
+| [`warden.toml`](warden.toml) | Serial analysis settings for the security reviewer (rate-limit spacing). |
 | [`worker.js`](worker.js) | Cloudflare entry, auth/verification/deletion/vault/AI, personal sync/status/sleep/study router. |
 | [`wrangler.toml`](wrangler.toml) | Worker entry, public variables, Durable Object migration and KV/D1/R2 bindings. |
 

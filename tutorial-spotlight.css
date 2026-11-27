@@ -1,5 +1,5 @@
 /* Taskitator tour (spotlight v2). Uses the app's tokens with fallbacks. */
-.tt-veil{position:fixed;inset:0;z-index:2147483000;background:transparent}
+.tt-veil{position:fixed;inset:0;z-index:2147483150;background:transparent} /* above the wide-screen menu rail (2147483001), below toasts */
 .tt-veil.tt-dim{background:rgba(2,6,23,.82)}
 .tt-ring{position:fixed;z-index:1;pointer-events:none;border-radius:12px;box-sizing:border-box;
   box-shadow:0 0 0 9999px rgba(2,6,23,.8);
@@ -82,3 +82,25 @@
 .tt-universe .tt-btn.tt-primary{background:#7c3aed;border-color:#7c3aed}
 .tt-universe .tt-btn:focus-visible,.tt-universe .tt-skip:focus-visible,.tt-universe .tt-checklist a:focus-visible{box-shadow:0 0 0 3px rgba(167,139,250,.6)}
 .tt-universe .tt-keys{color:#9d8bd0}
+
+/* Live steps (Help "Try it live", v3): the highlighted part stays usable. The veil lets taps through;
+   four blocking panes around the hole stop taps outside it. */
+.tt-block{position:fixed;z-index:1;display:none;background:transparent}
+.tt-veil.tt-live{pointer-events:none}
+.tt-veil.tt-live .tt-block{display:block;pointer-events:auto}
+.tt-veil.tt-live .tt-card,.tt-veil.tt-live .tt-arrow{pointer-events:auto}
+.tt-veil.tt-live .tt-ring::after{border-color:#fbbf24}
+.tt-veil.tt-paused{visibility:hidden}
+.tt-veil.tt-paused *{pointer-events:none!important}
+.tt-hint{margin:10px 0 0;font-size:.78rem;font-weight:700;color:#fde68a;display:flex;align-items:center;gap:6px}
+.tt-hint::before{content:'';width:8px;height:8px;border-radius:50%;background:#fbbf24;box-shadow:0 0 0 0 rgba(251,191,36,.6);animation:ttHint 1.6s ease-out infinite}
+@keyframes ttHint{70%,100%{box-shadow:0 0 0 8px rgba(251,191,36,0)}}
+.tt-min{margin-inline-start:8px;width:28px;height:28px;border-radius:8px;border:1px solid var(--border-color,#1e3a6e);background:var(--card-bg,#0f1d3a);color:var(--text-color,#f0f7ff);font:inherit;font-weight:800;line-height:1;cursor:pointer}
+.tt-min:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(59,130,246,.55)}
+.tt-meta .tt-count{margin-inline-start:auto}
+.tt-card.tt-mini{padding:8px 10px}
+.tt-card.tt-mini>:not(.tt-meta):not(.tt-head){display:none}
+.tt-card.tt-mini .tt-head .tt-text,.tt-card.tt-mini .tt-icon,.tt-card.tt-mini .tt-bar{display:none}
+.tt-card.tt-mini h2{font-size:.9rem}
+.tt-card.tt-mini .tt-meta{margin-bottom:4px}
+@media (prefers-reduced-motion:reduce){.tt-hint::before{animation:none}}

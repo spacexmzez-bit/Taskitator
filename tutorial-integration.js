@@ -40,7 +40,7 @@
         { selector: '#breakStatusPill', icon: 'breaks', title: 'Breaks', text: 'This shows whether you’re on a break and how today’s breaks are set up. Breaks have their own short tour.' },
         { selector: '#openDistractionDumpBtn', icon: 'notes', title: 'Scratchpad for distractions', text: 'Thinking about something else? Jot it down here, then get back to work. It saves and closes by itself after a short timer.', why: 'Writing it down is faster than acting on it, and it stops the thought from nagging you.' },
         { selector: '#emergencyTriggerBtn', icon: 'emergency', title: 'Emergency bypass', text: 'For real emergencies only. It lifts your restrictions for **15 minutes**, and you get **4 per week**. They refill after the weekend.', visual: { type: 'pips', total: 4, on: 4, label: 'uses per week' } },
-        { selector: '#syncStatusDot', icon: 'growth', title: 'Sync status', text: 'This dot shows whether your changes are saved to your account.', visual: { type: 'legend', items: [{ color: '#94a3b8', label: 'This device only' }, { color: '#3b82f6', label: 'Syncing' }, { color: '#22c55e', label: 'Up to date' }, { color: '#ef4444', label: 'Needs attention' }] } },
+        { selector: '#syncStatusDot', icon: 'growth', title: 'Sync status', text: 'This dot shows whether your changes are saved to your account.', visual: { type: 'legend', items: [{ color: '#eab308', label: 'Changes waiting' }, { color: '#22c55e', label: 'Up to date' }, { color: '#ef4444', label: 'Sync failed' }, { color: '#94a3b8', label: 'Grey ring: offline' }] } },
         { selector: ['#openCopilotFabBtn', '#openCopilotNavBtn'], icon: 'copilot', title: 'Copilot', text: 'Ask Copilot to plan, reschedule or review your tasks. It needs an AI key first, which you add in Settings.' },
         { kind: 'center', icon: 'completed', title: 'You’re set. What next?', text: 'These three take a few minutes each and unlock the rest of the app:', visual: { type: 'checklist', items: [
           { icon: 'robot', label: 'Connect an AI provider', sub: 'Free: needed for Copilot and proof checks. Pro: already included', href: 'settings.html#ai' },
@@ -103,9 +103,19 @@
         { selector: '#pro-activation-form', before: () => tab('tab-ai'), icon: 'key', title: 'Activate a code', text: 'Have a Pro code? Enter it here.' },
         { selector: '#proComparePageLink', before: () => tab('tab-ai'), icon: 'sliders', title: 'Compare plans', text: 'See what Free and Pro include side by side.' }
       ]
+    },
+    // Phase 6.9: opened from Help → Colour themes. The cards stay usable (live), and a pick waits for Save changes.
+    themes: {
+      page: 'settings', icon: 'leaves', title: 'Colour themes', chapter: 'Themes',
+      summary: 'Pick a theme and, on Pro, mix in other animal packs.',
+      steps: () => [
+        { selector: '#themeOptions', before: () => tab('tab-general'), live: true, icon: 'leaves', title: 'Pick a theme', text: 'Tap a theme to try it. **Savannah** is free; Desert, Jungle, Marina and Fictional are **Pro**. A theme recolours the whole app and brings its own animals. Animal colour still follows each task’s priority.' },
+        { selector: ['#iconMix', '#themeCard'], before: () => tab('tab-general'), live: true, icon: 'star', title: 'Icon mix (Pro)', text: 'Tick other packs to mix their animals in. Your theme’s own pack can’t be unticked and always appears most. Each box shows its share.' },
+        { selector: '#settingsSaveBar', icon: 'save', title: 'Save changes', text: 'A pick waits until you press **Save changes** at the bottom. **Discard** drops it. Themes are saved on this device only.' }
+      ]
     }
   };
-  const ORDER = ['account', 'breaks', 'ai', 'phone', 'pro'];
+  const ORDER = ['account', 'breaks', 'ai', 'phone', 'pro', 'themes'];
 
   // ---- Universe tour (follows the redesigned layout; role-aware) ----
   const uniTabBtn = id => document.querySelector(`.uni-tabs button[aria-controls="uni-pane-${id}"]`);
@@ -184,6 +194,10 @@
     if (t.page === 'index' && !onIndex()) {
       sessionStorage.setItem('taskitator_tutorial_next', JSON.stringify({ owner: owner(), key }));
       location.href = 'index.html';
+    } else if (t.page === 'settings' && !onSettings()) {
+      // Phase 6.9: Help (on index.html) opens Settings tours on the Settings page.
+      sessionStorage.setItem('taskitator_tutorial_next', JSON.stringify({ owner: owner(), key }));
+      location.href = 'settings.html';
     } else start(key);
   }
 
@@ -237,12 +251,19 @@
 
   function init() {
     renderHub();
+    if (onSettings()) {
+      try {
+        const next = JSON.parse(sessionStorage.getItem('taskitator_tutorial_next') || 'null');
+        if (next?.owner === owner() && TOURS[next.key]?.page === 'settings') { sessionStorage.removeItem('taskitator_tutorial_next'); setTimeout(() => attempt(() => start(next.key)), 600); }
+      } catch { /* ignore */ }
+      return;
+    }
     if (!onIndex()) return;
     // Explicit request from the hub or the legacy replay flag
     let key = '';
     try {
       const next = JSON.parse(sessionStorage.getItem('taskitator_tutorial_next') || 'null');
-      if (next?.owner === owner() && TOURS[next.key]) key = next.key;
+      if (next?.owner === owner() && TOURS[next.key]?.page === 'index') key = next.key;
       sessionStorage.removeItem('taskitator_tutorial_next');
     } catch { /* ignore */ }
     if (!key && sessionStorage.getItem('taskitator_tutorial_replay') === owner()) { sessionStorage.removeItem('taskitator_tutorial_replay'); key = 'account'; }

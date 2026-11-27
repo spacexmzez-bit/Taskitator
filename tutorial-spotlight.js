@@ -1,7 +1,14 @@
-/* Taskitator tour engine (v2).
+/* Taskitator tour engine (v3).
    TaskitatorSpotlight.start({steps, onFinish, chapter}) / .stop()
    Options: theme ('universe' tints the tour galaxy purple).
-   Step: {selector:string|string[], title, text, why, note, icon, visual, kind:'center', before(), when()}
+   Step: {selector:string|string[]|function, title, text, why, note, icon, visual, kind:'center', before(), when()}
+   Live steps (Help "Try it live"): {live:true, until(), act(), actLabel, lost:n, dock:'top'}
+     live   the highlighted part stays usable; everything outside it is faded and blocked.
+     until  the step finishes by itself once this returns true (checked every 250 ms). Without it, Next moves on.
+     act    "Do it for me": does what the step asks (for example opens the panel).
+     lost   when the highlighted part disappears (the person closed the panel), go back this many steps.
+     dock   'top' parks the card at the top when the highlighted part fills the screen (default: bottom).
+   While another dialog opens on top (a confirmation, a picker), a live step pauses and hides until it closes.
    Visuals: {type:'legend'|'pips'|'list'|'checklist', ...}. Text supports **bold** and `code`. */
 (() => {
   'use strict';
@@ -42,7 +49,7 @@
     const list = Array.isArray(sel) ? sel : sel ? [sel] : [];
     for (const s of list) {
       let n = null;
-      try { n = document.querySelector(s); } catch { /* bad selector */ }
+      try { n = typeof s === 'function' ? s() : document.querySelector(s); } catch { /* bad selector */ }
       if (n) { try { window.TaskitatorFold?.reveal(n); } catch { /* cosmetic */ } }   // Phase 6.7.1: open the Settings section that holds it
       if (visible(n)) return n;
     }
@@ -92,16 +99,22 @@
     card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true'); card.tabIndex = -1;
     card.setAttribute('aria-labelledby', 'tt-title'); card.setAttribute('aria-describedby', 'tt-text');
     const live = el('div', 'tt-sr'); live.setAttribute('aria-live', 'polite');
-    veil.append(ring, arrow, card, live);
+    // Live steps: four invisible panes around the highlighted part block taps outside it; the hole stays usable.
+    const blocks = [0, 1, 2, 3].map(() => { const b = el('div', 'tt-block'); b.setAttribute('aria-hidden', 'true'); return b; });
+    veil.append(ring, ...blocks, arrow, card, live);
     document.body.append(veil);
 
     let index = 0, target = null, raf = 0, token = 0, done = false, list = steps.slice();
+    let poll = 0, missing = 0, mini = false, nudged = false;
+    const isLive = () => !!list[index]?.live;
 
     function finish(result, href) {
       if (done) return; done = true; active = null; token++;
-      cancelAnimationFrame(raf);
+      cancelAnimationFrame(raf); clearInterval(poll);
       removeEventListener('resize', onMove); removeEventListener('scroll', onMove, true);
       document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('focusin', onFocusIn, true);
+      document.documentElement.classList.remove('tt-live-on');
       veil.remove();
       if (previous?.isConnected && !href) try { previous.focus({ preventScroll: true }); } catch { /* ignore */ }
       try { onFinish(result); } finally { if (href) location.href = href; }
@@ -128,17 +141,40 @@
       const actions = el('div', 'tt-actions');
       const skip = el('button', 'tt-skip', 'Skip tour'); skip.type = 'button';
       const back = el('button', 'tt-btn', 'Back'); back.type = 'button'; back.disabled = index === 0;
-      const next = el('button', 'tt-btn tt-primary', index === list.length - 1 ? 'Done' : 'Next'); next.type = 'button';
+      let next;
+      if (step.live && step.until) {
+        // The person moves on by doing the step; "Do it for me" is the fallback.
+        next = el('button', 'tt-btn tt-primary', step.actLabel || 'Do it for me'); next.type = 'button';
+        if (step.act) next.onclick = () => { try { step.act(); } catch { /* ignore */ } check(); };
+        else next.hidden = true;
+        card.append(el('p', 'tt-hint', t ? 'Use the highlighted part to continue.' : 'Open it to continue.'));
+      } else {
+        next = el('button', 'tt-btn tt-primary', index === list.length - 1 ? 'Done' : 'Next'); next.type = 'button';
+        next.onclick = () => index === list.length - 1 ? finish('completed') : go(1);
+      }
       skip.onclick = () => finish('skipped');
       back.onclick = go.bind(null, -1);
-      next.onclick = () => index === list.length - 1 ? finish('completed') : go(1);
       actions.append(skip, el('span', 'tt-spacer'), back, next);
-      card.append(actions, el('p', 'tt-keys', '← → to move · Esc to skip'));
+      card.append(actions, el('p', 'tt-keys', step.live ? 'Esc to skip' : '← → to move · Esc to skip'));
+      if (step.live) {
+        const min = el('button', 'tt-min', mini ? '+' : '–'); min.type = 'button';
+        min.setAttribute('aria-label', mini ? 'Show the guide card' : 'Shrink the guide card');
+        min.onclick = () => { mini = !mini; card.classList.toggle('tt-mini', mini); min.textContent = mini ? '+' : '–'; min.setAttribute('aria-label', mini ? 'Show the guide card' : 'Shrink the guide card'); place(); };
+        meta.append(min);
+      }
+      card.classList.toggle('tt-mini', !!step.live && mini);
       card.classList.toggle('tt-center', centered);
       card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
       return next;
     }
 
+    // Blocking panes for live steps: top, bottom, left and right of the hole (or the whole screen without one).
+    function hole(L, T, R, B) {
+      const vw = innerWidth, vh = innerHeight;
+      const boxes = L == null ? [[0, 0, vw, vh], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]
+        : [[0, 0, vw, T], [0, B, vw, vh - B], [0, T, L, B - T], [R, T, vw - R, B - T]];
+      blocks.forEach((b, i) => { const [x, y, w, h] = boxes[i]; Object.assign(b.style, { left: x + 'px', top: y + 'px', width: Math.max(0, w) + 'px', height: Math.max(0, h) + 'px' }); });
+    }
     function place() {
       if (done) return;
       const step = list[index];
@@ -148,14 +184,16 @@
       if (!target) {
         veil.classList.add('tt-dim'); ring.classList.add('tt-none'); arrow.classList.add('tt-hide');
         card.classList.add('tt-center'); card.style.left = card.style.top = '';
+        hole();
         return;
       }
       const r = target.getBoundingClientRect();
       const L = Math.max(0, r.left - PAD), T = Math.max(0, r.top - PAD);
       const R = Math.min(vw, r.right + PAD), B = Math.min(vh, r.bottom + PAD);
-      if (R <= L || B <= T) { veil.classList.add('tt-dim'); ring.classList.add('tt-none'); card.classList.add('tt-center'); return; }
+      if (R <= L || B <= T) { veil.classList.add('tt-dim'); ring.classList.add('tt-none'); card.classList.add('tt-center'); hole(); return; }
       veil.classList.remove('tt-dim'); ring.classList.remove('tt-none');
       Object.assign(ring.style, { left: L + 'px', top: T + 'px', width: (R - L) + 'px', height: (B - T) + 'px' });
+      hole(L, T, R, B);
 
       card.classList.remove('tt-center');
       const w = Math.min(420, vw - 2 * EDGE);
@@ -166,8 +204,11 @@
       let room = side === 'below' ? below : above;
       let top, showArrow = true;
       if (room < Math.min(h, 160)) { // target nearly fills the screen: dock the card at the bottom, no arrow
-        side = 'dock'; showArrow = false; top = vh - EDGE - Math.min(h, vh * 0.5);
-        card.style.maxHeight = Math.floor(vh * 0.5) + 'px';
+        const share = step.live ? 0.36 : 0.5; // a live panel needs most of the screen
+        side = 'dock'; showArrow = false;
+        // dock:'top' keeps a panel's footer (its Save button) uncovered.
+        top = step.dock === 'top' ? EDGE : vh - EDGE - Math.min(h, vh * share);
+        card.style.maxHeight = Math.floor(vh * share) + 'px';
       } else {
         const used = Math.min(h, room);
         if (h > room) card.style.maxHeight = Math.floor(room) + 'px';
@@ -176,6 +217,7 @@
       const cx = (L + R) / 2;
       const left = Math.min(Math.max(cx - w / 2, EDGE), vw - EDGE - w);
       card.style.left = left + 'px'; card.style.top = top + 'px';
+      card.classList.toggle('tt-docked', side === 'dock');
       arrow.classList.toggle('tt-hide', !showArrow);
       if (showArrow) {
         arrow.classList.toggle('tt-below', side === 'below'); arrow.classList.toggle('tt-above', side === 'above');
@@ -204,18 +246,68 @@
       }
       const next = render(step, t);
       live.textContent = `Step ${index + 1} of ${list.length}: ${step.title}`;
+      veil.classList.toggle('tt-live', !!step.live);
+      document.documentElement.classList.toggle('tt-live-on', !!step.live);
+      card.setAttribute('aria-modal', step.live ? 'false' : 'true');
+      missing = 0; nudged = false;
+      clearInterval(poll);
+      if (step.live) poll = setInterval(tick, 250);
       place();
       requestAnimationFrame(() => { ring.classList.remove('tt-instant'); });
-      next.focus({ preventScroll: true });
+      // A live step leaves focus where the person is working; the card is reachable with Tab.
+      if (!step.live || !t) next.focus({ preventScroll: true });
     }
-    const safe = fn => { try { return fn(); } catch { return true; } };
+    // Another dialog on top of a live step (a confirmation, a picker): step aside until it closes.
+    function foreign() {
+      for (const d of document.querySelectorAll('dialog[open], .modal-overlay.open')) {
+        if (veil.contains(d) || !visible(d)) continue;
+        if (target && (d.contains(target) || target.contains(d))) continue;
+        return true;
+      }
+      return false;
+    }
+    function check() {
+      const step = list[index];
+      if (step?.until && safe(step.until, false)) { index === list.length - 1 ? finish('completed') : go(1); return true; }
+      return false;
+    }
+    function tick() {
+      if (done) return;
+      const step = list[index];
+      if (!step?.live) return;
+      if (check()) return;
+      const paused = foreign();
+      veil.classList.toggle('tt-paused', paused);
+      if (paused) return;
+      const t = step.kind === 'center' ? null : findTarget(step.selector);
+      if (!t && step.lost) { if (++missing >= 3) { missing = 0; index = Math.max(0, index - step.lost); show(-1); } return; }
+      missing = 0;
+      // A panel that was still opening may not have scrolled; bring an off-screen target into view once.
+      if (t && !nudged) {
+        const r = t.getBoundingClientRect();
+        if (r.top >= innerHeight - 40 || r.bottom <= 40) { nudged = true; t.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' }); }
+      }
+      ring.classList.add('tt-instant'); place(); requestAnimationFrame(() => ring.classList.remove('tt-instant'));
+    }
+    function onFocusIn(e) {
+      // Typing inside a big live panel on a phone: shrink the docked card out of the way.
+      if (isLive() && !mini && target?.contains(e.target) && card.classList.contains('tt-docked') && e.target.matches?.('input, textarea, select')) {
+        mini = true; card.classList.add('tt-mini'); const m = card.querySelector('.tt-min'); if (m) { m.textContent = '+'; m.setAttribute('aria-label', 'Show the guide card'); } place();
+      }
+    }
+    const safe = (fn, fallback = true) => { try { return fn(); } catch { return fallback; } };
     function go(d) {
       const n = index + d;
       if (n < 0 || n >= list.length) return;
       index = n; show(d);
     }
     function onKey(e) {
+      if (isLive() && !card.contains(e.target)) {
+        // Keys inside the app belong to the app (typing, its own Esc to close a panel).
+        return;
+      }
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish('skipped'); return; }
+      if (isLive()) return; // a live step moves on by doing it; Tab may leave the card for the highlighted part
       if (e.key === 'ArrowRight') { e.preventDefault(); index === list.length - 1 ? finish('completed') : go(1); return; }
       if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); return; }
       if (e.key === 'Tab') {
@@ -230,6 +322,7 @@
     active = { finish };
     addEventListener('resize', onMove); addEventListener('scroll', onMove, true);
     document.addEventListener('keydown', onKey, true);
+    document.addEventListener('focusin', onFocusIn, true);
     show(1);
     return true;
   }

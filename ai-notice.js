@@ -46,8 +46,8 @@
 
     let queued = false;
     const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; refresh(); }); };
-    document.addEventListener('DOMContentLoaded', refresh);
-    window.addEventListener('load', refresh);
+    document.addEventListener('DOMContentLoaded', () => refresh()); // never pass the Event in as the root
+    window.addEventListener('load', () => refresh());
     for (const name of ['taskitator-ai-provider-changed', 'taskitator-pro-status', 'taskitator-auth-ready', 'taskitator-universe-view']) window.addEventListener(name, later);
     if (typeof MutationObserver === 'function') {
         const start = () => new MutationObserver(muts => {
