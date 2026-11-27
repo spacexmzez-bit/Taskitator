@@ -1169,8 +1169,10 @@ window.TaskitatorApp = (() => {
             if (this.reducedMotion()) return Promise.resolve();
             checkBtn?.classList.add('is-completing');
             row?.classList.add('is-completing');
+            // Phase 6.4: the task's animal leaves its footprint on the ring; the wait grows to fit the stamp.
+            const stamped = Boolean(window.TaskitatorIcons?.stamp?.(checkBtn));
             window.TaskitatorNature?.burst(checkBtn);
-            return new Promise(resolve => setTimeout(resolve, 260));
+            return new Promise(resolve => setTimeout(resolve, stamped ? window.TaskitatorIcons.STAMP_MS : 260));
         }
     };
     window.TaskitatorFX = UIFX;

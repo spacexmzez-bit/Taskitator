@@ -42,7 +42,7 @@
     const mapFor = fam => MAPS[fam] || MAPS.nature;
     // Animals, bird frames and the leaf are semantic keys too.
     for (const fam of Object.keys(MAPS)) {
-        ANIMALS.forEach(a => { MAPS[fam]['animal-' + a] = 'nt-a-' + a; });
+        ANIMALS.forEach(a => { MAPS[fam]['animal-' + a] = 'nt-a-' + a; MAPS[fam]['print-' + a] = 'nt-f-' + a; });
         BIRD_FRAMES.forEach((b, i) => { MAPS[fam]['bird' + i] = b; });
     }
     // Markup always points at the family-neutral alias #ic-<key>; the alias is built from
@@ -88,6 +88,24 @@
     function animal(rankOrName, cls) {
         const name = typeof rankOrName === 'string' && ANIMALS.includes(rankOrName) ? rankOrName : animalFor(rankOrName);
         return node('animal-' + name, 'tk-animal' + (cls ? ' ' + cls : ''));
+    }
+
+    // Phase 6.4: footprint stamped on the completion ring. The animal is read from the button itself, so
+    // every renderer (lists, detail panel) gets the matching print without passing a task around.
+    const STAMP_MS = 340;
+    function stamp(btn) {
+        try {
+            if (!btn || family() !== 'nature') return false;
+            if ((document.documentElement.getAttribute('data-fx-off') || '').split(/\s+/).includes('animals')) return false;
+            const href = btn.querySelector('.tk-animal use')?.getAttribute('href') || '';
+            const name = href.replace('#ic-animal-', '');
+            if (!ANIMALS.includes(name) || !has('print-' + name)) return false;
+            btn.querySelectorAll('.tk-print').forEach(n => n.remove());
+            const print = node('print-' + name, 'tk-print');
+            btn.appendChild(print);
+            setTimeout(() => print.remove(), STAMP_MS + 260);
+            return true;
+        } catch { return false; /* cosmetic only */ }
     }
 
     // Shared by every task-list renderer (Today/General, Projects, Calendar agenda):
@@ -149,5 +167,5 @@
     }
     sprite();
 
-    window.TaskitatorIcons = Object.freeze({ MAPS, ANIMALS, BIRD_FRAMES, icon, node, glyph, has, symbol, animal, animalFor, animalForId, decorateTask, ready: () => sprite() });
+    window.TaskitatorIcons = Object.freeze({ MAPS, ANIMALS, BIRD_FRAMES, icon, node, glyph, has, symbol, animal, animalFor, animalForId, stamp, STAMP_MS, decorateTask, ready: () => sprite() });
 })();

@@ -240,6 +240,26 @@ html[data-family="nature"][data-fx-off~="animals"] .check-circle .tk-animal { di
 html[data-family="nature"][data-fx-off~="animals"] .task-node.completed > .task-row .check-circle::after,
 html[data-family="nature"][data-fx-off~="animals"] .check-circle.is-completing::after { content: "✓"; font-size: 15px; font-weight: 800; color: var(--tk-bg1); }
 @keyframes tkPop { 40% { transform: scale(1.35) rotate(-10deg); } }
+/* Phase 6.4: the animal's footprint is stamped on the ring while the task completes (340 ms, see icons.js STAMP_MS). */
+html[data-family="nature"] .check-circle .tk-print {
+    position: absolute;
+    inset: 9%;
+    width: 82%;
+    height: 82%;
+    color: var(--tk-bg1);
+    pointer-events: none;
+    transform-origin: 50% 50%;
+    animation: tkStamp .34s cubic-bezier(.3, .7, .3, 1) both;
+}
+html[data-family="nature"] .check-circle.is-completing .tk-animal { animation: tkAnimalOut .12s ease-in forwards; }
+@keyframes tkStamp {
+    0%   { opacity: 0; transform: scale(2.1) rotate(-14deg); }
+    46%  { opacity: 1; transform: scale(.9) rotate(-6deg); }
+    68%  { transform: scale(1.07) rotate(-6deg); }
+    100% { opacity: 1; transform: scale(1) rotate(-6deg); }
+}
+@keyframes tkAnimalOut { to { opacity: 0; transform: scale(.7); } }
+html[data-family="nature"][data-fx-off~="animals"] .check-circle .tk-print { display: none; }
 html[data-family="nature"] .check-square { border-radius: 7px; border-color: var(--pc, var(--tk-badge)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc, transparent) 35%, transparent); }
 html[data-family="nature"] .check-square.selected { background: var(--pc, var(--tk-accent)); border-color: var(--pc, var(--tk-accent)); color: var(--tk-bg1); }
 
