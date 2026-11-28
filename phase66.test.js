@@ -7,7 +7,7 @@ import vm from 'node:vm';
 
 const root = new URL('./', import.meta.url);
 const read = p => fs.readFileSync(new URL(p, root), 'utf8');
-const SWITCHES = ['particles', 'clouds', 'animals', 'bird', 'parallax', 'bubbles', 'wipe'];
+const SWITCHES = ['particles', 'clouds', 'animals', 'bird', 'parallax', 'bubbles', 'wipe', 'race'];
 
 function boot({ stored, lowEnd = false, osReduce = false } = {}) {
     const store = new Map();
@@ -72,7 +72,7 @@ test('Static and Reduced lock the decorative effects; essential ones are not blo
     const { A } = boot();
     A.setMode('reduced');
     assert.equal(A.motionLevel(), 'reduced');
-    for (const k of ['particles', 'clouds', 'bird', 'parallax', 'bubbles', 'wipe']) assert.equal(A.motionAllowed(k), false, k);
+    for (const k of ['particles', 'clouds', 'bird', 'parallax', 'bubbles', 'wipe', 'race']) assert.equal(A.motionAllowed(k), false, k);
     A.setMode('static');
     assert.equal(A.motionLevel(), 'static');
     assert.equal(A.motionAllowed(), false);
@@ -108,7 +108,7 @@ test('motion.js: bubble and wipe respect the switches; script is loaded and prec
     for (const page of ['index.html', 'settings.html', 'components.html', 'legal.html', 'login.html']) assert.match(read(page), /src="motion\.js"/, page);
     const sw = read('sw.js');
     assert.match(sw, /\.\/motion\.js/); assert.match(sw, /\.\/ai-notice\.js/);
-    assert.match(sw, /CACHE_NAME = 'taskitator-phase4-v79'/);
+    assert.match(sw, /CACHE_NAME = 'taskitator-phase4-v82'/);
 });
 
 test('AI notice: provider company, Universe = Google, hosted = Anthropic, generic fallback', () => {

@@ -292,7 +292,7 @@ test('emoji lint: app chrome uses icons; only user content and Universe keep emo
     const KEEP = new Set([...'✕✓☑✎⛶⇅▼↻←→↑↓◆◇•·☰']);
     // Allow-list: user-chosen project icons and the Inbox default (user data), Universe (not in this project).
     const ALLOW = /PROJECT_ICONS|is_default: true|projectObj\.icon \|\||🌌|\.replace\(\/\[/;
-    const files = ['index.html', 'components.html', 'settings.html', 'legal.html', 'login.html', 'views/projects.js', 'views/calendar.js', 'views/stats.js', 'views/trash.js', 'views/blocker-guide.js', 'sleep.js', 'shell-router.js', 'app.js', 'components.js', 'pro.js', 'tutorial-integration.js', 'tutorial-spotlight.js', 'theme-boot.js', 'icons.js', 'nature.js', 'appearance-ui.js'];
+    const files = ['index.html', 'components.html', 'settings.html', 'legal.html', 'login.html', 'views/projects.js', 'views/calendar.js', 'views/stats.js', 'views/trash.js', 'views/blocker-guide.js', 'sleep.js', 'shell-router.js', 'app.js', 'components.js', 'pro.js', 'tutorial-integration.js', 'tutorial-spotlight.js', 'theme-boot.js', 'icons.js', 'nature.js', 'appearance-ui.js', 'friends-ui.js', 'collab-ui.js', 'race-ui.js', 'collab-archive.js', 'collab-locks.js'];
     const hits = [];
     for (const f of files) read(f).split('\n').forEach((line, i) => {
         if (ALLOW.test(line)) return;

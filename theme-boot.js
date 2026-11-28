@@ -3,7 +3,7 @@
    External file on purpose: editing it never changes the CSP inline-script hashes.
 
    Storage: localStorage 'taskitator_appearance' (per device, never synced):
-     { v:1, theme, effective, mix, anim:{particles,clouds,animals,bird,parallax,bubbles,wipe,mode}, bird_speed, notice }
+     { v:1, theme, effective, mix, anim:{particles,clouds,animals,bird,parallax,bubbles,wipe,race,mode}, bird_speed, notice }
    - mix        = extra animal packs (theme ids) shown on top of the theme's own pack (Phase 6.7, Pro). Kept when
                   Pro lapses; only packs the account may use are applied (see packs()).
    - anim.mode  = 'normal' (default) | 'custom' | 'reduced' | 'static' (Phase 6.6). The switches are kept per key; Normal shows them
@@ -27,10 +27,10 @@
     'use strict';
     const KEY = 'taskitator_appearance';
     const VERSION = 1;
-    const SWITCH_KEYS = ['particles', 'clouds', 'animals', 'bird', 'parallax', 'bubbles', 'wipe'];
+    const SWITCH_KEYS = ['particles', 'clouds', 'animals', 'bird', 'parallax', 'bubbles', 'wipe', 'race']; // race: Phase 7.6 challenge bar
     const MODES = ['static', 'reduced', 'normal', 'custom'];
     // Effects that Reduced and Static turn off (animals are art, not motion, so they keep their own switch).
-    const DECORATIVE = ['particles', 'clouds', 'bird', 'parallax', 'bubbles', 'wipe'];
+    const DECORATIVE = ['particles', 'clouds', 'bird', 'parallax', 'bubbles', 'wipe', 'race'];
     const reg = window.TaskitatorThemes;
     const html = document.documentElement;
     if (!reg) return;
@@ -46,7 +46,7 @@
     const defaultMode = () => (lowEnd() || osReduced() ? 'reduced' : 'normal');
     function defaults() {
         return { v: VERSION, theme: reg.DEFAULT_THEME, effective: reg.DEFAULT_THEME,
-            anim: { particles: true, clouds: true, animals: true, bird: true, parallax: true, bubbles: true, wipe: true, mode: defaultMode() },
+            anim: { particles: true, clouds: true, animals: true, bird: true, parallax: true, bubbles: true, wipe: true, race: true, mode: defaultMode() },
             bird_speed: 7, notice: null, mix: [] };
     }
     // Validate + migrate any stored value. Unknown fields are dropped; bad values fall back.

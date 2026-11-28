@@ -84,7 +84,7 @@ window.TaskitatorAgent = (() => {
             return 'projects';
         }
         // Phase 3.0 shell views of index.html (#calendar, #stats, ...): read-only for Ari, like the old components.html views.
-        const shellViews = { stats: 'stats', trash: 'trash', 'blocker-guide': 'blocker_guide', guide: 'blocker_guide', projects: 'projects', calendar: 'calendar', 'study-plans': 'study_plans', 'test-lab': 'study_plans', sleep: 'sleep', friends: 'friends', help: 'help' };
+        const shellViews = { stats: 'stats', trash: 'trash', 'blocker-guide': 'blocker_guide', guide: 'blocker_guide', projects: 'projects', calendar: 'calendar', 'study-plans': 'study_plans', 'test-lab': 'study_plans', sleep: 'sleep', friends: 'friends', collab: 'friends', help: 'help' };
         if (shell) {
             const route = shell.routeOf(hash);
             return route.view === 'tasks' ? (hash === 'general' ? 'general' : 'today') : shellViews[route.view];
@@ -3341,6 +3341,17 @@ window.TaskitatorApp = (() => {
                     shieldBadge.className = 'ai-badge shield-badge';
                     tkLabel(shieldBadge, 'shield', 'Shielded');
                     main.appendChild(shieldBadge);
+                }
+
+                // Phase 7.7: a linked copy of a locked collab task (collab-locks.js). Opens the collab.
+                if (task.collab_link && /^cb[a-f0-9]{20}$/.test(task.collab_link.cid || '')) {
+                    const cbBadge = document.createElement('a');
+                    cbBadge.className = 'ai-badge collab-badge';
+                    cbBadge.href = '#collab-' + task.collab_link.cid;
+                    tkLabel(cbBadge, task.collab_link.phone ? 'phone' : 'person', window.TaskitatorI18n?.translateText?.('Collab') || 'Collab');
+                    cbBadge.title = (window.TaskitatorI18n?.translateText?.('From a collab. Its owner sets the title, date and locks.') || 'From a collab. Its owner sets the title, date and locks.') + ' — ' + (task.collab_link.collab || '');
+                    cbBadge.addEventListener('click', e => e.stopPropagation());
+                    main.appendChild(cbBadge);
                 }
 
                 const allDesc = allChildrenMap.get(task.id);

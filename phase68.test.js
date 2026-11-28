@@ -176,6 +176,6 @@ test('"Local only" is gone: the dot falls back to pending, the guide drops it an
     const ar = ctx.module.exports;
     for (const k of ['Local only', 'Gray: Local Only', 'Red: Sync Failed / Offline']) assert.equal(ar[k], undefined, k);
     for (const k of ['Taking longer than usual…', 'Skip and open offline', 'Reconnect', 'AI is taking longer than usual…', 'Red: Sync Failed']) assert.ok(ar[k], k);
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v79'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v82'/);
     assert.match(read('README.md'), /Phase 6\.8/);
 });

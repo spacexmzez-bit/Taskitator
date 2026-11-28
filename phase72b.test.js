@@ -99,6 +99,6 @@ test('Worker route, Settings card, choice boxes, Points panel button, cache', ()
     assert.match(css, /\.tk-choice:has\(input:checked\)\{border-color:var\(--primary\);background:var\(--accent-light\)/);
     assert.match(ui, /TaskitatorAuth\.api\('\/points\/require', \{ method: 'POST', body: '\{\}' \}\)/);
     assert.match(ui, /await window\.SyncEngine\?\.syncNow\?\.\(\{ origin: 'manual' \}\);\n\s+const r = await window\.TaskitatorAuth\.api\('\/points\/require'/, 'syncs before pressing');
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v79'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v82'/);
     for (const k of ['Make today required', 'Streak counting', 'Tight', 'Loose', 'Switch to Tight?']) assert.ok(read('locales/ar.js').includes('"' + k + '"'), k);
 });

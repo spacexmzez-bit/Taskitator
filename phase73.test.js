@@ -68,7 +68,7 @@ test('Copilot knowledge: every page has an entry within budget', () => {
 test('Copilot knowledge covers the new features where they live', () => {
     const has = (text, ...words) => words.forEach(w => assert.ok(text.includes(w), w));
     has(K.PAGES.today, 'Points strip', '150', 'Make today required', 'free days', 'Emergency Bypass', 'AI-locked');
-    has(K.PAGES.friends, 'Duo streak', 'Cheer', 'Block', 'Collab', 'Pro for every member', 'Privacy');
+    has(K.PAGES.friends, 'Duo streak', 'Cheer', 'Block', 'Collab', 'Pro for all', 'Privacy');
     has(K.SETTINGS.schedule, 'Streak free days', 'Streak counting', 'Loose', 'Normal', 'Tight', 'next week');
     has(K.SETTINGS.ai, 'ChatGPT', 'platform.openai.com', 'GPT-6 Luna', 'subscription does not include API access');
     has(K.SETTINGS.tasks, 'Harsh', 'Limited', 'Loosening');
@@ -87,5 +87,5 @@ test('Copilot sends knowledge for the current page only; Friends and Universe ge
         assert.ok(k > 0 && k < a, f + ': knowledge loads before app.js');
     }
     assert.match(read('sw.js'), /'\.\/copilot-knowledge\.js'/);
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v79'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v82'/);
 });

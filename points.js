@@ -164,9 +164,11 @@
         return cur;
     }
 
+    // created_at may be an ISO string or epoch ms (older clients); NaN when missing.
+    const created = value => (typeof value === 'number' ? value : typeof value === 'string' ? (/^\d+$/.test(value) ? Number(value) : Date.parse(value)) : NaN);
     const stamp = value => (typeof value === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? Date.parse(value) : NaN);
 
-    /* Award new completions. Returns {state, gained, changed}. `previous` is the stored snapshot (may be null). */
+    /* Award new completions. Returns {state, gained, changed, awards} (awards: [{id, day, p, req, at, created}], Phase 7.6). `previous` is the stored snapshot (may be null). */
     function record(stateIn, previous, snapshot, now) {
         const state = normalize(stateIn);
         const settings = snapshot?.settings || {};
@@ -180,6 +182,7 @@
         const fresh = (snapshot?.tasks || []).filter(t => t && t.status === 'completed' && before.get(t.id)?.status !== 'completed');
         const freshIds = new Set(fresh.map(t => t.id));
         let gained = 0;
+        const awards = []; // Phase 7.6: what was awarded, for challenges (friends-backend.js chRecord)
         const items = fresh.map(t => ({ t, at: stamp(t.completed_at) })).filter(x => Number.isFinite(x.at)).sort((a, b) => a.at - b.at);
         for (const { t, at } of items) {
             if (Object.hasOwn(state.awarded, t.id)) continue;
@@ -197,6 +200,7 @@
             row.p += pts; row.n += 1; row.r += t.is_bonus ? 0 : 1; row.a += t.ai_locked ? 1 : 0; state.days[day] = row;
             state.total += pts; gained += pts;
             state.awarded[t.id] = dayNumber(day);
+            awards.push({ id: t.id, day, p: pts, req: !t.is_bonus, at, created: created(t.created_at) });
             changed = true;
         }
         // Prune
@@ -207,7 +211,7 @@
         for (const d of Object.keys(state.required)) if (d < dayFrom) { delete state.required[d]; changed = true; }
         const cur = streakOf(state, today);
         if (cur > state.best) { state.best = cur; changed = true; }
-        return { state, gained, changed };
+        return { state, gained, changed, awards };
     }
 
     /* "Make today required": once per free date. Blocks everything already finished today (by time and by id).

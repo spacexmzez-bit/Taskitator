@@ -8,7 +8,8 @@ import { FriendsService, FRIEND_LIMITS } from './friends-backend.js';
 const read = f => fs.readFileSync(new URL('./' + f, import.meta.url), 'utf8');
 
 test('limits and silent rules are in the service', () => {
-    assert.deepEqual({ ...FRIEND_LIMITS }, { FRIEND_LIMIT: 50, OUT_LIMIT: 20, DAILY_REQUESTS: 30, EXPIRE_MS: 30 * 86400000, COLLAB_MAX: 6 });
+    assert.deepEqual({ ...FRIEND_LIMITS }, { FRIEND_LIMIT: 50, OUT_LIMIT: 20, DAILY_REQUESTS: 30, EXPIRE_MS: 30 * 86400000, CH_MAX_DAYS: 30, CH_DEFAULT_DAYS: 5, CH_ACTIVE: 3, CH_PENDING: 10,
+        CH_MEMBERS: 6, CH_AUTOSTART_MS: 48 * 3600000, CH_LIST: 20, CH_COLORS: 8, CH_PRIZE: 40, CH_DAY_POINTS: 50, CH_DAY_TASKS: 15, CH_MIN_AGE_MS: 300000 });
     const src = read('friends-backend.js');
     assert.match(src, /mine\.out\[uid\] = refused \? \{ at: now, dropped: true \} : \{ at: now \};/);
     assert.match(src, /return \{ ok: true, status: 'pending' \}; \/\/ the same answer either way/);
@@ -34,7 +35,7 @@ test('Worker wiring, view, nav, Universe button, cache', () => {
     assert.match(w, /this\.friends = new FriendsService\(this\);/);
     assert.match(w, /const friendsRoute = path === '\/friends' \|\| path\.startsWith\('\/friends\/'\);/);
     assert.match(w, /!friendsRoute && /);
-    assert.match(w, /'friends:'\+identity\.userId\]/);
+    assert.match(w, /'friends:'\+identity\.userId,'chl:'\+identity\.userId\]/);
     const index = read('index.html');
     assert.match(index, /<section id="shellView-friends" class="shell-view" data-shell-view="friends" hidden><div class="fr-wrap" id="friendsRoot"><\/div><\/section>/);
     assert.match(index, /<a href="#friends" data-shell-link="friends">[\s\S]*?Friends<span class="nav-count" data-friends-count hidden><\/span><\/a>/);
@@ -44,7 +45,7 @@ test('Worker wiring, view, nav, Universe button, cache', () => {
     assert.match(read('app.js'), /friends: 'friends'/);
     assert.match(read('uni/universe-ui.js'), /window\.TaskitatorAuth\.api\('\/friends\/request',\{method:'POST',body:JSON\.stringify\(\{username:m\.username\}\)\}\)/);
     assert.match(read('sw.js'), /'\.\/friends-ui\.js'/);
-    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v79'/);
+    assert.match(read('sw.js'), /CACHE_NAME = 'taskitator-phase4-v82'/);
     assert.match(read('index.html'), /id="help-friends"/);
     assert.match(read('README.md'), /\*\*Friends \(Phase 7\.0\):\*\*/);
     for (const k of ['Friends', 'Send request', 'Duo streak {0}', 'Unfriend @{0}?']) assert.ok(read('locales/ar.js').includes('"' + k + '"'), k);

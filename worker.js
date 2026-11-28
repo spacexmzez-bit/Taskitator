@@ -15,6 +15,7 @@ import './points.js';
 import { ProGateway, TaskProtection, liveAccount, POLICY, planOf, periods, entitlementFor, clientOf, refreshKeyo, LargeBodies, hostedGlobalKey, hostedGlobalAdd } from './pro-backend.js';
 import { BreakSystems } from './break-systems.js';
 import { FriendsService } from './friends-backend.js';
+import { CollabService } from './collab-backend.js';
 import { proofRequestBody } from './pro-proof-payload.js';
 
 // File: recurrence-core.js
@@ -765,7 +766,7 @@ export class AccountDeletion {
                 // A recovery record contains only a digest-keyed, status-only expiry.
                 await tx.put('phone:'+device.digest,{scope:'deleted-unlock',expires:recoveryUntil});
             }
-            await tx.delete([phoneOwnerKey(link.user),phoneDevicesKey(link.user),pointsKey(link.user),'friends:'+identity.userId]);
+            await tx.delete([phoneOwnerKey(link.user),phoneDevicesKey(link.user),pointsKey(link.user),'friends:'+identity.userId,'chl:'+identity.userId]);
             current.status='consumed'; await tx.put(proofKey,current);
             await tx.put(markerKey,{status:'pending',receipt:body.receipt,phone_recovery_until:recoveryUntil});
             if (meta.legacy_disabled) await tx.put('deleted-legacy:'+await sha256(link.user),{expires:recoveryUntil});
@@ -1907,6 +1908,7 @@ export class TaskitatorSync {
         this.pro = new ProGateway(this);
         this.universe = new (universeCommunity())(this);
         this.friends = new FriendsService(this); // Phase 7.0
+        this.collab = new CollabService(this, this.friends); // Phase 7.5
         this.breaks = new BreakSystems(this);
     }
 
@@ -1914,8 +1916,9 @@ export class TaskitatorSync {
         const {link,meta}=await liveAccount(store,accountId);
         return {snapshot:await loadSnapshot(store,link.user,meta),meta,user:link.user};
     }
-    async writeTaskSnapshot(tx,accountId,snapshot) {
+    async writeTaskSnapshot(tx,accountId,snapshot,opts={}) {
         const {link,meta}=await liveAccount(tx,accountId);
+        if(!opts.skipCollab)await this.collab.locks.reconcile(tx,accountId,snapshot); // Phase 7.7: an approved proof on a collab copy completes the collab task
         if(meta.version>=Number.MAX_SAFE_INTEGER)throw new HTTPError(503,'Account revision limit reached.');
         meta.version++;meta.saved_at=new Date().toISOString();snapshot.updated_at=meta.saved_at;
         delete meta.last_write;
@@ -2226,8 +2229,9 @@ export class TaskitatorSync {
             const criteriaEdit = path === '/criteria/edit';
             const pointsRoute = (method === 'GET' && path === '/points') || (method === 'POST' && path === '/points/require'); // Phase 7.0 / 7.2
             const friendsRoute = path === '/friends' || path.startsWith('/friends/'); // Phase 7.0
+            const collabRoute = path.startsWith('/collab/'); // Phase 7.5
             if (!status && !pull && !push && !bridge && !me && !connect && !phoneAdmin &&
-                !proofStart && !proofPassword && !proofSignin && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute && !pointsRoute && !friendsRoute && !sleepRoute && !breaksRoute && !studyManage && !studyRoute && !criteriaEdit) {
+                !proofStart && !proofPassword && !proofSignin && !proofStatus && !deletion && !deletionStatus && !keyRoute && !proRoute && !emergencyRoute && !universeRoute && !pointsRoute && !friendsRoute && !collabRoute && !sleepRoute && !breaksRoute && !studyManage && !studyRoute && !criteriaEdit) {
                 return json({ error: 'Endpoint not found. Password changes are managed through your account profile.' }, 404);
             }
             await this.rateLimit(request);
@@ -2264,9 +2268,6 @@ export class TaskitatorSync {
                     const upload=/^\/universe\/groups\/[A-Za-z0-9_-]+\/work\/files\/[A-Za-z0-9_-]+\/upload$/.test(path);
                     const transfer=path==='/universe/imports'||/^\/universe\/(?:imports|groups\/[^/]+\/(?:transfer|archive))\/[^/]+\/file$/.test(path);
                     const ubody=method==='GET'?{}:await readJson(request,upload?8*1024*1024:transfer?21*1024*1024:65536);
-                    // Phase 7.0: inside a collab, changes need Pro for every member.
-                    const collabBlock=await this.friends.gate(identity,path,method,ubody);
-                    if(collabBlock)return json({error:collabBlock.message,code:collabBlock.code},collabBlock.status);
                     return json(await this.universe.handle(identity,path,method,ubody));
                 }
                 if (proRoute) {
@@ -2425,9 +2426,18 @@ export class TaskitatorSync {
                 if (friendsRoute) {
                     if (!account) throw new HTTPError(403, 'Use your connected account to use friends.');
                     if (method === 'POST') await this.rateLimit(request, 'friends:' + identity.userId, 30);
-                    const meta = await this.storage.get(accountKey(account.user));
-                    const settings = method === 'GET' && meta ? (await loadSnapshot(this.storage, account.user, meta))?.settings : null;
+                    else if (path === '/friends/challenges/live') await this.rateLimit(request, 'friends-live:' + identity.userId, 20); // Phase 7.6 race bar
+                    const meta = method === 'GET' && path === '/friends' ? await this.storage.get(accountKey(account.user)) : null; // the live race poll never loads the snapshot
+                    const settings = meta ? (await loadSnapshot(this.storage, account.user, meta))?.settings : null;
                     const out = await this.friends.handle(identity, path, method, method === 'POST' ? await readJson(request, 4096) : null, settings);
+                    if (out?.__error) return json({ error: out.__error.message, code: out.__error.code }, out.__error.status);
+                    return json(out);
+                }
+                if (collabRoute) { // Phase 7.5: shared task trees for friends (collab-backend.js)
+                    if (!account) throw new HTTPError(403, 'Use your connected account to use collabs.');
+                    await this.rateLimit(request, (method === 'GET' ? 'collab-read:' : 'collab:') + identity.userId, method === 'GET' ? 30 : 40);
+                    const out = await this.collab.handle(identity, path, method, method === 'POST' ? await readJson(request, 8192) : null,
+                        { rev: url.searchParams.get('rev') ?? undefined });
                     if (out?.__error) return json({ error: out.__error.message, code: out.__error.code }, out.__error.status);
                     return json(out);
                 }
@@ -2581,6 +2591,7 @@ export class TaskitatorSync {
                         const err=new HTTPError(403,why);
                         if(!l.setting)Object.assign(err,{code:'STATUS_LOCKED',rejected:l.tasks.map(t=>({id:t.id,code:'STATUS_LOCKED',message:t.message,related:[]}))});
                         throw err;}}
+                    await this.collab.locks.guardPush(tx,identity.userId,previous,snapshot); // Phase 7.7: accepted collab copies stay until released
                     globalThis.TaskitatorEarly.apply(snapshot);
                     globalThis.TaskitatorSmartStudy.apply(snapshot,previous);
                     // Breaks are changed only through /breaks. Sync keeps the stored copy, so a stale or
@@ -2589,6 +2600,8 @@ export class TaskitatorSync {
                     // Phase 7.0: points and streak live outside the snapshot, so restore, clear and reopen can't change them.
                     const P=globalThis.TaskitatorPoints,pk=pointsKey(user),awarded=P.record(await tx.get(pk),previous,snapshot,Date.now());
                     if(awarded.changed)await tx.put(pk,awarded.state);
+                    await this.friends.chRecord(tx,identity.userId,awarded.awards,awarded.state,Date.now()); // Phase 7.6: challenge log (anti-cheat caps)
+                    await this.collab.locks.reconcile(tx,identity.userId,snapshot,{previous,bypass:await this.protection.bypass(tx,identity.userId)}); // Phase 7.7
                     const points={...P.summary(awarded.state,Date.now()),gained:awarded.gained};
                     snapshot.updated_at = now;
                     await saveSnapshot(tx, user, meta, snapshot);

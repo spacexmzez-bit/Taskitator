@@ -151,5 +151,5 @@ test('tour card keeps its scroll; Back and Next stay pinned', () => {
         assert.match(html, /tutorial-spotlight\.css\?v=tour-v4/);
         assert.match(html, /tutorial-spotlight\.js\?v=tour-v4/);
     }
-    assert.match(read('sw.js'), /taskitator-phase4-v79/);
+    assert.match(read('sw.js'), /taskitator-phase4-v82/);
 });

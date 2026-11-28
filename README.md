@@ -2,7 +2,7 @@
 
 Taskitator is a browser task manager with nested tasks, projects, scheduled and flexible breaks, offline personal editing, proof-based completion, a focus timer, an AI Copilot, cloud synchronization, phone-blocking integration, and collaborative workspaces called **Universes**. The frontend is static HTML/CSS/JavaScript. Its authenticated backend runs in a Cloudflare Worker and a Durable Object; Universe records use D1, and Universe attachments use R2.
 
-This guide describes the source as of **Phase 7.4 (28 November 2026)**: 241 files, including 28 PNG assets. **Part 1** is the user guide: every feature of Taskitator on the web, where it is, how to use it step by step, and the rules and limits behind it. **Part 2** is the code and architecture guide. The source describes the app's behavior; live configuration, credentials and provider availability depend on the deployment. Older Part 2 sections describe the code as it was first inspected (commit `99b4282`, 5 November 2026) plus the phase notes that followed; where a statement and the current code differ, the code wins.
+This guide describes the source as of **Phase 7.7 (28 November 2026)**: 247 files, including 28 PNG assets. **Part 1** is the user guide: every feature of Taskitator on the web, where it is, how to use it step by step, and the rules and limits behind it. **Part 2** is the code and architecture guide. The source describes the app's behavior; live configuration, credentials and provider availability depend on the deployment. Older Part 2 sections describe the code as it was first inspected (commit `99b4282`, 5 November 2026) plus the phase notes that followed; where a statement and the current code differ, the code wins.
 
 ## Contents
 
@@ -49,7 +49,8 @@ Everything is free unless the table says otherwise. Pro comes from a Keyo licens
 | Breaks, strict modes, Emergency Bypass, Scratchpad, Focus timer | Yes | Yes |
 | Points, ranks and streak | Yes | Yes |
 | Friends, leaderboard, cheers, duo streak | Yes | Yes |
-| Collab (shared space with friends) | No | Yes, every member needs Pro |
+| Collab (shared task with friends) | No | Yes, every member needs Pro |
+| Challenges | Join only | Start and join |
 | Phone lock (MacroDroid) and Sleep Lock | Yes, 3 phone devices | Yes, 12 phone devices |
 | Backup, restore, sync, offline editing | Yes | Yes |
 | AI with your own Gemini, Claude or ChatGPT key (Copilot, criteria checks, proof reviews, note cleanup) | Yes, within 10 credits a day and 220 a calendar month (Riyadh time). Shown as Available / Caution / Critical, never as numbers | Yes, not limited or metered by Taskitator; your provider bills you |
@@ -84,6 +85,8 @@ Everything is free unless the table says otherwise. Pro comes from a Keyo licens
 | Username | 3–20 letters, numbers or underscores; unique, case does not matter |
 | Copilot name | 20 characters |
 | Friends | 50 friends; 20 waiting requests; 30 requests a day; requests expire after 30 days |
+| Challenges | You + 5 friends; 1–30 days; 3 at a time (joined); 20 listed; per day at most 50 points / 15 tasks count; prize text 40 characters |
+| Collab | You + 5 friends; 150 tasks; 6 levels; 200 comments; 10 collabs each (finished ones don't count); deleted 7 days after it finishes; proof criteria 1,000 characters |
 
 ### Time rules
 
@@ -214,7 +217,7 @@ On Pro, hosted Taskitator AI runs on Claude by Anthropic, whichever provider is 
 Settings → General → **Animations & effects** (last section, collapsed). Per device.
 
 - **Static**: nothing moves. **Reduced**: only loading spinners and progress bars. **Normal**: everything (default). **Custom**: set automatically when you switch one effect off; switching all back on returns to Normal; choosing Custom again restores your last set.
-- Effect switches (work in Normal and Custom only): Falling leaves, Clouds, Animals (off shows a plain tick), Bird, Parallax, Tap bubbles, Icon wipe.
+- Effect switches (work in Normal and Custom only): Falling leaves, Clouds, Animals (off shows a plain tick), Bird, Parallax, Tap bubbles, Icon wipe, **Challenge race** (the race bar at the bottom of Today; see Challenges).
 - Low-memory devices and devices with the system "reduce motion" setting start in Reduced until you choose.
 - Animations can make Taskitator slower on older devices; choose Reduced or Static if it feels slow.
 
@@ -233,7 +236,8 @@ Up to 100 subtasks per entry; more than 20 asks first. The range must go up. Wit
 Settings → Account & data → **Back up & restore**.
 
 - **Download** saves one `.json` file with tasks, projects, settings, breaks, saved criteria and review history from this browser. Secrets are removed. Reference files kept only in this browser may not be included.
-- **Restore from a backup**: pick a Taskitator `.json` file, then **Merge** (adds the backup's tasks; nothing is deleted) or **Replace everything** (wipes this browser's data and uses the backup). Invalid repeating-task data is refused.
+- When you're online, the file also holds your **friends** (accepted, requests received and sent) and your **collabs** (tasks, progress, people and comments), by username only. That part is a record: restoring never brings friends or collabs back.
+- **Restore from a backup**: pick a Taskitator `.json` file, then **Merge** (adds the backup's tasks; nothing is deleted) or **Replace everything** (wipes this browser's data and uses the backup). Invalid repeating-task data is refused. A saved collab file is refused too (it's a record, not a backup).
 
 ### Batch proof review (Pro)
 
@@ -289,26 +293,82 @@ Menu → Calendar.
 - Early tasks show **Early · due {date}**.
 - **Unscheduled Tasks** lists undated tasks with **Assign to Today**.
 
+### Challenges
+
+Compete with up to 5 friends on points, tasks or streak.
+
+**Start one** (Pro)
+1. Menu → **Friends** → **Your friends** → **Challenge** on a friend's row. Tick more friends if you like (up to 5).
+2. Pick how to win:
+   - **Time**: the highest score on the last day wins. Ties share the win.
+   - **Amount**: the first to reach a goal wins. If nobody reaches it by the last day, the highest score wins and it shows "Nobody reached the goal".
+3. Pick what counts:
+   - **Points**: points earned (at most 50 count a day).
+   - **Tasks**: required tasks finished (bonus tasks don't count; at most 15 a day).
+   - **Streak**: days in a row with a required task finished. Free days don't break it; a tie goes to whoever finished more days. The same rule applies to everyone, whatever their own streak mode.
+4. Choose 1 to 30 days (5 by default). For Amount, choose the goal (the form shows the allowed range).
+5. Optional: a **prize**, up to 40 characters (e.g. "$300"). It's just text everyone sees; Taskitator doesn't handle prizes.
+6. Pick **your color** and press **Send challenge**.
+
+**Join one** (free)
+- Under **Challenges** on your Friends page, pick a color and press **Accept**, or **Decline**. Invitations last 7 days.
+- After joining you can **Leave** until it starts.
+
+**Starting**
+- The sender presses **Start** once at least one friend has joined, or it starts by itself 48 hours after it was sent if someone joined. Day 1 is the next day. Friends who hadn't answered are dropped, and nobody can join after the start.
+- The type, goal, days, prize and people are fixed once it's sent.
+
+**While it runs**
+- Scores come only from the server. A task counts if it's finished inside the challenge's days and at least 5 minutes after it was created.
+- Amount: the win goes to whoever's sync crosses the goal first, by the server's clock.
+- **Forfeit** takes you out for good (no rejoining). If only one person is left, they win. The sender can't cancel after the start.
+- Blocking someone makes you forfeit the challenges you share with them; a waiting one you sent is cancelled.
+- **Change color** any time (each color once per challenge).
+- The result is fixed when it ends. **Remove** hides a finished one; finished ones disappear after 30 days.
+- Limits: 3 challenges at a time (waiting ones you've joined count), 20 listed per person.
+
+**The race bar on Today**
+- Running challenges show at the bottom of Today as a race track: one badge per person (your color, name shortened when long), the leader with a crown.
+- **Time:** badges spread between last and first place, so the gap shows who's ahead. **Amount:** a track from start to finish flag; the bigger each step is compared with the goal, the further one step moves you.
+- **–** minimizes it to a small button at the bottom-left (bottom-right in Arabic). Tap the button to bring it back. The choice is kept on this device.
+- It refreshes every minute while Today is open, when you come back, and a few seconds after you finish a task.
+- Turn it off in Settings → Animations & effects → **Challenge race**. It's hidden in Reduced and Static. The Friends page always shows the full challenge list.
+
 ### Collab (Pro)
 
-A small shared space where friends work on tasks together, with the same proof checks and phone blocking a Universe has. Everyone in a collab needs Pro.
+One shared task with friends. You split it into subtasks, assign people, and everyone sees the same tasks, edits and progress. Everyone in a collab needs Pro.
 
 **Start one**
 1. Menu → **Friends** → **Collabs** → **Start a collab**.
-2. Name it and tick up to 5 friends. You and every friend you pick need active Pro.
-3. Press **Create collab**. Each friend gets an invitation under **Collabs** on their Friends page for 7 days.
+2. Name the shared task and tick up to 5 friends.
+3. Press **Create collab** and confirm that everyone needs Pro. Each friend gets an invitation under **Collabs** on their Friends page for 7 days. The collab opens straight away.
 
 **Join one**
 1. On your Friends page, under **Collabs**, press **Join** (or **Decline**).
-2. Press **Open** next to a collab to work in it.
+2. Press **Open** next to a collab. It opens in its own Collab page inside Taskitator (not in Universe).
 
 **Working in a collab**
-- A collab opens in the Universe workspace and appears in your Universe list with a purple **Collab** badge.
-- The person who started it is the owner; friends join as admins, so everyone can add projects and tasks.
-- Tasks, assignments, AI or friend reviews, deadlines and phone blocking (each person turns on **Allow Universe phone blocking**) work exactly as in a Universe. See *Universe*.
-- **Pro for everyone:** if anyone's Pro ends, nobody can change anything until it's renewed. You can still read the collab, leave it or withdraw phone-blocking consent.
-- A collab counts toward your Universe limits (own 2, join 7 on Pro).
-- Unfriending someone doesn't remove them from a collab. Leave it, or the owner removes them, from the collab's settings.
+- **Only the person who started it changes it:** tasks (**+** adds a subtask, **✎** edits title, notes and due date, **✕** deletes a task and everything under it), assignees (**@**) and people (**Invite friends**, **Remove**, **Cancel invite**). Renaming the top task renames the collab.
+- **Assignees:** the starter assigns one or more people to the top task or to any subtask (invited friends too, before they join). An assignee can complete their task and everything under it; completing a task completes its whole subtree. Reopening a task reopens any finished task above it. The starter can complete anything.
+- **Progress:** an overall bar, and one per person for what's assigned to them. The page checks for changes every 45 seconds while it's open, and when you come back to it.
+- **Comments:** anyone in the collab can leave a note (up to 300 characters), shown with the date and time to the second. You can delete your own.
+- **Pro for everyone:** if anyone's Pro ends, nobody can change tasks or complete anything until it's renewed. Reading, comments, leaving and removing people still work.
+- Collab tasks don't earn points and don't count toward streaks or phone lock.
+- **Locks (optional, per task):** when adding or editing a task, the starter can set **AI check** (with proof criteria), **Shield** and **Phone lock** (needs a due date).
+  - Everyone assigned to a locked task sees **Needs your OK** and chooses **Accept locks** or **Decline**. Nothing binds them until they accept, and a task waiting for their OK can't be completed by them. The starter sees who accepted (✓), who hasn't answered (…) and who declined (✕).
+  - Accepting adds a linked copy of the task to your own task list (marked **Collab**). There, an **AI check** is completed with proof like any AI-locked task (your own credits or key), and a **phone lock** keeps your phone locked on the due date until it's done, whatever your phone-lock counting mode. Without a phone lock the copy has no date, so it never locks the phone. **Shield**: the task can't be completed until its subtasks are done.
+  - Completing the copy completes the collab task (and everything under it); completing it in the collab completes everyone's copies. AI-checked tasks are never completed from the collab page.
+  - After accepting you can't remove the copy, change its title or date, decline, or leave the collab. **Ask to be released**; the starter **Release**s you (the copy leaves your list and you're unassigned) or **Deny**s. The starter can release anyone at any time, and removing someone or deleting the collab releases them too. Emergency Bypass still works; the starter sees when it's used.
+  - Locked tasks can't be reopened. Changing a task's locks asks everyone again (their copies are removed until they accept the new ones).
+  - Refusing locks and releasing need no Pro; accepting does (like every change).
+- **Viewers:** a member with nothing assigned is a **Viewer**. They see everything and can comment. To add a viewer, invite a friend and don't assign them anything. (Viewers need Pro too.)
+- **Finishing:** completing the top task finishes the collab for everyone (you're asked to confirm; it can't be undone). It becomes read-only, waiting invitations are dropped, and everything is **deleted after 7 days**.
+- **Save JSON file:** when a collab finishes, everyone gets a prompt to save a copy (tasks, who did what, progress and comments with times). The button stays on the collab page until it's deleted. The file is a record only; Taskitator can't import it.
+- A finished collab doesn't count toward the 10-collab limit. Members can **Remove from my list**; the starter can **Delete now**.
+- **Leave collab** (members) or **Delete collab** (starter; deletes everything for everyone).
+- Limits: you + 5 friends, 150 tasks, 6 levels deep, the newest 200 comments, 10 collabs per person. Needs a connection.
+- Unfriending someone doesn't remove them from a collab. The starter removes them under **People**.
+- Collabs made before Phase 7.5 were Universes; they stay in your Universe list as ordinary Universes.
 
 ### Colour themes and Icon mix
 
@@ -1169,17 +1229,25 @@ These scripts execute in browser and Worker contexts through a `window`/`globalT
   - **Duo streak:** consecutive days both ledgers have a completion, skipping days either marked free.
   - **Deleted accounts:** they drop out on read; deleting an account removes its `friends:` record. The view never returns task data.
   - **Browser:** `friends-ui.js` renders the `#friends` shell view (Add a friend, Requests, Leaderboard All time / This week, Your friends with Cheer / Unfriend / Block, Cheers, Privacy, Blocked). A background load after sign-in sets the menu request badge (`data-friends-count`) and shows cheer toasts once (`taskitator_friends_seen`). Universe member rows get **Add friend**. Ari treats the view as read-only (`friends: 'stats'`). Cache `taskitator-phase4-v74`.
-- **Collab (Phase 7.0):** built on the Universe backend; no new tables and no migration.
-  - **Create:** `POST /friends/collab/create {title, ids}` (`FriendsService.collab`) checks that every chosen person is a mutual friend (1–5 of them) and that the creator and each friend have Pro (`UniverseService.entitlement`). It then creates a Universe group as the creator (purpose `Collab · …`, which drives the purple **Collab** badge in the Universe list) and one 7-day **admin** invitation per friend through the normal Universe endpoints, so every Universe rule and trigger applies.
-  - **Storage:** the token is stored only in the friend's `friends:` record (`collab_in`) and `collab:<gid>` = `{owner, title, members, at}`.
-  - **Join:** `collab/accept` (needs Pro) calls `/universe/invitations/accept` as the friend; `collab/decline` drops the invitation.
-  - **Overview:** `GET /friends` adds `collab_invites` and `collabs` (current D1 members only).
-  - **Pro gate:** `FriendsService.gate` runs in the Worker before every Universe request. For a group with a `collab:` record, any non-GET needs Pro for every current member (403 `COLLAB_PRO`). Leave, group delete, `DELETE` and withdrawing phone-blocking consent stay open.
-  - **Limits:** collabs count toward Universe caps (own 2, join 7) because those caps are database triggers, and changing them was judged too risky.
-  - **Browser:** Friends gets a **Collabs** section (invites with Join/Decline, list with Open, a Start a collab form). `components.html?view=universe&group=<id>` opens a group directly. Tests in `uni/collab.test.js` run the real `UniverseRules` on an in-memory D1. Cache `taskitator-phase4-v76`.
+- **Collab (Phase 7.0):** replaced in Phase 7.5 (see below). It was a Universe group created from Friends.
 
 - **ChatGPT and Copilot knowledge (Phase 7.3):** `worker.js` `PROVIDERS.openai` (`ChatGPT`, model `gpt-6-luna`): own vault slot like Claude; key check `GET https://api.openai.com/v1/models/gpt-6-luna` (Bearer, no generation); `toOpenAIRequest` turns the Gemini-shaped payload into a Responses API body (`store:false`; `instructions`; `input` with `input_text`/`input_image`/`input_file` data URLs, `function_call`/`function_call_output` by `call_id`; tools `type:function, strict:false`, `parallel_tool_calls:false`; `reasoning.effort` `none` for Copilot, `low` for structured reviews; strict `json_schema` output, array schemas wrapped in `{results}`) and `fromOpenAIResponse` maps it back (reasoning items skipped; refusal/content filter 422; `incomplete` 502; invalid tool arguments 502). Free metering: `POST /v1/responses/input_tokens` (a 404/405 falls back to `estimateOpenAIInput`, an upper bound), usage `input_tokens`/`output_tokens`, price `BYOK_RATES['gpt-6-luna']` ($0.10/$0.50 per 1M, ×2/×1.5 over 272K). Client: `pro.js` provider maps, key texts (an OpenAI API key, not a ChatGPT subscription), large-photo resize as for Claude; `settings.html` option; `ai-notice.js` OpenAI. Universe AI stays Gemini-only. `copilot-knowledge.js` (`TaskitatorCopilotKnowledge`): `MAP` (where everything is, ~120 tokens) + one condensed entry per page (`PAGES`) and per Settings tab (`SETTINGS`, open tab only, read from `#settingsTabs [aria-selected]`); `app.js` appends `forPage(page)` to the system prompt; Friends and Universe now have their own page keys (read-only). Budgets tested: MAP ≤ 560 chars, a page ≤ 1,900, Settings ≤ 2,300. Tests: `phase73.test.js` and `security.test.js` "Phase 7.3". Cache `taskitator-phase4-v78`.
 - **Title shortcuts and tour scroll (Phase 7.4):** `components.js` gains the pure module `nlp-match.js` (`TaskitatorNlpMatch`: `priority`, `project`, `tag`, `suggest`, `tokenOf`, `TOKEN`, `ACTIVE`). Priority tokens match the user's level names (case-insensitive, spaces ignored, NFKC, any script), then the position in rank order (`!3`, `!p3`, Arabic-Indic digits), then a unique name prefix; a name wins over a number. The name shown on screen (`TaskitatorI18n.translateText`, so the Arabic for the default levels) is accepted as an alias. `NLPEngine` builds every chip through `chipFor`/`insertChip`; a new priority, project or bonus chip removes the older one of the same type. The mention list (`.nlp-menu`, `role=listbox`, `aria-activedescendant`) sits under the title's `.form-group`; a `window` keydown listener in the capture phase takes ↑ ↓ Enter Tab Esc while it is open, before the modals' own Escape handlers. `@` calls `addTag` only for a new tag, and the draft catalogue no longer lists a live tag twice. `tutorial-spotlight.js` `place()` measures with `scrollHeight` instead of lifting `max-height` and restores `scrollTop`, so a docked live card no longer jumps back to the top every 250 ms; `.tt-actions` is sticky at the bottom of the card; docked live cards may use 42% of the screen. Cache `taskitator-phase4-v79`, tour assets `?v=tour-v4`.
+- **Challenges and lean Collab (Phase 7.5):**
+  - **Challenges** (`friends-backend.js`, `POST /friends/challenge/{create,accept,decline,cancel,forfeit,dismiss}`): `challenge:<id>` = `{id, from, to, metric, days, status, at, accepted_at, start, end, result}`, indexed in both people's `friends:` record (`challenges`). Create needs Pro (`isPro`), a mutual friendship and no running challenge with that friend; 3 active each, 10 pending sent, invites expire after 7 days. Accept sets `start` = the next Riyadh day and `end` = start + days − 1. Scores come from each person's points ledger (`chScore`): points = Σ`p`, tasks = Σ`r` (required), streak = longest run of days with `r` > 0 inside the window (a free day or today-not-yet-done doesn't break it; second value = days done). `challengeList` (in `GET /friends`) freezes the result on the first read after `end` (`chWinner`: higher main, then for streak more days; otherwise a draw). Block deletes challenges between the two.
+  - **Collab** (`collab-backend.js`, `CollabService`; routes `POST /collab/{create,accept,decline,leave,delete,invite,remove,add,edit,del,assign,complete,comment,uncomment}` and `GET /collab/<cid>?rev=`): plain Durable Object records, no D1/R2/AI. `cb:<cid>` meta (owner, members, invited, rev, task counts), `cbt:<cid>:<tid>` one record per task (root id `root`), `cbm:<cid>:<at>-<rnd>` comments; membership index in `friends:<uid>` (`cb`, `cb_in`). Owner-only edits; assignees complete their node and its subtree (`complete` walks up for an assignment); reopening clears finished ancestors. Pro for every member is checked before the storage transaction (it may call the licence service) and the transaction refuses if the member list changed meanwhile (`COLLAB_RETRY`); comments, leave, remove, decline and delete skip it. Each write bumps `rev`; `GET ?rev=N` returns `{unchanged:true}` from one read. Deletes are chunked to 128 keys. A collab whose owner's account is gone is wiped on the next read. `GET /friends` lists collabs and invites through `CollabService.listFor`.
+  - **Removed:** the Phase 7.0 Universe-based collab (`FriendsService.collab`, the Worker's `friends.gate` before Universe requests, the Universe **Collab** badge, `uni/collab.test.js`, `phase72.test.js`). Old `collab_in`/`collabs` fields are dropped from `friends:` records when read; old collab groups stay ordinary Universes.
+  - **Browser:** `friends-ui.js` adds **Challenge** on friend rows (Points/Tasks/Streak choice boxes, days), a **Challenges** section, and the new **Collabs** section. `collab-ui.js` renders `#collab-<cid>` (view `collab` in `shell-router.js`), loaded by the router with a `<script>` tag the first time a collab opens; it polls every 45 s while visible. Cache `taskitator-phase4-v80`.
+- **Locked collab assignments (Phase 7.7):** `collab-locks.js` (`CollabLocks`, used as `collab.locks`). Task records gain `locks {ai, criteria, shield, phone}` (`cleanLocks`: AI needs criteria ≤1,000 characters, phone needs a due date) and `consent {uid:{s:'pending'|'yes'|'no', at, req?, bypass?}}` for every assignee of a locked task. New collab actions: `consent` (needs a synced snapshot and Pro for everyone; writes the mirror), `refuse`, `release_request` (`cancel:true` withdraws), owner `release` (`approve:false` denies); `add`/`edit` take `locks` (a change removes open mirrors and resets everyone to pending; title/notes/due edits update mirrors; finished tasks' locks are frozen). `refuse`, `release` and `release_request` skip the Pro gate. A locked assignment counts for completion only once accepted; `CollabLocks.blockers` refuses completing a subtree with an unfinished AI-locked task or a shielded task with unfinished subtasks; locked tasks (or locked finished ancestors) can't be reopened; `leave` is refused while you hold an accepted, unfinished lock; `remove`, `del`, `delete` and `wipe` release mirrors (`releaseAll`). The mirror is a task written into the assignee's stored snapshot by the Worker (`service.writeTaskSnapshot(tx, uid, snapshot, {skipCollab:true})`): id `cbx_<cid>_<tid>`, `ai_locked` + `proof_criteria`/`raw_`/`original_` when AI, `due_date` only with a phone lock, `status_count`, `collab_link {cid, tid, phone, shield, collab}`. Sync: `guardPush` (after the protection guards) rejects new tasks carrying `collab_link`, and for an accepted open mirror rejects removal, trashing or changes to `title`, `due_date`, `status_count`, `collab_link`, bonus flags, AI fields or `parent_id`, and a completion the collab's shield blocks; Emergency Bypass skips it. `reconcile` (push, before saving; and in `writeTaskSnapshot` unless `skipCollab`, which covers AI proof approval) completes the collab task + subtree when a mirror turns completed (`done.via` `proof`/`bypass`), closes every other accepted mirror of those tasks (`closeCopies`), finishes the collab if the root is done, and records `consent {s:'no', bypass}` when a protected mirror disappears under bypass. `pro/status-count.js` `forced()`: `ai_locked` or `collab_link.phone` always count toward the phone lock. Meta `consent_open {uid: n}` → `needs_ok` on the Friends list. UI: `collab-ui.js` locks fieldset, lock badges, consent chips (✓ … ✕ / request), Accept/Decline/Ask to be released, owner Release/Deny, banner; a sync runs after accepting or completing locked work. `app.js` shows a **Collab** badge on mirrors linking to `#collab-<cid>`. Tests: `phase77.test.js`. Cache `taskitator-phase4-v82`, `collab-ui.js?v=cb-3`, `friends-ui.js?v=fr-v5`.
+- **Group challenges, finished collabs and the race bar (Phase 7.6):**
+  - **Challenges v2** (`friends-backend.js`): `challenge:<id>` = `{v:2, id, from, type:'time'|'amount', metric, days, target, prize, status, at, members:{uid:{s:'invited'|'in'|'left', at, color}}, start, end, started_at, track_from, prog:{uid:{day:{p,r}}}, reached:{uid:at}, result:{scores, winners[], how:'target'|'deadline'|'forfeit', at, target_missed}}`. A 7.5 record is read through `FriendsService.chUp` as a two-person Time challenge with `track_from: null`, so it keeps ledger scoring until it ends. New actions: `start` (sender; needs one joiner), `leave` (before the start), `color`; `create` takes `ids` (1–5; `id` still works), `type`, `target` (`chGoalRange`: points 10…50×days, tasks 2…15×days, streak 2…days), `prize` (`chPrize`: ≤40 chars, control and bidi-override characters dropped), `color` (0–7, unique per challenge). `needsTick`/`chTick` run on reads (in a transaction only when something is due): auto-start 48 h after sending if someone joined (`chStart`: start = next Riyadh day, unanswered invitees dropped, `chl:<uid>` index written), drop a waiting one after 7 days, `chSettle` (Amount: earliest `reached`; otherwise after `end` the top score, ties share; everyone else left → the last one wins; deleted accounts can't win), drop finished ones after 30 days. Limits: 3 challenges you've joined (waiting or running), 20 listed per person.
+  - **Anti-cheat log:** `points.js` `record()` now also returns `awards` (`{id, day, p, req, at, created}`). In the sync transaction the Worker calls `friends.chRecord(tx, uid, awards, state, now)` right after the ledger: one read of `chl:<uid>`; for each running challenge it adds awards inside `[start, end]`, finished at least 5 minutes after `created_at` (`CH_MIN_AGE_MS`; missing `created_at` passes), capped per day at 50 points / 15 required tasks (`CH_DAY_POINTS`, `CH_DAY_TASKS`), and records `reached[uid] = now` (server time) when an Amount goal is crossed; nothing counts once someone has reached it. Scores read `prog`, not the ledger (the ledger is only read for Streak free days). Blocking (`endChallenges`) makes the blocker forfeit shared running challenges and cancels or leaves waiting ones, so blocking the leader can't void a race. Account deletion also deletes `chl:<uid>`.
+  - **Live endpoint:** `GET /friends/challenges/live` (`challengeLive`, rate limit 20/min): running challenges you're in, waiting ones you joined, and ones that ended in the last 24 h, each as `chView` (usernames only, members in standing order). `chLive` caches scores and usernames per challenge for 45 s in the Durable Object's memory; `chSave` and `chRecord` clear the entry.
+  - **Race bar** (`race-ui.js`, `TaskitatorRace`, loaded with the app before `friends-ui.js`): a `#raceDock` after `#taskListContainer`, shown on Today only (`TaskitatorShell.current() === 'tasks'` and key ≠ `general`), when `TaskitatorAppearance.motionAllowed('race')` (new switch `race` in `theme-boot.js` `SWITCH_KEYS`/`DECORATIVE`, Settings row **Challenge race**). Positions: Time = `BUF + (100−2·BUF)·(score−min)/max(range, MIN_SPAN)`, Amount = `BUF + (100−2·BUF)·min(1, score/goal)`, `BUF` 8 %; greedy lanes (gap 22 %, up to 3); the badge translates by −x % of its own width so it never leaves the track; names over 7 characters cut to 5 + "…"; crown on a unique leader. Keyed DOM updates so badges slide (CSS transition). **–** stores `taskitator_race_min` and shows `#raceFab` (bottom-left; bottom-right in RTL). Polls every 60 s while Today is visible, on focus/reconnect, and 5 s after a `taskitator-points` event that earned points or added a completion. `window.TaskitatorRaceColors` (8 colors) is shared with `friends-ui.js`.
+  - **Collab lifecycle** (`collab-backend.js`): completing `root` calls `finish()`: `finished {at, by}`, `purge_at = now + 7 d`, invitations dropped, members' index entries become `{done: purge_at}` (not counted by `activeCount` toward the 10-collab limit). Every action except `leave`, `delete` and `decline` then fails with `COLLAB_FINISHED` (checked before the Pro gate, which is skipped). `leave` on a finished collab only removes it from your list. `view`/`listFor` wipe it on the first read after `purge_at`. The view returns `finished` and `purge_at`; `can_edit` is false once finished.
+  - **Archive** (`collab-archive.js`, `TaskitatorCollabArchive`): `build(view)` → `{format:'taskitator-collab-archive', format_version:1, notice, saved_at, collab, progress{done,total,percent,people[{username, role:'owner'|'member'|'viewer'|'invited', assigned, done}]}, outline (nested), comments}`: usernames only, no ids, none of the import keys. `collab-ui.js` loads it on demand for **Save JSON file** (finish confirm, a once-per-device prompt, and a button on finished collabs) and shows **Viewer** for members with no assignment. Settings → Back up adds `taskitator_social` (friends, requests received/sent, collab invitations, every collab as an archive) when online; restore ignores it and refuses an archive file with a clear message.
+  - **i18n:** `i18n.js` now tries the most specific pattern first (longest literal text), so `"{0} days left"` beats `"{0} left"`.
+  - Tests: `phase76.test.js`; the 7.5 challenge tests in `phase75.test.js` were replaced. Cache `taskitator-phase4-v81`; `friends-ui.js?v=fr-v4`, `collab-ui.js?v=cb-2`, `copilot-knowledge.js?v=ck-4`.
 - **Streak modes and required free day (Phase 7.2):** `points.js`: ledger rows are now `{p,n,r,a}` (all / required non-bonus / AI-locked completions); `modes[{from,mode}]` scheduled from `settings.streak_mode` (`tight|normal|loose`, default loose) by `scheduleMode`, a change starting at `nextWeekStart` like free days; `dayDone(state,date)` reads the count for that day's mode (rows without `r`/`a`, from before 7.2, count in every mode). `required{date:{at,ex}}`: `POST /points/require` (Worker, in a storage transaction with the stored snapshot) runs `requireDay` once per free date: records the press time and every task id finished today (awarded today or `completed_at` today), and resets today's row. `record` then gives nothing for completions at or before `at` or with an id in `ex` (marked awarded, so a later reopen adds nothing either). `isFree(state,date)` = weekly free and not required; streak, summary, week and duo streak (`friends-backend.js`) use `isFree`/`dayDone`. Summary adds `mode`, `mode_next`, `today.required`, `today.can_require`. Browser: Points panel shows the mode and the **Make today required** button (syncs first, confirm shows how many finished tasks won't count); Settings → Day & week **Streak counting** card; Phone lock counting and Streak counting use `.tk-choices`/`.tk-choice` (style.css), the look of Universe's choice boxes. Tests: `phase72b.test.js`. Cache `taskitator-phase4-v77`.
 - **Stats fix (Phase 7.1):** `views/stats.js` `renderStats` (1) uses the app's logical day (`TaskitatorRecurrence.today`, Riyadh time shifted by `day_start_hour`, the same rule as Today, Points and recurrence) for Done Today, Pending Today and the 7-day bars, instead of the UTC date; (2) reads timestamps as ISO strings or numbers; (3) draws each card in its own guarded part (`statsPart`), so one bad value (a history entry without `tasks`, a break that can't be timed) is logged and the rest still draws, where before a single throw left every number at its HTML default of 0; (4) takes today's breaks from the Worker's answer (`BreakEngine.current()`: Scheduled windows and reserved minutes, or Flexible minutes used), falling back to the saved record; (5) redraws while open on `taskitator-synced`, `taskitator-tasks-updated`, `taskitator-breaks-changed`, `taskitator-auth-ready` and cross-tab `storage`. Tests: `stats.test.js`. Cache `taskitator-phase4-v76`.
 ### `uni/focus-timer.js`
@@ -1745,9 +1813,17 @@ Paths are relative to the repository root. This is the complete file list as of 
 | [`stats.test.js`](stats.test.js) | Stats view: malformed data, guarded cards, logical-day counts and redraw events. |
 | [`phase72b.test.js`](phase72b.test.js) | Phase 7.2: streak modes, Make today required, choice boxes. |
 | [`phase73.test.js`](phase73.test.js) | Phase 7.3: ChatGPT adapter, pricing, client wiring; Copilot knowledge budgets and coverage. |
+| [`phase75.test.js`](phase75.test.js) | Phase 7.5: Collab service (permissions, assignees, subtree completion, Pro gate, comments, polling, limits) and challenges (scoring, freezing, limits). |
+| [`phase76.test.js`](phase76.test.js) | Phase 7.6: group challenges (Time/Amount, goals, prize, colors, auto-start, anti-cheat log, live endpoint, 7.5 migration), finished collabs and the archive, race bar positions and wiring, Arabic pattern order. |
+| [`phase77.test.js`](phase77.test.js) | Phase 7.7: collab locks (consent, mirror, release, bypass, shield, AI proof path, lock changes, phone-lock counting, wiring). |
 | [`phase74.test.js`](phase74.test.js) | Phase 7.4: priority, project and tag shortcut matching, mention list rows and wiring, tour card scroll and pinned buttons. |
-| [`friends-backend.js`](friends-backend.js) | Phase 7.0 friends service on the Worker (requests, block, privacy, cheers, overview with points). |
-| [`friends-ui.js`](friends-ui.js) | Phase 7.0 Friends view: add by username, requests, leaderboard, cheers, privacy. |
+| [`friends-backend.js`](friends-backend.js) | Phase 7.0 friends service on the Worker (requests, block, privacy, cheers, overview with points); Phase 7.5 challenges; Phase 7.6 group challenges, anti-cheat log (`chRecord`) and `GET /friends/challenges/live`. |
+| [`friends-ui.js`](friends-ui.js) | Phase 7.0 Friends view: add by username, requests, leaderboard, cheers, privacy; Phase 7.5 challenges and the Collabs list. |
+| [`collab-backend.js`](collab-backend.js) | Phase 7.5 Collab service on the Worker: shared task tree, assignees, comments, Pro for every member. |
+| [`collab-ui.js`](collab-ui.js) | Phase 7.5 Collab view (`#collab-<id>`), loaded on demand; Phase 7.6 finish, Save JSON file, Viewer. |
+| [`collab-locks.js`](collab-locks.js) | Phase 7.7 locked collab assignments: consent, the linked copy in the assignee's list, sync guard and two-way completion. |
+| [`collab-archive.js`](collab-archive.js) | Phase 7.6 saved-collab file builder (record only; refused by restore); used by the collab view and the Settings backup. |
+| [`race-ui.js`](race-ui.js) | Phase 7.6 challenge race bar at the bottom of Today, its minimize button and the shared challenge colors. |
 | [`points.js`](points.js) | Phase 7.0 points, ranks, streak and free-day rules shared by the Worker (awards) and the browser. |
 | [`points-ui.js`](points-ui.js) | Phase 7.0 points & streak strip on Today and its details panel. |
 | [`copilot-knowledge.js`](copilot-knowledge.js) | Phase 7.3 condensed per-page Copilot knowledge (`TaskitatorCopilotKnowledge`). |

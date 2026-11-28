@@ -6,6 +6,8 @@
              status_bonus_count.
    limited : only AI-locked tasks count. Bonus tasks never count.
    AI-locked tasks always count. Undated tasks never count (Phase 6.1.1).
+   Phase 7.7: a collab task copy whose owner set a phone lock (collab_link.phone) always counts, like AI-locked tasks:
+   its assignee agreed to it.
    Bonus = is_bonus, or Dynamic Bonus (dynamic_bonus) once every required descendant is done and at least one
    required descendant exists (completed). Dynamic Bonus is derived, never stored. */
 (function(root){
@@ -50,8 +52,9 @@ function effective(by,task){
  return true;
 }
 // bonus: optional Set from bonusIds(); without it only is_bonus is treated as bonus.
+const forced=t=>Boolean(t&&(t.ai_locked||t.collab_link?.phone===true));
 function counts(by,task,settings,bonus){
- if(task.ai_locked)return true;
+ if(forced(task))return true;
  const m=mode(settings);
  if(m==='limited')return false;
  const isBonus=bonus?bonus.has(task.id):Boolean(task.is_bonus);
@@ -69,7 +72,7 @@ function dueNow(by,task,today){
 // (status_bonus_count on, and not Limited). AI-locked tasks always lock.
 function pending(tasks,today,settings){
  const by=index(tasks),bonus=bonusIds(tasks),withBonus=mode(settings)!=='limited'&&bonusCount(settings);
- return (tasks||[]).some(t=>!t||typeof t!=='object'||(t.status==='active'&&dueNow(by,t,today)&&(t.ai_locked||withBonus||!bonus.has(t.id))));
+ return (tasks||[]).some(t=>!t||typeof t!=='object'||(t.status==='active'&&dueNow(by,t,today)&&(forced(t)||withBonus||!bonus.has(t.id))));
 }
 // Does any active due task count under the record's settings?
 function unfinished(tasks,settings,today){

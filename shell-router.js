@@ -22,6 +22,7 @@
         'test-lab': { title: '', doc: 'Test lab — Taskitator' },
         sleep: { title: '', doc: 'Sleep Lock — Taskitator' },
         friends: { title: '', doc: 'Friends — Taskitator' },
+        collab: { title: '', doc: 'Collab — Taskitator' },
         help: { title: '', doc: 'Help — Taskitator' }
     };
     const ALIASES = { guide: 'blocker-guide', blocker_guide: 'blocker-guide', study_plans: 'study-plans', plans: 'study-plans', test_lab: 'test-lab', lab: 'test-lab' };
@@ -34,6 +35,7 @@
     }
     function routeOf(key) {
         if (key.startsWith('help-')) return { view: 'help', anchor: key };
+        if (key.startsWith('collab-')) return { view: 'collab', id: key.slice(7) };
         if (GUIDE_ANCHORS.has(key)) return { view: 'blocker-guide', anchor: key };
         const view = canonicalView(key);
         return Object.hasOwn(VIEWS, view) ? { view } : { view: 'tasks' };
@@ -90,7 +92,20 @@
             else if (view === 'test-lab') window.TaskitatorTestLabView?.show();
             else if (view === 'sleep') window.TaskitatorSleepView?.show();
             else if (view === 'friends') window.TaskitatorFriendsView?.show();
+            else if (view === 'collab') collabView().then(v => v?.show(routeOf(hashKey()).id || '')).catch(err => console.error('Collab could not load', err));
         } catch (err) { console.error('Taskitator view could not refresh', view, err); }
+    }
+    // Phase 7.5: the collab view's script loads the first time a collab is opened, never with the app.
+    let collabLoading = null;
+    function collabView() {
+        if (window.TaskitatorCollabView) return Promise.resolve(window.TaskitatorCollabView);
+        return collabLoading ||= new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'collab-ui.js?v=cb-3';
+            script.onload = () => resolve(window.TaskitatorCollabView);
+            script.onerror = () => { collabLoading = null; reject(new Error('collab-ui.js failed to load')); };
+            document.head.appendChild(script);
+        });
     }
     function show() {
         const key = hashKey(), route = routeOf(key), view = route.view, leaving = current;
@@ -101,6 +116,7 @@
             if (leaving === 'study-plans') window.TaskitatorStudyPlansView?.hide?.();
             if (leaving === 'test-lab') window.TaskitatorTestLabView?.hide?.();
             if (leaving === 'sleep') window.TaskitatorSleepView?.hide?.();
+            if (leaving === 'collab') window.TaskitatorCollabView?.hide?.();
         }
         if (view === 'help' && leaving !== 'help') {
             if (leaving) {
@@ -127,7 +143,7 @@
         if (jump) jump.style.display = view === 'calendar' ? 'inline-flex' : 'none';
         document.title = info.doc;
         activeLinks(view);
-        const changed = leaving !== view;
+        const changed = leaving !== view || (view === 'collab' && key !== currentKey); // another collab = a fresh view
         current = view;
         currentKey = key;
         if (changed) hooks(view);

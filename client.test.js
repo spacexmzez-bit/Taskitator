@@ -362,7 +362,7 @@ test('page bootstrap activates the security cache before initializing an authent
     const serviceWorker={controller:{postMessage(message,ports){ports[0].postMessage({version:'old-cache'});ports[0].close();}},
         addEventListener(name,fn){listeners.set(name,fn)},removeEventListener(name){listeners.delete(name)},
         async register(){calls.push('register');return {async update(){
-            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase4-v79'});ports[0].close();}};
+            serviceWorker.controller={postMessage(message,ports){ports[0].postMessage({version:'taskitator-phase4-v82'});ports[0].close();}};
             await listeners.get('controllerchange')();
         }}}};
     const auth={signedIn:true,account:{user:'rd'},async init(){calls.push('authenticate')}};
@@ -854,13 +854,13 @@ test('Universe page shows only Universe; old components.html views redirect into
 test('Shell router: one index.html, hash views, legacy ?view= and per-view refresh',()=>{
  const html=fs.readFileSync(new URL('index.html',rootURL()),'utf8');
  const views=[...html.matchAll(/<(?:div|section)\b[^>]*\bdata-shell-view="([^"]+)"/g)].map(m=>m[1]);
- assert.deepEqual(views,['tasks','projects','calendar','stats','trash','blocker-guide','study-plans','test-lab','sleep','friends','help']);
+ assert.deepEqual(views,['tasks','projects','calendar','stats','trash','blocker-guide','study-plans','test-lab','sleep','friends','collab','help']);
  for(const f of ['views/projects.js','views/calendar.js','views/stats.js','views/trash.js','views/blocker-guide.js','pro/study-manage.js','study-plans.js','sleep.js','shell-router.js'])assert.ok(html.includes('src="'+f+'"'),f);
  assert.ok(html.indexOf('src="app.js')<html.indexOf('src="views/projects.js"')&&html.indexOf('src="study-plans.js"')<html.indexOf('src="shell-router.js"'));
  for(const old of ['components.html?view=calendar','components.html?view=projects','sleep.html"','study-plans.html"','help.html"'])assert.equal(html.includes(old),false,old);
  const code=fs.readFileSync(new URL('shell-router.js',rootURL()),'utf8');
  const make=(id,v)=>({id,hidden:false,getAttribute:k=>k==='data-shell-view'?v:null,querySelectorAll:()=>[]});
- const els=['tasks','projects','calendar','stats','trash','blocker-guide','study-plans','test-lab','sleep','friends','help'].map(v=>make('v-'+v,v));
+ const els=['tasks','projects','calendar','stats','trash','blocker-guide','study-plans','test-lab','sleep','friends','collab','help'].map(v=>make('v-'+v,v));
  const links=[{id:'navLinkToday'},{id:'navLinkGeneral'},{shell:'calendar'},{shell:'sleep'}].map(l=>({...l,classList:{on:false,toggle(_,v){this.on=v;}},getAttribute:k=>k==='data-shell-link'?l.shell||null:null}));
  const calls=[],listeners={},title={textContent:'',hidden:true},jump={style:{}},back={href:'',setAttribute(k,v){this.href=v;}};let replaced=null;
  const anchors = new Map(['help-p-study', 'help-calendar', 'bridge-manual'].map(id => [id, { scrollIntoView() { calls.push(id); } }]));

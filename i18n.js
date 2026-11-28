@@ -85,7 +85,7 @@
             const parts = key.split(/\{\w+\}/);
             const re = new RegExp('^' + parts.map(escapeRe).reduce((acc, part, i) =>
                 acc + (i ? (names[i - 1] === 'n' ? '(-?\\d[\\d.,]*)' : '(.+?)') : '') + part, '') + '$');
-            const pat = { re, names, value };
+            const pat = { re, names, value, lit: parts.join('').length };
             const head = parts[0].trim().split(' ')[0], tail = parts[parts.length - 1].trim().split(' ').pop();
             const inner = parts.map(x => x.trim()).find(Boolean)?.split(' ')[0];
             const [bucket, word] = head ? [out.first, head] : tail ? [out.last, tail] : inner ? [out.mid, inner] : [null, ''];
@@ -93,6 +93,8 @@
             if (!bucket.has(word)) bucket.set(word, []);
             bucket.get(word).push(pat);
         }
+        // Phase 7.6: the most specific pattern wins ("{0} days left" before "{0} left"), whatever the dictionary order.
+        for (const b of [out.first, out.last, out.mid]) for (const list of b.values()) list.sort((x, y) => y.lit - x.lit);
         return out;
     }
     const table = () => (compiled ??= compile());
@@ -110,6 +112,7 @@
         const words = key.split(' ');
         const cands = [...(tb.first.get(words[0]) || []), ...(tb.last.get(words[words.length - 1]) || [])];
         if (tb.mid.size && words.length <= 12) for (const w of words) if (tb.mid.has(w)) cands.push(...tb.mid.get(w));
+        cands.sort((x, y) => y.lit - x.lit);
         for (const p of cands) {
             const m = p.re.exec(key);
             if (!m) continue;
